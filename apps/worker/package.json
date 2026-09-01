@@ -14,7 +14,12 @@
     "@nestjs/core": "12.0.1",
     "@nestjs/platform-express": "12.0.1",
     "@solar/domain": "workspace:*",
+    "bullmq": "^6.3.3",
+    "csv-stringify": "^6.8.3",
+    "exceljs": "^4.4.0",
     "express": "5.2.1",
+    "ioredis": "^6.0.0",
+    "pino": "^10.3.1",
     "reflect-metadata": "0.2.2",
     "rxjs": "7.8.2"
   },
