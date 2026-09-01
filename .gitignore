@@ -12,3 +12,4 @@ pnpm-debug.log*
 
 
 .worktrees/
+.superpowers/sdd/*/task-1-report.md
