@@ -14,3 +14,8 @@ export { evaluateQuality, normalizeValue } from "./telemetry/quality.js";
 export { calculateCumulativeDiff } from "./telemetry/cumulative-energy.js";
 export type { QualityResult, QualityRule, QualityStatus } from "./telemetry/quality.js";
 export type { EnergyDiffResult } from "./telemetry/cumulative-energy.js";
+
+export { aggregate, bucketStart } from "./telemetry/aggregation.js";
+export type { AggregateBucket, AggregatePoint } from "./telemetry/aggregation.js";
+export { gatewayStatus, evaluateAlarm } from "./alarm/alarm-policy.js";
+export type { AlarmInput, AlarmSeverity, GatewayStatus } from "./alarm/alarm-policy.js";
