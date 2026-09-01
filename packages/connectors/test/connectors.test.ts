@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { FileImportConnector, ModbusTcpConnector, SimulatorConnector } from "./index.js";
+import { FileImportConnector, ModbusTcpConnector, SimulatorConnector } from "../src/index.js";
 test("simulator requires connection and returns deterministic registers",async()=>{const c=new SimulatorConnector();await assert.rejects(c.read([{address:1,quantity:1}]),/not connected/);await c.connect({id:"sim",type:"simulator"});assert.deepEqual(await c.read([{address:1,quantity:2}]),[{address:1,value:"11"},{address:2,value:"12"}]);});
 test("file import validates and filters rows",async()=>{const c=new FileImportConnector();const rows=FileImportConnector.parse('[{"address":2,"value":"23081","timestamp":"2026-01-01T00:00:00Z"}]');await c.connect({id:"file",type:"file-import",rows});assert.deepEqual(await c.read([{address:2,quantity:1}]),[{address:2,value:"23081"}]);});
 test("modbus adapter preserves register addresses",async()=>{const c=new ModbusTcpConnector(async()=>({readHoldingRegisters:async()=>[10,20],close:async()=>{}}));await c.connect({id:"gw",type:"modbus-tcp"});assert.deepEqual(await c.read([{address:100,quantity:2}]),[{address:100,value:"10"},{address:101,value:"20"}]);await c.disconnect();});
