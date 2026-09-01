@@ -19,3 +19,10 @@ export { aggregate, bucketStart } from "./telemetry/aggregation.js";
 export type { AggregateBucket, AggregatePoint } from "./telemetry/aggregation.js";
 export { gatewayStatus, evaluateAlarm } from "./alarm/alarm-policy.js";
 export type { AlarmInput, AlarmSeverity, GatewayStatus } from "./alarm/alarm-policy.js";
+
+export { calculateCumulativeDiff as calculateBillingCumulativeDiff } from './billing/cumulative-diff.js';
+export type { BillingQuality, MeterSnapshot, CumulativeDiffResult } from './billing/cumulative-diff.js';
+export { calculateRate } from './billing/rate-calculator.js';
+export type { FixedRateVersion, Money } from './billing/rate-calculator.js';
+export { canTransition, assertTransition } from './billing/billing-lifecycle.js';
+export type { BillingStatus } from './billing/billing-lifecycle.js';
