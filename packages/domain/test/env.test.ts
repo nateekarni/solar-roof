@@ -14,7 +14,9 @@ const baseEnv = {
   STORAGE_ENDPOINT: "http://localhost:9000",
   STORAGE_REGION: "ap-southeast-1",
   STORAGE_BUCKET: "solar-platform",
-  STORAGE_ACCESS_KEY: "solar",`r`n  STORAGE_SECRET_KEY: "storage-secret-storage-secret-storage-secret",`r`n  REDIS_URL: "redis://localhost:6379"
+  STORAGE_ACCESS_KEY: "solar",
+  STORAGE_SECRET_KEY: "storage-secret-storage-secret-storage-secret",
+  REDIS_URL: "redis://localhost:6379"
 };
 
 test("loadEnv validates required secrets", () => {
