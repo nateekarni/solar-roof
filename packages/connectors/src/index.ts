@@ -15,7 +15,7 @@ export interface RegisterReadResult {
 
 export interface ConnectorHealth {
   readonly status: "healthy" | "degraded" | "offline";
-  readonly lastCheckedAt?: string;
+  readonly lastCheckedAt?: string | undefined;
 }
 
 export interface EnergyConnector {
@@ -25,3 +25,7 @@ export interface EnergyConnector {
   disconnect(): Promise<void>;
 }
 
+
+export { SimulatorConnector } from "./simulator.connector.js";
+export { FileImportConnector } from "./file-import.connector.js";
+export { ModbusTcpConnector } from "./modbus-tcp.connector.js";
