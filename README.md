@@ -61,3 +61,20 @@ docker compose -f infra/docker/compose.yml config
 - API: `http://localhost:3001/health`
 - Worker: `http://localhost:3002/health`
 
+
+## Docker workflows
+
+Local dependencies only (Web/API use `pnpm dev`):
+
+`docker compose --env-file infra/docker/.env.local.example -f infra/docker/docker-compose.local.yml up -d`
+
+Production-like stack (replace all example secrets first):
+
+`docker compose --env-file .env.production -f infra/docker/docker-compose.prod.yml up -d --build`
+
+Compose validation:
+
+`docker compose --env-file infra/docker/.env.local.example -f infra/docker/docker-compose.local.yml config`
+`docker compose --env-file infra/docker/.env.production.example -f infra/docker/docker-compose.prod.yml config`
+
+API OpenAPI UI: `http://localhost:3001/docs`

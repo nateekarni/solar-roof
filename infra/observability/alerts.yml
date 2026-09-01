@@ -1,0 +1,24 @@
+groups:
+  - name: solar-platform
+    rules:
+      - alert: GatewayOffline
+        expr: solar_gateway_last_seen_seconds > 300
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: Gateway has not sent telemetry
+          runbook: docs/runbooks/incident-response.md
+      - alert: BillingJobFailed
+        expr: increase(solar_billing_runs_total{status="failed"}[15m]) > 0
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: Monthly billing job failed
+          runbook: docs/runbooks/billing-reconciliation.md
+      - alert: DocumentGenerationFailures
+        expr: increase(solar_document_generation_total{status="failed"}[15m]) > 0
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: Document generation is failing
+          runbook: docs/runbooks/incident-response.md
