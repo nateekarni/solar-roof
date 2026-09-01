@@ -6,3 +6,6 @@ export type { DependencyHealth, DependencyStatus, ServiceHealth } from "./health
 
 export { AppendOnlyAuditService } from "./audit/audit-event.js";
 export type { AuditEvent, AuditEventStore, AuditInput, AuditValue } from "./audit/audit-event.js";
+
+export { canAccess } from "./access/access-policy.js";
+export type { AccessAction, AccessActor, AccessResource, PlatformRole } from "./access/access-policy.js";
