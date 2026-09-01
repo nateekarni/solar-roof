@@ -9,3 +9,8 @@ export type { AuditEvent, AuditEventStore, AuditInput, AuditValue } from "./audi
 
 export { canAccess } from "./access/access-policy.js";
 export type { AccessAction, AccessActor, AccessResource, PlatformRole } from "./access/access-policy.js";
+
+export { evaluateQuality, normalizeValue } from "./telemetry/quality.js";
+export { calculateCumulativeDiff } from "./telemetry/cumulative-energy.js";
+export type { QualityResult, QualityRule, QualityStatus } from "./telemetry/quality.js";
+export type { EnergyDiffResult } from "./telemetry/cumulative-energy.js";

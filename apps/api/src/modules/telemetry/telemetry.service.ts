@@ -1,0 +1,10 @@
+import { ConflictException, Injectable } from "@nestjs/common";
+import { evaluateQuality, normalizeValue, type QualityRule, type QualityStatus } from "@solar/domain";
+export interface RegisterMappingVersion { id:string; deviceId:string; semanticField:string; registerAddress:string; dataType:string; signed:boolean; byteOrder:string; scale:number; unit:string; pollingIntervalSeconds:number; qualityRule:QualityRule; effectiveFrom:Date; effectiveTo?:Date; }
+export interface TelemetrySample { deviceId:string; mappingVersionId:string; sourceTime:Date; receivedTime:Date; rawPayload:unknown; rawValue:number; normalizedValue:number; unit:string; quality:QualityStatus; ingestionId:string; }
+@Injectable()
+export class TelemetryService {
+ private readonly mappings=new Map<string,RegisterMappingVersion>(); private readonly samples=new Map<string,TelemetrySample>();
+ publishMapping(input:RegisterMappingVersion):RegisterMappingVersion { if(this.mappings.has(input.id)) throw new ConflictException("Mapping version already exists"); if(input.pollingIntervalSeconds<1) throw new ConflictException("Polling interval must be positive"); this.mappings.set(input.id,input); return input; }
+ ingest(input:{deviceId:string;mappingVersionId:string;sourceTime:Date;receivedTime:Date;rawPayload:unknown;rawValue:number;ingestionId:string}):TelemetrySample { if(this.samples.has(input.ingestionId)) return this.samples.get(input.ingestionId)!; const mapping=this.mappings.get(input.mappingVersionId); if(!mapping) throw new ConflictException("Mapping version not found"); const normalized=normalizeValue(input.rawValue,mapping.scale,mapping.unit); const quality=evaluateQuality(normalized.value,input.sourceTime,input.receivedTime,mapping.qualityRule); const sample={...input,normalizedValue:normalized.value,unit:normalized.unit,quality:quality.status}; this.samples.set(input.ingestionId,sample); return sample; }
+}
