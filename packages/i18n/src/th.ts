@@ -1,5 +1,7 @@
 export const th = {
-  app: { title: "แพลตฟอร์มจัดการพลังงานแสงอาทิตย์", health: "สถานะระบบ" },
-  navigation: { dashboard: "แดชบอร์ด", schools: "โรงเรียน", sites: "ไซต์", gateways: "เกตเวย์", billing: "การเรียกเก็บเงิน", documents: "เอกสาร", reports: "รายงาน" },
-  dashboard: { welcome: "สวัสดี {name}", production: "พลังงานผลิตสะสม", collection: "การเก็บเงิน" }
+  app: { title: "แพลตฟอร์มจัดการพลังงานแสงอาทิตย์", health: "สถานะระบบ", platform: "SOLAR ENERGY PLATFORM" },
+  navigation: { dashboard: "ภาพรวม", schools: "โรงเรียน", sites: "ไซต์และ Gateway", gateways: "เกตเวย์", billing: "การเรียกเก็บเงิน", documents: "เอกสาร", reports: "รายงาน", users: "ผู้ใช้งาน", contracts: "สัญญาและเรท", audit: "Audit log", settings: "ตั้งค่า", alerts: "แจ้งเตือน" },
+  dashboard: { title: "ภาพรวมผู้บริหาร", production: "พลังงานผลิตสะสม", collection: "การเก็บเงิน", all: "ดูทั้งหมด", period: "ช่วงเวลา", month: "เดือนนี้", year: "ปีนี้", liveHealth: "การแจ้งเตือนล่าสุด", sites: "โรงเรียนที่ผลิตไฟฟ้าได้สูงสุดวันนี้", stats: { schools: "โรงเรียนทั้งหมด", onlineSchools: "โรงเรียนออนไลน์", installedCapacity: "กำลังการผลิตติดตั้ง", currentProduction: "กำลังผลิตปัจจุบัน", monthlyEnergy: "พลังงานเดือนนี้", monthlyRevenue: "รายได้เดือนนี้" } },
+  common: { search: "ค้นหา...", filter: "ตัวกรอง", all: "ทั้งหมด", active: "ใช้งานอยู่", review: "ต้องตรวจสอบ", exportCsv: "ส่งออก CSV", save: "บันทึกการตั้งค่า", success: "บันทึกข้อมูลสำเร็จ", error: "ไม่สามารถบันทึกข้อมูลได้" },
+  settings: { eyebrow: "PLATFORM SETTINGS", title: "ตั้งค่าระบบ", description: "กำหนดค่าแพลตฟอร์ม การออกเอกสาร retention และ localization", documentSeries: "เลขที่เอกสาร", invoicePrefix: "Invoice prefix", receiptPrefix: "Receipt prefix", retention: "การเก็บรักษาข้อมูล", rawTelemetry: "Raw telemetry", aggregateDocuments: "Aggregate / เอกสาร", localeAlerts: "ภาษาและการแจ้งเตือน", language: "ภาษาเริ่มต้น", thai: "ไทย", english: "English", criticalEmail: "Email สำหรับ alarm สำคัญ", inApp: "In-app notifications" }
 } as const;

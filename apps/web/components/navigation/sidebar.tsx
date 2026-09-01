@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Activity, Bell, Building2, CircleDollarSign, FileText, Gauge, LayoutDashboard, ScrollText, Settings, Users, Zap } from "lucide-react";
+import { t } from "@solar/i18n";
 import { Avatar, AvatarFallback } from "../../components/ui/avatar";
 
 const items = [
-  { href: "/", label: "ภาพรวม", icon: LayoutDashboard }, { href: "/schools", label: "โรงเรียน", icon: Building2 }, { href: "/sites", label: "ไซต์และ Gateway", icon: Gauge }, { href: "/billing", label: "การเรียกเก็บเงิน", icon: CircleDollarSign }, { href: "/documents", label: "เอกสาร", icon: FileText }, { href: "/reports", label: "รายงาน", icon: Activity }, { href: "/users", label: "ผู้ใช้งาน", icon: Users }, { href: "/contracts", label: "สัญญาและเรท", icon: ScrollText }, { href: "/audit", label: "Audit log", icon: FileText }, { href: "/settings", label: "ตั้งค่า", icon: Settings }, { href: "/alerts", label: "แจ้งเตือน", icon: Bell },
+  { href: "/", label: t("navigation.dashboard"), icon: LayoutDashboard }, { href: "/schools", label: t("navigation.schools"), icon: Building2 }, { href: "/sites", label: t("navigation.sites"), icon: Gauge }, { href: "/billing", label: t("navigation.billing"), icon: CircleDollarSign }, { href: "/documents", label: t("navigation.documents"), icon: FileText }, { href: "/reports", label: t("navigation.reports"), icon: Activity }, { href: "/users", label: t("navigation.users"), icon: Users }, { href: "/contracts", label: t("navigation.contracts"), icon: ScrollText }, { href: "/audit", label: t("navigation.audit"), icon: FileText }, { href: "/settings", label: t("navigation.settings"), icon: Settings }, { href: "/alerts", label: t("navigation.alerts"), icon: Bell },
 ];
 
 export function Sidebar() {
