@@ -1,0 +1,65 @@
+services:
+  postgres:
+    image: timescale/timescaledb:latest-pg16
+    container_name: solar-postgres
+    environment:
+      POSTGRES_DB: solar_platform
+      POSTGRES_USER: solar
+      POSTGRES_PASSWORD: solar
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./init-timescaledb.sql:/docker-entrypoint-initdb.d/001-init-timescaledb.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U solar -d solar_platform"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: solar-redis
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  mqtt:
+    image: emqx/emqx:5.8.5
+    container_name: solar-mqtt
+    ports:
+      - "1883:1883"
+      - "18083:18083"
+    healthcheck:
+      test: ["CMD-SHELL", "emqx ctl status >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+
+  storage:
+    image: minio/minio:latest
+    container_name: solar-storage
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: solar
+      MINIO_ROOT_PASSWORD: solar-storage-secret
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9000/minio/health/live >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres-data:
+  minio-data:
+

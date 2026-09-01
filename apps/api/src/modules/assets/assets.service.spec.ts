@@ -1,0 +1,4 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { AssetsService } from "./assets.service.js";
+test("assets enforce relationships and one active billing meter",()=>{const s=new AssetsService();s.createSchool({id:"school-1",name:"School"});s.createSite({id:"site-1",schoolId:"school-1",name:"Main"});s.registerGateway({id:"gw-1",siteId:"site-1",name:"GW",protocol:"modbus-tcp"});s.registerDevice({id:"device-1",gatewayId:"gw-1",serialNumber:"serial-1"});assert.equal(s.assignBillingMeter({id:"meter-1",siteId:"site-1",deviceId:"device-1"}).semanticField,"total_energy");assert.throws(()=>s.assignBillingMeter({id:"meter-2",siteId:"site-1",deviceId:"device-1"}),/active Billing Meter/);});

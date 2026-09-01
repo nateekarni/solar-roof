@@ -1,0 +1,3 @@
+import { OperationPage } from '../../features/shared/operation-page';
+export default function Page() { return <OperationPage eyebrow='NOTIFICATION CENTER' title='การแจ้งเตือน' description='Alarm, เอกสารออกใหม่ และสถานะการชำระเงิน พร้อมผลการส่งอีเมล' action='ตั้งค่าการแจ้งเตือน' columns={['รายการ','รายละเอียด','ข้อมูล','สถานะ']} rows={[['Gateway GW-007 offline','Alarm สำคัญ · โรงเรียนเทศบาลหนองยาง','In-app + Email · 09:30','ยังไม่อ่าน'],['ใบเสร็จ RCT-2026-000112','เอกสารออกใหม่ · โรงเรียนบ้านไผ่เมือง','Email · ส่งสำเร็จ','อ่านแล้ว'],['ชำระเงิน INV-2026-000128','สถานะ payment เปลี่ยนเป็น paid','In-app · ส่งสำเร็จ','อ่านแล้ว']]} />; }
+

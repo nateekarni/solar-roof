@@ -1,0 +1,4 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { TelemetryService } from "./telemetry.service.js";
+test("telemetry mapping normalizes and deduplicates ingestion",()=>{const s=new TelemetryService();s.publishMapping({id:"map-1",deviceId:"dev-1",semanticField:"voltage",registerAddress:"R2",dataType:"uint16",signed:false,byteOrder:"big-endian",scale:.01,unit:"V",pollingIntervalSeconds:60,qualityRule:{min:0,max:300},effectiveFrom:new Date("2026-01-01")});const input={deviceId:"dev-1",mappingVersionId:"map-1",sourceTime:new Date("2026-01-01T00:00:00Z"),receivedTime:new Date("2026-01-01T00:00:01Z"),rawPayload:{R2:23081},rawValue:23081,ingestionId:"ingest-1"};assert.equal(s.ingest(input).normalizedValue,230.81);assert.equal(s.ingest(input),s.ingest(input));});

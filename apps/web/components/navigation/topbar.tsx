@@ -1,0 +1,2 @@
+"use client";
+export function Topbar() { return <header className="topbar"><div><span className="eyebrow">SOLAR ENERGY PLATFORM</span><h1>ภาพรวมผู้บริหาร</h1></div><div className="top-actions"><button type="button" aria-label="แจ้งเตือน" className="icon-button">♧<span className="notification-dot" /></button><button type="button" className="user-pill"><span className="avatar small">O</span> Owner <span aria-hidden="true">⌄</span></button></div></header>; }

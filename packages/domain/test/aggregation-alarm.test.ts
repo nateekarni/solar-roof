@@ -1,0 +1,5 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { aggregate, gatewayStatus } from "../src/index.js";
+test("aggregation groups 15 minute buckets and quality",()=>{const points=aggregate([{timestamp:new Date("2026-01-01T00:01:00Z"),value:10,quality:"complete"},{timestamp:new Date("2026-01-01T00:14:00Z"),value:20,quality:"partial"},{timestamp:new Date("2026-01-01T00:16:00Z"),value:40,quality:"complete"}],"15m");assert.equal(points.length,2);assert.equal(points[0]!.value,15);assert.equal(points[0]!.quality,"partial");});
+test("gateway health uses expected polling interval",()=>{const now=new Date("2026-01-01T00:00:00Z");assert.equal(gatewayStatus(new Date("2025-12-31T23:59:00Z"),now,60),"online");assert.equal(gatewayStatus(new Date("2025-12-31T23:57:30Z"),now,60),"degraded");assert.equal(gatewayStatus(undefined,now,60),"offline");});
