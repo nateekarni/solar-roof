@@ -1,0 +1,24 @@
+{
+  "name": "solar-platform",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.24.0",
+  "engines": {
+    "node": ">=24.20.0 <25",
+    "pnpm": ">=11.24.0 <12"
+  },
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "db:migrate": "pnpm --filter @solar/api db:migrate"
+  },
+  "devDependencies": {
+    "@types/node": "26.4.0",
+    "tsx": "4.23.13",
+    "turbo": "2.10.12",
+    "typescript": "7.0.2"
+  }
+}
+
