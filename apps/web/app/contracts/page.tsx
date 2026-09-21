@@ -1,3 +1,0 @@
-import { OperationPage } from '../../features/shared/operation-page';
-export default function Page() { return <OperationPage eyebrow='CONTRACTS & RATES' title='สัญญาและอัตราค่าไฟ' description='จัดการ version, effective date, ผู้ลงนาม และ rate ต่อ Site' action='สร้างสัญญา' columns={['รายการ','รายละเอียด','ข้อมูล','สถานะ']} rows={[['CON-2026-000021','โรงเรียนบ้านคลองแสน · v2','01 ม.ค. 2569 – 31 ธ.ค. 2569 · ฿4.12/kWh','ใช้งานอยู่'],['CON-2026-000022','โรงเรียนบ้านไผ่เมือง · v1','01 ก.พ. 2569 – ไม่มีกำหนด · ฿4.05/kWh','ใช้งานอยู่'],['CON-2025-000018','โรงเรียนเทศบาลหนองยาง · v1','หมดอายุ 31 ธ.ค. 2568','หมดอายุ']]} />; }
-

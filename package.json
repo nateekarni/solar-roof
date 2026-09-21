@@ -12,7 +12,9 @@
     "build": "turbo run build",
     "lint": "turbo run lint",
     "test": "turbo run test",
-    "db:migrate": "pnpm --filter @solar/api db:migrate"
+    "db:migrate": "pnpm --filter @solar/api db:migrate",
+    "db:seed": "pnpm --filter @solar/api db:seed",
+    "db:seed:reset": "pnpm --filter @solar/api db:seed:reset"
   },
   "devDependencies": {
     "@types/node": "26.4.0",
@@ -21,4 +23,3 @@
     "typescript": "7.0.2"
   }
 }
-

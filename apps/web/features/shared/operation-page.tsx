@@ -1,11 +1,113 @@
-import { Download, Plus, Search } from "lucide-react";
-import { Badge } from "../../components/ui/badge";
-import { Button } from "../../components/ui/button";
-import { Card } from "../../components/ui/card";
-import { Input } from "../../components/ui/input";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
+import { cookies } from "next/headers";
+import { createTranslator, type Locale } from "@solar/i18n";
+import { serverFetch, getApiBaseUrl } from "../../lib/server-fetch";
+import { OperationPageHeader } from "./operation-page-header";
+import { OperationTable } from "./operation-table";
+import { OperationAutoRefresh } from "./operation-auto-refresh";
 
-export function OperationPage({ eyebrow, title, description, columns, rows, action }: { eyebrow: string; title: string; description: string; columns: string[]; rows: string[][]; action?: string }) {
-  return <section><div className="page-heading"><div><span className="eyebrow">{eyebrow}</span><h1>{title}</h1><p>{description}</p></div>{action && <Button type="button"><Plus data-icon="inline-start" />{action}</Button>}</div><div className="toolbar"><div className="relative flex-1"><Search aria-hidden="true" className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" /><Input className="pl-9" aria-label="ค้นหา" placeholder="ค้นหา..." /></div><Select defaultValue="all"><SelectTrigger aria-label="ตัวกรอง"><SelectValue placeholder="ตัวกรอง" /></SelectTrigger><SelectContent><SelectGroup><SelectItem value="all">ทั้งหมด</SelectItem><SelectItem value="active">ใช้งานอยู่</SelectItem><SelectItem value="review">ต้องตรวจสอบ</SelectItem></SelectGroup></SelectContent></Select><Button type="button" variant="secondary"><Download data-icon="inline-start" />ส่งออก CSV</Button></div><Card className="panel table-wrap"><Table><TableHeader><TableRow>{columns.map(column => <TableHead key={column}>{column}</TableHead>)}</TableRow></TableHeader><TableBody>{rows.map((row, index) => <TableRow key={`${row[0]}-${index}`}>{row.map((cell, cellIndex) => <TableCell key={`${cell}-${cellIndex}`}>{cellIndex === row.length - 1 ? <Badge variant="secondary" className="table-status">{cell}</Badge> : cell}</TableCell>)}</TableRow>)}</TableBody></Table></Card></section>;
+type OperationResponse = {
+  columns: string[];
+  rows: any[];
+  idKey?: string | undefined;
+};
+
+type SummaryItem = {
+  label: string;
+  value: string | number;
+  unit: string;
+  note: string;
+};
+
+type SummaryResponse = SummaryItem[];
+
+function getCacheConfig(resource: string): RequestInit {
+  const revalidateMap: Record<string, number> = {
+    alerts: 0,
+    notifications: 0,
+    billing: 60,
+    schools: 300,
+    sites: 300,
+    contracts: 600,
+    users: 600,
+    reports: 600,
+    audit: 300,
+  };
+  const seconds = revalidateMap[resource];
+  if (seconds === undefined || seconds === 0) {
+    return { cache: "no-store" };
+  }
+  return { next: { revalidate: seconds } };
+}
+
+async function getOperationData(
+  resource: string,
+): Promise<{ data: OperationResponse; summary: SummaryResponse }> {
+  const baseUrl = getApiBaseUrl();
+
+  const fetchOptions = getCacheConfig(resource);
+
+  const [rowsRes, summaryRes] = await Promise.all([
+    serverFetch(`${baseUrl}/v1/operations/${resource}`, fetchOptions),
+    serverFetch(`${baseUrl}/v1/operations/${resource}/summary`, fetchOptions),
+  ]);
+
+  if (!rowsRes.ok) {
+    throw new Error(`ไม่สามารถโหลดข้อมูลจาก API ได้ (HTTP ${rowsRes.status})`);
+  }
+
+  const data = (await rowsRes.json()) as OperationResponse;
+  const summary = summaryRes.ok
+    ? ((await summaryRes.json()) as SummaryResponse)
+    : [];
+
+  return { data, summary };
+}
+
+export async function OperationPage({
+  resource,
+  eyebrow,
+  title,
+  description,
+  action,
+}: {
+  resource: string;
+  eyebrow?: string;
+  title?: string;
+  description?: string;
+  action?: string | undefined;
+}) {
+  const cookieStore = await cookies();
+  const locale = (cookieStore.get("locale")?.value as Locale) || "th";
+  const t = createTranslator(locale);
+
+  const displayEyebrow = eyebrow || t(`operations.${resource}.eyebrow`);
+  const displayTitle = (resource === "audit" && title === "Audit log") ? t("navigation.audit") : (title || t(`operations.${resource}.title`));
+  const displayDescription = description || t(`operations.${resource}.description`);
+  const displayAction = action || t(`operations.${resource}.action`);
+
+  const { data, summary } = await getOperationData(resource);
+  const isRealtime = resource === "alerts" || resource === "notifications";
+
+  return (
+    <main className="content">
+      {isRealtime && <OperationAutoRefresh intervalMs={30_000} />}
+      <div className="ops-content space-y-4">
+        <OperationPageHeader
+          resource={resource}
+          eyebrow={displayEyebrow}
+          title={displayTitle}
+          description={displayDescription}
+          action={displayAction}
+        />
+        <OperationTable
+          resource={resource}
+          title={displayTitle}
+          columns={data.columns || []}
+          rows={data.rows || []}
+          summary={summary}
+          idKey={data.idKey}
+        />
+      </div>
+    </main>
+  );
 }

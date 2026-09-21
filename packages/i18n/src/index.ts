@@ -1,3 +1,3 @@
-export { createTranslator, t } from "./locale.js";
-export { th } from "./th.js";
-
+export * from "./th.js";
+export * from "./en.js";
+export * from "./locale.js";

@@ -1,0 +1,283 @@
+"use client";
+
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Check, Copy, UserPlus } from "lucide-react";
+import { useRouter } from "next/navigation";
+import * as React from "react";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
+import { notify } from "../../components/feedback/notifications";
+import { Button } from "../../components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../../components/ui/dialog";
+import { Input } from "../../components/ui/input";
+import { Label } from "../../components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../components/ui/select";
+import { apiClient } from "../../lib/api-client";
+import { useLocale, useT } from "../../providers/locale-provider";
+
+const userSchema = z.object({
+  email: z.string().min(1, "กรุณาระบุอีเมล").email("รูปแบบอีเมลไม่ถูกต้อง"),
+  displayName: z.string().min(2, "ชื่อผู้ใช้งานต้องมีอย่างน้อย 2 ตัวอักษร"),
+  role: z.enum(["owner", "admin", "school_user"]),
+  schoolId: z.string().optional(),
+});
+
+type UserFormValues = z.infer<typeof userSchema>;
+
+interface SchoolOption {
+  id: string;
+  name: string;
+}
+
+export function InviteUserDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const router = useRouter();
+  const t = useT();
+  const locale = useLocale();
+  const [loading, setLoading] = React.useState(false);
+  const [schools, setSchools] = React.useState<SchoolOption[]>([]);
+  const [selectedRole, setSelectedRole] = React.useState<"owner" | "admin" | "school_user">("school_user");
+  const [invitedResult, setInvitedResult] = React.useState<{
+    email: string;
+    tempPassword?: string;
+    message: string;
+  } | null>(null);
+  const [copied, setCopied] = React.useState(false);
+
+  const {
+    register,
+    handleSubmit,
+    setValue,
+    reset,
+    formState: { errors },
+  } = useForm<UserFormValues>({
+    resolver: zodResolver(userSchema),
+    defaultValues: {
+      email: "",
+      displayName: "",
+      role: "school_user",
+    },
+  });
+
+  React.useEffect(() => {
+    if (open) {
+      setInvitedResult(null);
+      setCopied(false);
+      apiClient
+        .get<SchoolOption[]>("/v1/schools")
+        .then((data) => {
+          setSchools(data);
+          if (data[0]) setValue("schoolId", data[0].id);
+        })
+        .catch(() => {});
+    }
+  }, [open, setValue]);
+
+  const onSubmit = async (values: UserFormValues) => {
+    setLoading(true);
+    try {
+      const res = await apiClient.post<any>("/v1/users/invite", values);
+      setInvitedResult({
+        email: res.email,
+        tempPassword: res.tempPassword,
+        message: res.message,
+      });
+      notify.success(
+        locale === "th" ? "เชิญและสร้างผู้ใช้งานสำเร็จ" : "User invited successfully"
+      );
+      reset();
+      router.refresh();
+    } catch (err: any) {
+      notify.error(err.message || "เกิดข้อผิดพลาดในการสร้างผู้ใช้");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const copyPassword = () => {
+    if (invitedResult?.tempPassword) {
+      navigator.clipboard.writeText(invitedResult.tempPassword);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[450px]">
+        <DialogHeader>
+          <div className="flex items-center gap-2.5">
+            <div className="grid size-9 place-items-center rounded-lg bg-primary/10 text-primary">
+              <UserPlus className="size-5" />
+            </div>
+            <div>
+              <DialogTitle className="text-base font-semibold">
+                {locale === "th" ? "เชิญผู้ใช้งานใหม่" : "Invite New User"}
+              </DialogTitle>
+              <DialogDescription className="text-xs">
+                {locale === "th"
+                  ? "สร้างบัญชีผู้ใช้งานและกำหนดสิทธิ์การเข้าถึงโรงเรียน"
+                  : "Create user account and assign platform permission scope"}
+              </DialogDescription>
+            </div>
+          </div>
+        </DialogHeader>
+
+        {invitedResult ? (
+          <div className="space-y-4 py-3">
+            <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 space-y-2.5">
+              <p className="text-xs font-semibold text-emerald-800 dark:text-emerald-300">
+                {invitedResult.message}
+              </p>
+              {invitedResult.tempPassword && (
+                <div className="rounded-lg bg-background border border-border p-3 space-y-1">
+                  <span className="text-[11px] text-muted-foreground">รหัสผ่านชั่วคราว (Temporary Password):</span>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono text-sm font-bold text-foreground">
+                      {invitedResult.tempPassword}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={copyPassword}
+                      className="h-7 text-xs gap-1 text-primary hover:text-primary"
+                    >
+                      {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                      <span>{copied ? "คัดลอกแล้ว" : "คัดลอก"}</span>
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <DialogFooter className="pt-2">
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => onOpenChange(false)}
+                className="text-xs h-9 w-full font-semibold"
+              >
+                เสร็จสิ้น (Done)
+              </Button>
+            </DialogFooter>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-3.5 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="u-email" className="text-xs font-medium">
+                {locale === "th" ? "อีเมล (Email) *" : "Email Address *"}
+              </Label>
+              <Input
+                id="u-email"
+                type="email"
+                placeholder="officer@school.local"
+                className="text-xs h-9"
+                {...register("email")}
+              />
+              {errors.email && (
+                <p className="text-[11px] text-destructive">{errors.email.message}</p>
+              )}
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="u-name" className="text-xs font-medium">
+                {locale === "th" ? "ชื่อ-นามสกุล *" : "Display Name *"}
+              </Label>
+              <Input
+                id="u-name"
+                placeholder={locale === "th" ? "เช่น สมชาย สุขใจ" : "e.g. John Doe"}
+                className="text-xs h-9"
+                {...register("displayName")}
+              />
+              {errors.displayName && (
+                <p className="text-[11px] text-destructive">{errors.displayName.message}</p>
+              )}
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="u-role" className="text-xs font-medium">
+                {locale === "th" ? "บทบาท (Role) *" : "Role *"}
+              </Label>
+              <Select
+                defaultValue="school_user"
+                onValueChange={(val: "owner" | "admin" | "school_user") => {
+                  setSelectedRole(val);
+                  setValue("role", val);
+                }}
+              >
+                <SelectTrigger id="u-role" className="text-xs h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="school_user" className="text-xs">
+                    {t("profile.schoolUser")}
+                  </SelectItem>
+                  <SelectItem value="admin" className="text-xs">
+                    {t("profile.admin")}
+                  </SelectItem>
+                  <SelectItem value="owner" className="text-xs">
+                    {t("profile.owner")}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {selectedRole === "school_user" && (
+              <div className="space-y-1.5">
+                <Label htmlFor="u-school" className="text-xs font-medium">
+                  {locale === "th" ? "โรงเรียนสังกัด *" : "School Access *"}
+                </Label>
+                <Select onValueChange={(val) => setValue("schoolId", val)}>
+                  <SelectTrigger id="u-school" className="text-xs h-9">
+                    <SelectValue placeholder="เลือกโรงเรียน" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {schools.map((s) => (
+                      <SelectItem key={s.id} value={s.id} className="text-xs">
+                        {s.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            <DialogFooter className="pt-3 gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => onOpenChange(false)}
+                className="text-xs h-9"
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button type="submit" size="sm" disabled={loading} className="text-xs h-9 font-semibold">
+                {loading ? t("common.saving") : t("common.confirm")}
+              </Button>
+            </DialogFooter>
+          </form>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}

@@ -43,4 +43,9 @@ export class AuthService {
     if (payload.typ !== "access" || typeof payload.sub !== "string" || typeof payload.email !== "string" || typeof payload.role !== "string" || typeof payload.sid !== "string") throw new Error("Invalid access claims");
     return { id: payload.sub, email: payload.email, role: payload.role as AuthUser["role"], schoolId: typeof payload.schoolId === "string" ? payload.schoolId : undefined, sessionId: payload.sid };
   }
+  verifyRefreshToken(token: string): AuthUser & { sessionId: string } {
+    const payload = verify(token, this.refreshSecret);
+    if (payload.typ !== "refresh" || typeof payload.sub !== "string" || typeof payload.email !== "string" || typeof payload.role !== "string" || typeof payload.sid !== "string") throw new Error("Invalid refresh claims");
+    return { id: payload.sub, email: payload.email, role: payload.role as AuthUser["role"], schoolId: typeof payload.schoolId === "string" ? payload.schoolId : undefined, sessionId: payload.sid };
+  }
 }

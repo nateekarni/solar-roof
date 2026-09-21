@@ -1,17 +1,234 @@
-datasource db { provider = "postgresql" url = env("DATABASE_URL") }
-generator client { provider = "prisma-client-js" }
-enum UserRole { owner admin school_user }
-enum RecordStatus { active inactive }
-enum QualityStatus { complete partial estimated invalid }
-model User { id String @id @default(uuid()) email String @unique displayName String role UserRole status RecordStatus @default(active) createdAt DateTime @default(now()) updatedAt DateTime @updatedAt }
-model School { id String @id @default(uuid()) name String status RecordStatus @default(active) createdAt DateTime @default(now()) updatedAt DateTime @updatedAt }
-model Site { id String @id @default(uuid()) schoolId String name String timezone String @default("Asia/Bangkok") status RecordStatus @default(active) }
-model Gateway { id String @id @default(uuid()) siteId String name String protocol String endpoint String? credentialRef String? lastSeenAt DateTime? status String @default("offline") }
-model Device { id String @id @default(uuid()) gatewayId String name String? model String? serialNumber String? slaveId Int? }
-model RegisterMappingVersion { id String @id @default(uuid()) deviceId String semanticField String registerAddress String dataType String signed Boolean @default(false) byteOrder String scale Decimal @db.Decimal(20,8) unit String pollingIntervalSeconds Int @default(60) qualityRule Json effectiveFrom DateTime effectiveTo DateTime? }
-model TelemetryRaw { id String @id @default(uuid()) deviceId String mappingVersionId String sourceTime DateTime receivedTime DateTime rawPayload Json normalizedValue Decimal? @db.Decimal(24,8) unit String? quality QualityStatus ingestionId String @unique }
-model BillingMeter { id String @id @default(uuid()) siteId String deviceId String semanticField String @default("total_energy") active Boolean @default(true) @@unique([siteId, deviceId, semanticField]) }
-model Contract { id String @id @default(uuid()) schoolId String siteId String? startDate DateTime endDate DateTime? status RecordStatus @default(active) }
-model RateVersion { id String @id @default(uuid()) contractId String effectiveFrom DateTime effectiveTo DateTime? rateType String @default("fixed_kwh") rate Decimal @db.Decimal(20,8) currency String @default("THB") }
-model BillingCycle { id String @id @default(uuid()) siteId String periodStart DateTime periodEnd DateTime cutoffTime DateTime status String @default("open") quality QualityStatus? openingEnergy Decimal? @db.Decimal(24,8) closingEnergy Decimal? @db.Decimal(24,8) consumedKwh Decimal? @db.Decimal(24,8) @@unique([siteId, periodStart, periodEnd]) }
-model AuditEvent { id String @id @default(uuid()) actorId String? action String entityType String entityId String before Json? after Json? reason String? correlationId String occurredAt DateTime @default(now()) @@index([entityType, entityId, occurredAt]) }
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum UserRole {
+  owner
+  admin
+  school_user
+}
+
+enum RecordStatus {
+  active
+  inactive
+}
+
+enum QualityStatus {
+  complete
+  partial
+  estimated
+  invalid
+}
+
+enum DeviceType {
+  meter
+  smart_logger
+  smart_locker
+}
+
+enum InvoiceStatus {
+  draft
+  pending
+  paid
+  overdue
+  void
+}
+
+model User {
+  id          String       @id @default(uuid())
+  email       String       @unique
+  displayName String
+  role        UserRole
+  schoolId    String?
+  school      School?      @relation(fields: [schoolId], references: [id])
+  status      RecordStatus @default(active)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+model School {
+  id        String       @id @default(uuid())
+  name      String
+  status    RecordStatus @default(active)
+  users     User[]
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+}
+
+model Site {
+  id        String       @id @default(uuid())
+  schoolId  String
+  name      String
+  timezone  String       @default("Asia/Bangkok")
+  status    RecordStatus @default(active)
+}
+
+model Gateway {
+  id                    String    @id @default(uuid())
+  siteId                String
+  name                  String
+  protocol              String
+  endpoint              String?
+  credentialRef         String?
+  fetchFrequencySeconds Int       @default(60)
+  lastSeenAt            DateTime?
+  status                String    @default("offline")
+}
+
+model Device {
+  id           String  @id @default(uuid())
+  gatewayId    String
+  name         String?
+  model        String?
+  serialNumber String?
+  slaveId      Int?
+  presetId     String?
+}
+
+model RegisterMappingVersion {
+  id                     String    @id @default(uuid())
+  deviceId               String
+  presetId               String?
+  semanticField          String
+  registerAddress        String
+  dataType               String
+  signed                 Boolean   @default(false)
+  byteOrder              String
+  scale                  Decimal   @db.Decimal(20, 8)
+  unit                   String
+  pollingIntervalSeconds Int       @default(60)
+  qualityRule            Json
+  effectiveFrom          DateTime
+  effectiveTo            DateTime?
+}
+
+model TelemetryRaw {
+  id               String        @id @default(uuid())
+  deviceId         String
+  mappingVersionId String
+  sourceTime       DateTime
+  receivedTime     DateTime
+  rawPayload       Json
+  normalizedValue  Decimal?      @db.Decimal(24, 8)
+  unit             String?
+  quality          QualityStatus
+  ingestionId      String        @unique
+}
+
+model BillingMeter {
+  id            String  @id @default(uuid())
+  siteId        String
+  deviceId      String
+  semanticField String  @default("total_energy")
+  active        Boolean @default(true)
+
+  @@unique([siteId, deviceId, semanticField])
+}
+
+model Contract {
+  id        String       @id @default(uuid())
+  siteId    String
+  startDate DateTime
+  endDate   DateTime?
+  status    RecordStatus @default(active)
+}
+
+model RateVersion {
+  id            String    @id @default(uuid())
+  contractId    String
+  effectiveFrom DateTime
+  effectiveTo   DateTime?
+  rateType      String    @default("fixed_kwh")
+  rate          Decimal   @db.Decimal(20, 8)
+  currency      String    @default("THB")
+}
+
+model BillingCycle {
+  id            String         @id @default(uuid())
+  siteId        String
+  periodStart   DateTime
+  periodEnd     DateTime
+  cutoffTime    DateTime
+  status        String         @default("open")
+  quality       QualityStatus?
+  openingEnergy Decimal?       @db.Decimal(24, 8)
+  closingEnergy Decimal?       @db.Decimal(24, 8)
+  consumedKwh   Decimal?       @db.Decimal(24, 8)
+
+  @@unique([siteId, periodStart, periodEnd])
+}
+
+model AuditEvent {
+  id            String   @id @default(uuid())
+  actorId       String?
+  action        String
+  entityType    String
+  entityId      String
+  before        Json?
+  after         Json?
+  reason        String?
+  correlationId String
+  occurredAt    DateTime @default(now())
+
+  @@index([entityType, entityId, occurredAt])
+}
+
+model SystemSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+model MeterPreset {
+  id         String     @id @default(uuid())
+  brand      String
+  model      String
+  deviceType DeviceType @default(meter)
+  registers  Json
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  @@unique([brand, model])
+}
+
+model Invoice {
+  id             String        @id @default(uuid())
+  invoiceNumber  String        @unique
+  schoolId       String
+  siteId         String
+  billingCycleId String        @unique
+  periodStart    DateTime
+  periodEnd      DateTime
+  consumedKwh    Decimal       @db.Decimal(24, 8)
+  ratePerKwh     Decimal       @db.Decimal(20, 8)
+  totalAmount    Decimal       @db.Decimal(20, 8)
+  currency       String        @default("THB")
+  status         InvoiceStatus @default(draft)
+  issuedAt       DateTime      @default(now())
+  dueAt          DateTime?
+  paidAt         DateTime?
+  receipt        Receipt?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+}
+
+model Receipt {
+  id            String   @id @default(uuid())
+  receiptNumber String   @unique
+  invoiceId     String   @unique
+  invoice       Invoice  @relation(fields: [invoiceId], references: [id])
+  schoolId      String
+  taxId         String?
+  subTotal      Decimal  @db.Decimal(20, 8)
+  vatRate       Decimal  @db.Decimal(5, 4) @default(0.0700)
+  vatAmount     Decimal  @db.Decimal(20, 8)
+  totalAmount   Decimal  @db.Decimal(20, 8)
+  currency      String   @default("THB")
+  issuedAt      DateTime @default(now())
+  createdAt     DateTime @default(now())
+}

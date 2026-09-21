@@ -78,3 +78,36 @@ Compose validation:
 `docker compose --env-file infra/docker/.env.production.example -f infra/docker/docker-compose.prod.yml config`
 
 API OpenAPI UI: `http://localhost:3001/docs`
+
+## Database-backed demo data
+
+Local dependencies and database:
+
+Copy `infra/docker/.env.local.example` to `.env` before running the API scripts. The example contains local-only credentials.
+
+```bash
+docker compose --env-file infra/docker/.env.local.example -f infra/docker/docker-compose.local.yml up -d
+pnpm db:migrate
+pnpm db:seed
+pnpm dev
+```
+
+The demo seed is deterministic and recreates local/demo data only. It creates 12 schools, 18 sites, 18 gateways, 36 devices, 60-second raw telemetry for 7 days, 15-minute/hour/day/month aggregates, contracts, rate versions, billing cycles, invoices, payments, alerts and audit events.
+
+To intentionally recreate the local dataset:
+
+```bash
+pnpm db:seed:reset
+```
+
+`db:seed` and `db:seed:reset` refuse to run when `NODE_ENV=production`. Do not use demo seed against a production database.
+
+Production-like stack and seed:
+
+```bash
+docker compose --env-file .env.production -f infra/docker/docker-compose.prod.yml up -d --build
+docker compose --env-file .env.production -f infra/docker/docker-compose.prod.yml run --rm api pnpm --filter @solar/api db:migrate
+# Seed is intentionally local/demo only; do not run it against production data.
+```
+
+Web reads dashboard and management rows from API endpoints backed by PostgreSQL/TimescaleDB. There is no static-data fallback. If the API/database is unavailable, the UI shows an error state.

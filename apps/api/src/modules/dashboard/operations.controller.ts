@@ -1,0 +1,45 @@
+import { Controller, Get, Inject, Param, Req, Res } from "@nestjs/common";
+import { type Response } from "express";
+import { OperationsService } from "./operations.service.js";
+
+function toCsv(columns: string[], rows: Record<string, unknown>[], idKey = "id"): string {
+  const header = columns.map(c => `"${String(c).replace(/"/g, '""')}"`).join(",");
+  const bodyLines = rows.map(row => {
+    const values = Object.entries(row)
+      .filter(([k]) => k !== idKey)
+      .map(([_, v]) => {
+        if (v === null || v === undefined) return '""';
+        return `"${String(v).replace(/"/g, '""')}"`;
+      });
+    return values.join(",");
+  });
+  return [header, ...bodyLines].join("\r\n");
+}
+
+@Controller("v1/operations")
+export class OperationsController {
+  constructor(
+    @Inject(OperationsService) private readonly operations: OperationsService,
+  ) {}
+
+  @Get(":resource/summary")
+  summary(@Param("resource") resource: string, @Req() req: any) {
+    return this.operations.summary(resource, req?.user);
+  }
+
+  @Get(":resource/export")
+  async exportCsv(@Param("resource") resource: string, @Res() res: Response, @Req() req: any) {
+    const data = await this.operations.list(resource, req?.user);
+    const csv = toCsv(data.columns, data.rows, data.idKey || "id");
+    const filename = `${resource}-${new Date().toISOString().slice(0, 10)}.csv`;
+    
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.send("\uFEFF" + csv);
+  }
+
+  @Get(":resource")
+  list(@Param("resource") resource: string, @Req() req: any) {
+    return this.operations.list(resource, req?.user);
+  }
+}

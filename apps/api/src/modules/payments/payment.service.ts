@@ -1,5 +1,76 @@
-import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
-export interface Payment { id: string; invoiceId: string; amount: number; status: "pending" | "paid" | "rejected"; paidAt?: Date; markedBy?: string; evidenceFileId?: string; }
-@Injectable()
-export class PaymentService { private readonly payments = new Map<string, Payment>(); create(input: Omit<Payment, "status">): Payment { const payment = { ...input, status: "pending" as const }; this.payments.set(payment.id, payment); return payment; } markPaid(input: { paymentId: string; actorId: string; evidenceFileId?: string }): Payment { const payment = this.payments.get(input.paymentId); if (!payment) throw new NotFoundException("Payment not found"); if (payment.status === "rejected") throw new ConflictException("Rejected payment cannot be marked paid"); if (payment.status === "paid") return payment; payment.status = "paid"; payment.paidAt = new Date(); payment.markedBy = input.actorId; if (input.evidenceFileId !== undefined) payment.evidenceFileId = input.evidenceFileId; return payment; } get(id: string): Payment { const payment = this.payments.get(id); if (!payment) throw new NotFoundException("Payment not found"); return payment; } }
+import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { DatabaseService } from "../../database/database.service.js";
 
+export interface Payment {
+  id: string;
+  invoiceId?: string;
+  billingCycleId?: string;
+  amount: number;
+  status: "pending" | "paid" | "rejected";
+  paidAt?: Date;
+  markedBy?: string;
+  evidenceFileId?: string;
+  note?: string;
+}
+
+@Injectable()
+export class PaymentService {
+  constructor(@Inject(DatabaseService) private readonly db: DatabaseService) {}
+
+  async create(input: Omit<Payment, "status">): Promise<Payment> {
+    const cycleId = input.billingCycleId || input.invoiceId;
+    if (cycleId) {
+      await this.db.query(
+        `INSERT INTO payments (id, billing_cycle_id, status, paid_at, evidence_key, note)
+         VALUES ($1, $2, 'pending', NULL, $3, $4)`,
+        [input.id, cycleId, input.evidenceFileId ?? null, input.note ?? null]
+      );
+    }
+    return { ...input, status: "pending" };
+  }
+
+  async markPaid(input: { paymentId: string; actorId: string; evidenceFileId?: string }): Promise<Payment> {
+    const res = await this.db.query(
+      `UPDATE payments 
+       SET status = 'paid', paid_at = NOW(), evidence_key = coalesce($2, evidence_key)
+       WHERE id = $1
+       RETURNING id, billing_cycle_id AS "billingCycleId", status, paid_at AS "paidAt", evidence_key AS "evidenceFileId"`,
+      [input.paymentId, input.evidenceFileId ?? null]
+    );
+
+    const row = res.rows[0];
+    if (!row) {
+      throw new NotFoundException("Payment not found");
+    }
+
+    return {
+      id: row.id,
+      billingCycleId: row.billingCycleId,
+      amount: 0,
+      status: row.status,
+      paidAt: row.paidAt,
+      markedBy: input.actorId,
+      evidenceFileId: row.evidenceFileId,
+    };
+  }
+
+  async get(id: string): Promise<Payment> {
+    const res = await this.db.query(
+      `SELECT id, billing_cycle_id AS "billingCycleId", status, paid_at AS "paidAt", evidence_key AS "evidenceFileId"
+       FROM payments WHERE id = $1`,
+      [id]
+    );
+    const row = res.rows[0];
+    if (!row) {
+      throw new NotFoundException("Payment not found");
+    }
+    return {
+      id: row.id,
+      billingCycleId: row.billingCycleId,
+      amount: 0,
+      status: row.status,
+      paidAt: row.paidAt,
+      evidenceFileId: row.evidenceFileId,
+    };
+  }
+}
