@@ -7,6 +7,7 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { notify } from "../../components/feedback/notifications";
 import { Button } from "../../components/ui/button";
+import { DatePicker } from "../../components/ui/date-picker";
 import {
   Dialog,
   DialogContent,
@@ -15,7 +16,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../../components/ui/dialog";
-import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import {
   Select,
@@ -73,6 +73,7 @@ export function BillingCycleDialog({
     register,
     handleSubmit,
     setValue,
+    watch,
     reset,
     formState: { errors },
   } = useForm<BillingFormValues>({
@@ -121,8 +122,8 @@ export function BillingCycleDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-lg sm:rounded-2xl sm:p-6">
+        <DialogHeader className="pb-1">
           <DialogTitle className="text-base font-semibold">
             {locale === "th" ? "สร้างรอบบิลใหม่" : "Create Billing Cycle"}
           </DialogTitle>
@@ -133,13 +134,13 @@ export function BillingCycleDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-3.5 py-2">
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 pt-3.5">
           <div className="space-y-1.5">
-            <Label htmlFor="site-select" className="text-xs font-medium">
-              {locale === "th" ? "ไซต์พลังงาน *" : "Solar Site *"}
+            <Label htmlFor="site-select" required className="text-xs font-medium">
+              {locale === "th" ? "ไซต์พลังงาน" : "Solar Site"}
             </Label>
             <Select onValueChange={(val) => setValue("siteId", val)}>
-              <SelectTrigger id="site-select" className="text-xs h-9">
+              <SelectTrigger id="site-select" className="text-xs h-10 w-full">
                 <SelectValue placeholder={loadingSites ? "กำลังโหลดไซต์..." : "เลือกไซต์"} />
               </SelectTrigger>
               <SelectContent>
@@ -157,14 +158,13 @@ export function BillingCycleDialog({
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label htmlFor="start-date" className="text-xs font-medium">
-                {locale === "th" ? "วันเริ่มต้น *" : "Start Date *"}
+              <Label htmlFor="start-date" required className="text-xs font-medium">
+                {locale === "th" ? "วันเริ่มต้น" : "Start Date"}
               </Label>
-              <Input
+              <DatePicker
                 id="start-date"
-                type="date"
-                className="text-xs h-9"
-                {...register("periodStart")}
+                value={watch("periodStart")}
+                onChange={(val) => setValue("periodStart", val, { shouldValidate: true })}
               />
               {errors.periodStart && (
                 <p className="text-[11px] text-destructive">{errors.periodStart.message}</p>
@@ -172,14 +172,13 @@ export function BillingCycleDialog({
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="end-date" className="text-xs font-medium">
-                {locale === "th" ? "วันสิ้นสุด *" : "End Date *"}
+              <Label htmlFor="end-date" required className="text-xs font-medium">
+                {locale === "th" ? "วันสิ้นสุด" : "End Date"}
               </Label>
-              <Input
+              <DatePicker
                 id="end-date"
-                type="date"
-                className="text-xs h-9"
-                {...register("periodEnd")}
+                value={watch("periodEnd")}
+                onChange={(val) => setValue("periodEnd", val, { shouldValidate: true })}
               />
               {errors.periodEnd && (
                 <p className="text-[11px] text-destructive">{errors.periodEnd.message}</p>
@@ -187,17 +186,17 @@ export function BillingCycleDialog({
             </div>
           </div>
 
-          <DialogFooter className="pt-3 gap-2">
+          <DialogFooter>
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={() => onOpenChange(false)}
-              className="text-xs h-9"
+              className="text-xs h-10 px-4"
             >
               {t("common.cancel")}
             </Button>
-            <Button type="submit" size="sm" disabled={loading} className="text-xs h-9 font-semibold">
+            <Button type="submit" size="sm" disabled={loading} className="text-xs h-10 px-5 font-semibold">
               {loading ? t("common.saving") : t("common.confirm")}
             </Button>
           </DialogFooter>

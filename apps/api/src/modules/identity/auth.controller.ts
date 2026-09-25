@@ -101,6 +101,8 @@ export class AuthController {
     );
 
     return {
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
       expiresInSeconds: tokens.expiresInSeconds,
       user: {
         id: user.id,
@@ -188,6 +190,8 @@ export class AuthController {
     });
 
     return {
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
       expiresInSeconds: tokens.expiresInSeconds,
       user: {
         id: user.id,

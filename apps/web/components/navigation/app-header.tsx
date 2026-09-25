@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Globe,
   Laptop,
+  Loader2,
   LogOut,
   Menu,
   Moon,
@@ -15,6 +16,7 @@ import {
   Shield,
   Sun,
   User,
+  X,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -41,6 +43,7 @@ import { ResponsivePopover } from "../../components/ui/responsive-popover";
 import { Separator } from "../../components/ui/separator";
 import { SidebarTrigger } from "../../components/ui/sidebar";
 import { apiClient } from "../../lib/api-client";
+import { cn } from "../../lib/utils";
 import { useLocale, useSetLocale, useT } from "../../providers/locale-provider";
 import { useAuth } from "../../stores/auth-store";
 
@@ -65,6 +68,9 @@ export function AppHeader() {
   const [notificationOpen, setNotificationOpen] = React.useState(false);
   const [profileOpen, setProfileOpen] = React.useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
+  const [allAlerts, setAllAlerts] = React.useState<AlertItem[]>([]);
+  const [visibleCount, setVisibleCount] = React.useState(6);
+  const [loadingMore, setLoadingMore] = React.useState(false);
   const [alerts, setAlerts] = React.useState<AlertItem[]>([]);
   const [activeAlertCount, setActiveAlertCount] = React.useState(0);
   const [loadingAlerts, setLoadingAlerts] = React.useState(false);
@@ -92,15 +98,47 @@ export function AppHeader() {
         apiClient.get<{ label: string; value: number }[]>("/v1/operations/alerts/summary").catch(() => []),
       ]);
 
-      setAlerts(listRes.rows.slice(0, 5));
+      const rows = listRes.rows || [];
+      setAllAlerts(rows);
+      setAlerts(rows.slice(0, 6));
+      setVisibleCount(6);
       const activeItem = summaryRes.find((s) => s.label.includes("active") || s.label.includes("ใช้งาน"));
-      setActiveAlertCount(Number(activeItem?.value ?? listRes.rows.filter((r) => r.status !== "acknowledged").length));
+      setActiveAlertCount(Number(activeItem?.value ?? rows.filter((r) => r.status !== "acknowledged").length));
     } catch {
       // ignore
     } finally {
       setLoadingAlerts(false);
     }
   }, []);
+
+  const handleMarkAllAsRead = async () => {
+    try {
+      await apiClient.put("/v1/alerts/acknowledge-all");
+      setActiveAlertCount(0);
+      setAllAlerts((prev) => prev.map((a) => ({ ...a, status: "acknowledged" })));
+      setAlerts((prev) => prev.map((a) => ({ ...a, status: "acknowledged" })));
+      fetchAlerts();
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleNotificationScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+    if (scrollHeight - scrollTop - clientHeight < 25) {
+      if (visibleCount < allAlerts.length && !loadingMore) {
+        setLoadingMore(true);
+        setTimeout(() => {
+          setVisibleCount((prev) => {
+            const next = Math.min(prev + 6, allAlerts.length);
+            setAlerts(allAlerts.slice(0, next));
+            return next;
+          });
+          setLoadingMore(false);
+        }, 250);
+      }
+    }
+  };
 
   React.useEffect(() => {
     fetchAlerts();
@@ -135,6 +173,8 @@ export function AppHeader() {
     switch (path) {
       case "/":
         return t("dashboard.title");
+      case "/system":
+        return t("navigation.system");
       case "/schools":
         return t("navigation.schools");
       case "/sites":
@@ -222,19 +262,21 @@ export function AppHeader() {
       </div>
 
       <div className="flex items-center gap-1.5 md:gap-2">
-        {/* Notification Responsive Popover / Mobile Drawer */}
+        {/* Notification Popover (Responsive: Full-screen Sheet on Mobile, Popover on Desktop) */}
         <ResponsivePopover
           open={notificationOpen}
           onOpenChange={setNotificationOpen}
           title={t("notifications.header")}
+          sheetHeaderClassName="sr-only"
+          showCloseButton={false}
           popoverClassName="w-80 max-w-[calc(100vw-2rem)] p-0 shadow-lg rounded-xl"
-          sheetClassName="max-h-[85vh] p-0 flex flex-col gap-0 rounded-t-2xl overflow-hidden"
+          sheetClassName="h-full max-h-screen inset-0 rounded-none w-full p-0 flex flex-col gap-0 bg-background overflow-hidden"
           trigger={
             <Button
               variant="ghost"
               size="icon"
               aria-label={t("navigation.alerts")}
-              className="relative size-8.5 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted"
+              className="relative size-8.5 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer"
             >
               <Bell className="size-4" />
               {activeAlertCount > 0 && (
@@ -243,37 +285,63 @@ export function AppHeader() {
             </Button>
           }
         >
-          <div className="flex items-center justify-between border-b border-border p-3">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold text-foreground">
-                {t("notifications.header")}
-              </span>
-              {activeAlertCount > 0 ? (
-                <Badge
-                  variant="secondary"
-                  className="h-4.5 px-1.5 text-[10px] font-medium rounded-full bg-destructive/15 text-destructive"
-                >
-                  {t("notifications.badge", { count: activeAlertCount })}
-                </Badge>
-              ) : (
-                <Badge
-                  variant="secondary"
-                  className="h-4.5 px-1.5 text-[10px] font-medium rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
-                >
-                  {t("notifications.allClear")}
-                </Badge>
-              )}
+          {/* Notification Header: Row 1 = Title & Close; Row 2 = Mark all read (No divider between) */}
+          <div className="p-3.5 sm:p-3 shrink-0 bg-card border-b border-border space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-sm sm:text-xs font-bold sm:font-semibold text-foreground">
+                  {t("notifications.header")}
+                </span>
+                {activeAlertCount > 0 ? (
+                  <Badge
+                    variant="secondary"
+                    className="h-5 px-1.5 text-[10px] font-medium rounded-full bg-destructive/15 text-destructive"
+                  >
+                    {t("notifications.badge", { count: activeAlertCount })}
+                  </Badge>
+                ) : (
+                  <Badge
+                    variant="secondary"
+                    className="h-5 px-1.5 text-[10px] font-medium rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                  >
+                    {t("notifications.allClear")}
+                  </Badge>
+                )}
+              </div>
+
+              {/* Dedicated Close Button */}
+              <button
+                type="button"
+                onClick={() => setNotificationOpen(false)}
+                className="size-8 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
+                aria-label="ปิด"
+              >
+                <X className="size-4" />
+              </button>
             </div>
-            <Link
-              href="/alerts"
-              onClick={() => setNotificationOpen(false)}
-              className="text-[11px] font-medium text-primary hover:underline"
-            >
-              {t("notifications.viewAll")}
-            </Link>
+
+            {/* Row 2: Mark All as Read button on right */}
+            <div className="flex items-center justify-end">
+              <button
+                type="button"
+                onClick={handleMarkAllAsRead}
+                disabled={activeAlertCount === 0}
+                className={cn(
+                  "text-xs font-semibold px-2.5 py-1 rounded-md transition-colors",
+                  activeAlertCount > 0
+                    ? "text-primary hover:bg-primary/10 hover:underline cursor-pointer"
+                    : "text-muted-foreground opacity-60 cursor-default pointer-events-none"
+                )}
+              >
+                {t("notifications.markAllAsRead") || "อ่านทั้งหมด"}
+              </button>
+            </div>
           </div>
 
-          <div className="divide-y divide-border/60 max-h-72 overflow-y-auto">
+          <div
+            onScroll={handleNotificationScroll}
+            className="divide-y divide-border/60 flex-1 md:max-h-72 overflow-y-auto scrollbar-none [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
             {loadingAlerts ? (
               <div className="p-4 text-center text-xs text-muted-foreground">
                 {t("common.loading")}
@@ -286,44 +354,42 @@ export function AppHeader() {
                 </p>
               </div>
             ) : (
-              alerts.map((alert) => (
-                <Link
-                  key={alert.id}
-                  href="/alerts"
-                  onClick={() => setNotificationOpen(false)}
-                  className="flex items-start gap-2.5 p-3 hover:bg-muted/40 transition-colors"
-                >
-                  <div className="grid size-6 shrink-0 place-items-center rounded-md bg-destructive/15 text-destructive mt-0.5">
-                    <AlertTriangle className="size-3.5" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-1">
-                      <strong className="truncate text-xs font-semibold text-foreground">
-                        {alert.title}
-                      </strong>
-                      <span className="text-[10px] text-muted-foreground shrink-0">
-                        {alert.status === "acknowledged"
-                          ? t("notifications.acknowledged")
-                          : alert.severity || "alarm"}
-                      </span>
+              <>
+                {alerts.map((alert) => (
+                  <Link
+                    key={alert.id}
+                    href="/alerts"
+                    onClick={() => setNotificationOpen(false)}
+                    className="flex items-start gap-2.5 p-3.5 sm:p-3 hover:bg-muted/40 transition-colors"
+                  >
+                    <div className="grid size-6 shrink-0 place-items-center rounded-md bg-destructive/15 text-destructive mt-0.5">
+                      <AlertTriangle className="size-3.5" />
                     </div>
-                    <p className="text-[11px] text-muted-foreground line-clamp-1 mt-0.5">
-                      {alert.detail}
-                    </p>
+                    <div className="min-w-0 flex-1 flex flex-col gap-0.5">
+                      <div className="flex items-center justify-between gap-1">
+                        <strong className="truncate text-xs font-semibold text-foreground leading-tight">
+                          {alert.title}
+                        </strong>
+                        <span className="text-[10px] text-muted-foreground shrink-0">
+                          {alert.status === "acknowledged"
+                            ? t("notifications.acknowledged")
+                            : alert.severity || "alarm"}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground line-clamp-1 leading-tight">
+                        {alert.detail}
+                      </p>
+                    </div>
+                  </Link>
+                ))}
+                {loadingMore && (
+                  <div className="flex items-center justify-center p-2.5 text-xs text-muted-foreground gap-1.5 bg-muted/10">
+                    <Loader2 className="size-3.5 animate-spin text-primary" />
+                    <span>{t("common.loading")}</span>
                   </div>
-                </Link>
-              ))
+                )}
+              </>
             )}
-          </div>
-
-          <div className="border-t border-border p-2 bg-muted/20">
-            <Link
-              href="/notifications"
-              onClick={() => setNotificationOpen(false)}
-              className="flex items-center justify-center w-full py-1 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
-            >
-              {t("notifications.allNotifications")}
-            </Link>
           </div>
         </ResponsivePopover>
 
@@ -333,14 +399,22 @@ export function AppHeader() {
             <PopoverTrigger asChild>
               <button
                 type="button"
-                className="flex items-center gap-2 rounded-full ring-offset-background transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-muted/50 transition-colors cursor-pointer ring-offset-background focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
                 aria-label={t("profile.userMenu")}
               >
-                <Avatar className="size-8.5 border border-border cursor-pointer hover:opacity-90">
+                <Avatar className="size-8.5 border border-border">
                   <AvatarFallback className="bg-primary text-primary-foreground font-bold text-xs">
                     {initials}
                   </AvatarFallback>
                 </Avatar>
+                <div className="hidden lg:flex flex-col text-left">
+                  <span className="text-xs font-semibold text-foreground leading-tight truncate max-w-[140px]">
+                    {user?.displayName || "Admin User"}
+                  </span>
+                  <span className="text-[10px] text-muted-foreground leading-tight truncate max-w-[140px]">
+                    {roleLabel}
+                  </span>
+                </div>
               </button>
             </PopoverTrigger>
             <PopoverContent
@@ -371,15 +445,44 @@ export function AppHeader() {
                 </div>
               </div>
 
+              {/* User Account Navigation Links */}
+              <div className="p-1.5 border-b border-border/70 space-y-0.5 bg-card">
+                <Link
+                  href="/settings/general"
+                  onClick={() => setProfileOpen(false)}
+                  className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-foreground hover:bg-muted/80 transition-colors"
+                >
+                  <Settings2 className="size-3.5 text-muted-foreground" />
+                  <span>{locale === "en" ? "General Settings" : "การตั้งค่าทั่วไป"}</span>
+                </Link>
+                <Link
+                  href="/settings/account"
+                  onClick={() => setProfileOpen(false)}
+                  className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-foreground hover:bg-muted/80 transition-colors"
+                >
+                  <User className="size-3.5 text-muted-foreground" />
+                  <span>{locale === "en" ? "Account Settings" : "การตั้งค่าบัญชี"}</span>
+                </Link>
+                <Link
+                  href="/settings/security"
+                  onClick={() => setProfileOpen(false)}
+                  className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-foreground hover:bg-muted/80 transition-colors"
+                >
+                  <Shield className="size-3.5 text-muted-foreground" />
+                  <span>{locale === "en" ? "Security & Password" : "ความปลอดภัยและรหัสผ่าน"}</span>
+                </Link>
+              </div>
+
               {/* Quick Preferences Toggles */}
-              <div className="p-3 border-b border-border/80 space-y-2.5 bg-card">
+              {/* User Preferences (Language & Theme) */}
+              <div className="p-2.5 px-3 border-b border-border/80 space-y-2 bg-card">
                 {/* Language Switch */}
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2 text-xs font-medium text-foreground">
                     <Globe className="size-3.5 text-muted-foreground" />
                     <span>{t("profile.language")}</span>
                   </div>
-                  <div className="flex items-center gap-1 rounded-lg bg-muted/60 p-1 border border-border/50">
+                  <div className="flex items-center gap-1.5">
                     <button
                       type="button"
                       onClick={(e) => {
@@ -388,13 +491,14 @@ export function AppHeader() {
                       }}
                       title="ไทย"
                       aria-label="ไทย"
-                      className={`flex items-center justify-center size-7 rounded-md text-sm transition-all cursor-pointer ${
+                      className={`flex items-center justify-center h-7 px-2 rounded-md text-xs transition-all cursor-pointer ${
                         locale === "th"
-                          ? "bg-background text-foreground shadow-xs font-semibold scale-105"
-                          : "text-muted-foreground hover:text-foreground hover:bg-background/50"
+                          ? "bg-[#EAB308]/25 text-[#0F172A] dark:text-[#EAB308] ring-1 ring-[#EAB308]/60 font-semibold shadow-2xs"
+                          : "bg-muted/80 border border-border/60 hover:bg-muted text-muted-foreground hover:text-foreground shadow-2xs"
                       }`}
                     >
-                      <span className="leading-none text-base">🇹🇭</span>
+                      <span className="mr-1">🇹🇭</span>
+                      <span className="font-semibold text-[11px]">TH</span>
                     </button>
                     <button
                       type="button"
@@ -404,13 +508,14 @@ export function AppHeader() {
                       }}
                       title="English"
                       aria-label="English"
-                      className={`flex items-center justify-center size-7 rounded-md text-sm transition-all cursor-pointer ${
+                      className={`flex items-center justify-center h-7 px-2 rounded-md text-xs transition-all cursor-pointer ${
                         locale === "en"
-                          ? "bg-background text-foreground shadow-xs font-semibold scale-105"
-                          : "text-muted-foreground hover:text-foreground hover:bg-background/50"
+                          ? "bg-[#EAB308]/25 text-[#0F172A] dark:text-[#EAB308] ring-1 ring-[#EAB308]/60 font-semibold shadow-2xs"
+                          : "bg-muted/80 border border-border/60 hover:bg-muted text-muted-foreground hover:text-foreground shadow-2xs"
                       }`}
                     >
-                      <span className="leading-none text-base">🇬🇧</span>
+                      <span className="mr-1">🇬🇧</span>
+                      <span className="font-semibold text-[11px]">EN</span>
                     </button>
                   </div>
                 </div>
@@ -421,7 +526,7 @@ export function AppHeader() {
                     <Palette className="size-3.5 text-muted-foreground" />
                     <span>{t("profile.theme")}</span>
                   </div>
-                  <div className="flex items-center gap-1 rounded-lg bg-muted/60 p-1 border border-border/50">
+                  <div className="flex items-center gap-1.5">
                     <button
                       type="button"
                       onClick={(e) => {
@@ -432,8 +537,8 @@ export function AppHeader() {
                       aria-label={t("profile.light")}
                       className={`flex items-center justify-center size-7 rounded-md text-xs transition-all cursor-pointer ${
                         theme === "light"
-                          ? "bg-background text-foreground shadow-xs scale-105"
-                          : "text-muted-foreground hover:text-foreground hover:bg-background/50"
+                          ? "bg-[#EAB308]/25 text-[#0F172A] dark:text-[#EAB308] ring-1 ring-[#EAB308]/60 shadow-2xs"
+                          : "bg-muted/80 border border-border/60 hover:bg-muted text-muted-foreground hover:text-foreground shadow-2xs"
                       }`}
                     >
                       <Sun className="size-3.5" />
@@ -448,8 +553,8 @@ export function AppHeader() {
                       aria-label={t("profile.dark")}
                       className={`flex items-center justify-center size-7 rounded-md text-xs transition-all cursor-pointer ${
                         theme === "dark"
-                          ? "bg-background text-foreground shadow-xs scale-105"
-                          : "text-muted-foreground hover:text-foreground hover:bg-background/50"
+                          ? "bg-[#EAB308]/25 text-[#0F172A] dark:text-[#EAB308] ring-1 ring-[#EAB308]/60 shadow-2xs"
+                          : "bg-muted/80 border border-border/60 hover:bg-muted text-muted-foreground hover:text-foreground shadow-2xs"
                       }`}
                     >
                       <Moon className="size-3.5" />
@@ -464,8 +569,8 @@ export function AppHeader() {
                       aria-label={t("profile.system")}
                       className={`flex items-center justify-center size-7 rounded-md text-xs transition-all cursor-pointer ${
                         theme === "system"
-                          ? "bg-background text-foreground shadow-xs scale-105"
-                          : "text-muted-foreground hover:text-foreground hover:bg-background/50"
+                          ? "bg-[#EAB308]/25 text-[#0F172A] dark:text-[#EAB308] ring-1 ring-[#EAB308]/60 shadow-2xs"
+                          : "bg-muted/80 border border-border/60 hover:bg-muted text-muted-foreground hover:text-foreground shadow-2xs"
                       }`}
                     >
                       <Laptop className="size-3.5" />
@@ -474,40 +579,12 @@ export function AppHeader() {
                 </div>
               </div>
 
-              {/* Navigation Links */}
-              <div className="p-1.5 space-y-0.5 text-xs">
-                <Link
-                  href="/settings/users"
-                  onClick={() => setProfileOpen(false)}
-                  className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-foreground hover:bg-muted transition-colors"
-                >
-                  <User className="size-4 text-muted-foreground" />
-                  <span>{t("profile.manageUsers")}</span>
-                </Link>
-                <Link
-                  href="/settings/audit"
-                  onClick={() => setProfileOpen(false)}
-                  className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-foreground hover:bg-muted transition-colors"
-                >
-                  <Shield className="size-4 text-muted-foreground" />
-                  <span>{t("profile.auditHistory")}</span>
-                </Link>
-                <Link
-                  href="/settings"
-                  onClick={() => setProfileOpen(false)}
-                  className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-foreground hover:bg-muted transition-colors"
-                >
-                  <Settings2 className="size-4 text-muted-foreground" />
-                  <span>{t("profile.systemSettings")}</span>
-                </Link>
-              </div>
-
               {/* Logout Button */}
-              <div className="p-1.5 border-t border-border">
+              <div className="p-2 pb-2.5">
                 <button
                   type="button"
                   onClick={handleLogout}
-                  className="flex w-full items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
+                  className="flex w-full items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold text-destructive hover:bg-destructive/10 transition-colors cursor-pointer border border-transparent hover:border-destructive/20"
                 >
                   <LogOut className="size-4" />
                   <span>{t("auth.logout")}</span>
@@ -522,7 +599,7 @@ export function AppHeader() {
           variant="ghost"
           size="icon"
           onClick={() => setMobileMenuOpen(true)}
-          className="flex md:hidden size-8.5 rounded-full text-foreground hover:bg-muted"
+          className="flex md:hidden size-8.5 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted"
           aria-label="Open navigation menu"
         >
           <Menu className="size-5" />

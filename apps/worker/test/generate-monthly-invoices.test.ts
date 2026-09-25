@@ -17,7 +17,7 @@ test("generates invoice for billing cycles without existing invoices", async () 
         return { rows: [{ count: 5 }] };
       }
       if (sql.includes("INSERT INTO documents")) {
-        return { rows: [{ document_number: "INV-2026-000006", amount: 10414.63 }] };
+        return { rows: [{ document_number: "INV2026010006", amount: 10414.63 }] };
       }
       return { rows: [] };
     },
@@ -26,6 +26,6 @@ test("generates invoice for billing cycles without existing invoices", async () 
   const results = await job.run(mockDb, 2026, 1);
   assert.equal(results.length, 1);
   assert.equal(results[0]?.billingCycleId, "cycle-1");
-  assert.equal(results[0]?.documentNumber, "INV-2026-000006");
+  assert.equal(results[0]?.documentNumber, "INV2026010006");
   assert.equal(results[0]?.created, true);
 });

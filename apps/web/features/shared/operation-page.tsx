@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { createTranslator, type Locale } from "@solar/i18n";
 import { serverFetch, getApiBaseUrl } from "../../lib/server-fetch";
 import { OperationPageHeader } from "./operation-page-header";
@@ -26,8 +27,9 @@ function getCacheConfig(resource: string): RequestInit {
     notifications: 0,
     billing: 60,
     schools: 300,
-    sites: 300,
+    sites: 0,
     contracts: 600,
+    documents: 600,
     users: 600,
     reports: 600,
     audit: 300,
@@ -50,6 +52,10 @@ async function getOperationData(
     serverFetch(`${baseUrl}/v1/operations/${resource}`, fetchOptions),
     serverFetch(`${baseUrl}/v1/operations/${resource}/summary`, fetchOptions),
   ]);
+
+  if (rowsRes.status === 401 || summaryRes.status === 401) {
+    redirect("/login");
+  }
 
   if (!rowsRes.ok) {
     throw new Error(`ไม่สามารถโหลดข้อมูลจาก API ได้ (HTTP ${rowsRes.status})`);
@@ -81,9 +87,14 @@ export async function OperationPage({
   const t = createTranslator(locale);
 
   const displayEyebrow = eyebrow || t(`operations.${resource}.eyebrow`);
-  const displayTitle = (resource === "audit" && title === "Audit log") ? t("navigation.audit") : (title || t(`operations.${resource}.title`));
-  const displayDescription = description || t(`operations.${resource}.description`);
-  const displayAction = action || t(`operations.${resource}.action`);
+  const displayTitle =
+    resource === "audit" && title === "Audit log"
+      ? t("navigation.audit")
+      : title || t(`operations.${resource}.title`);
+  const displayDescription =
+    description || t(`operations.${resource}.description`);
+  const displayAction =
+    action !== undefined ? action : t(`operations.${resource}.action`);
 
   const { data, summary } = await getOperationData(resource);
   const isRealtime = resource === "alerts" || resource === "notifications";

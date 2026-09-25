@@ -14,6 +14,17 @@ export { evaluateQuality, normalizeValue } from "./telemetry/quality.js";
 export { calculateCumulativeDiff } from "./telemetry/cumulative-energy.js";
 export type { QualityResult, QualityRule, QualityStatus } from "./telemetry/quality.js";
 export type { EnergyDiffResult } from "./telemetry/cumulative-energy.js";
+export {
+  decodeModbusValue,
+  decodeRegisterBatch,
+  parseRegisterIndex,
+} from "./telemetry/register-decoder.js";
+export type {
+  WordOrder,
+  ModbusDataType,
+  RegisterFieldMapping,
+  DecodedFieldResult,
+} from "./telemetry/register-decoder.js";
 
 export { aggregate, bucketStart } from "./telemetry/aggregation.js";
 export type { AggregateBucket, AggregatePoint } from "./telemetry/aggregation.js";

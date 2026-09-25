@@ -99,7 +99,7 @@ export function CustomizeCardsModal({
                 value={draftConfig[idx] ?? defaultConfig[idx] ?? "schools"}
                 onValueChange={(val) => handleChange(idx, val)}
               >
-                <SelectTrigger className="h-8.5 text-xs bg-card">
+                <SelectTrigger className="h-10 text-xs bg-card">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -114,13 +114,13 @@ export function CustomizeCardsModal({
           ))}
         </div>
 
-        <DialogFooter className="pt-2 flex items-center justify-between sm:justify-between gap-2 border-t border-border">
+        <DialogFooter className="pt-2 flex items-center justify-between sm:justify-between gap-2">
           <Button
             type="button"
             variant="ghost"
             size="sm"
             onClick={handleReset}
-            className="text-xs h-9 text-muted-foreground hover:text-foreground gap-1.5"
+            className="text-xs h-10 px-3 text-muted-foreground hover:text-foreground gap-1.5"
           >
             <RotateCcw className="size-3.5" />
             <span>{locale === "th" ? "คืนค่าเริ่มต้น" : "Reset Defaults"}</span>
@@ -132,7 +132,7 @@ export function CustomizeCardsModal({
               variant="outline"
               size="sm"
               onClick={() => onOpenChange(false)}
-              className="text-xs h-9"
+              className="text-xs h-10 px-4"
             >
               {t("common.cancel")}
             </Button>
@@ -140,7 +140,7 @@ export function CustomizeCardsModal({
               type="button"
               size="sm"
               onClick={handleConfirm}
-              className="text-xs h-9 font-semibold"
+              className="text-xs h-10 px-5 font-semibold"
             >
               {t("common.confirm")}
             </Button>

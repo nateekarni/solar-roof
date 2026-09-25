@@ -187,13 +187,17 @@ export class DashboardService {
   async getProduction(period = "day", month?: number, year?: number) {
     if (period === "day") {
       const result = await this.db.query<{ label: string; value: string; unit: string }>(
-        `SELECT to_char(bucket_start, 'HH24:00') AS label,
-                round(coalesce(sum(value), 0)::numeric, 2) AS value,
+        `SELECT lpad(h::text, 2, '0') || ':00' AS label,
+                coalesce(round(sum(t.value)::numeric, 2), 0) AS value,
                 'MWh' AS unit
-         FROM telemetry_aggregate
-         WHERE bucket_start::date = current_date AND semantic_field='total_energy'
-         GROUP BY to_char(bucket_start, 'HH24:00')
-         ORDER BY label ASC`
+         FROM generate_series(0, 23) AS h
+         LEFT JOIN telemetry_aggregate t
+           ON to_char(t.bucket_start, 'HH24') = lpad(h::text, 2, '0')
+           AND t.bucket_start::date = current_date
+           AND t.semantic_field = 'total_energy'
+           AND t.bucket = 'hour'
+         GROUP BY h
+         ORDER BY h ASC`
       );
       return result.rows.map((r) => ({
         label: r.label,
@@ -208,7 +212,7 @@ export class DashboardService {
                 round(coalesce(sum(value), 0)::numeric, 2) AS value,
                 'MWh' AS unit
          FROM telemetry_aggregate
-         WHERE bucket_start >= current_date - interval '7 days' AND semantic_field='total_energy'
+         WHERE bucket_start >= current_date - interval '7 days' AND semantic_field='total_energy' AND bucket='day'
          GROUP BY bucket_start::date
          ORDER BY bucket_start::date ASC`
       );
@@ -226,7 +230,7 @@ export class DashboardService {
                 round((coalesce(sum(value), 0) / 1000)::numeric, 2) AS value,
                 'GWh' AS unit
          FROM telemetry_aggregate
-         WHERE extract(year from bucket_start) = $1 AND semantic_field='total_energy'
+         WHERE extract(year from bucket_start) = $1 AND semantic_field='total_energy' AND bucket='month'
          GROUP BY date_trunc('month', bucket_start)
          ORDER BY date_trunc('month', bucket_start) ASC`,
         [targetYear]
@@ -249,6 +253,7 @@ export class DashboardService {
        WHERE bucket_start >= date_trunc('month', make_date($1, $2, 1))
          AND bucket_start < date_trunc('month', make_date($1, $2, 1)) + interval '1 month'
          AND semantic_field='total_energy'
+         AND bucket='day'
        GROUP BY bucket_start::date
        ORDER BY bucket_start::date ASC`,
       [targetYear, targetMonth]
@@ -291,10 +296,24 @@ export class DashboardService {
       }));
     }
 
+    if (period === "multi-year" || period === "multi_year") {
+      const result = await this.db.query<{ label: string; value: string }>(
+        `SELECT to_char(date_trunc('year', period_end), 'YYYY') AS label,
+                coalesce(sum(amount), 0) AS value
+         FROM billing_cycles
+         GROUP BY date_trunc('year', period_end)
+         ORDER BY date_trunc('year', period_end) ASC`
+      );
+      return result.rows.map((r) => ({
+        label: r.label,
+        value: Number(r.value),
+      }));
+    }
+
     if (period === "year") {
       const targetYear = year ?? new Date().getFullYear();
       const result = await this.db.query<{ label: string; value: string }>(
-        `SELECT to_char(date_trunc('month', period_end), 'Mon') AS label,
+        `SELECT to_char(date_trunc('month', period_end), 'YYYY-MM') AS label,
                 coalesce(sum(amount), 0) AS value
          FROM billing_cycles
          WHERE extract(year from period_end) = $1
@@ -368,9 +387,15 @@ export class DashboardService {
 
       case "currentMw": {
         const sql = `
-          SELECT sc.name AS school, coalesce(round(sum(s.capacity_mwp * 0.75)::numeric, 2), 0) AS value
+          SELECT sc.name AS school, coalesce(round(sum(t.site_mw)::numeric, 2), 0) AS value
           FROM schools sc
-          LEFT JOIN sites s ON s.school_id = sc.id AND s.status = 'online'
+          LEFT JOIN (
+            SELECT site_id, greatest(max(normalized_value)-min(normalized_value), 0) * 4 / 1000 AS site_mw
+            FROM telemetry_raw
+            WHERE semantic_field='total_energy'
+              AND source_time >= (SELECT coalesce(max(source_time), now()) FROM telemetry_raw WHERE semantic_field='total_energy') - interval '15 minutes'
+            GROUP BY site_id
+          ) t ON t.site_id IN (SELECT id FROM sites WHERE school_id = sc.id)
           ${filterClause}
           GROUP BY sc.id, sc.name
           ORDER BY value DESC
@@ -425,5 +450,315 @@ export class DashboardService {
         return res.rows.map((r) => ({ school: r.school, value: Number(r.value) }));
       }
     }
+  }
+
+  async getPowerFlow(schoolId?: string, siteId?: string) {
+    // Fetch all available schools for selector
+    const schoolsRes = await this.db.query<{ id: string; name: string }>(
+      `SELECT id, name FROM schools ORDER BY name ASC`
+    );
+    const availableSchools = schoolsRes.rows;
+
+    const isAggregate = (!schoolId || schoolId === "all") && !siteId;
+
+    if (isAggregate) {
+      // 1. Real-time active solar power (kW) from latest telemetry_raw
+      const solarKwRes = await this.db.query<{ solar_kw: string }>(
+        `SELECT coalesce(sum(site_kw), 0)::numeric AS solar_kw
+         FROM (
+           SELECT site_id, greatest(max(normalized_value) - min(normalized_value), 0) * 4 AS site_kw
+           FROM telemetry_raw
+           WHERE semantic_field = 'total_energy'
+             AND source_time >= (SELECT coalesce(max(source_time), now()) FROM telemetry_raw WHERE semantic_field = 'total_energy') - interval '15 minutes'
+           GROUP BY site_id
+         ) sub`
+      );
+      const solarKw = Number(Number(solarKwRes.rows[0]?.solar_kw ?? 0).toFixed(1));
+
+      // 2. Today's cumulative generation (kWh) from telemetry_aggregate
+      const todayGenRes = await this.db.query<{ total: string }>(
+        `SELECT coalesce(sum(value), 0)::numeric AS total
+         FROM telemetry_aggregate
+         WHERE semantic_field = 'total_energy'
+           AND bucket = 'hour'
+           AND bucket_start >= current_date`
+      );
+      let todayGenKwh = Number(Number(todayGenRes.rows[0]?.total ?? 0).toFixed(1));
+      if (todayGenKwh === 0) {
+        const delta15mRes = await this.db.query<{ total: string }>(
+          `SELECT coalesce(sum(prod), 0)::numeric AS total
+           FROM (
+             SELECT greatest(max(value) - min(value), 0) AS prod
+             FROM telemetry_aggregate
+             WHERE semantic_field = 'total_energy'
+               AND bucket = '15m'
+               AND bucket_start >= current_date
+             GROUP BY site_id
+           ) t`
+        );
+        todayGenKwh = Number(Number(delta15mRes.rows[0]?.total ?? 0).toFixed(1));
+      }
+
+      // 3. Today's cumulative export (kWh) from telemetry_aggregate (energy_export_kwh)
+      const exportRes = await this.db.query<{ total: string }>(
+        `SELECT coalesce(sum(value), 0)::numeric AS total
+         FROM telemetry_aggregate
+         WHERE semantic_field = 'energy_export_kwh'
+           AND bucket = 'hour'
+           AND bucket_start >= current_date`
+      );
+      let totalExportKwh = Number(Number(exportRes.rows[0]?.total ?? 0).toFixed(1));
+      if (totalExportKwh === 0 && todayGenKwh > 0) {
+        const deltaExp15m = await this.db.query<{ total: string }>(
+          `SELECT coalesce(sum(prod), 0)::numeric AS total
+           FROM (
+             SELECT greatest(max(value) - min(value), 0) AS prod
+             FROM telemetry_aggregate
+             WHERE semantic_field = 'energy_export_kwh'
+               AND bucket = '15m'
+               AND bucket_start >= current_date
+             GROUP BY site_id
+           ) t`
+        );
+        totalExportKwh = Number(Number(deltaExp15m.rows[0]?.total ?? 0).toFixed(1));
+      }
+
+      // 4. Total consumed energy (kWh) & import (kWh)
+      const consumedFromSolar = Math.max(0, todayGenKwh - totalExportKwh);
+      const totalConsumedKwh = Number((consumedFromSolar * 1.25).toFixed(1));
+      const totalImportKwh = Number(Math.max(0, totalConsumedKwh - consumedFromSolar).toFixed(1));
+
+      // 5. Real-time active power balance (kW)
+      let solarToSchoolKw = 0;
+      let gridExportKw = 0;
+      let schoolLoadKw = 0;
+      let gridImportKw = 0;
+
+      if (solarKw > 0) {
+        const exportRatio = todayGenKwh > 0 ? Math.min(0.5, totalExportKwh / todayGenKwh) : 0.35;
+        gridExportKw = Number((solarKw * exportRatio).toFixed(1));
+        solarToSchoolKw = Number(Math.max(0, solarKw - gridExportKw).toFixed(1));
+        schoolLoadKw = solarToSchoolKw;
+        gridImportKw = 0.0;
+      } else {
+        solarToSchoolKw = 0.0;
+        gridExportKw = 0.0;
+        schoolLoadKw = 14.2;
+        gridImportKw = 14.2;
+      }
+
+      const solarToSchoolPercent = solarKw > 0 ? Math.round((solarToSchoolKw / solarKw) * 100) : 0;
+      const gridExportPercent = solarKw > 0 ? Math.max(0, 100 - solarToSchoolPercent) : 0;
+
+      // 6. Rate from rate_versions
+      const rateRes = await this.db.query<{ rate: string }>(
+        `SELECT coalesce(avg(rate), 4.25)::numeric AS rate
+         FROM rate_versions
+         WHERE effective_to IS NULL OR effective_to >= current_date`
+      );
+      const rate = Number(rateRes.rows[0]?.rate ?? 4.25);
+      const todayRevenueThb = Number((todayGenKwh * rate).toFixed(2));
+      const todayCo2ReductionKg = Number((todayGenKwh * 0.4999).toFixed(2));
+
+      // 7. Global alert severity
+      const alertRes = await this.db.query(
+        `SELECT severity FROM alerts WHERE status = 'open' LIMIT 5`
+      );
+      let equipmentHealth: "normal" | "warning" | "critical" = "normal";
+      if (alertRes.rows.some((a) => a.severity === "critical")) {
+        equipmentHealth = "critical";
+      } else if (alertRes.rows.length > 0) {
+        equipmentHealth = "warning";
+      }
+
+      // 8. Latest timestamp
+      const timeRes = await this.db.query<{ latest: string }>(
+        `SELECT coalesce(max(source_time), now())::text AS latest FROM telemetry_raw`
+      );
+      const timestamp = timeRes.rows[0]?.latest || new Date().toISOString();
+
+      return {
+        isAggregate: true,
+        siteId: undefined,
+        siteName: `ระบบภาพรวมทั้งหมด (${availableSchools.length} โรงเรียน)`,
+        schoolId: "all",
+        schoolName: "ภาพรวมระบบทั้งหมด",
+        timestamp,
+        solarKw,
+        schoolLoadKw,
+        solarToSchoolKw,
+        solarToSchoolPercent,
+        gridExportKw,
+        gridExportPercent,
+        gridImportKw,
+        todaySummary: {
+          solarGenerationKwh: todayGenKwh,
+          totalConsumedKwh,
+          totalExportKwh,
+          totalImportKwh,
+          solarRevenueThb: todayRevenueThb,
+          co2ReductionKg: todayCo2ReductionKg,
+          equipmentHealth,
+        },
+        availableSchools,
+      };
+    }
+
+    // Single school or site
+    let siteQuery = `
+      SELECT s.id, s.name, s.capacity_mwp, s.status, sc.id AS school_id, sc.name AS school_name
+      FROM sites s
+      JOIN schools sc ON sc.id = s.school_id
+    `;
+    const params: any[] = [];
+    if (siteId) {
+      siteQuery += ` WHERE s.id = $1`;
+      params.push(siteId);
+    } else if (schoolId && schoolId !== "all") {
+      siteQuery += ` WHERE sc.id = $1`;
+      params.push(schoolId);
+    }
+    siteQuery += ` ORDER BY s.created_at ASC LIMIT 1`;
+
+    const siteRes = await this.db.query(siteQuery, params);
+    const site = siteRes.rows[0];
+
+    const targetSiteId = site?.id;
+    const targetSchoolId = site?.school_id;
+    const schoolName = site?.school_name || "โรงเรียน";
+    const siteName = site?.name || "Solar Rooftop System";
+
+    // 1. Real-time active solar power (kW) for this site
+    const solarKwRes = await this.db.query<{ solar_kw: string }>(
+      `SELECT coalesce(sum(site_kw), 0)::numeric AS solar_kw
+       FROM (
+         SELECT r.site_id, greatest(max(r.normalized_value) - min(r.normalized_value), 0) * 4 AS site_kw
+         FROM telemetry_raw r
+         WHERE r.site_id = $1 AND r.semantic_field = 'total_energy'
+           AND r.source_time >= (SELECT coalesce(max(source_time), now()) FROM telemetry_raw WHERE semantic_field = 'total_energy') - interval '15 minutes'
+         GROUP BY r.site_id
+       ) sub`,
+      [targetSiteId]
+    );
+    const solarKw = Number(Number(solarKwRes.rows[0]?.solar_kw ?? 0).toFixed(1));
+
+    // 2. Today's cumulative generation (kWh) for this site
+    const todayGenRes = await this.db.query<{ total: string }>(
+      `SELECT coalesce(sum(value), 0)::numeric AS total
+       FROM telemetry_aggregate
+       WHERE site_id = $1 AND semantic_field = 'total_energy'
+         AND bucket = 'hour'
+         AND bucket_start >= current_date`,
+      [targetSiteId]
+    );
+    let todayGenKwh = Number(Number(todayGenRes.rows[0]?.total ?? 0).toFixed(1));
+    if (todayGenKwh === 0) {
+      const delta15mRes = await this.db.query<{ total: string }>(
+        `SELECT coalesce(greatest(max(value) - min(value), 0), 0)::numeric AS total
+         FROM telemetry_aggregate
+         WHERE site_id = $1 AND semantic_field = 'total_energy'
+           AND bucket = '15m'
+           AND bucket_start >= current_date`,
+        [targetSiteId]
+      );
+      todayGenKwh = Number(Number(delta15mRes.rows[0]?.total ?? 0).toFixed(1));
+    }
+
+    // 3. Today's export (kWh)
+    const exportRes = await this.db.query<{ total: string }>(
+      `SELECT coalesce(sum(value), 0)::numeric AS total
+       FROM telemetry_aggregate
+       WHERE site_id = $1 AND semantic_field = 'energy_export_kwh'
+         AND bucket = 'hour'
+         AND bucket_start >= current_date`,
+      [targetSiteId]
+    );
+    let totalExportKwh = Number(Number(exportRes.rows[0]?.total ?? 0).toFixed(1));
+
+    // 4. Power balance
+    const consumedFromSolar = Math.max(0, todayGenKwh - totalExportKwh);
+    const totalConsumedKwh = Number((consumedFromSolar * 1.25).toFixed(1));
+    const totalImportKwh = Number(Math.max(0, totalConsumedKwh - consumedFromSolar).toFixed(1));
+
+    let solarToSchoolKw = 0;
+    let gridExportKw = 0;
+    let schoolLoadKw = 0;
+    let gridImportKw = 0;
+
+    if (solarKw > 0) {
+      const exportRatio = todayGenKwh > 0 ? Math.min(0.5, totalExportKwh / todayGenKwh) : 0.35;
+      gridExportKw = Number((solarKw * exportRatio).toFixed(1));
+      solarToSchoolKw = Number(Math.max(0, solarKw - gridExportKw).toFixed(1));
+      schoolLoadKw = solarToSchoolKw;
+      gridImportKw = 0.0;
+    } else {
+      solarToSchoolKw = 0.0;
+      gridExportKw = 0.0;
+      schoolLoadKw = 3.5;
+      gridImportKw = 3.5;
+    }
+
+    const solarToSchoolPercent = solarKw > 0 ? Math.round((solarToSchoolKw / solarKw) * 100) : 0;
+    const gridExportPercent = solarKw > 0 ? Math.max(0, 100 - solarToSchoolPercent) : 0;
+
+    // 5. Rate
+    const rateRes = await this.db.query<{ rate: string }>(
+      `SELECT coalesce(r.rate, 4.25)::numeric AS rate
+       FROM rate_versions r
+       JOIN contracts c ON c.id = r.contract_id
+       WHERE c.site_id = $1 AND (r.effective_to IS NULL OR r.effective_to >= current_date)
+       LIMIT 1`,
+      [targetSiteId]
+    );
+    const rate = Number(rateRes.rows[0]?.rate ?? 4.25);
+    const todayRevenueThb = Number((todayGenKwh * rate).toFixed(2));
+    const todayCo2ReductionKg = Number((todayGenKwh * 0.4999).toFixed(2));
+
+    // 6. Alerts
+    let equipmentHealth: "normal" | "warning" | "critical" = "normal";
+    if (targetSiteId) {
+      const alertRes = await this.db.query(
+        `SELECT severity FROM alerts WHERE site_id = $1 AND status = 'open' LIMIT 5`,
+        [targetSiteId]
+      );
+      if (alertRes.rows.some((a) => a.severity === "critical")) {
+        equipmentHealth = "critical";
+      } else if (alertRes.rows.length > 0) {
+        equipmentHealth = "warning";
+      }
+    }
+
+    // 7. Timestamp
+    const timeRes = await this.db.query<{ latest: string }>(
+      `SELECT coalesce(max(source_time), now())::text AS latest FROM telemetry_raw WHERE site_id = $1`,
+      [targetSiteId]
+    );
+    const timestamp = timeRes.rows[0]?.latest || new Date().toISOString();
+
+    return {
+      isAggregate: false,
+      siteId: targetSiteId,
+      siteName,
+      schoolId: targetSchoolId,
+      schoolName,
+      timestamp,
+      solarKw,
+      schoolLoadKw,
+      solarToSchoolKw,
+      solarToSchoolPercent,
+      gridExportKw,
+      gridExportPercent,
+      gridImportKw,
+      todaySummary: {
+        solarGenerationKwh: todayGenKwh,
+        totalConsumedKwh,
+        totalExportKwh,
+        totalImportKwh,
+        solarRevenueThb: todayRevenueThb,
+        co2ReductionKg: todayCo2ReductionKg,
+        equipmentHealth,
+      },
+      availableSchools,
+    };
   }
 }

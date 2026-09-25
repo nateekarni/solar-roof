@@ -1,350 +1,339 @@
 "use client";
 
-import { useLocale, useT } from "../../../providers/locale-provider";
 import * as React from "react";
-import { ConfirmAction } from "../../../components/feedback/confirm-action";
-import { notify } from "../../../components/feedback/notifications";
-import { apiClient } from "../../../lib/api-client";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import {
+  ChevronRight,
+  FileText,
+  Gauge,
+  History,
+  LogOut,
+  ShieldCheck,
+  Sliders,
+  User,
+  Users,
+} from "lucide-react";
+import { useAuth } from "../../../stores/auth-store";
+import { useLocale } from "../../../providers/locale-provider";
+import { Avatar, AvatarFallback } from "../../../components/ui/avatar";
+import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "../../../components/ui/card";
-import { Input } from "../../../components/ui/input";
-import { Label } from "../../../components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "../../../components/ui/select";
-import { Switch } from "../../../components/ui/switch";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogTitle,
+} from "../../../components/ui/dialog";
+import { SchoolSettingsView } from "../../../features/settings/school-settings-view";
+import { SystemSettingsContent } from "../../../features/settings/system-settings-content";
 
 export default function SettingsPage() {
-  const t = useT();
+  const router = useRouter();
   const locale = useLocale();
-  const [loading, setLoading] = React.useState(false);
+  const { user, clear } = useAuth();
+  const [logoutDialogOpen, setLogoutDialogOpen] = React.useState(false);
 
-  const [form, setForm] = React.useState({
-    invoicePrefix: "INV-{year}-",
-    receiptPrefix: "RCT-{year}-",
-    defaultUnitPriceThb: 4.5,
-    defaultFetchFrequencySec: 60,
-    rawTelemetryRetentionYears: 2,
-    aggregateRetentionYears: 7,
-    language: "th",
-    criticalEmailAlert: true,
-    inAppNotification: true,
-  });
-
-  React.useEffect(() => {
-    apiClient
-      .get<Partial<typeof form>>("/v1/settings")
-      .then((data) => {
-        if (data) setForm((prev) => ({ ...prev, ...data }));
-      })
-      .catch(() => {});
-  }, []);
-
-  const save = async () => {
-    setLoading(true);
+  const handleLogout = async () => {
     try {
-      await apiClient.put("/v1/settings", form);
-      notify.success(t("settings.saveSuccess"));
-    } catch {
-      notify.error(t("settings.saveError"));
-    } finally {
-      setLoading(false);
+      await fetch("/v1/auth/logout", { method: "POST", credentials: "include" });
+    } catch {}
+    clear();
+    router.push("/login");
+  };
+
+  const initials = (user?.displayName || "SU")
+    .split(" ")
+    .map((n) => n[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+
+  const getRoleName = () => {
+    switch (user?.role) {
+      case "owner":
+        return locale === "th" ? "Platform Owner" : "Platform Owner";
+      case "admin":
+        return locale === "th" ? "Platform Admin" : "Platform Admin";
+      case "school_user":
+        return locale === "th" ? "School Administrator" : "School Administrator";
+      default:
+        return locale === "th" ? "ผู้ดูแลระบบ" : "Administrator";
     }
   };
 
   return (
-    <main className="content">
-      <div className="ops-content">
-        <div className="page-heading">
+    <>
+      {/* 1. Mobile View: Settings Menu Hub */}
+      <main className="content block md:hidden pb-12">
+        <div className="space-y-4">
+          {/* Header */}
           <div>
-            <span className="eyebrow">{t("settings.eyebrow")}</span>
-            <h1 className="text-xl font-bold tracking-tight text-foreground md:text-2xl">
-              {t("settings.title")}
+            <h1 className="text-xl font-bold tracking-tight text-foreground">
+              {locale === "th" ? "การตั้งค่า" : "Settings"}
             </h1>
-            <p className="text-xs text-muted-foreground">
-              {t("settings.description")}
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {locale === "th"
+                ? "เลือกหมวดหมู่ที่ต้องการจัดการและปรับแต่ง"
+                : "Select a category to configure"}
             </p>
           </div>
-          <ConfirmAction
-            trigger={
-              <Button
-                type="button"
-                size="sm"
-                className="font-semibold shadow-xs"
-                disabled={loading}
+
+          {/* Quick Profile Summary Banner */}
+          <Link
+            href="/settings/account"
+            className="flex items-center gap-3.5 p-3.5 rounded-2xl bg-card border border-border/70 shadow-xs hover:bg-muted/40 transition-colors"
+          >
+            <Avatar className="size-12 ring-2 ring-primary/20 shadow-xs">
+              <AvatarFallback className="bg-primary/10 text-primary font-bold text-base">
+                {initials}
+              </AvatarFallback>
+            </Avatar>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="text-sm font-bold text-foreground truncate">
+                  {user?.displayName || "User"}
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground truncate">{user?.email || "admin@solar.local"}</p>
+              <Badge variant="outline" className="mt-1 text-[10px] bg-primary/10 text-primary border-primary/20">
+                {getRoleName()}
+              </Badge>
+            </div>
+            <ChevronRight className="size-4 text-muted-foreground shrink-0" />
+          </Link>
+
+          {/* Group 1: User & Preferences */}
+          <div className="space-y-1.5">
+            <span className="text-[11px] font-semibold text-muted-foreground tracking-wider uppercase px-1">
+              {locale === "th" ? "บัญชีและความชอบส่วนตัว" : "Account & Preferences"}
+            </span>
+
+            <div className="rounded-2xl bg-card border border-border/70 divide-y divide-border/50 shadow-xs overflow-hidden">
+              {/* 1. General Settings */}
+              <Link
+                href="/settings/general"
+                className="flex items-center gap-3 p-3.5 hover:bg-muted/50 transition-colors cursor-pointer"
               >
-                {loading ? "กำลังบันทึก..." : t("common.save")}
-              </Button>
-            }
-            title={t("settings.saveConfirmTitle")}
-            description={t("settings.saveConfirmDesc")}
-            confirmLabel={t("common.save")}
-            onConfirm={save}
-          />
+                <div className="flex size-9 items-center justify-center rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 shrink-0">
+                  <Sliders className="size-4.5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-semibold text-foreground">
+                    {locale === "th" ? "การตั้งค่าทั่วไป" : "General Settings"}
+                  </div>
+                  <p className="text-[11px] text-muted-foreground truncate">
+                    {locale === "th"
+                      ? "ภาษา, ธีมการแสดงผล, การแจ้งเตือน"
+                      : "Language, theme, notifications"}
+                  </p>
+                </div>
+                <ChevronRight className="size-4 text-muted-foreground shrink-0" />
+              </Link>
+
+              {/* 2. Account Settings */}
+              <Link
+                href="/settings/account"
+                className="flex items-center gap-3 p-3.5 hover:bg-muted/50 transition-colors cursor-pointer"
+              >
+                <div className="flex size-9 items-center justify-center rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 shrink-0">
+                  <User className="size-4.5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-semibold text-foreground">
+                    {locale === "th" ? "การตั้งค่าบัญชี" : "Account Settings"}
+                  </div>
+                  <p className="text-[11px] text-muted-foreground truncate">
+                    {locale === "th"
+                      ? "รูปโปรไฟล์, ชื่อ-นามสกุล, ข้อมูลติดต่อ"
+                      : "Avatar, name, contact information"}
+                  </p>
+                </div>
+                <ChevronRight className="size-4 text-muted-foreground shrink-0" />
+              </Link>
+
+              {/* 3. Security Settings */}
+              <Link
+                href="/settings/security"
+                className="flex items-center gap-3 p-3.5 hover:bg-muted/50 transition-colors cursor-pointer"
+              >
+                <div className="flex size-9 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 shrink-0">
+                  <ShieldCheck className="size-4.5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-semibold text-foreground">
+                    {locale === "th" ? "ความปลอดภัย" : "Security & Password"}
+                  </div>
+                  <p className="text-[11px] text-muted-foreground truncate">
+                    {locale === "th"
+                      ? "รหัสผ่าน, เซสชันการเข้าใช้งาน"
+                      : "Password, sessions, security"}
+                  </p>
+                </div>
+                <ChevronRight className="size-4 text-muted-foreground shrink-0" />
+              </Link>
+            </div>
+          </div>
+
+          {/* Group 2: System & Platform (Only for Non-School Users) */}
+          {user?.role !== "school_user" && (
+            <div className="space-y-1.5 pt-2">
+              <span className="text-[11px] font-semibold text-muted-foreground tracking-wider uppercase px-1">
+                {locale === "th" ? "ระบบและแพลตฟอร์ม" : "System & Platform"}
+              </span>
+
+              <div className="rounded-2xl bg-card border border-border/70 divide-y divide-border/50 shadow-xs overflow-hidden">
+                {/* System Defaults */}
+                <Link
+                  href="/settings/system"
+                  className="flex items-center gap-3 p-3.5 hover:bg-muted/50 transition-colors cursor-pointer"
+                >
+                  <div className="flex size-9 items-center justify-center rounded-xl bg-primary/10 text-primary shrink-0">
+                    <FileText className="size-4.5" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-semibold text-foreground">
+                      {locale === "th" ? "ค่าตั้งต้นระบบ & รอบบิล" : "System Defaults"}
+                    </div>
+                    <p className="text-[11px] text-muted-foreground truncate">
+                      {locale === "th"
+                        ? "ราคาต่อหน่วย, อัตราดึงข้อมูล, คำนำหน้าบิล"
+                        : "Unit price, fetch interval, document prefix"}
+                    </p>
+                  </div>
+                  <ChevronRight className="size-4 text-muted-foreground shrink-0" />
+                </Link>
+
+                {/* Meter Presets */}
+                <Link
+                  href="/settings/meter-presets"
+                  className="flex items-center gap-3 p-3.5 hover:bg-muted/50 transition-colors cursor-pointer"
+                >
+                  <div className="flex size-9 items-center justify-center rounded-xl bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 shrink-0">
+                    <Gauge className="size-4.5" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-semibold text-foreground">
+                      {locale === "th" ? "คอนฟิกมิเตอร์ & Register Presets" : "Meter Presets"}
+                    </div>
+                    <p className="text-[11px] text-muted-foreground truncate">
+                      {locale === "th"
+                        ? "จัดการ Preset Address และการแปลงค่าหน่วย Modbus"
+                        : "Modbus registers, scaling, and presets"}
+                    </p>
+                  </div>
+                  <ChevronRight className="size-4 text-muted-foreground shrink-0" />
+                </Link>
+
+                {/* Audit Log */}
+                <Link
+                  href="/settings/audit"
+                  className="flex items-center gap-3 p-3.5 hover:bg-muted/50 transition-colors cursor-pointer"
+                >
+                  <div className="flex size-9 items-center justify-center rounded-xl bg-orange-500/10 text-orange-600 dark:text-orange-400 shrink-0">
+                    <History className="size-4.5" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-semibold text-foreground">
+                      {locale === "th" ? "ประวัติการแก้ไขระบบ (Audit Trail)" : "Audit Trail"}
+                    </div>
+                    <p className="text-[11px] text-muted-foreground truncate">
+                      {locale === "th"
+                        ? "บันทึกเหตุการณ์และประวัติการเปลี่ยนแปลงข้อมูล"
+                        : "Append-only system activity and change logs"}
+                    </p>
+                  </div>
+                  <ChevronRight className="size-4 text-muted-foreground shrink-0" />
+                </Link>
+
+                {/* User Management */}
+                <Link
+                  href="/settings/users"
+                  className="flex items-center gap-3 p-3.5 hover:bg-muted/50 transition-colors cursor-pointer"
+                >
+                  <div className="flex size-9 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 shrink-0">
+                    <Users className="size-4.5" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-semibold text-foreground">
+                      {locale === "th" ? "จัดการผู้ใช้งาน" : "User Management"}
+                    </div>
+                    <p className="text-[11px] text-muted-foreground truncate">
+                      {locale === "th"
+                        ? "จัดการสิทธิ์ เพิ่ม/ลดผู้ดูแลระบบและโรงเรียน"
+                        : "Manage users, invitations, and permissions"}
+                    </p>
+                  </div>
+                  <ChevronRight className="size-4 text-muted-foreground shrink-0" />
+                </Link>
+              </div>
+            </div>
+          )}
+
+          {/* Logout Section */}
+          <div className="pt-2">
+            <Button
+              variant="outline"
+              onClick={() => setLogoutDialogOpen(true)}
+              className="w-full h-11 text-xs font-medium text-destructive border-destructive/30 hover:bg-destructive/10 gap-2 rounded-xl cursor-pointer"
+            >
+              <LogOut className="size-4" />
+              <span>{locale === "th" ? "ออกจากระบบ (Sign Out)" : "Sign Out"}</span>
+            </Button>
+          </div>
         </div>
+      </main>
 
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {/* Card: System Defaults */}
-          <Card className="panel h-full">
-            <CardHeader className="p-0 pb-3">
-              <CardDescription className="text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">
-                SYSTEM DEFAULTS
-              </CardDescription>
-              <CardTitle className="text-sm font-semibold text-foreground">
-                {t("navigation.systemDefaults")}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-3 p-0 pt-1">
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="unit-price" className="text-xs">
-                  ราคาต่อหน่วยตั้งต้น (THB / kWh)
-                </Label>
-                <Input
-                  id="unit-price"
-                  type="number"
-                  step="0.01"
-                  value={form.defaultUnitPriceThb}
-                  onChange={(e) =>
-                    setForm({ ...form, defaultUnitPriceThb: Number(e.target.value) })
-                  }
-                  className="h-9 text-xs"
-                />
-                <span className="text-[10px] text-muted-foreground">
-                  ใช้ Auto-fill ในการทำสัญญาและคำนวณบิล
-                </span>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="fetch-freq" className="text-xs">
-                  ความถี่ดึงข้อมูลมิเตอร์ตั้งต้น (วินาที)
-                </Label>
-                <Input
-                  id="fetch-freq"
-                  type="number"
-                  min="10"
-                  max="3600"
-                  value={form.defaultFetchFrequencySec}
-                  onChange={(e) =>
-                    setForm({ ...form, defaultFetchFrequencySec: Number(e.target.value) })
-                  }
-                  className="h-9 text-xs"
-                />
-                <span className="text-[10px] text-muted-foreground">
-                  Default สำหรับ Gateway & MQTT polling (60 วินาที)
-                </span>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Card 1: Document Series */}
-          <Card className="panel h-full">
-            <CardHeader className="p-0 pb-3">
-              <CardDescription className="text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">
-                DOCUMENT SERIES
-              </CardDescription>
-              <CardTitle className="text-sm font-semibold text-foreground">
-                {t("settings.documentSeries")}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-3 p-0 pt-1">
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="invoice-prefix" className="text-xs">
-                  {t("settings.invoicePrefix")}
-                </Label>
-                <Input
-                  id="invoice-prefix"
-                  value={form.invoicePrefix}
-                  onChange={(e) =>
-                    setForm({ ...form, invoicePrefix: e.target.value })
-                  }
-                  className="h-9 text-xs"
-                />
-                <span className="text-[10px] text-muted-foreground">
-                  {locale === "th"
-                    ? "ใช้ {year} สำหรับแทนปี ค.ศ. ปัจจุบันอัตโนมัติ"
-                    : "Use {year} to auto-fill current year"}
-                </span>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="receipt-prefix" className="text-xs">
-                  {t("settings.receiptPrefix")}
-                </Label>
-                <Input
-                  id="receipt-prefix"
-                  value={form.receiptPrefix}
-                  onChange={(e) =>
-                    setForm({ ...form, receiptPrefix: e.target.value })
-                  }
-                  className="h-9 text-xs"
-                />
-                <span className="text-[10px] text-muted-foreground">
-                  {locale === "th"
-                    ? "ใช้ {year} สำหรับแทนปี ค.ศ. ปัจจุบันอัตโนมัติ"
-                    : "Use {year} to auto-fill current year"}
-                </span>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Card 2: Data Retention */}
-          <Card className="panel h-full">
-            <CardHeader className="p-0 pb-3">
-              <CardDescription className="text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">
-                RETENTION
-              </CardDescription>
-              <CardTitle className="text-sm font-semibold text-foreground">
-                {t("settings.retention")}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-3 p-0 pt-1">
-              <div className="flex flex-col gap-1.5">
-                <Label className="text-xs">{t("settings.rawTelemetry")}</Label>
-                <Select
-                  value={`${form.rawTelemetryRetentionYears}`}
-                  onValueChange={(val) =>
-                    setForm({
-                      ...form,
-                      rawTelemetryRetentionYears: Number(val),
-                    })
-                  }
-                >
-                  <SelectTrigger
-                    className="h-9 text-xs"
-                    aria-label={t("settings.rawTelemetry")}
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      <SelectItem value="1" className="text-xs">
-                        1 ปี
-                      </SelectItem>
-                      <SelectItem value="2" className="text-xs">
-                        2 ปี
-                      </SelectItem>
-                      <SelectItem value="3" className="text-xs">
-                        3 ปี
-                      </SelectItem>
-                      <SelectItem value="5" className="text-xs">
-                        5 ปี
-                      </SelectItem>
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label className="text-xs">
-                  {t("settings.aggregateDocuments")}
-                </Label>
-                <Select
-                  value={`${form.aggregateRetentionYears}`}
-                  onValueChange={(val) =>
-                    setForm({
-                      ...form,
-                      aggregateRetentionYears: Number(val),
-                    })
-                  }
-                >
-                  <SelectTrigger
-                    className="h-9 text-xs"
-                    aria-label={t("settings.aggregateDocuments")}
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      <SelectItem value="5" className="text-xs">
-                        5 ปี
-                      </SelectItem>
-                      <SelectItem value="7" className="text-xs">
-                        7 ปี
-                      </SelectItem>
-                      <SelectItem value="10" className="text-xs">
-                        10 ปี
-                      </SelectItem>
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Card 3: Locale & Alerts */}
-          <Card className="panel h-full">
-            <CardHeader className="p-0 pb-3">
-              <CardDescription className="text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">
-                LOCALE & ALERTS
-              </CardDescription>
-              <CardTitle className="text-sm font-semibold text-foreground">
-                {t("settings.localeAlerts")}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-3 p-0 pt-1">
-              <div className="flex flex-col gap-1.5">
-                <Label className="text-xs">{t("settings.language")}</Label>
-                <Select
-                  value={form.language}
-                  onValueChange={(val) => setForm({ ...form, language: val })}
-                >
-                  <SelectTrigger
-                    className="h-9 text-xs"
-                    aria-label={t("settings.language")}
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      <SelectItem value="th" className="text-xs">
-                        {t("settings.thai")}
-                      </SelectItem>
-                      <SelectItem value="en" className="text-xs">
-                        {t("settings.english")}
-                      </SelectItem>
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex items-center gap-2.5 pt-1">
-                <Switch
-                  id="critical-email"
-                  checked={form.criticalEmailAlert}
-                  onCheckedChange={(checked) =>
-                    setForm({ ...form, criticalEmailAlert: checked })
-                  }
-                />
-                <Label
-                  htmlFor="critical-email"
-                  className="text-xs cursor-pointer"
-                >
-                  {t("settings.criticalEmail")}
-                </Label>
-              </div>
-              <div className="flex items-center gap-2.5">
-                <Switch
-                  id="in-app"
-                  checked={form.inAppNotification}
-                  onCheckedChange={(checked) =>
-                    setForm({ ...form, inAppNotification: checked })
-                  }
-                />
-                <Label htmlFor="in-app" className="text-xs cursor-pointer">
-                  {t("settings.inApp")}
-                </Label>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+      {/* 2. Desktop View */}
+      <div className="hidden md:block">
+        {user?.role === "school_user" ? (
+          <main className="content p-4 md:p-6">
+            <SchoolSettingsView />
+          </main>
+        ) : (
+          <main className="content">
+            <SystemSettingsContent showBackLink={false} />
+          </main>
+        )}
       </div>
-    </main>
+
+      {/* Mobile Logout Dialog */}
+      <Dialog open={logoutDialogOpen} onOpenChange={setLogoutDialogOpen}>
+        <DialogContent className="sm:max-w-xs p-5 rounded-2xl text-center space-y-3">
+          <div className="size-12 rounded-full bg-destructive/10 text-destructive flex items-center justify-center mx-auto">
+            <LogOut className="size-6" />
+          </div>
+          <div>
+            <DialogTitle className="text-base font-bold">
+              {locale === "th" ? "ออกจากระบบ?" : "Sign Out?"}
+            </DialogTitle>
+            <DialogDescription className="text-xs mt-1">
+              {locale === "th"
+                ? "คุณต้องการออกจากระบบ Solar Platform ใช่หรือไม่"
+                : "Are you sure you want to sign out?"}
+            </DialogDescription>
+          </div>
+          <DialogFooter className="flex-row justify-center gap-2 pt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setLogoutDialogOpen(false)}
+              className="flex-1 h-9 text-xs"
+            >
+              {locale === "th" ? "ยกเลิก" : "Cancel"}
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleLogout}
+              className="flex-1 h-9 text-xs"
+            >
+              {locale === "th" ? "ออกจากระบบ" : "Sign Out"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

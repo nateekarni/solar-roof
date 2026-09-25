@@ -35,8 +35,8 @@ export function CollectionChart({ collection }: { collection?: Collection }) {
   const formatMillions = (val: number) => `${(val / 1000000).toFixed(2)} ลบ.`;
 
   return (
-    <Card className="panel">
-      <CardHeader className="p-0 pb-3">
+    <Card className="panel flex flex-col flex-1 h-full justify-between">
+      <CardHeader className="p-0 pb-2.5">
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm font-semibold text-foreground">
             การเก็บเงิน
@@ -46,8 +46,8 @@ export function CollectionChart({ collection }: { collection?: Collection }) {
           </span>
         </div>
       </CardHeader>
-      <CardContent className="p-0">
-        <div className="flex items-center justify-between gap-3 pt-1">
+      <CardContent className="p-0 flex-1 flex flex-col justify-between min-h-0">
+        <div className="flex-1 flex flex-wrap sm:flex-nowrap items-center justify-center gap-3 sm:gap-6 py-2">
           {/* Donut Chart */}
           <div className="relative size-32 shrink-0">
             <ResponsiveContainer width="100%" height="100%">
@@ -96,31 +96,31 @@ export function CollectionChart({ collection }: { collection?: Collection }) {
           </div>
 
           {/* Legend Items */}
-          <div className="flex flex-col gap-2 text-xs flex-1">
-            <div className="flex items-center justify-between gap-1">
-              <span className="flex items-center gap-1.5 text-muted-foreground text-[11px]">
+          <div className="flex flex-col gap-2 text-xs">
+            <div className="flex items-center justify-between gap-3">
+              <span className="flex items-center gap-1.5 text-muted-foreground text-[11px] min-w-[70px]">
                 <span className="size-2 rounded-full bg-success" />
                 เก็บเงินแล้ว
               </span>
-              <span className="font-semibold text-foreground text-xs">
+              <span className="font-semibold text-foreground text-xs text-right">
                 {formatMillions(paid)}
               </span>
             </div>
-            <div className="flex items-center justify-between gap-1">
-              <span className="flex items-center gap-1.5 text-muted-foreground text-[11px]">
+            <div className="flex items-center justify-between gap-3">
+              <span className="flex items-center gap-1.5 text-muted-foreground text-[11px] min-w-[70px]">
                 <span className="size-2 rounded-full bg-destructive" />
                 ค้างชำระ
               </span>
-              <span className="font-semibold text-foreground text-xs">
+              <span className="font-semibold text-foreground text-xs text-right">
                 {formatMillions(pending)}
               </span>
             </div>
-            <div className="flex items-center justify-between gap-1">
-              <span className="flex items-center gap-1.5 text-muted-foreground text-[11px]">
+            <div className="flex items-center justify-between gap-3">
+              <span className="flex items-center gap-1.5 text-muted-foreground text-[11px] min-w-[70px]">
                 <span className="size-2 rounded-full bg-warning" />
                 ยังไม่ออกบิล
               </span>
-              <span className="font-semibold text-foreground text-xs">
+              <span className="font-semibold text-foreground text-xs text-right">
                 {formatMillions(unbilled)}
               </span>
             </div>

@@ -30,8 +30,10 @@ const DEFAULT_CARD_CONFIG = [
 
 export function DashboardStatsClient({
   stats,
+  totalSites,
 }: {
   stats: DashboardSummaryStats;
+  totalSites?: number;
 }) {
   const t = useT();
   const locale = useLocale();
@@ -51,6 +53,12 @@ export function DashboardStatsClient({
     } catch {
       // ignore
     }
+  }, []);
+
+  React.useEffect(() => {
+    const handleOpen = () => setIsCustomizeOpen(true);
+    window.addEventListener("open-customize-cards", handleOpen);
+    return () => window.removeEventListener("open-customize-cards", handleOpen);
   }, []);
 
   const handleSaveConfig = (newConfig: string[]) => {
@@ -90,12 +98,12 @@ export function DashboardStatsClient({
   const metricDefinitions: Record<string, MetricDef> = {
     schools: defaultMetricDef,
     onlineSites: {
-      label: t("dashboard.stats.onlineSchools"),
+      label: t("dashboard.stats.onlineSites") || "ไซต์ออนไลน์",
       value: stats.onlineSites || 0,
-      unit: t("dashboard.stats.unitSchools"),
+      unit: t("dashboard.stats.unitSites") || (locale === "th" ? "ไซต์" : "sites"),
       note:
-        stats.schools > 0
-          ? `${((stats.onlineSites / stats.schools) * 100).toFixed(1)}${t("dashboard.stats.onlinePercent")}`
+        (totalSites || 18) > 0
+          ? `${((stats.onlineSites / (totalSites || 18)) * 100).toFixed(1)}${t("dashboard.stats.onlinePercent")}`
           : t("common.noData"),
       tone: "green",
       icon: Laptop,
@@ -151,21 +159,6 @@ export function DashboardStatsClient({
 
   return (
     <>
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-          {locale === "th" ? "ตัวชี้วัดสำคัญ (Key Metrics)" : "Key Metrics"}
-        </span>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={() => setIsCustomizeOpen(true)}
-          className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground gap-1.5 cursor-pointer"
-        >
-          <SlidersHorizontal className="size-3.5" />
-          <span>{locale === "th" ? "ปรับแต่งการ์ด" : "Customize"}</span>
-        </Button>
-      </div>
 
       <section className="stats-grid">
         {cardConfig.map((metricKey, idx) => {

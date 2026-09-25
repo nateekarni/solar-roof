@@ -67,7 +67,7 @@ export function SiteMap({ sites }: { sites: Site[] }) {
 
   return (
     <Card className="panel map-panel flex flex-col h-full">
-      <CardHeader className="border-b border-border py-3 px-4">
+      <CardHeader className="p-0 pb-2.5">
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm font-semibold text-foreground">
             แผนที่โรงเรียนทั้งหมด
@@ -77,8 +77,8 @@ export function SiteMap({ sites }: { sites: Site[] }) {
           </Badge>
         </div>
       </CardHeader>
-      <CardContent className="map-content relative flex flex-col flex-1 p-0">
-        <div className="site-map relative flex-1 h-full w-full">
+      <CardContent className="map-content relative flex flex-col flex-1 p-0 min-h-0">
+        <div className="site-map relative flex-1 min-h-[260px] sm:min-h-[350px] w-full rounded-xl overflow-hidden border border-border">
           <Map
             initialViewState={{ latitude: 13.75, longitude: 100.8, zoom: 5.5 }}
             mapStyle={style}
@@ -201,11 +201,8 @@ export function SiteMap({ sites }: { sites: Site[] }) {
         </div>
 
         {/* Always-visible Site / Overall Info Bar */}
-        <div className="site-info-bar">
+        <div className="site-info-bar border-t-0 pt-2.5 px-0 bg-transparent">
           <div className="site-info-left">
-            <span className="site-eyebrow">
-              {selected ? "SELECTED SITE" : "OVERALL"}
-            </span>
             <strong className="site-name">
               {selected ? selected.name : "ภาพรวมทุกไซต์พลังงาน"}
             </strong>
@@ -236,7 +233,7 @@ export function SiteMap({ sites }: { sites: Site[] }) {
               <button
                 type="button"
                 onClick={() => setSelectedId(null)}
-                className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted"
+                className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted cursor-pointer"
                 aria-label="ปิดและกลับสู่ภาพรวม"
                 title="ปิดและกลับสู่ภาพรวม"
               >

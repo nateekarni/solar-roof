@@ -15,6 +15,7 @@ export class OperationsService {
           SELECT 
             s.id,
             s.name,
+            s.code,
             s.region,
             coalesce(round(sum(si.capacity_mwp)::numeric, 4), 0) AS "capacityMwp",
             count(distinct si.id)::int AS "sitesCount",
@@ -24,7 +25,7 @@ export class OperationsService {
           LEFT JOIN sites si ON si.school_id = s.id
           LEFT JOIN gateways g ON g.site_id = si.id
           ${isSchoolUser ? `WHERE s.id = '${schoolId}'` : ""}
-          GROUP BY s.id, s.name, s.region
+          GROUP BY s.id, s.name, s.code, s.region
           ORDER BY s.name
         `;
         const res = await this.db.query(sql);
@@ -87,10 +88,21 @@ export class OperationsService {
             coalesce(round(b.consumed_kwh::numeric, 2), 0) AS "consumedKwh",
             coalesce(round(b.rate::numeric, 2), 4.25) AS rate,
             coalesce(round(b.amount::numeric, 2), 0) AS amount,
-            b.status
+            b.status,
+            p.id AS "paymentId",
+            p.status AS "paymentStatus",
+            p.slip_url AS "slipUrl",
+            p.slip_url AS "หลักฐานการชำระ",
+            to_char(p.paid_at, 'YYYY-MM-DD HH24:MI') AS "paidAt",
+            p.rejection_reason AS "rejectionReason",
+            d.document_number AS "invoiceNumber",
+            r.document_number AS "receiptNumber"
           FROM billing_cycles b
           JOIN sites si ON si.id = b.site_id
           JOIN schools s ON s.id = si.school_id
+          LEFT JOIN payments p ON p.billing_cycle_id = b.id
+          LEFT JOIN documents d ON d.billing_cycle_id = b.id AND d.document_type = 'invoice'
+          LEFT JOIN documents r ON r.billing_cycle_id = b.id AND r.document_type = 'receipt'
           ${isSchoolUser ? `WHERE s.id = '${schoolId}'` : ""}
           ORDER BY b.period_end DESC, s.name
         `;
@@ -103,6 +115,7 @@ export class OperationsService {
             "พลังงาน (kWh)",
             "อัตรา (฿/kWh)",
             "ยอดเงิน (฿)",
+            "หลักฐานการชำระ",
             "สถานะ",
           ],
           rows: res.rows,
@@ -272,6 +285,9 @@ export class OperationsService {
               scope: "ทุกโรงเรียนและไซต์พลังงาน",
               format: "CSV / XLSX",
               status: "พร้อมดาวน์โหลด",
+              fileSize: "1.8 MB",
+              generatedAt: "2026-09-22 06:00",
+              description: "สรุปปริมาณการผลิตกระแสไฟฟ้า ค่ารังสีแสงอาทิตย์ และสถิติ PR (Performance Ratio) รายไซต์ประจำเดือน",
             },
             {
               id: "2",
@@ -280,6 +296,9 @@ export class OperationsService {
               scope: "รอบบิลประจำปีปัจจุบัน",
               format: "PDF / CSV",
               status: "พร้อมดาวน์โหลด",
+              fileSize: "3.2 MB",
+              generatedAt: "2026-09-21 18:30",
+              description: "รายงานประมวลผลใบแจ้งหนี้ ใบเสร็จรับเงิน และสถานะการชำระเงินของทุกโรงเรียนคู่สัญญา PPA",
             },
             {
               id: "3",
@@ -288,6 +307,9 @@ export class OperationsService {
               scope: "Gateways, Inverters, Meters",
               format: "PDF",
               status: "พร้อมดาวน์โหลด",
+              fileSize: "950 KB",
+              generatedAt: "2026-09-22 08:15",
+              description: "สถิติ uptime ความสมบูรณ์ของสัญญาณเครือข่าย ค่า packet loss และประวัติการตัดการเชื่อมต่อของอุปกรณ์ IOT",
             },
             {
               id: "4",
@@ -296,6 +318,9 @@ export class OperationsService {
               scope: "Audit events ย้อนหลัง 90 วัน",
               format: "CSV",
               status: "พร้อมดาวน์โหลด",
+              fileSize: "4.5 MB",
+              generatedAt: "2026-09-22 00:00",
+              description: "บันทึกประวัติการทำรายการ กิจกรรมของผู้ดูแลระบบ การปรับเปลี่ยนอัตราค่าไฟ และการอนุญาตสิทธิ์เข้าถึง",
             },
           ],
           idKey: "id",
@@ -307,6 +332,8 @@ export class OperationsService {
           SELECT 
             a.id,
             a.title,
+            coalesce(a.detail, a.title) AS detail,
+            a.severity,
             'In-App + Email' AS channel,
             'ผู้ดูแลระบบและโรงเรียน' AS recipient,
             to_char(a.occurred_at, 'YYYY-MM-DD HH24:MI') AS "sentAt",
@@ -337,6 +364,7 @@ export class OperationsService {
             u.role,
             coalesce(s.name, 'ทุกโรงเรียน (ส่วนกลาง)') AS "schoolName",
             'ใช้งานเมื่อวานนี้' AS "lastActive",
+            to_char(u.created_at, 'YYYY-MM-DD HH24:MI') AS "createdAt",
             u.status
           FROM users u
           LEFT JOIN schools s ON s.id = u.school_id
@@ -366,7 +394,11 @@ export class OperationsService {
             a.entity_type AS "entityType",
             a.entity_id::text AS "entityId",
             coalesce(u.display_name, 'Admin User') AS actor,
-            'สำเร็จ' AS status
+            'สำเร็จ' AS status,
+            a.correlation_id AS "correlationId",
+            a.reason,
+            a.before_json AS "beforeJson",
+            a.after_json AS "afterJson"
           FROM audit_events a
           LEFT JOIN users u ON u.id = a.actor_id
           ORDER BY a.occurred_at DESC

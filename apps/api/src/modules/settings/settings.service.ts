@@ -24,8 +24,8 @@ export class SettingsService {
     const map = new Map(res.rows.map((r) => [r.key, r.value]));
 
     return {
-      invoicePrefix: map.get("invoicePrefix") ?? "INV-{year}-",
-      receiptPrefix: map.get("receiptPrefix") ?? "RCT-{year}-",
+      invoicePrefix: map.get("invoicePrefix") ?? "INV{year}{month}",
+      receiptPrefix: map.get("receiptPrefix") ?? "RCT{year}{month}",
       rawTelemetryRetentionYears: Number(map.get("rawTelemetryRetentionYears") ?? 2),
       aggregateRetentionYears: Number(map.get("aggregateRetentionYears") ?? 7),
       language: map.get("language") ?? "th",

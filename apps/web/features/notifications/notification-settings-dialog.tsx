@@ -101,7 +101,7 @@ export function NotificationSettingsDialog({
                 type="email"
                 value={emailAddress}
                 onChange={(e) => setEmailAddress(e.target.value)}
-                className="text-xs h-9"
+                className="text-xs h-10"
               />
             </div>
           )}
@@ -129,7 +129,7 @@ export function NotificationSettingsDialog({
             variant="outline"
             size="sm"
             onClick={() => onOpenChange(false)}
-            className="text-xs h-9"
+            className="text-xs h-10 px-4"
           >
             {t("common.cancel")}
           </Button>
@@ -138,7 +138,7 @@ export function NotificationSettingsDialog({
             size="sm"
             onClick={handleSave}
             disabled={loading}
-            className="text-xs h-9 font-semibold"
+            className="text-xs h-10 px-5 font-semibold"
           >
             {loading ? t("common.saving") : t("common.confirm")}
           </Button>

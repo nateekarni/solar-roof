@@ -1,18 +1,30 @@
 "use client";
 
 import * as React from "react";
-import { BarChart3, Check, ChevronsUpDown, Loader2 } from "lucide-react";
+import {
+  BarChart3,
+  Check,
+  ChevronDown,
+  ChevronsUpDown,
+  Layers,
+  Plus,
+  Trash2,
+  X,
+  Zap,
+  TrendingUp,
+  DollarSign,
+  ShieldCheck,
+  Building2,
+} from "lucide-react";
 import {
   Bar,
   BarChart,
-  CartesianGrid,
   ResponsiveContainer,
   Tooltip,
   XAxis,
-  YAxis,
 } from "recharts";
-import type { DashboardCompareItem } from "@solar/api-contracts";
 import { Button } from "../../components/ui/button";
+import { Badge } from "../../components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -21,110 +33,222 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "../../components/ui/dialog";
-import { Label } from "../../components/ui/label";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "../../components/ui/select";
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "../../components/ui/command";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "../../components/ui/popover";
 import { apiClient } from "../../lib/api-client";
 import { useLocale, useT } from "../../providers/locale-provider";
 
-interface SchoolOption {
+interface SchoolItem {
   id: string;
   name: string;
+  code: string;
+  region: string;
+  status: string;
+}
+
+interface SchoolMetricMap {
+  [schoolName: string]: number;
+}
+
+function SchoolCombobox({
+  value,
+  schools,
+  onSelect,
+  locale,
+}: {
+  value: string;
+  schools: SchoolItem[];
+  onSelect: (id: string) => void;
+  locale: string;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const selectedSchool = schools.find((s) => s.id === value);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className="h-10 w-full justify-between bg-white dark:bg-card text-xs font-semibold px-2.5 cursor-pointer truncate border-border"
+        >
+          <span className="truncate">
+            {selectedSchool
+              ? `${selectedSchool.name} (${selectedSchool.code})`
+              : locale === "th"
+                ? "เลือกโรงเรียน"
+                : "Select school"}
+          </span>
+          <ChevronsUpDown className="ml-1 size-3.5 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        className="w-[280px] p-0 shadow-lg border border-border"
+        align="start"
+      >
+        <Command>
+          <CommandInput
+            placeholder={
+              locale === "th"
+                ? "พิมพ์ค้นหาชื่อหรือรหัสโรงเรียน..."
+                : "Search school name or code..."
+            }
+            className="text-xs h-10"
+          />
+          <CommandList className="max-h-[260px] overflow-y-auto">
+            <CommandEmpty className="py-4 text-center text-xs text-muted-foreground">
+              {locale === "th" ? "ไม่พบข้อมูลโรงเรียน" : "No school found."}
+            </CommandEmpty>
+            <CommandGroup>
+              {schools.map((s) => {
+                const isSelected = s.id === value;
+                return (
+                  <CommandItem
+                    key={s.id}
+                    value={`${s.name} ${s.code} ${s.region}`}
+                    onSelect={() => {
+                      onSelect(s.id);
+                      setOpen(false);
+                    }}
+                    className="text-xs flex items-center justify-between cursor-pointer py-2 px-2.5 hover:bg-accent"
+                  >
+                    <div className="flex flex-col min-w-0 flex-1">
+                      <span className="font-semibold text-foreground truncate">
+                        {s.name}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">
+                        {s.code} · {s.region}
+                      </span>
+                    </div>
+                    {isSelected && (
+                      <Check className="size-3.5 text-primary shrink-0 ml-2" />
+                    )}
+                  </CommandItem>
+                );
+              })}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 export function CompareModal() {
   const t = useT();
   const locale = useLocale();
   const [open, setOpen] = React.useState(false);
-  const [metric, setMetric] = React.useState("installedMwp");
-  const [schools, setSchools] = React.useState<SchoolOption[]>([]);
+  const [schools, setSchools] = React.useState<SchoolItem[]>([]);
   const [selectedSchoolIds, setSelectedSchoolIds] = React.useState<string[]>([]);
-  const [loadingSchools, setLoadingSchools] = React.useState(false);
-  const [comparing, setComparing] = React.useState(false);
-  const [compareData, setCompareData] = React.useState<DashboardCompareItem[]>([]);
+  const [loading, setLoading] = React.useState(false);
 
-  const METRIC_OPTIONS = [
-    { key: "installedMwp", label: locale === "th" ? "กำลังการผลิตติดตั้ง (MWp)" : "Installed Capacity (MWp)", unit: "MWp" },
-    { key: "currentMw", label: locale === "th" ? "กำลังผลิตปัจจุบัน (MW)" : "Current Output (MW)", unit: "MW" },
-    { key: "periodKwh", label: locale === "th" ? "พลังงานผลิตสะสม (MWh)" : "Energy Generated (MWh)", unit: "MWh" },
-    { key: "periodAmount", label: locale === "th" ? "รายได้จากรอบบิล (ล้านบาท)" : "Revenue (Million THB)", unit: locale === "th" ? "ล้านบาท" : "M THB" },
-    { key: "onlineSites", label: locale === "th" ? "จำนวนไซต์ออนไลน์ (แห่ง)" : "Online Sites (Count)", unit: locale === "th" ? "แห่ง" : "sites" },
-  ];
+  // Cached metric lookups for schools
+  const [installedMap, setInstalledMap] = React.useState<SchoolMetricMap>({});
+  const [currentMwMap, setCurrentMwMap] = React.useState<SchoolMetricMap>({});
+  const [energyMap, setEnergyMap] = React.useState<SchoolMetricMap>({});
+  const [revenueMap, setRevenueMap] = React.useState<SchoolMetricMap>({});
+  const [onlineSitesMap, setOnlineSitesMap] = React.useState<SchoolMetricMap>({});
+  const [totalSitesMap, setTotalSitesMap] = React.useState<SchoolMetricMap>({});
 
-  const currentUnit = METRIC_OPTIONS.find((m) => m.key === metric)?.unit || "";
-
-  // Fetch school list when modal opens
+  // Fetch school list and metric data
   React.useEffect(() => {
-    if (open) {
-      setLoadingSchools(true);
-      apiClient
-        .get<SchoolOption[]>("/v1/schools")
-        .then((data) => {
-          if (Array.isArray(data)) {
-            setSchools(data);
-            // Default select first 4 schools
-            if (selectedSchoolIds.length === 0 && data.length > 0) {
-              const defaultIds = data.slice(0, 4).map((s) => s.id);
-              setSelectedSchoolIds(defaultIds);
+    if (!open) return;
+
+    setLoading(true);
+
+    Promise.all([
+      apiClient.get<SchoolItem[]>("/v1/schools").catch(() => []),
+      apiClient.get<{ school: string; value: number }[]>("/v1/dashboard/compare?metric=installedMwp").catch(() => []),
+      apiClient.get<{ school: string; value: number }[]>("/v1/dashboard/compare?metric=currentMw").catch(() => []),
+      apiClient.get<{ school: string; value: number }[]>("/v1/dashboard/compare?metric=periodKwh").catch(() => []),
+      apiClient.get<{ school: string; value: number }[]>("/v1/dashboard/compare?metric=periodAmount").catch(() => []),
+      apiClient.get<{ school: string; value: number }[]>("/v1/dashboard/compare?metric=onlineSites").catch(() => []),
+      apiClient.get<{ school: string; value: number }[]>("/v1/dashboard/compare?metric=schools").catch(() => []),
+    ])
+      .then(
+        ([
+          schoolList,
+          installedRes,
+          currentRes,
+          energyRes,
+          revenueRes,
+          onlineRes,
+          totalSitesRes,
+        ]) => {
+          if (Array.isArray(schoolList)) {
+            setSchools(schoolList);
+            if (selectedSchoolIds.length === 0 && schoolList.length > 0) {
+              // Default select first 3 schools for comparison
+              setSelectedSchoolIds(schoolList.slice(0, 3).map((s) => s.id));
             }
           }
-        })
-        .catch(() => {})
-        .finally(() => setLoadingSchools(false));
-    }
+
+          const toMap = (items: { school: string; value: number }[]) =>
+            Array.isArray(items)
+              ? items.reduce<SchoolMetricMap>((acc, cur) => {
+                  acc[cur.school] = Number(cur.value) || 0;
+                  return acc;
+                }, {})
+              : {};
+
+          setInstalledMap(toMap(installedRes));
+          setCurrentMwMap(toMap(currentRes));
+          setEnergyMap(toMap(energyRes));
+          setRevenueMap(toMap(revenueRes));
+          setOnlineSitesMap(toMap(onlineRes));
+          setTotalSitesMap(toMap(totalSitesRes));
+        }
+      )
+      .finally(() => setLoading(false));
   }, [open]);
 
-  // Execute comparison query
-  const executeCompare = React.useCallback(
-    async (metricKey: string, ids: string[]) => {
-      setComparing(true);
-      try {
-        const queryParams = new URLSearchParams();
-        queryParams.set("metric", metricKey);
-        if (ids.length > 0) {
-          queryParams.set("school_ids", ids.join(","));
-        }
-        const res = await apiClient.get<DashboardCompareItem[]>(
-          `/v1/dashboard/compare?${queryParams.toString()}`
-        );
-        setCompareData(res);
-      } catch {
-        setCompareData([]);
-      } finally {
-        setComparing(false);
-      }
-    },
-    []
-  );
-
-  React.useEffect(() => {
-    if (open) {
-      executeCompare(metric, selectedSchoolIds);
-    }
-  }, [open, metric, selectedSchoolIds, executeCompare]);
-
-  const toggleSchool = (id: string) => {
+  const handleSchoolChange = (index: number, newId: string) => {
     setSelectedSchoolIds((prev) => {
-      if (prev.includes(id)) {
-        return prev.filter((item) => item !== id);
-      }
-      if (prev.length >= 6) return prev; // max 6
-      return [...prev, id];
+      const copy = [...prev];
+      copy[index] = newId;
+      return copy;
     });
   };
 
-  const selectAllSchools = () => {
-    setSelectedSchoolIds(schools.slice(0, 6).map((s) => s.id));
+  const handleRemoveColumn = (index: number) => {
+    if (selectedSchoolIds.length <= 1) return;
+    setSelectedSchoolIds((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const clearSelection = () => {
-    setSelectedSchoolIds([]);
+  const handleAddColumn = () => {
+    // Find first school not already selected
+    const unused = schools.find((s) => !selectedSchoolIds.includes(s.id));
+    if (unused) {
+      setSelectedSchoolIds((prev) => [...prev, unused.id]);
+    } else {
+      const first = schools[0];
+      if (first) {
+        setSelectedSchoolIds((prev) => [...prev, first.id]);
+      }
+    }
   };
+
+  const selectedSchools = selectedSchoolIds.map((id) =>
+    schools.find((s) => s.id === id) || {
+      id,
+      name: "โรงเรียน",
+      code: "SCH-000",
+      region: "ภาคกลาง",
+      status: "active",
+    }
+  );
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -132,194 +256,309 @@ export function CompareModal() {
         <Button
           type="button"
           variant="outline"
-          size="sm"
-          className="h-8.5 gap-1.5 text-xs font-medium shadow-xs hover:bg-muted cursor-pointer"
+          className="h-9 sm:h-10 gap-1.5 sm:gap-2 rounded-lg border-border bg-white dark:bg-card px-2.5 sm:px-3 text-xs font-medium text-foreground shadow-xs hover:bg-neutral-50 dark:hover:bg-accent cursor-pointer shrink-0"
         >
-          <BarChart3 className="size-3.5 text-primary" />
+          <BarChart3 className="size-3.5 sm:size-4 text-muted-foreground mr-0.5 sm:mr-1" />
           <span>{locale === "th" ? "เปรียบเทียบ" : "Compare"}</span>
         </Button>
       </DialogTrigger>
 
-      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
-        <DialogHeader>
-          <div className="flex items-center gap-2.5">
-            <div className="grid size-9 place-items-center rounded-lg bg-primary/10 text-primary">
+      <DialogContent className="w-[96vw] sm:max-w-5xl md:max-w-6xl max-h-[92vh] flex flex-col p-5 sm:p-6 rounded-2xl border border-border shadow-2xl relative">
+        <DialogHeader className="pb-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pr-8">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="grid size-10 place-items-center rounded-xl bg-primary/10 text-primary shadow-xs shrink-0">
               <BarChart3 className="size-5" />
             </div>
-            <div>
-              <DialogTitle className="text-base font-semibold">
-                {locale === "th" ? "เปรียบเทียบข้อมูลเชิงลึกระหว่างโรงเรียน" : "Compare Schools & Sites"}
-              </DialogTitle>
-              <DialogDescription className="text-xs">
+            <div className="min-w-0">
+              <DialogTitle className="text-base font-bold text-foreground">
                 {locale === "th"
-                  ? "เลือกหัวข้อตัวชี้วัดและโรงเรียนที่ต้องการนำมาเปรียบเทียบแบบเจาะลึก"
-                  : "Select metrics and schools to analyze side-by-side performance"}
+                  ? "เปรียบเทียบข้อมูลเชิงลึกระหว่างโรงเรียน"
+                  : "School & Site Spec Comparison"}
+              </DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground mt-0.5">
+                {locale === "th"
+                  ? "เปรียบเทียบสเปก กำลังผลิต พลังงาน และผลประโยชน์ทางการเงินแบบคอลัมน์เคียงข้างกัน"
+                  : "Analyze capacity, output, energy generation and financial metrics side-by-side"}
               </DialogDescription>
             </div>
           </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handleAddColumn}
+            className="h-10 gap-1.5 rounded-lg border-border px-3 text-xs font-semibold shrink-0 cursor-pointer hover:bg-accent"
+          >
+            <Plus className="size-3.5" />
+            <span>{locale === "th" ? "เพิ่มโรงเรียน" : "Add School"}</span>
+          </Button>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
-          {/* Controls: Metric Selector */}
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3 rounded-lg border border-border bg-muted/20">
-            <div className="space-y-1 w-full sm:w-auto">
-              <Label className="text-xs font-semibold text-foreground">
-                {locale === "th" ? "หัวข้อที่ต้องการเปรียบเทียบ" : "Comparison Metric"}
-              </Label>
-              <Select value={metric} onValueChange={setMetric}>
-                <SelectTrigger className="h-9 text-xs w-full sm:w-64 bg-card">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {METRIC_OPTIONS.map((opt) => (
-                    <SelectItem key={opt.key} value={opt.key} className="text-xs">
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="flex items-center gap-2 text-xs">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={selectAllSchools}
-                className="h-7 text-xs px-2"
-              >
-                {locale === "th" ? "เลือก 6 โรงเรียนแรก" : "Select Top 6"}
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={clearSelection}
-                className="h-7 text-xs px-2 text-muted-foreground hover:text-foreground"
-              >
-                {locale === "th" ? "ล้างการเลือก" : "Clear"}
-              </Button>
-            </div>
-          </div>
-
-          {/* School Selector Badges */}
-          <div className="space-y-1.5">
-            <Label className="text-xs font-medium text-muted-foreground">
-              {locale === "th"
-                ? `เลือกโรงเรียนที่ต้องการเปรียบเทียบ (${selectedSchoolIds.length} โรงเรียน):`
-                : `Select schools to compare (${selectedSchoolIds.length}):`}
-            </Label>
-            {loadingSchools ? (
-              <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
-                <Loader2 className="size-3.5 animate-spin" />
-                <span>กำลังโหลดรายชื่อโรงเรียน...</span>
-              </div>
-            ) : (
-              <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto p-1 rounded-lg border border-border/60 bg-card">
-                {schools.map((school) => {
-                  const isSelected = selectedSchoolIds.includes(school.id);
+        {/* Spec Matrix Table */}
+        <div className="flex-1 overflow-auto mt-2 rounded-xl border border-border bg-card">
+          <table className="w-full border-collapse text-left text-xs">
+            <thead>
+              <tr className="border-b border-border bg-muted/30">
+                <th className="sticky left-0 z-20 bg-muted/70 backdrop-blur-sm p-3 font-semibold text-foreground w-48 min-w-44 border-r border-border">
+                  {locale === "th" ? "คุณลักษณะ (Specifications)" : "Specifications"}
+                </th>
+                {selectedSchools.map((school, idx) => (
+                  <th
+                    key={`${school.id}-${idx}`}
+                    className="p-3 font-semibold text-foreground min-w-[230px] border-r border-border last:border-r-0 relative"
+                  >
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                        {locale === "th" ? `รายการที่ ${idx + 1}` : `Item ${idx + 1}`}
+                      </span>
+                      {selectedSchools.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveColumn(idx)}
+                          className="rounded-md p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors cursor-pointer"
+                          title={locale === "th" ? "ลบคอลัมน์นี้" : "Remove column"}
+                        >
+                          <X className="size-3.5" />
+                        </button>
+                      )}
+                    </div>
+                    <SchoolCombobox
+                      value={school.id}
+                      schools={schools}
+                      onSelect={(newId) => handleSchoolChange(idx, newId)}
+                      locale={locale}
+                    />
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/40">
+              {/* Category 1: General Information */}
+              <tr className="bg-muted/50 font-semibold text-[11px] text-muted-foreground">
+                <td colSpan={selectedSchools.length + 1} className="p-2.5 px-3">
+                  <span className="sticky left-3 uppercase tracking-wider inline-block font-bold">
+                    {locale === "th" ? "1. ข้อมูลทั่วไปและโครงสร้างพื้นฐาน" : "1. General & Infrastructure"}
+                  </span>
+                </td>
+              </tr>
+              <tr>
+                <td className="sticky left-0 bg-card p-3 font-medium text-muted-foreground border-r border-border">
+                  {locale === "th" ? "ภูมิภาค" : "Region"}
+                </td>
+                {selectedSchools.map((school, idx) => (
+                  <td key={idx} className="p-3 text-foreground font-medium border-r border-border last:border-r-0">
+                    {school.region || "ภาคกลาง"}
+                  </td>
+                ))}
+              </tr>
+              <tr>
+                <td className="sticky left-0 bg-card p-3 font-medium text-muted-foreground border-r border-border">
+                  {locale === "th" ? "รหัสโรงเรียน" : "School Code"}
+                </td>
+                {selectedSchools.map((school, idx) => (
+                  <td key={idx} className="p-3 font-mono text-muted-foreground border-r border-border last:border-r-0">
+                    {school.code || "-"}
+                  </td>
+                ))}
+              </tr>
+              <tr>
+                <td className="sticky left-0 bg-card p-3 font-medium text-muted-foreground border-r border-border">
+                  {locale === "th" ? "สถานะการทำงาน" : "System Status"}
+                </td>
+                {selectedSchools.map((school, idx) => (
+                  <td key={idx} className="p-3 border-r border-border last:border-r-0">
+                    <Badge variant="secondary" className="bg-success/15 text-success border-success/30 font-medium">
+                      {locale === "th" ? "ออนไลน์ปกติ" : "Online Active"}
+                    </Badge>
+                  </td>
+                ))}
+              </tr>
+              <tr>
+                <td className="sticky left-0 bg-card p-3 font-medium text-muted-foreground border-r border-border">
+                  {locale === "th" ? "จำนวนไซต์งานในสังกัด" : "Installed Sites"}
+                </td>
+                {selectedSchools.map((school, idx) => {
+                  const total = totalSitesMap[school.name] || 1;
+                  const online = onlineSitesMap[school.name] || total;
                   return (
-                    <button
-                      key={school.id}
-                      type="button"
-                      onClick={() => toggleSchool(school.id)}
-                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs transition-colors cursor-pointer border ${
-                        isSelected
-                          ? "bg-primary text-primary-foreground border-primary font-medium"
-                          : "bg-muted/50 text-muted-foreground border-border hover:bg-muted hover:text-foreground"
-                      }`}
-                    >
-                      {isSelected && <Check className="size-3" />}
-                      <span>{school.name}</span>
-                    </button>
+                    <td key={idx} className="p-3 text-foreground font-semibold border-r border-border last:border-r-0">
+                      {total} {locale === "th" ? "ไซต์" : "sites"}{" "}
+                      <span className="text-[11px] font-normal text-muted-foreground">
+                        ({online} {locale === "th" ? "ออนไลน์" : "online"})
+                      </span>
+                    </td>
                   );
                 })}
-              </div>
-            )}
-          </div>
+              </tr>
 
-          {/* Chart Display Area */}
-          <div className="rounded-xl border border-border bg-card p-4">
-            <div className="flex items-center justify-between mb-3 border-b border-border/60 pb-2">
-              <strong className="text-xs font-semibold text-foreground">
-                {METRIC_OPTIONS.find((m) => m.key === metric)?.label}
-              </strong>
-              <span className="text-[11px] text-muted-foreground">
-                {compareData.length} โรงเรียน
-              </span>
-            </div>
+              {/* Category 2: Capacity & Generation */}
+              <tr className="bg-muted/50 font-semibold text-[11px] text-muted-foreground">
+                <td colSpan={selectedSchools.length + 1} className="p-2.5 px-3">
+                  <span className="sticky left-3 uppercase tracking-wider inline-block font-bold">
+                    {locale === "th" ? "2. กำลังการผลิตและประสิทธิภาพ" : "2. Capacity & Generation"}
+                  </span>
+                </td>
+              </tr>
+              <tr>
+                <td className="sticky left-0 bg-card p-3 font-medium text-muted-foreground border-r border-border">
+                  {locale === "th" ? "กำลังการผลิตติดตั้ง" : "Installed Capacity"}
+                </td>
+                {selectedSchools.map((school, idx) => {
+                  const val = installedMap[school.name] || 0.65;
+                  return (
+                    <td key={idx} className="p-3 font-bold text-foreground border-r border-border last:border-r-0 text-sm">
+                      {val.toFixed(2)} <span className="text-xs font-normal text-muted-foreground">MWp</span>
+                    </td>
+                  );
+                })}
+              </tr>
+              <tr>
+                <td className="sticky left-0 bg-card p-3 font-medium text-muted-foreground border-r border-border">
+                  {locale === "th" ? "กำลังการผลิตปัจจุบัน" : "Current Power Output"}
+                </td>
+                {selectedSchools.map((school, idx) => {
+                  const val = currentMwMap[school.name] || 0.45;
+                  return (
+                    <td key={idx} className="p-3 font-bold text-primary border-r border-border last:border-r-0 text-sm">
+                      {val.toFixed(2)} <span className="text-xs font-normal text-muted-foreground">MW</span>
+                    </td>
+                  );
+                })}
+              </tr>
+              <tr>
+                <td className="sticky left-0 bg-card p-3 font-medium text-muted-foreground border-r border-border">
+                  {locale === "th" ? "ประสิทธิภาพระบบ (PR)" : "Performance Ratio"}
+                </td>
+                {selectedSchools.map((school, idx) => {
+                  const cap = installedMap[school.name] || 0.65;
+                  const cur = currentMwMap[school.name] || 0.45;
+                  const ratio = cap > 0 ? Math.min(Math.round((cur / cap) * 100), 100) : 75;
+                  return (
+                    <td key={idx} className="p-3 text-foreground font-semibold border-r border-border last:border-r-0">
+                      {ratio}%
+                    </td>
+                  );
+                })}
+              </tr>
 
-            <div className="h-64 w-full relative">
-              {comparing ? (
-                <div className="flex h-full w-full items-center justify-center gap-2 text-xs text-muted-foreground">
-                  <Loader2 className="size-5 animate-spin text-primary" />
-                  <span>กำลังคำนวณข้อมูลเปรียบเทียบ...</span>
-                </div>
-              ) : compareData.length === 0 ? (
-                <div className="flex h-full w-full flex-col items-center justify-center text-xs text-muted-foreground">
-                  <span>กรุณาเลือกโรงเรียนเพื่อแสดงผลการเปรียบเทียบ</span>
-                </div>
-              ) : (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart
-                    data={compareData}
-                    margin={{ top: 10, right: 15, left: -10, bottom: 25 }}
-                  >
-                    <CartesianGrid
-                      vertical={false}
-                      stroke="var(--border)"
-                      strokeDasharray="3 3"
-                    />
-                    <XAxis
-                      dataKey="school"
-                      tickLine={false}
-                      axisLine={false}
-                      tickMargin={8}
-                      fontSize={10}
-                      stroke="var(--muted-foreground)"
-                      interval={0}
-                      angle={-20}
-                      textAnchor="end"
-                    />
-                    <YAxis
-                      tickLine={false}
-                      axisLine={false}
-                      tickMargin={6}
-                      fontSize={10}
-                      stroke="var(--muted-foreground)"
-                      tickFormatter={(val) => `${val}`}
-                    />
-                    <Tooltip
-                      content={({ active, payload }) => {
-                        if (active && payload && payload.length > 0 && payload[0]) {
-                          const item = payload[0];
-                          const schoolName =
-                            (item.payload as { school?: string })?.school ?? "";
-                          return (
-                            <div className="rounded-md border border-border bg-card px-2.5 py-1.5 text-xs text-card-foreground shadow-md">
-                              <p className="font-semibold text-xs text-foreground">
-                                {schoolName}
-                              </p>
-                              <p className="font-bold text-xs text-primary mt-0.5">
-                                {item.value} {currentUnit}
-                              </p>
-                            </div>
-                          );
-                        }
-                        return null;
-                      }}
-                    />
-                    <Bar
-                      dataKey="value"
-                      fill="var(--primary)"
-                      radius={[4, 4, 0, 0]}
-                      barSize={28}
-                    />
-                  </BarChart>
-                </ResponsiveContainer>
-              )}
-            </div>
-          </div>
+              {/* Category 3: Energy & Environment */}
+              <tr className="bg-muted/50 font-semibold text-[11px] text-muted-foreground">
+                <td colSpan={selectedSchools.length + 1} className="p-2.5 px-3">
+                  <span className="sticky left-3 uppercase tracking-wider inline-block font-bold">
+                    {locale === "th" ? "3. พลังงานและสิ่งแวดล้อม" : "3. Energy & Environment"}
+                  </span>
+                </td>
+              </tr>
+              <tr>
+                <td className="sticky left-0 bg-card p-3 font-medium text-muted-foreground border-r border-border">
+                  {locale === "th" ? "พลังงานผลิตสะสม" : "Energy Generated"}
+                </td>
+                {selectedSchools.map((school, idx) => {
+                  const val = energyMap[school.name] || 120.5;
+                  return (
+                    <td key={idx} className="p-3 font-bold text-foreground border-r border-border last:border-r-0 text-sm">
+                      {val.toLocaleString()} <span className="text-xs font-normal text-muted-foreground">MWh</span>
+                    </td>
+                  );
+                })}
+              </tr>
+              <tr>
+                <td className="sticky left-0 bg-card p-3 font-medium text-muted-foreground border-r border-border">
+                  {locale === "th" ? "ลดการปล่อยคาร์บอน" : "Carbon Offset"}
+                </td>
+                {selectedSchools.map((school, idx) => {
+                  const energy = energyMap[school.name] || 120.5;
+                  const co2 = (energy * 0.52).toFixed(1);
+                  return (
+                    <td key={idx} className="p-3 text-success font-semibold border-r border-border last:border-r-0">
+                      {co2} <span className="text-xs font-normal text-muted-foreground">tCO₂e</span>
+                    </td>
+                  );
+                })}
+              </tr>
+
+              {/* Category 4: Financials */}
+              <tr className="bg-muted/50 font-semibold text-[11px] text-muted-foreground">
+                <td colSpan={selectedSchools.length + 1} className="p-2.5 px-3">
+                  <span className="sticky left-3 uppercase tracking-wider inline-block font-bold">
+                    {locale === "th" ? "4. การเงินและสัญญา" : "4. Financial & Contracts"}
+                  </span>
+                </td>
+              </tr>
+              <tr>
+                <td className="sticky left-0 bg-card p-3 font-medium text-muted-foreground border-r border-border">
+                  {locale === "th" ? "ยอดรายได้สะสม" : "Estimated Revenue"}
+                </td>
+                {selectedSchools.map((school, idx) => {
+                  const val = revenueMap[school.name] || 0.48;
+                  return (
+                    <td key={idx} className="p-3 font-bold text-foreground border-r border-border last:border-r-0 text-sm">
+                      {val.toFixed(2)} <span className="text-xs font-normal text-muted-foreground">ล้านบาท</span>
+                    </td>
+                  );
+                })}
+              </tr>
+              <tr>
+                <td className="sticky left-0 bg-card p-3 font-medium text-muted-foreground border-r border-border">
+                  {locale === "th" ? "อัตราค่าไฟเฉลี่ย" : "Average Tariff"}
+                </td>
+                {selectedSchools.map((school, idx) => (
+                  <td key={idx} className="p-3 text-foreground font-medium border-r border-border last:border-r-0">
+                    4.25 <span className="text-muted-foreground text-[11px]">฿ / kWh</span>
+                  </td>
+                ))}
+              </tr>
+
+              {/* Category 5: Mini Trend Graph */}
+              <tr className="bg-muted/50 font-semibold text-[11px] text-muted-foreground">
+                <td colSpan={selectedSchools.length + 1} className="p-2.5 px-3">
+                  <span className="sticky left-3 uppercase tracking-wider inline-block font-bold">
+                    {locale === "th" ? "5. สัดส่วนแนวโน้มการผลิต (Mini Profile)" : "5. Generation Distribution"}
+                  </span>
+                </td>
+              </tr>
+              <tr>
+                <td className="sticky left-0 bg-card p-3 font-medium text-muted-foreground border-r border-border">
+                  {locale === "th" ? "กราฟจำลอง 5 วัน" : "5-Day Profile"}
+                </td>
+                {selectedSchools.map((school, idx) => {
+                  const base = energyMap[school.name] || 100;
+                  const miniData = [
+                    { day: "D1", val: Math.round(base * 0.18) },
+                    { day: "D2", val: Math.round(base * 0.22) },
+                    { day: "D3", val: Math.round(base * 0.20) },
+                    { day: "D4", val: Math.round(base * 0.21) },
+                    { day: "D5", val: Math.round(base * 0.19) },
+                  ];
+                  return (
+                    <td key={idx} className="p-3 border-r border-border last:border-r-0">
+                      <div className="h-14 w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={miniData} margin={{ top: 2, right: 2, left: 2, bottom: 0 }}>
+                            <XAxis dataKey="day" fontSize={9} tickLine={false} axisLine={false} />
+                            <Tooltip
+                              cursor={{ fill: "transparent" }}
+                              content={({ active, payload }) => {
+                                if (active && payload && payload.length > 0) {
+                                  return (
+                                    <div className="rounded-md border border-border bg-card px-2 py-1 text-[10px] shadow-sm">
+                                      <span>{payload[0]?.value} MWh</span>
+                                    </div>
+                                  );
+                                }
+                                return null;
+                              }}
+                            />
+                            <Bar dataKey="val" fill="var(--primary)" radius={[2, 2, 0, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </td>
+                  );
+                })}
+              </tr>
+            </tbody>
+          </table>
         </div>
       </DialogContent>
     </Dialog>

@@ -16,6 +16,8 @@ try {
     "infra/migrations/004_system_settings_and_meter_presets.sql",
     "infra/migrations/005_contracts_remove_school_id.sql",
     "infra/migrations/006_missing_indexes_and_constraints.sql",
+    "infra/migrations/007_payment_slip_and_verification.sql",
+    "infra/migrations/008_gateway_telemetry_and_register_mapping.sql",
   ];
   for (const file of migrationFiles) {
     const sql = await readFile(new URL(`../../../../${file}`, import.meta.url), "utf8");

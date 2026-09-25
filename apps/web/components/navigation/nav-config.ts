@@ -1,10 +1,12 @@
 import type { LucideIcon } from "lucide-react";
 import {
+  AlertTriangle,
   GraduationCap,
   LayoutDashboard,
   MapPin,
   ScrollText,
   Settings2,
+  Zap,
 } from "lucide-react";
 
 export interface NavSubItem {
@@ -28,6 +30,12 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/",
   },
   {
+    key: "system",
+    labelKey: "navigation.system",
+    icon: Zap,
+    href: "/system",
+  },
+  {
     key: "schools",
     labelKey: "navigation.schools",
     icon: GraduationCap,
@@ -38,6 +46,12 @@ export const NAV_ITEMS: NavItem[] = [
     labelKey: "navigation.sites",
     icon: MapPin,
     href: "/sites",
+  },
+  {
+    key: "alerts",
+    labelKey: "navigation.alerts",
+    icon: AlertTriangle,
+    href: "/alerts",
   },
   {
     key: "contractsAndDocs",
@@ -56,10 +70,10 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Settings2,
     href: "/settings",
     subItems: [
-      { href: "/settings/users", labelKey: "navigation.users" },
-      { href: "/settings/audit", labelKey: "navigation.audit" },
+      { href: "/settings/system", labelKey: "navigation.systemDefaults" },
       { href: "/settings/meter-presets", labelKey: "navigation.meterPresets" },
-      { href: "/settings", labelKey: "navigation.systemDefaults" },
+      { href: "/settings/audit", labelKey: "navigation.audit" },
+      { href: "/settings/users", labelKey: "navigation.users" },
     ],
   },
 ];

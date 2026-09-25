@@ -50,6 +50,34 @@ import {
   SelectValue,
 } from "./select";
 import { Empty, EmptyDescription, EmptyMedia, EmptyTitle } from "./empty";
+import { useLocale } from "../../providers/locale-provider";
+import { cn } from "../../lib/utils";
+
+const DEFAULT_COLUMN_TITLES: Record<string, { th: string; en: string }> = {
+  name: { th: "ชื่อโรงเรียน", en: "School Name" },
+  schoolName: { th: "โรงเรียน", en: "School" },
+  siteName: { th: "ชื่อไซต์", en: "Site Name" },
+  region: { th: "ภูมิภาค", en: "Region" },
+  capacityMwp: { th: "กำลังติดตั้ง (MWp)", en: "Capacity (MWp)" },
+  sitesCount: { th: "จำนวนไซต์", en: "Sites Count" },
+  gatewaysCount: { th: "Gateway", en: "Gateways Count" },
+  gateway: { th: "Gateway", en: "Gateway" },
+  status: { th: "สถานะ", en: "Status" },
+  protocol: { th: "โพรโทคอล", en: "Protocol" },
+  productionKwh: { th: "ผลิตสะสม (kWh)", en: "Production (kWh)" },
+  period: { th: "รอบบิล", en: "Billing Period" },
+  consumedKwh: { th: "พลังงานที่ใช้ (kWh)", en: "Consumed (kWh)" },
+  rate: { th: "อัตราค่าไฟ", en: "Rate" },
+  amount: { th: "ยอดรวม", en: "Amount" },
+  severity: { th: "ระดับความรุนแรง", en: "Severity" },
+  title: { th: "หัวข้อ", en: "Title" },
+  detail: { th: "รายละเอียด", en: "Detail" },
+  occurredAt: { th: "เวลาที่เกิด", en: "Occurred At" },
+  action: { th: "การดำเนินการ", en: "Action" },
+  actor: { th: "ผู้ดำเนินการ", en: "Actor" },
+  entity: { th: "ข้อมูลเป้าหมาย", en: "Target" },
+  timestamp: { th: "วันเวลา", en: "Timestamp" },
+};
 
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
@@ -59,6 +87,7 @@ interface DataTableProps<TData, TValue> {
   filterComponent?: React.ReactNode;
   actionsComponent?: React.ReactNode;
   pageSize?: number;
+  onRowClick?: (row: TData) => void;
 }
 
 export function DataTable<TData, TValue>({
@@ -69,7 +98,9 @@ export function DataTable<TData, TValue>({
   filterComponent,
   actionsComponent,
   pageSize = 10,
+  onRowClick,
 }: DataTableProps<TData, TValue>) {
+  const locale = useLocale();
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({});
@@ -101,32 +132,18 @@ export function DataTable<TData, TValue>({
 
   return (
     <div className="space-y-3.5 w-full">
-      {/* Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-1 flex-wrap items-center gap-2.5 min-w-[240px]">
-          {searchKey ? (
-            <div className="relative flex-1 max-w-sm">
-              <Search className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder={searchPlaceholder}
-                value={(table.getColumn(searchKey)?.getFilterValue() as string) ?? ""}
-                onChange={(event) =>
-                  table.getColumn(searchKey)?.setFilterValue(event.target.value)
-                }
-                className="h-9 pl-9 text-xs"
-              />
-            </div>
-          ) : (
-            <div className="relative flex-1 max-w-sm">
-              <Search className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder={searchPlaceholder}
-                value={globalFilter}
-                onChange={(e) => setGlobalFilter(e.target.value)}
-                className="h-9 pl-9 text-xs"
-              />
-            </div>
-          )}
+      {/* Table Toolbar */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-1 items-center gap-2">
+          <div className="relative w-full max-w-xs">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+            <Input
+              placeholder={searchPlaceholder}
+              value={globalFilter ?? ""}
+              onChange={(event) => setGlobalFilter(event.target.value)}
+              className="h-9 pl-8 text-xs bg-white dark:bg-card border-border shadow-2xs"
+            />
+          </div>
           {filterComponent}
         </div>
 
@@ -134,28 +151,36 @@ export function DataTable<TData, TValue>({
           {actionsComponent}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" className="h-9 gap-1.5 text-xs font-medium">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-10 gap-1.5 text-xs font-medium bg-white dark:bg-card border-border shadow-xs hover:bg-neutral-50 dark:hover:bg-accent"
+              >
                 <SlidersHorizontal className="size-3.5" />
-                คอลัมน์
+                {locale === "en" ? "Columns" : "คอลัมน์"}
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-44">
-              <DropdownMenuLabel className="text-xs">แสดง/ซ่อนคอลัมน์</DropdownMenuLabel>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuLabel className="text-xs">
+                {locale === "en" ? "Toggle Columns" : "แสดง/ซ่อนคอลัมน์"}
+              </DropdownMenuLabel>
               <DropdownMenuSeparator />
               {table
                 .getAllColumns()
                 .filter((column) => column.getCanHide())
                 .map((column) => {
+                  const metaTitle = (column.columnDef.meta as { title?: string })?.title;
+                  const dictTitle = DEFAULT_COLUMN_TITLES[column.id]?.[locale === "th" ? "th" : "en"];
+                  const headerStr = typeof column.columnDef.header === "string" ? column.columnDef.header : undefined;
+                  const title = metaTitle || dictTitle || headerStr || column.id;
                   return (
                     <DropdownMenuCheckboxItem
                       key={column.id}
-                      className="text-xs capitalize"
+                      className="text-xs cursor-pointer"
                       checked={column.getIsVisible()}
                       onCheckedChange={(value) => column.toggleVisibility(!!value)}
                     >
-                      {typeof column.columnDef.header === "string"
-                        ? column.columnDef.header
-                        : column.id}
+                      {title}
                     </DropdownMenuCheckboxItem>
                   );
                 })}
@@ -170,11 +195,11 @@ export function DataTable<TData, TValue>({
           <Table>
             <TableHeader>
               {table.getHeaderGroups().map((headerGroup) => (
-                <TableRow key={headerGroup.id} className="bg-muted/40 hover:bg-muted/40">
+                <TableRow key={headerGroup.id} className="h-10 bg-muted/40 hover:bg-muted/40">
                   {headerGroup.headers.map((header) => (
                     <TableHead
                       key={header.id}
-                      className="text-xs font-semibold text-muted-foreground whitespace-nowrap"
+                      className="h-10 py-0 text-xs font-semibold text-muted-foreground whitespace-nowrap"
                     >
                       {header.isPlaceholder
                         ? null
@@ -190,7 +215,21 @@ export function DataTable<TData, TValue>({
                   <TableRow
                     key={row.id}
                     data-state={row.getIsSelected() && "selected"}
-                    className="hover:bg-muted/30 transition-colors"
+                    className={cn(
+                      "hover:bg-muted/30 transition-colors",
+                      onRowClick && "cursor-pointer"
+                    )}
+                    onClick={(e) => {
+                      const target = e.target as HTMLElement;
+                      if (
+                        target.closest(
+                          "button, a, input, select, [role=menuitem], [data-slot=dropdown-menu-trigger]"
+                        )
+                      ) {
+                        return;
+                      }
+                      onRowClick?.(row.original);
+                    }}
                   >
                     {row.getVisibleCells().map((cell) => (
                       <TableCell key={cell.id} className="text-xs py-3">

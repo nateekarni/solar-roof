@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import type { Locale } from "@solar/i18n";
 import { AppHeader } from "../../components/navigation/app-header";
 import { AppSidebar } from "../../components/navigation/app-sidebar";
+import { MobileBottomNav } from "../../components/navigation/mobile-bottom-nav";
 import { SidebarInset, SidebarProvider } from "../../components/ui/sidebar";
 import { LocaleProvider } from "../../providers/locale-provider";
 
@@ -16,7 +17,10 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
         <AppSidebar />
         <SidebarInset className="flex flex-col h-svh overflow-hidden">
           <AppHeader />
-          <div className="flex-1 overflow-y-auto overflow-x-hidden w-full">{children}</div>
+          <div className="flex-1 overflow-y-auto overflow-x-hidden w-full bg-neutral-100 dark:bg-background pb-20 md:pb-0">
+            {children}
+          </div>
+          <MobileBottomNav />
         </SidebarInset>
       </SidebarProvider>
     </LocaleProvider>

@@ -122,8 +122,8 @@ export function InviteUserDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[450px]">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-lg sm:rounded-2xl sm:p-6">
+        <DialogHeader className="pb-1">
           <div className="flex items-center gap-2.5">
             <div className="grid size-9 place-items-center rounded-lg bg-primary/10 text-primary">
               <UserPlus className="size-5" />
@@ -159,38 +159,47 @@ export function InviteUserDialog({
                       variant="ghost"
                       size="sm"
                       onClick={copyPassword}
-                      className="h-7 text-xs gap-1 text-primary hover:text-primary"
+                      className="h-8 gap-1 text-xs"
                     >
-                      {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-                      <span>{copied ? "คัดลอกแล้ว" : "คัดลอก"}</span>
+                      {copied ? (
+                        <>
+                          <Check className="size-3.5 text-emerald-600" />
+                          <span className="text-emerald-600">คัดลอกแล้ว</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="size-3.5" />
+                          <span>คัดลอก</span>
+                        </>
+                      )}
                     </Button>
                   </div>
                 </div>
               )}
             </div>
 
-            <DialogFooter className="pt-2">
+            <DialogFooter>
               <Button
                 type="button"
                 size="sm"
                 onClick={() => onOpenChange(false)}
-                className="text-xs h-9 w-full font-semibold"
+                className="text-xs h-10 px-5 font-semibold w-full sm:w-auto"
               >
-                เสร็จสิ้น (Done)
+                เสร็จสิ้น
               </Button>
             </DialogFooter>
           </div>
         ) : (
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-3.5 py-2">
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 pt-3.5">
             <div className="space-y-1.5">
-              <Label htmlFor="u-email" className="text-xs font-medium">
-                {locale === "th" ? "อีเมล (Email) *" : "Email Address *"}
+              <Label htmlFor="u-email" required className="text-xs font-medium">
+                {locale === "th" ? "อีเมล (Email)" : "Email Address"}
               </Label>
               <Input
                 id="u-email"
                 type="email"
                 placeholder="officer@school.local"
-                className="text-xs h-9"
+                className="text-xs h-10"
                 {...register("email")}
               />
               {errors.email && (
@@ -199,13 +208,13 @@ export function InviteUserDialog({
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="u-name" className="text-xs font-medium">
-                {locale === "th" ? "ชื่อ-นามสกุล *" : "Display Name *"}
+              <Label htmlFor="u-name" required className="text-xs font-medium">
+                {locale === "th" ? "ชื่อ-นามสกุล" : "Display Name"}
               </Label>
               <Input
                 id="u-name"
                 placeholder={locale === "th" ? "เช่น สมชาย สุขใจ" : "e.g. John Doe"}
-                className="text-xs h-9"
+                className="text-xs h-10"
                 {...register("displayName")}
               />
               {errors.displayName && (
@@ -214,8 +223,8 @@ export function InviteUserDialog({
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="u-role" className="text-xs font-medium">
-                {locale === "th" ? "บทบาท (Role) *" : "Role *"}
+              <Label htmlFor="u-role" required className="text-xs font-medium">
+                {locale === "th" ? "บทบาท (Role)" : "Role"}
               </Label>
               <Select
                 defaultValue="school_user"
@@ -224,7 +233,7 @@ export function InviteUserDialog({
                   setValue("role", val);
                 }}
               >
-                <SelectTrigger id="u-role" className="text-xs h-9">
+                <SelectTrigger id="u-role" className="text-xs h-10 w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -243,11 +252,11 @@ export function InviteUserDialog({
 
             {selectedRole === "school_user" && (
               <div className="space-y-1.5">
-                <Label htmlFor="u-school" className="text-xs font-medium">
-                  {locale === "th" ? "โรงเรียนสังกัด *" : "School Access *"}
+                <Label htmlFor="u-school" required className="text-xs font-medium">
+                  {locale === "th" ? "โรงเรียนสังกัด" : "School Access"}
                 </Label>
                 <Select onValueChange={(val) => setValue("schoolId", val)}>
-                  <SelectTrigger id="u-school" className="text-xs h-9">
+                  <SelectTrigger id="u-school" className="text-xs h-10 w-full">
                     <SelectValue placeholder="เลือกโรงเรียน" />
                   </SelectTrigger>
                   <SelectContent>
@@ -261,17 +270,17 @@ export function InviteUserDialog({
               </div>
             )}
 
-            <DialogFooter className="pt-3 gap-2">
+            <DialogFooter>
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
                 onClick={() => onOpenChange(false)}
-                className="text-xs h-9"
+                className="text-xs h-10 px-4"
               >
                 {t("common.cancel")}
               </Button>
-              <Button type="submit" size="sm" disabled={loading} className="text-xs h-9 font-semibold">
+              <Button type="submit" size="sm" disabled={loading} className="text-xs h-10 px-5 font-semibold">
                 {loading ? t("common.saving") : t("common.confirm")}
               </Button>
             </DialogFooter>

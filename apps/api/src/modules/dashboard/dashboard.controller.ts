@@ -92,4 +92,12 @@ export class DashboardController {
       : [];
     return this.dashboard.compare(metric, schoolIds, startDate, endDate);
   }
+
+  @Get("power-flow")
+  getPowerFlow(
+    @Query("school_id") schoolId?: string,
+    @Query("site_id") siteId?: string
+  ) {
+    return this.dashboard.getPowerFlow(schoolId, siteId);
+  }
 }

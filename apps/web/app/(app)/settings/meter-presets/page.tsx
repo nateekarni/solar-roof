@@ -1,8 +1,9 @@
 "use client";
-
 import * as React from "react";
+import Link from "next/link";
 import {
   Activity,
+  ChevronLeft,
   Cpu,
   Plus,
   Trash2,
@@ -380,6 +381,17 @@ export default function MeterPresetsPage() {
   return (
     <main className="content">
       <div className="ops-content space-y-6">
+        {/* Mobile Back Button (Mobile Only) */}
+        <div className="block md:hidden">
+          <Link
+            href="/settings"
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors mb-1"
+          >
+            <ChevronLeft className="size-4" />
+            <span>การตั้งค่า</span>
+          </Link>
+        </div>
+
         {/* Header */}
         <div className="page-heading flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div>
@@ -400,13 +412,15 @@ export default function MeterPresetsPage() {
                 เพิ่ม Preset ใหม่
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+            <DialogContent className="sm:max-w-4xl w-full max-h-[88vh] overflow-y-auto sm:rounded-2xl sm:p-6">
               <DialogHeader>
-                <DialogTitle className="text-base flex items-center gap-2">
-                  <Cpu className="size-5 text-primary" />
+                <DialogTitle className="text-base font-semibold flex items-center gap-2">
+                  <div className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                    <Cpu className="size-4" />
+                  </div>
                   เพิ่ม Preset รุ่นและยี่ห้อมิเตอร์
                 </DialogTitle>
-                <DialogDescription className="text-xs">
+                <DialogDescription className="text-xs text-muted-foreground">
                   กำหนด Address และ Register Mapping มาตรฐานสำหรับใช้อ้างอิงตอนเพิ่มอุปกรณ์
                 </DialogDescription>
               </DialogHeader>
@@ -499,20 +513,33 @@ export default function MeterPresetsPage() {
                             <td className="p-1.5">
                               <Select
                                 value={reg.semanticField}
-                                onValueChange={(val) =>
-                                  handleUpdateRegister(idx, "semanticField", val)
-                                }
+                                onValueChange={(val) => {
+                                  handleUpdateRegister(idx, "semanticField", val);
+                                  if (!reg.nameTh || reg.nameTh === "ตัวแปรใหม่") {
+                                    const defaultNames: Record<string, string> = {
+                                      voltage: "แรงดันไฟฟ้า",
+                                      current: "กระแสไฟฟ้า",
+                                      active_power: "กำลังไฟฟ้า",
+                                      total_energy: "พลังงานไฟฟ้ารวม",
+                                      wind_speed: "ความเร็วลม",
+                                      custom: "ค่ากำหนดเอง",
+                                    };
+                                    if (defaultNames[val]) {
+                                      handleUpdateRegister(idx, "nameTh", defaultNames[val]);
+                                    }
+                                  }
+                                }}
                               >
-                                <SelectTrigger className="h-7 text-[11px] w-28">
-                                  <SelectValue />
+                                <SelectTrigger className="h-8 text-xs w-44">
+                                  <SelectValue placeholder="เลือกตัวแปร" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  <SelectItem value="voltage">voltage</SelectItem>
-                                  <SelectItem value="current">current</SelectItem>
-                                  <SelectItem value="active_power">active_power</SelectItem>
-                                  <SelectItem value="total_energy">total_energy</SelectItem>
-                                  <SelectItem value="wind_speed">wind_speed</SelectItem>
-                                  <SelectItem value="custom">custom</SelectItem>
+                                  <SelectItem value="voltage" className="text-xs">แรงดันไฟฟ้า (voltage)</SelectItem>
+                                  <SelectItem value="current" className="text-xs">กระแสไฟฟ้า (current)</SelectItem>
+                                  <SelectItem value="active_power" className="text-xs">กำลังไฟฟ้า (active_power)</SelectItem>
+                                  <SelectItem value="total_energy" className="text-xs">พลังงานไฟฟ้ารวม (total_energy)</SelectItem>
+                                  <SelectItem value="wind_speed" className="text-xs">ความเร็วลม (wind_speed)</SelectItem>
+                                  <SelectItem value="custom" className="text-xs">กำหนดเอง (custom)</SelectItem>
                                 </SelectContent>
                               </Select>
                             </td>
@@ -522,7 +549,7 @@ export default function MeterPresetsPage() {
                                 onChange={(e) =>
                                   handleUpdateRegister(idx, "nameTh", e.target.value)
                                 }
-                                className="h-7 text-[11px] w-28"
+                                className="h-8 text-xs w-32"
                               />
                             </td>
                             <td className="p-1.5">
@@ -531,7 +558,7 @@ export default function MeterPresetsPage() {
                                 onChange={(e) =>
                                   handleUpdateRegister(idx, "registerAddress", e.target.value)
                                 }
-                                className="h-7 text-[11px] w-20 font-mono"
+                                className="h-8 text-xs w-24 font-mono"
                               />
                             </td>
                             <td className="p-1.5">
@@ -541,15 +568,15 @@ export default function MeterPresetsPage() {
                                   handleUpdateRegister(idx, "dataType", val)
                                 }
                               >
-                                <SelectTrigger className="h-7 text-[11px] w-20">
-                                  <SelectValue />
+                                <SelectTrigger className="h-8 text-xs w-28">
+                                  <SelectValue placeholder="Data Type" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  <SelectItem value="uint16">uint16</SelectItem>
-                                  <SelectItem value="int16">int16</SelectItem>
-                                  <SelectItem value="uint32">uint32</SelectItem>
-                                  <SelectItem value="int32">int32</SelectItem>
-                                  <SelectItem value="float32">float32</SelectItem>
+                                  <SelectItem value="uint16" className="text-xs">UINT16</SelectItem>
+                                  <SelectItem value="int16" className="text-xs">INT16</SelectItem>
+                                  <SelectItem value="uint32" className="text-xs">UINT32</SelectItem>
+                                  <SelectItem value="int32" className="text-xs">INT32</SelectItem>
+                                  <SelectItem value="float32" className="text-xs">FLOAT32</SelectItem>
                                 </SelectContent>
                               </Select>
                             </td>
@@ -611,7 +638,7 @@ export default function MeterPresetsPage() {
         {/* Filters */}
         <div className="flex flex-col sm:flex-row items-center gap-3">
           <div className="relative flex-1 w-full">
-            <Search className="absolute left-2.5 top-2.5 size-4 text-muted-foreground" />
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
             <Input
               placeholder="ค้นหาตามชื่อยี่ห้อ, รุ่น, หรือคำอธิบาย..."
               value={searchTerm}

@@ -81,7 +81,7 @@ export function AcknowledgeDialog({
             variant="outline"
             size="sm"
             onClick={() => onOpenChange(false)}
-            className="text-xs h-9"
+            className="text-xs h-10 px-4"
           >
             {t("common.cancel")}
           </Button>
@@ -90,7 +90,7 @@ export function AcknowledgeDialog({
             size="sm"
             onClick={handleConfirm}
             disabled={loading}
-            className="text-xs h-9 font-semibold gap-1.5"
+            className="text-xs h-10 px-5 font-semibold gap-1.5"
           >
             <CheckCircle className="size-3.5" />
             <span>{loading ? t("common.saving") : locale === "th" ? "ยืนยันรับทราบทั้งหมด" : "Confirm Acknowledge"}</span>

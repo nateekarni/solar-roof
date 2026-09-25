@@ -25,6 +25,8 @@ export interface ResponsivePopoverProps {
   sideOffset?: number;
   popoverClassName?: string;
   sheetClassName?: string;
+  sheetHeaderClassName?: string;
+  showCloseButton?: boolean;
 }
 
 export function ResponsivePopover({
@@ -37,6 +39,8 @@ export function ResponsivePopover({
   sideOffset = 8,
   popoverClassName,
   sheetClassName,
+  sheetHeaderClassName,
+  showCloseButton = true,
 }: ResponsivePopoverProps) {
   const isMobile = useIsMobile();
   const [mounted, setMounted] = React.useState(false);
@@ -56,9 +60,9 @@ export function ResponsivePopover({
     return (
       <Sheet {...controlProps}>
         <SheetTrigger asChild>{trigger}</SheetTrigger>
-        <SheetContent side="bottom" className={sheetClassName}>
+        <SheetContent side="bottom" className={sheetClassName} showCloseButton={showCloseButton}>
           {title && (
-            <SheetHeader>
+            <SheetHeader className={sheetHeaderClassName}>
               <SheetTitle>{title}</SheetTitle>
             </SheetHeader>
           )}

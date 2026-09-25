@@ -39,11 +39,15 @@ export class GenerateMonthlyInvoicesJob {
 
     for (const cycle of cyclesRes.rows) {
       try {
+        const yr = String(periodYear);
+        const mo = String(periodMonth).padStart(2, "0");
+        const prefix = `INV${yr}${mo}`;
         const countRes = await db.query(
-          `SELECT count(*)::int AS count FROM documents WHERE document_type = 'invoice'`
+          `SELECT count(*)::int AS count FROM documents WHERE document_number LIKE $1`,
+          [`${prefix}%`]
         );
         const seq = (countRes.rows[0]?.count ?? 0) + 1;
-        const documentNumber = `INV-${periodYear}-${String(seq).padStart(6, "0")}`;
+        const documentNumber = `${prefix}${String(seq).padStart(4, "0")}`;
         const docId = `inv-${cycle.id}`;
         const fileKey = `invoices/${periodYear}/${documentNumber}.pdf`;
 

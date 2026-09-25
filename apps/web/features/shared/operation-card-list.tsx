@@ -3,15 +3,43 @@
 import {
   ChevronLeft,
   ChevronRight,
+  Edit,
+  Eye,
+  ExternalLink,
+  FileCheck,
   FileQuestion,
+  FileText,
+  Image as ImageIcon,
+  QrCode,
+  Radio,
+  Receipt,
   Search,
+  ShieldCheck,
+  Trash2,
 } from "lucide-react";
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card } from "../../components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "../../components/ui/dialog";
 import { Input } from "../../components/ui/input";
 import { useLocale, useT } from "../../providers/locale-provider";
+import { formatAppDate, formatAppDateTime, isIsoDateLike } from "../../lib/date-format";
+import { renderStatusBadge, STATUS_MAP } from "../../lib/status-badge";
+import { useAuth } from "../../stores/auth-store";
+import { SiteEditDialog } from "../sites/site-edit-dialog";
+import { SiteDeleteDialog } from "../sites/site-delete-dialog";
+import { SiteTelemetryDialog } from "../sites/site-telemetry-dialog";
+import { PaymentDialog } from "../billing/payment-dialog";
+import { PaymentVerificationDialog } from "../billing/payment-verification-dialog";
+import { BillingDetailModal } from "../billing/billing-detail-modal";
+import { DocumentPreviewModal, type DocumentPreviewData } from "./document-preview-modal";
 
 export interface OperationCardListProps {
   resource: string;
@@ -20,6 +48,7 @@ export interface OperationCardListProps {
   rows: Record<string, any>[];
   idKey?: string;
   pageSize?: number;
+  onOpenDetail?: (row: Record<string, any>) => void;
 }
 
 export function OperationCardList({
@@ -29,12 +58,39 @@ export function OperationCardList({
   rows,
   idKey = "id",
   pageSize = 10,
+  onOpenDetail,
 }: OperationCardListProps) {
   const t = useT();
   const locale = useLocale();
 
+  const router = useRouter();
+  const { user } = useAuth();
+  const isSchoolUser = user?.role === "school_user";
+
   const [searchTerm, setSearchTerm] = React.useState("");
   const [page, setPage] = React.useState(1);
+
+  // Site Edit, Delete & Telemetry Dialog State
+  const [editSiteOpen, setEditSiteOpen] = React.useState(false);
+  const [selectedSiteId, setSelectedSiteId] = React.useState<string | null>(null);
+  const [deleteSiteOpen, setDeleteSiteOpen] = React.useState(false);
+  const [selectedDeleteSite, setSelectedDeleteSite] = React.useState<{ id: string; name: string } | null>(null);
+  const [telemetryDialogOpen, setTelemetryDialogOpen] = React.useState(false);
+  const [selectedTelemetrySite, setSelectedTelemetrySite] = React.useState<{ id: string; name: string } | null>(null);
+
+  // Billing & Payment Dialog States
+  const [payDialogOpen, setPayDialogOpen] = React.useState(false);
+  const [selectedPayCycle, setSelectedPayCycle] = React.useState<any | null>(null);
+  const [verifyDialogOpen, setVerifyDialogOpen] = React.useState(false);
+  const [selectedVerifyCycle, setSelectedVerifyCycle] = React.useState<any | null>(null);
+  const [billingModalOpen, setBillingModalOpen] = React.useState(false);
+  const [selectedBillingId, setSelectedBillingId] = React.useState<string | null>(null);
+  const [slipPreviewOpen, setSlipPreviewOpen] = React.useState(false);
+  const [slipPreviewUrl, setSlipPreviewUrl] = React.useState<string | null>(null);
+
+  // Document Preview Modal State
+  const [previewOpen, setPreviewOpen] = React.useState(false);
+  const [previewData, setPreviewData] = React.useState<DocumentPreviewData | null>(null);
 
   // Format numbers / currency
   const formatNumber = (val: any) => {
@@ -45,104 +101,13 @@ export function OperationCardList({
     }).format(num);
   };
 
-  const getStatusBadge = (cell: string) => {
-    const lower = String(cell).toLowerCase();
-    if (
-      cell === "ออนไลน์" ||
-      lower === "active" ||
-      lower === "online" ||
-      cell === "พร้อมดาวน์โหลด" ||
-      cell === "สำเร็จ" ||
-      lower === "paid" ||
-      cell === "ชำระแล้ว" ||
-      cell === "ส่งสำเร็จ"
-    ) {
-      const display =
-        lower === "paid" || cell === "ชำระแล้ว"
-          ? locale === "th" ? "ชำระแล้ว" : "Paid"
-          : lower === "online" || cell === "ออนไลน์"
-          ? locale === "th" ? "ออนไลน์" : "Online"
-          : lower === "active" || cell === "ใช้งานอยู่"
-          ? locale === "th" ? "ใช้งานอยู่" : "Active"
-          : cell;
-
-      return (
-        <Badge
-          variant="secondary"
-          className="bg-success/15 text-success border-success/30 font-medium text-[11px] px-2 py-0.5"
-        >
-          {display}
-        </Badge>
-      );
-    }
-    if (
-      cell === "แจ้งเตือน" ||
-      lower === "warning" ||
-      lower === "review" ||
-      cell === "ต้องตรวจสอบ" ||
-      cell === "ตรวจสอบ" ||
-      lower === "pending" ||
-      lower === "draft" ||
-      cell === "รอดำเนินการ"
-    ) {
-      const display =
-        lower === "pending"
-          ? locale === "th" ? "รอชำระ" : "Pending"
-          : lower === "draft"
-          ? locale === "th" ? "ร่าง" : "Draft"
-          : lower === "review" || cell === "ต้องตรวจสอบ"
-          ? locale === "th" ? "ต้องตรวจสอบ" : "Review"
-          : cell;
-
-      return (
-        <Badge
-          variant="secondary"
-          className="bg-warning/15 text-warning border-warning/30 font-medium text-[11px] px-2 py-0.5"
-        >
-          {display}
-        </Badge>
-      );
-    }
-    if (
-      cell === "ออฟไลน์" ||
-      lower === "offline" ||
-      lower === "danger" ||
-      lower === "critical" ||
-      cell === "วิกฤต" ||
-      cell === "ระงับการใช้งาน"
-    ) {
-      const display =
-        lower === "offline" || cell === "ออฟไลน์"
-          ? locale === "th" ? "ออฟไลน์" : "Offline"
-          : lower === "critical" || cell === "วิกฤต"
-          ? locale === "th" ? "วิกฤต" : "Critical"
-          : cell;
-
-      return (
-        <Badge variant="destructive" className="font-medium text-[11px] px-2 py-0.5">
-          {display}
-        </Badge>
-      );
-    }
-    return <Badge variant="secondary" className="text-[11px] px-2 py-0.5">{cell}</Badge>;
+  const isStatusValue = (val: any) => {
+    const str = String(val ?? "").trim().toLowerCase();
+    return Boolean(STATUS_MAP[str] || STATUS_MAP[String(val ?? "").trim()]);
   };
 
-  const isStatusValue = (val: any) => {
-    const str = String(val ?? "").toLowerCase();
-    return (
-      str === "ออนไลน์" ||
-      str === "ออฟไลน์" ||
-      str === "ต้องตรวจสอบ" ||
-      str === "critical" ||
-      str === "warning" ||
-      str === "active" ||
-      str === "paid" ||
-      str === "pending" ||
-      str === "draft" ||
-      str === "สำเร็จ" ||
-      str === "แจ้งเตือน" ||
-      str === "ใช้งานอยู่"
-    );
+  const getStatusBadge = (cell: string) => {
+    return renderStatusBadge(cell, locale);
   };
 
   // Filter rows based on search term
@@ -219,7 +184,16 @@ export function OperationCardList({
             return (
               <Card
                 key={row[idKey] ?? idx}
-                className="p-3.5 bg-card border-border/80 shadow-2xs rounded-xl space-y-2.5 hover:border-primary/40 transition-colors"
+                className={`p-3.5 bg-card border-border/80 shadow-2xs rounded-xl space-y-2.5 hover:border-primary/40 transition-colors ${
+                  onOpenDetail ? "cursor-pointer active:scale-[0.99] transition-transform" : ""
+                }`}
+                onClick={(e) => {
+                  const target = e.target as HTMLElement;
+                  if (target.closest("button, a, input")) return;
+                  if (onOpenDetail) {
+                    onOpenDetail(row);
+                  }
+                }}
               >
                 {/* Card Header: Title + Status */}
                 <div className="flex items-start justify-between gap-2">
@@ -259,33 +233,281 @@ export function OperationCardList({
                         key.toLowerCase().includes("power") ||
                         key.toLowerCase().includes("capacity");
 
+                      const isSlip =
+                        key.toLowerCase().includes("slip") ||
+                        key === "หลักฐานการชำระ";
+
                       return (
                         <div key={key} className="space-y-0.5 min-w-0">
                           <span className="text-[10px] text-muted-foreground font-medium block truncate">
                             {colHeader}
                           </span>
-                          <span className={`block truncate ${
-                            isAmount
-                              ? "font-semibold text-primary"
-                              : isEnergy
-                              ? "font-semibold text-foreground"
-                              : isStatusValue(val)
-                              ? ""
-                              : "text-foreground"
-                          }`}>
-                            {isStatusValue(val) ? (
-                              getStatusBadge(str)
-                            ) : isAmount ? (
-                              `฿${formatNumber(val)}`
-                            ) : isEnergy ? (
-                              formatNumber(val)
-                            ) : (
-                              str
-                            )}
-                          </span>
+                          {isSlip && str && str !== "-" && str !== "null" && str !== "undefined" ? (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-6 text-[11px] px-2 gap-1 text-primary border-primary/30 hover:bg-primary/5 cursor-pointer font-medium"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSlipPreviewUrl(str);
+                                setSlipPreviewOpen(true);
+                              }}
+                            >
+                              <ImageIcon className="size-3" />
+                              <span>{locale === "th" ? "ดูสลิป" : "View Slip"}</span>
+                            </Button>
+                          ) : (
+                            <span className={`block truncate ${
+                              isAmount
+                                ? "font-semibold text-primary"
+                                : isEnergy
+                                ? "font-semibold text-foreground"
+                                : isStatusValue(val)
+                                ? ""
+                                : "text-foreground"
+                            }`}>
+                              {isStatusValue(val) ? (
+                                getStatusBadge(str)
+                              ) : isAmount ? (
+                                `฿${formatNumber(val)}`
+                              ) : isEnergy ? (
+                                formatNumber(val)
+                              ) : (key.toLowerCase().includes("date") || key.toLowerCase().includes("at") || key.toLowerCase().includes("time") || isIsoDateLike(str)) && str && str !== "-" ? (
+                                str.includes(":") || str.includes("T") ? formatAppDateTime(str, locale) : formatAppDate(str, locale)
+                              ) : (
+                                str
+                              )}
+                            </span>
+                          )}
                         </div>
                       );
                     })}
+                  </div>
+                )}
+
+                {/* Mobile Action Buttons for Billing */}
+                {resource === "billing" && (
+                  <div className="flex flex-wrap items-center justify-end gap-1.5 pt-2 border-t border-border/40">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setSelectedBillingId(row[idKey] || row.id);
+                        setBillingModalOpen(true);
+                      }}
+                      className="h-7 text-xs px-2.5 gap-1"
+                    >
+                      <Eye className="size-3 text-muted-foreground" />
+                      <span>{locale === "th" ? "รายละเอียดรอบบิล" : "Billing Details"}</span>
+                    </Button>
+
+                    {/* School User Pay Button */}
+                    {isSchoolUser && (row.status === "approved" || row.status === "pending_review" || row.status === "rejected" || !row.status) && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => {
+                          setSelectedPayCycle(row);
+                          setPayDialogOpen(true);
+                        }}
+                        className="h-7 text-xs px-2.5 gap-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+                      >
+                        <QrCode className="size-3" />
+                        <span>{locale === "th" ? "ชำระเงิน" : "Pay"}</span>
+                      </Button>
+                    )}
+
+                    {/* Admin/Owner Verify Button */}
+                    {!isSchoolUser && (row.status === "pending_verification" || row.paymentStatus === "pending_verification" || row.slipUrl || row["หลักฐานการชำระ"]) && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => {
+                          setSelectedVerifyCycle(row);
+                          setVerifyDialogOpen(true);
+                        }}
+                        className="h-7 text-xs px-2.5 gap-1 bg-primary text-primary-foreground"
+                      >
+                        <ShieldCheck className="size-3" />
+                        <span>{locale === "th" ? "ตรวจสลิป" : "Verify"}</span>
+                      </Button>
+                    )}
+
+                    {/* View Invoice PDF */}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setPreviewData({
+                          type: "invoice",
+                          title: `ใบแจ้งหนี้ #${row.invoiceNumber || row[idKey] || row.id}`,
+                          documentNumber: row.invoiceNumber || row[idKey] || row.id,
+                          schoolName: row.schoolName || row["ชื่อโรงเรียน"],
+                          amount: Number(row.amount || row["ยอดรวมสุทธิ"] || 0),
+                          period: row.period || row["รอบบิล"],
+                        });
+                        setPreviewOpen(true);
+                      }}
+                      className="h-7 text-xs px-2 text-primary hover:underline gap-1"
+                    >
+                      <FileText className="size-3" />
+                      <span>{locale === "th" ? "ใบแจ้งหนี้" : "Invoice"}</span>
+                    </Button>
+
+                    {/* View Receipt PDF (Only if paid / approved) */}
+                    {(() => {
+                      const isReceiptReady =
+                        row.status === "paid" ||
+                        row.paymentStatus === "approved" ||
+                        row.paymentStatus === "paid";
+                      if (isReceiptReady) {
+                        return (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setPreviewData({
+                                type: "receipt",
+                                title: `ใบเสร็จรับเงิน #${row.receiptNumber || row[idKey] || row.id}`,
+                                documentNumber: row.receiptNumber || row[idKey] || row.id,
+                                schoolName: row.schoolName || row["ชื่อโรงเรียน"],
+                                amount: Number(row.amount || row["ยอดรวมสุทธิ"] || 0),
+                                period: row.period || row["รอบบิล"],
+                              });
+                              setPreviewOpen(true);
+                            }}
+                            className="h-7 text-xs px-2 text-emerald-600 dark:text-emerald-400 hover:underline gap-1 font-medium"
+                          >
+                            <Receipt className="size-3" />
+                            <span>{locale === "th" ? "ใบเสร็จ" : "Receipt"}</span>
+                          </Button>
+                        );
+                      }
+                      return null;
+                    })()}
+                  </div>
+                )}
+
+                {/* Mobile Action Buttons for Contracts */}
+                {resource === "contracts" && (
+                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-border/40">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setPreviewData({
+                          type: "contract",
+                          title: `สัญญาซื้อขายไฟฟ้า #${row.contractNumber || row.id}`,
+                          documentNumber: row.contractNumber,
+                          schoolName: row.schoolName,
+                          amount: Number(row.rate || 4.25),
+                          period: row.startDate,
+                        });
+                        setPreviewOpen(true);
+                      }}
+                      className="h-7 text-xs px-2.5 gap-1 text-primary"
+                    >
+                      <FileText className="size-3" />
+                      <span>{locale === "th" ? "ดูสัญญา" : "View Contract"}</span>
+                    </Button>
+                  </div>
+                )}
+
+                {/* Mobile Action Buttons for Receipts */}
+                {resource === "receipts" && (
+                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-border/40">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setPreviewData({
+                          type: "receipt",
+                          title: `ใบเสร็จรับเงิน #${row.receiptNumber || row.documentNumber || row.id}`,
+                          documentNumber: row.receiptNumber || row.documentNumber,
+                          schoolName: row.schoolName,
+                          amount: Number(row.amount || 0),
+                          period: row.period || row.issueDate,
+                        });
+                        setPreviewOpen(true);
+                      }}
+                      className="h-7 text-xs px-2.5 gap-1 text-emerald-600 dark:text-emerald-400"
+                    >
+                      <Receipt className="size-3" />
+                      <span>{locale === "th" ? "ดูใบเสร็จ" : "View Receipt"}</span>
+                    </Button>
+                  </div>
+                )}
+
+                {/* Mobile Action Buttons for Sites */}
+                {resource === "sites" && (
+                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-border/40">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setSelectedTelemetrySite({
+                          id: row[idKey] || row.id,
+                          name: row.name || row["ชื่อไซต์"] || row["ชื่อไซต์งาน"] || "ไซต์งาน",
+                        });
+                        setTelemetryDialogOpen(true);
+                      }}
+                      className="h-7 text-xs px-2.5 gap-1 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 bg-emerald-500/5 cursor-pointer font-medium"
+                    >
+                      <Radio className="size-3 text-emerald-600 dark:text-emerald-400" />
+                      <span>{locale === "th" ? "สัญญาณสด" : "Live"}</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setSelectedSiteId(row[idKey] || row.id);
+                        setEditSiteOpen(true);
+                      }}
+                      className="h-7 text-xs px-2.5 gap-1 cursor-pointer"
+                    >
+                      <Edit className="size-3 text-primary" />
+                      <span>{locale === "th" ? "แก้ไข" : "Edit"}</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setSelectedDeleteSite({
+                          id: row[idKey] || row.id,
+                          name: row.name || row["ชื่อไซต์"] || row["ชื่อไซต์งาน"] || "ไซต์งาน",
+                        });
+                        setDeleteSiteOpen(true);
+                      }}
+                      className="h-7 text-xs px-2.5 gap-1 text-destructive hover:text-destructive cursor-pointer"
+                    >
+                      <Trash2 className="size-3" />
+                      <span>{locale === "th" ? "ลบ" : "Delete"}</span>
+                    </Button>
+                  </div>
+                )}
+
+                {/* Mobile Action Buttons for Audit, Alerts, Users, Schools, Notifications, Reports */}
+                {["audit", "alerts", "users", "schools", "notifications", "reports"].includes(resource) && (
+                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-border/40">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onOpenDetail?.(row)}
+                      className="h-7 text-xs px-2.5 gap-1 text-primary cursor-pointer hover:bg-primary/5"
+                    >
+                      <Eye className="size-3" />
+                      <span>{locale === "th" ? "ดูรายละเอียด" : "View Details"}</span>
+                    </Button>
                   </div>
                 )}
               </Card>
@@ -326,6 +548,121 @@ export function OperationCardList({
           </div>
         </div>
       )}
+
+      {/* Payment Dialog for School User */}
+      <PaymentDialog
+        open={payDialogOpen}
+        onOpenChange={setPayDialogOpen}
+        billingCycle={selectedPayCycle}
+        onSuccess={() => router.refresh()}
+      />
+
+      {/* Payment Verification Dialog for Admin / Owner */}
+      <PaymentVerificationDialog
+        open={verifyDialogOpen}
+        onOpenChange={setVerifyDialogOpen}
+        billingCycle={selectedVerifyCycle}
+        onSuccess={() => router.refresh()}
+      />
+
+      {/* Centered Billing Detail & Slip Split-View Modal */}
+      <BillingDetailModal
+        open={billingModalOpen}
+        onOpenChange={setBillingModalOpen}
+        billingId={selectedBillingId}
+        onUpdated={() => router.refresh()}
+        onOpenInvoice={(detail) => {
+          setPreviewData({
+            type: "invoice",
+            title: `ใบแจ้งหนี้ #${detail.invoiceNumber || detail.id}`,
+            documentNumber: detail.invoiceNumber,
+            schoolName: detail.schoolName,
+            amount: Number(detail.amount || 0),
+            period: detail.periodEnd,
+          });
+          setPreviewOpen(true);
+        }}
+        onOpenReceipt={(detail) => {
+          setPreviewData({
+            type: "receipt",
+            title: `ใบเสร็จรับเงิน #${detail.receiptNumber || detail.invoiceNumber || detail.id}`,
+            documentNumber: detail.receiptNumber || detail.invoiceNumber,
+            schoolName: detail.schoolName,
+            amount: Number(detail.amount || 0),
+            period: detail.periodEnd,
+          });
+          setPreviewOpen(true);
+        }}
+      />
+
+      {/* High-Resolution Payment Slip Lightbox Dialog */}
+      <Dialog open={slipPreviewOpen} onOpenChange={setSlipPreviewOpen}>
+        <DialogContent className="sm:max-w-xl max-w-[95vw] p-4 bg-card border-border sm:rounded-2xl">
+          <DialogHeader className="pb-2 border-b border-border/60">
+            <DialogTitle className="text-sm font-semibold flex items-center justify-between gap-2 pr-6">
+              <span className="flex items-center gap-2">
+                <ImageIcon className="size-4 text-primary" />
+                {locale === "th" ? "หลักฐานสลิปการโอนเงิน" : "Payment Transfer Slip"}
+              </span>
+              {slipPreviewUrl && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  asChild
+                  className="h-7 text-xs px-2 gap-1 text-muted-foreground hover:text-foreground"
+                >
+                  <a href={slipPreviewUrl} target="_blank" rel="noopener noreferrer">
+                    <ExternalLink className="size-3" />
+                    <span>{locale === "th" ? "เปิดภาพเต็ม" : "Full View"}</span>
+                  </a>
+                </Button>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col items-center justify-center p-2 bg-muted/20 rounded-xl overflow-hidden min-h-[300px]">
+            {slipPreviewUrl ? (
+              <img
+                src={slipPreviewUrl}
+                alt="Payment Slip Evidence"
+                className="max-h-[70vh] w-auto max-w-full rounded-lg object-contain shadow-sm border border-border/60"
+              />
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                {locale === "th" ? "ไม่พบไฟล์ภาพสลิป" : "Slip image not found"}
+              </p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Interactive Document Preview Modal */}
+      <DocumentPreviewModal
+        open={previewOpen}
+        onOpenChange={setPreviewOpen}
+        data={previewData}
+      />
+
+      {/* Site Edit Dialog for Mobile */}
+      <SiteEditDialog
+        open={editSiteOpen}
+        onOpenChange={setEditSiteOpen}
+        siteId={selectedSiteId}
+      />
+
+      {/* Site Delete Dialog for Mobile */}
+      <SiteDeleteDialog
+        open={deleteSiteOpen}
+        onOpenChange={setDeleteSiteOpen}
+        site={selectedDeleteSite}
+      />
+
+      {/* Site Telemetry & Raw Registers Dialog for Mobile */}
+      <SiteTelemetryDialog
+        open={telemetryDialogOpen}
+        onOpenChange={setTelemetryDialogOpen}
+        siteId={selectedTelemetrySite?.id}
+        siteName={selectedTelemetrySite?.name}
+      />
     </div>
   );
 }

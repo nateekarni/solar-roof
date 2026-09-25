@@ -1,4 +1,16 @@
-import { BadRequestException, Body, Controller, Inject, NotFoundException, Param, Post } from "@nestjs/common";
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Inject,
+  NotFoundException,
+  Param,
+  Patch,
+  Post,
+  Req,
+} from "@nestjs/common";
+import { type Request } from "express";
 import { randomUUID } from "node:crypto";
 import { DatabaseService } from "../../database/database.service.js";
 import { Roles } from "../../common/roles.decorator.js";
@@ -74,51 +86,59 @@ export class BillingController {
   @Post("contracts")
   async createContract(@Body() body: {
     siteId?: string;
+    siteIds?: string[];
     effectiveDate?: string;
     ratePerKwh?: number;
     paymentTerms?: string;
     signerName?: string;
   }) {
-    const siteId = body.siteId;
+    const rawSiteIds = body.siteIds && body.siteIds.length > 0 ? body.siteIds : body.siteId ? [body.siteId] : [];
+    const siteIds = Array.from(new Set(rawSiteIds.filter(Boolean)));
     const effectiveDate = body.effectiveDate || new Date().toISOString().slice(0, 10);
     const ratePerKwh = Number(body.ratePerKwh ?? 4.25);
     const paymentTerms = body.paymentTerms || "ชำระภายใน 30 วัน";
     const signerName = body.signerName || "Solar Platform Owner";
 
-    if (!siteId) {
-      throw new BadRequestException("siteId is required");
+    if (siteIds.length === 0) {
+      throw new BadRequestException("At least one siteId is required");
     }
-
-    const countRes = await this.db.query("SELECT count(*)::int AS count FROM contracts WHERE site_id = $1", [siteId]);
-    const version = (countRes.rows[0]?.count ?? 0) + 1;
-    const contractId = randomUUID();
-    const rateId = randomUUID();
 
     const client = await this.db.pool.connect();
     try {
       await client.query("BEGIN");
 
-      // 1. Insert contract (scoped to site)
-      const contractSql = `
-        INSERT INTO contracts (
-          id, site_id, version, start_date, status, payment_terms, signer_name
-        )
-        VALUES ($1, $2, $3, $4, 'active', $5, $6)
-        RETURNING id, site_id AS "siteId", version, start_date AS "startDate", status
-      `;
-      const res = await client.query(contractSql, [
-        contractId, siteId, version, effectiveDate, paymentTerms, signerName
-      ]);
+      const createdContracts = [];
 
-      // 2. Insert initial rate version
-      const rateSql = `
-        INSERT INTO rate_versions (id, contract_id, effective_from, rate_type, rate, currency)
-        VALUES ($1, $2, $3, 'fixed_kwh', $4, 'THB')
-      `;
-      await client.query(rateSql, [rateId, contractId, effectiveDate, ratePerKwh]);
+      for (const targetSiteId of siteIds) {
+        const countRes = await client.query("SELECT count(*)::int AS count FROM contracts WHERE site_id = $1", [targetSiteId]);
+        const version = (countRes.rows[0]?.count ?? 0) + 1;
+        const contractId = randomUUID();
+        const rateId = randomUUID();
+
+        // 1. Insert contract (scoped to site)
+        const contractSql = `
+          INSERT INTO contracts (
+            id, site_id, version, start_date, status, payment_terms, signer_name
+          )
+          VALUES ($1, $2, $3, $4, 'active', $5, $6)
+          RETURNING id, site_id AS "siteId", version, start_date AS "startDate", status
+        `;
+        const res = await client.query(contractSql, [
+          contractId, targetSiteId, version, effectiveDate, paymentTerms, signerName
+        ]);
+
+        // 2. Insert initial rate version
+        const rateSql = `
+          INSERT INTO rate_versions (id, contract_id, effective_from, rate_type, rate, currency)
+          VALUES ($1, $2, $3, 'fixed_kwh', $4, 'THB')
+        `;
+        await client.query(rateSql, [rateId, contractId, effectiveDate, ratePerKwh]);
+
+        createdContracts.push(res.rows[0]);
+      }
 
       await client.query("COMMIT");
-      return res.rows[0];
+      return createdContracts.length === 1 ? createdContracts[0] : createdContracts;
     } catch (err) {
       await client.query("ROLLBACK");
       throw err;
@@ -157,15 +177,27 @@ export class BillingController {
       };
     }
 
-    // Generate global sequential invoice number
-    const year = new Date().getFullYear();
+    // 1. Fetch prefix template from system_settings or default INV{year}{month}
+    const settingsRes = await this.db.query<{ value: string }>(
+      `SELECT value FROM system_settings WHERE key = 'invoicePrefix'`
+    );
+    const prefixTemplate = settingsRes.rows[0]?.value || "INV{year}{month}";
+
+    const periodDate = cycle.periodEnd ? new Date(cycle.periodEnd) : new Date();
+    const yr = String(periodDate.getUTCFullYear() || periodDate.getFullYear());
+    const m = periodDate.getUTCMonth() !== undefined ? periodDate.getUTCMonth() : periodDate.getMonth();
+    const mo = String(m + 1).padStart(2, "0");
+    const prefix = prefixTemplate.replace("{year}", yr).replace("{month}", mo);
+
+    // Count existing invoices starting with this prefix
     const countRes = await this.db.query(
-      `SELECT count(*)::int AS count FROM documents WHERE document_type = 'invoice'`
+      `SELECT count(*)::int AS count FROM documents WHERE document_number LIKE $1`,
+      [`${prefix}%`]
     );
     const seq = (countRes.rows[0]?.count ?? 0) + 1;
-    const documentNumber = `INV-${year}-${String(seq).padStart(6, "0")}`;
+    const documentNumber = `${prefix}${String(seq).padStart(4, "0")}`;
     const docId = randomUUID();
-    const fileKey = `invoices/${year}/${documentNumber}.pdf`;
+    const fileKey = `invoices/${yr}/${documentNumber}.pdf`;
 
     const insertSql = `
       INSERT INTO documents (
@@ -185,6 +217,376 @@ export class BillingController {
       created: true,
       message: "สร้างใบแจ้งหนี้เรียบร้อยแล้ว",
       document: res.rows[0],
+    };
+  }
+
+  @Get("billing-cycles/:id")
+  async getBillingCycleDetails(@Param("id") id: string) {
+    const res = await this.db.query(
+      `SELECT 
+         b.id,
+         b.site_id AS "siteId",
+         si.name AS "siteName",
+         s.id AS "schoolId",
+         s.name AS "schoolName",
+         to_char(b.period_start, 'YYYY-MM-DD') AS "periodStart",
+         to_char(b.period_end, 'YYYY-MM-DD') AS "periodEnd",
+         to_char(b.cutoff_time, 'YYYY-MM-DD HH24:MI') AS "cutoffTime",
+         b.status,
+         b.quality,
+         coalesce(round(b.opening_energy::numeric, 2), 0) AS "openingEnergy",
+         coalesce(round(b.closing_energy::numeric, 2), 0) AS "closingEnergy",
+         coalesce(round(b.consumed_kwh::numeric, 2), 0) AS "consumedKwh",
+         coalesce(round(b.rate::numeric, 2), 4.25) AS rate,
+         coalesce(round(b.amount::numeric, 2), 0) AS amount,
+         d.id AS "invoiceId",
+         d.document_number AS "invoiceNumber",
+         d.status AS "invoiceStatus",
+         r.id AS "receiptId",
+         r.document_number AS "receiptNumber",
+         p.id AS "paymentId",
+         p.status AS "paymentStatus",
+         coalesce(round(p.amount::numeric, 2), round(b.amount::numeric, 2)) AS "paidAmount",
+         to_char(p.paid_at, 'YYYY-MM-DD HH24:MI') AS "paidAt",
+         p.slip_url AS "slipUrl",
+         p.evidence_key AS "evidenceKey",
+         p.note AS "paymentNote",
+         p.rejection_reason AS "rejectionReason"
+       FROM billing_cycles b
+       JOIN sites si ON si.id = b.site_id
+       JOIN schools s ON s.id = si.school_id
+       LEFT JOIN documents d ON d.billing_cycle_id = b.id AND d.document_type = 'invoice'
+       LEFT JOIN documents r ON r.billing_cycle_id = b.id AND r.document_type = 'receipt'
+       LEFT JOIN payments p ON p.billing_cycle_id = b.id
+       WHERE b.id = $1`,
+      [id]
+    );
+    if (res.rows.length === 0) {
+      throw new NotFoundException("Billing cycle not found");
+    }
+    return res.rows[0];
+  }
+
+  @Roles("school_user", "admin", "owner")
+  @Post("billing-cycles/:id/pay")
+  async payBillingCycle(
+    @Param("id") id: string,
+    @Body() body: {
+      amount?: number;
+      paidAt?: string;
+      slipUrl?: string;
+      evidenceKey?: string;
+      note?: string;
+    },
+    @Req() req: Request & { user?: { id: string; role: string } }
+  ) {
+    const cycleRes = await this.db.query("SELECT * FROM billing_cycles WHERE id = $1", [id]);
+    const cycle = cycleRes.rows[0];
+    if (!cycle) {
+      throw new NotFoundException("Billing cycle not found");
+    }
+
+    const payAmount = body.amount !== undefined ? Number(body.amount) : Number(cycle.amount);
+    const paidAt = body.paidAt ? new Date(body.paidAt) : new Date();
+    const slipUrl = body.slipUrl || null;
+    const evidenceKey = body.evidenceKey || null;
+    const note = body.note || null;
+    const actorId = req.user?.id || randomUUID();
+
+    // Check if payment record already exists
+    const existingPayment = await this.db.query<{ id: string }>(
+      "SELECT id FROM payments WHERE billing_cycle_id = $1 ORDER BY paid_at DESC NULLS LAST LIMIT 1",
+      [id]
+    );
+
+    let paymentId: string;
+    const firstPayment = existingPayment.rows[0];
+    if (firstPayment) {
+      paymentId = firstPayment.id;
+      await this.db.query(
+        `UPDATE payments 
+         SET amount = $1, status = 'pending_verification', paid_at = $2, slip_url = coalesce($3, slip_url), evidence_key = coalesce($4, evidence_key), note = $5, rejection_reason = NULL
+         WHERE id = $6`,
+        [payAmount, paidAt, slipUrl, evidenceKey, note, paymentId]
+      );
+    } else {
+      paymentId = randomUUID();
+      await this.db.query(
+        `INSERT INTO payments (id, billing_cycle_id, amount, status, paid_at, slip_url, evidence_key, note)
+         VALUES ($1, $2, $3, 'pending_verification', $4, $5, $6, $7)`,
+        [paymentId, id, payAmount, paidAt, slipUrl, evidenceKey, note]
+      );
+    }
+
+    // Update billing cycle status to 'pending_verification'
+    await this.db.query(
+      "UPDATE billing_cycles SET status = 'pending_verification' WHERE id = $1",
+      [id]
+    );
+
+    // Audit event
+    try {
+      await this.db.query(
+        `INSERT INTO audit_events (
+           id, actor_id, action, entity_type, entity_id, before_json, after_json, reason, correlation_id, occurred_at
+         )
+         VALUES (gen_random_uuid(), $1, 'billing_cycle.pay', 'billing_cycle', $2, $3, $4, 'Payment slip submitted for verification', gen_random_uuid()::text, NOW())`,
+        [
+          actorId,
+          id,
+          JSON.stringify({ status: cycle.status }),
+          JSON.stringify({ status: "pending_verification", amount: payAmount, paymentId }),
+        ]
+      );
+    } catch {}
+
+    return {
+      success: true,
+      message: "ส่งหลักฐานการชำระเงินเรียบร้อยแล้ว อยู่ระหว่างการตรวจสอบโดยเจ้าหน้าที่",
+      paymentId,
+      status: "pending_verification",
+    };
+  }
+
+  @Roles("admin", "owner")
+  @Patch("billing-cycles/:id/verify-payment")
+  async verifyPayment(
+    @Param("id") id: string,
+    @Body() body: {
+      status: "approved" | "rejected";
+      rejectionReason?: string;
+      note?: string;
+    },
+    @Req() req: Request & { user?: { id: string } }
+  ) {
+    const { status, rejectionReason, note } = body;
+    if (!status || !["approved", "rejected"].includes(status)) {
+      throw new BadRequestException("status must be either 'approved' or 'rejected'");
+    }
+
+    const cycleRes = await this.db.query(
+      `SELECT b.*, si.school_id AS "schoolId" 
+       FROM billing_cycles b 
+       JOIN sites si ON si.id = b.site_id 
+       WHERE b.id = $1`,
+      [id]
+    );
+    const cycle = cycleRes.rows[0];
+    if (!cycle) {
+      throw new NotFoundException("Billing cycle not found");
+    }
+
+    const paymentRes = await this.db.query(
+      "SELECT * FROM payments WHERE billing_cycle_id = $1 ORDER BY paid_at DESC NULLS LAST LIMIT 1",
+      [id]
+    );
+    const payment = paymentRes.rows[0];
+    if (!payment) {
+      throw new BadRequestException("No payment found for this billing cycle");
+    }
+
+    const actorId = req.user?.id || null;
+
+    if (status === "approved") {
+      // 1. Mark payment as paid
+      await this.db.query(
+        `UPDATE payments 
+         SET status = 'paid', verified_at = NOW(), verified_by = $1, rejection_reason = NULL, note = coalesce($2, note)
+         WHERE id = $3`,
+        [actorId, note || null, payment.id]
+      );
+
+      // 2. Mark billing cycle as paid
+      await this.db.query(
+        "UPDATE billing_cycles SET status = 'paid' WHERE id = $1",
+        [id]
+      );
+
+      // 3. Issue receipt document if not exists
+      const docCheck = await this.db.query(
+        "SELECT id, document_number AS \"documentNumber\" FROM documents WHERE billing_cycle_id = $1 AND document_type = 'receipt'",
+        [id]
+      );
+
+      let receiptDoc = docCheck.rows[0];
+      if (!receiptDoc) {
+        const settingsRes = await this.db.query<{ value: string }>(
+          `SELECT value FROM system_settings WHERE key = 'receiptPrefix'`
+        );
+        const prefixTemplate = settingsRes.rows[0]?.value || "REC{year}{month}";
+        const periodDate = cycle.period_end ? new Date(cycle.period_end) : new Date();
+        const yr = String(periodDate.getUTCFullYear() || periodDate.getFullYear());
+        const m = periodDate.getUTCMonth() !== undefined ? periodDate.getUTCMonth() : periodDate.getMonth();
+        const mo = String(m + 1).padStart(2, "0");
+        const prefix = prefixTemplate.replace("{year}", yr).replace("{month}", mo);
+
+        const countRes = await this.db.query(
+          `SELECT count(*)::int AS count FROM documents WHERE document_number LIKE $1`,
+          [`${prefix}%`]
+        );
+        const seq = (countRes.rows[0]?.count ?? 0) + 1;
+        const documentNumber = `${prefix}${String(seq).padStart(4, "0")}`;
+        const docId = randomUUID();
+        const fileKey = `receipts/${yr}/${documentNumber}.pdf`;
+
+        const insertReceipt = await this.db.query(
+          `INSERT INTO documents (
+             id, site_id, billing_cycle_id, document_type, document_number, status, issue_date, amount, file_key
+           )
+           VALUES ($1, $2, $3, 'receipt', $4, 'issued', NOW(), $5, $6)
+           RETURNING id, document_number AS "documentNumber", status, issue_date AS "issueDate", amount`,
+          [docId, cycle.site_id, id, documentNumber, cycle.amount, fileKey]
+        );
+        receiptDoc = insertReceipt.rows[0];
+      }
+
+      // 4. Audit event
+      try {
+        await this.db.query(
+          `INSERT INTO audit_events (
+             id, actor_id, action, entity_type, entity_id, before_json, after_json, reason, correlation_id, occurred_at
+           )
+           VALUES (gen_random_uuid(), $1, 'payment.verify_approved', 'billing_cycle', $2, $3, $4, 'Payment verified and approved by admin', gen_random_uuid()::text, NOW())`,
+          [actorId, id, JSON.stringify({ cycleStatus: cycle.status, paymentStatus: payment.status }), JSON.stringify({ cycleStatus: "paid", paymentStatus: "paid" })]
+        );
+      } catch {}
+
+      return {
+        success: true,
+        message: "อนุมัติการชำระเงินและออกใบเสร็จรับเงินเรียบร้อยแล้ว",
+        billingCycleStatus: "paid",
+        receipt: receiptDoc,
+      };
+    } else {
+      if (!rejectionReason) {
+        throw new BadRequestException("rejectionReason is required when rejecting payment");
+      }
+
+      // Update payment
+      await this.db.query(
+        `UPDATE payments 
+         SET status = 'rejected', rejection_reason = $1, verified_at = NOW(), verified_by = $2, note = coalesce($3, note)
+         WHERE id = $4`,
+        [rejectionReason, actorId, note || null, payment.id]
+      );
+
+      // Return cycle status to 'approved'
+      await this.db.query(
+        "UPDATE billing_cycles SET status = 'approved' WHERE id = $1",
+        [id]
+      );
+
+      // Audit event
+      try {
+        await this.db.query(
+          `INSERT INTO audit_events (
+             id, actor_id, action, entity_type, entity_id, before_json, after_json, reason, correlation_id, occurred_at
+           )
+           VALUES (gen_random_uuid(), $1, 'payment.verify_rejected', 'billing_cycle', $2, $3, $4, $5, gen_random_uuid()::text, NOW())`,
+          [actorId, id, JSON.stringify({ cycleStatus: cycle.status, paymentStatus: payment.status }), JSON.stringify({ cycleStatus: "approved", paymentStatus: "rejected" }), rejectionReason]
+        );
+      } catch {}
+
+      return {
+        success: true,
+        message: "ปฏิเสธหลักฐานการชำระเงินแล้ว และแจ้งให้ผู้ใช้ส่งหลักฐานใหม่",
+        billingCycleStatus: "approved",
+      };
+    }
+  }
+
+  @Roles("owner", "admin")
+  @Patch("billing-cycles/:id/status")
+  async updateBillingCycleStatus(
+    @Param("id") id: string,
+    @Body() body: { status: string; reason?: string }
+  ) {
+    const { status, reason } = body;
+    if (!status || !["pending_review", "approved", "rejected"].includes(status)) {
+      throw new BadRequestException("Invalid status. Must be pending_review, approved, or rejected");
+    }
+
+    const cycleRes = await this.db.query("SELECT * FROM billing_cycles WHERE id = $1", [id]);
+    const before = cycleRes.rows[0];
+    if (!before) throw new NotFoundException("Billing cycle not found");
+
+    const updateRes = await this.db.query(
+      `UPDATE billing_cycles 
+       SET status = $1 
+       WHERE id = $2 
+       RETURNING id, status`,
+      [status, id]
+    );
+
+    // If approved, automatically generate invoice if none exists
+    let invoice = null;
+    if (status === "approved") {
+      try {
+        invoice = await this.generateInvoiceForBillingCycle(id);
+      } catch {}
+    }
+
+    // Insert into audit_events
+    try {
+      await this.db.query(
+        `INSERT INTO audit_events (
+           id, action, entity_type, entity_id, before_json, after_json, reason, correlation_id
+         )
+         VALUES (gen_random_uuid(), 'update_status', 'billing_cycle', $1, $2, $3, $4, gen_random_uuid()::text)`,
+        [id, JSON.stringify(before), JSON.stringify({ ...before, status }), reason || `Status updated to ${status}`]
+      );
+    } catch {}
+
+    return {
+      success: true,
+      billingCycle: updateRes.rows[0],
+      invoice,
+    };
+  }
+
+  @Roles("owner", "admin")
+  @Patch("billing-cycles/:id/adjust")
+  async adjustBillingCycle(
+    @Param("id") id: string,
+    @Body() body: { consumedKwh?: number; rate?: number; amount?: number; note?: string }
+  ) {
+    const cycleRes = await this.db.query("SELECT * FROM billing_cycles WHERE id = $1", [id]);
+    const before = cycleRes.rows[0];
+    if (!before) throw new NotFoundException("Billing cycle not found");
+
+    const consumedKwh = body.consumedKwh !== undefined ? Number(body.consumedKwh) : Number(before.consumed_kwh);
+    const rate = body.rate !== undefined ? Number(body.rate) : Number(before.rate);
+    const amount = body.amount !== undefined ? Number(body.amount) : Number((consumedKwh * rate).toFixed(2));
+
+    const updateRes = await this.db.query(
+      `UPDATE billing_cycles 
+       SET consumed_kwh = $1, rate = $2, amount = $3, status = 'pending_review'
+       WHERE id = $4 
+       RETURNING id, site_id AS "siteId", period_start AS "periodStart", period_end AS "periodEnd", status, consumed_kwh AS "consumedKwh", rate, amount`,
+      [consumedKwh, rate, amount, id]
+    );
+
+    // If invoice exists, update document amount
+    await this.db.query(
+      `UPDATE documents SET amount = $1 WHERE billing_cycle_id = $2 AND document_type = 'invoice'`,
+      [amount, id]
+    );
+
+    // Record audit event
+    try {
+      await this.db.query(
+        `INSERT INTO audit_events (
+           id, action, entity_type, entity_id, before_json, after_json, reason, correlation_id
+         )
+         VALUES (gen_random_uuid(), 'adjust_billing', 'billing_cycle', $1, $2, $3, $4, gen_random_uuid()::text)`,
+        [id, JSON.stringify(before), JSON.stringify(updateRes.rows[0]), body.note || "Billing adjusted by operator"]
+      );
+    } catch {}
+
+    return {
+      success: true,
+      message: "ปรับแก้ข้อมูลรอบบิลเรียบร้อยแล้ว และส่งเข้ารอตรวจสอบ",
+      billingCycle: updateRes.rows[0],
     };
   }
 }

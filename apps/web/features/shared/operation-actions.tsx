@@ -89,18 +89,18 @@ export function OperationActions({
         size="sm"
         disabled={exporting}
         onClick={handleExport}
-        className="h-9 gap-1.5 text-xs font-medium"
+        className="h-9 gap-1.5 text-xs font-medium bg-white text-foreground hover:bg-neutral-50 dark:bg-card dark:text-card-foreground border border-border shadow-xs cursor-pointer"
       >
         <Download className="size-3.5" />
         <span>{exporting ? t("common.loading") : t("common.exportCsv")}</span>
       </Button>
 
-      {action && (
+      {action && action.trim() !== "" && (
         <Button
           type="button"
           size="sm"
           onClick={handleActionClick}
-          className="h-9 gap-1.5 text-xs font-semibold shadow-xs"
+          className="h-9 gap-1.5 text-xs font-semibold shadow-xs cursor-pointer"
         >
           <Plus className="size-3.5" />
           <span>{action}</span>

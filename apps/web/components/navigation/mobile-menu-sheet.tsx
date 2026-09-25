@@ -136,7 +136,7 @@ export function MobileMenuSheet({ open, onOpenChange }: MobileMenuSheetProps) {
   const currentAction = searchParams?.get("action");
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex flex-col bg-sidebar text-sidebar-foreground animate-in slide-in-from-bottom duration-300">
+    <div className="fixed inset-0 z-50 flex flex-col bg-sidebar text-sidebar-foreground animate-in fade-in duration-200">
       {/* Top Header of Mobile Menu */}
       <div className="flex h-14 shrink-0 items-center justify-between border-b border-sidebar-border px-4">
         <div className="flex items-center gap-2.5">
@@ -240,7 +240,13 @@ export function MobileMenuSheet({ open, onOpenChange }: MobileMenuSheetProps) {
               }`}
             >
               <Icon className="size-4.5 shrink-0" />
-              <span>{t(item.labelKey)}</span>
+              <span>
+                {t(item.labelKey) === item.labelKey && item.key === "system"
+                  ? locale === "en"
+                    ? "System Flow"
+                    : "ผังระบบ"
+                  : t(item.labelKey)}
+              </span>
             </Link>
           );
         })}
@@ -279,30 +285,30 @@ export function MobileMenuSheet({ open, onOpenChange }: MobileMenuSheetProps) {
               <Globe className="size-3.5 text-sidebar-foreground/70" />
               <span>{t("profile.language")}</span>
             </div>
-            <div className="flex items-center gap-1 rounded-md bg-sidebar-accent/60 p-0.5 border border-sidebar-border">
+            <div className="flex items-center gap-1.5 rounded-lg bg-sidebar-accent/40 p-1 border border-sidebar-border/80">
               <button
                 type="button"
                 onClick={() => handleLanguageChange("th")}
                 title="ไทย"
-                className={`size-7 flex items-center justify-center rounded text-sm transition-all cursor-pointer ${
+                className={`size-7.5 flex items-center justify-center rounded-md text-xs font-semibold transition-all cursor-pointer ${
                   locale === "th"
-                    ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-xs font-semibold scale-105"
-                    : "text-sidebar-foreground/70 hover:text-sidebar-foreground"
+                    ? "bg-[#EAB308] text-[#0F172A] shadow-xs scale-105"
+                    : "bg-muted/80 text-foreground/80 hover:bg-muted hover:text-foreground border border-border/50 shadow-2xs"
                 }`}
               >
-                <span className="leading-none text-base">🇹🇭</span>
+                <span>TH</span>
               </button>
               <button
                 type="button"
                 onClick={() => handleLanguageChange("en")}
                 title="English"
-                className={`size-7 flex items-center justify-center rounded text-sm transition-all cursor-pointer ${
+                className={`size-7.5 flex items-center justify-center rounded-md text-xs font-semibold transition-all cursor-pointer ${
                   locale === "en"
-                    ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-xs font-semibold scale-105"
-                    : "text-sidebar-foreground/70 hover:text-sidebar-foreground"
+                    ? "bg-[#EAB308] text-[#0F172A] shadow-xs scale-105"
+                    : "bg-muted/80 text-foreground/80 hover:bg-muted hover:text-foreground border border-border/50 shadow-2xs"
                 }`}
               >
-                <span className="leading-none text-base">🇬🇧</span>
+                <span>EN</span>
               </button>
             </div>
           </div>
@@ -313,42 +319,42 @@ export function MobileMenuSheet({ open, onOpenChange }: MobileMenuSheetProps) {
               <Palette className="size-3.5 text-sidebar-foreground/70" />
               <span>{t("profile.theme")}</span>
             </div>
-            <div className="flex items-center gap-0.5 rounded-md bg-sidebar-accent/60 p-0.5 border border-sidebar-border">
+            <div className="flex items-center gap-1.5 rounded-lg bg-sidebar-accent/40 p-1 border border-sidebar-border/80">
               <button
                 type="button"
                 onClick={() => handleThemeChange("light")}
                 title={t("profile.light")}
-                className={`size-7 flex items-center justify-center rounded transition-all cursor-pointer ${
+                className={`size-7.5 flex items-center justify-center rounded-md transition-all cursor-pointer ${
                   theme === "light"
-                    ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-xs scale-105"
-                    : "text-sidebar-foreground/70 hover:text-sidebar-foreground"
+                    ? "bg-[#EAB308] text-[#0F172A] shadow-xs scale-105"
+                    : "bg-muted/80 text-foreground/80 hover:bg-muted hover:text-foreground border border-border/50 shadow-2xs"
                 }`}
               >
-                <Sun className="size-3.5" />
+                <Sun className="size-4" />
               </button>
               <button
                 type="button"
                 onClick={() => handleThemeChange("dark")}
                 title={t("profile.dark")}
-                className={`size-7 flex items-center justify-center rounded transition-all cursor-pointer ${
+                className={`size-7.5 flex items-center justify-center rounded-md transition-all cursor-pointer ${
                   theme === "dark"
-                    ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-xs scale-105"
-                    : "text-sidebar-foreground/70 hover:text-sidebar-foreground"
+                    ? "bg-[#EAB308] text-[#0F172A] shadow-xs scale-105"
+                    : "bg-muted/80 text-foreground/80 hover:bg-muted hover:text-foreground border border-border/50 shadow-2xs"
                 }`}
               >
-                <Moon className="size-3.5" />
+                <Moon className="size-4" />
               </button>
               <button
                 type="button"
                 onClick={() => handleThemeChange("system")}
                 title={t("profile.system")}
-                className={`size-7 flex items-center justify-center rounded transition-all cursor-pointer ${
+                className={`size-7.5 flex items-center justify-center rounded-md transition-all cursor-pointer ${
                   theme === "system"
-                    ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-xs scale-105"
-                    : "text-sidebar-foreground/70 hover:text-sidebar-foreground"
+                    ? "bg-[#EAB308] text-[#0F172A] shadow-xs scale-105"
+                    : "bg-muted/80 text-foreground/80 hover:bg-muted hover:text-foreground border border-border/50 shadow-2xs"
                 }`}
               >
-                <Laptop className="size-3.5" />
+                <Laptop className="size-4" />
               </button>
             </div>
           </div>

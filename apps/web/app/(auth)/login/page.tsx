@@ -22,12 +22,20 @@ const getInitialLocale = (): Locale => {
 export default function LoginPage() {
   const router = useRouter();
   const [showPassword, setShowPassword] = React.useState(false);
-  const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
+  const [errorKey, setErrorKey] = React.useState<string | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
   const [locale, setLocaleState] = React.useState<Locale>("th");
 
   React.useEffect(() => {
     setLocaleState(getInitialLocale());
+
+    // Security: Immediately sanitize and remove any leaked credentials from URL query string
+    if (typeof window !== "undefined" && window.location.search) {
+      const params = new URLSearchParams(window.location.search);
+      if (params.has("email") || params.has("password")) {
+        window.history.replaceState(null, "", window.location.pathname);
+      }
+    }
   }, []);
 
   const t = React.useMemo(() => createTranslator(locale), [locale]);
@@ -66,11 +74,9 @@ export default function LoginPage() {
 
   const onSubmit = async (values: LoginFormValues) => {
     setIsLoading(true);
-    setErrorMsg(null);
+    setErrorKey(null);
     try {
-      const baseUrl =
-        process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
-      const res = await fetch(`${baseUrl}/v1/auth/login`, {
+      const res = await fetch("/v1/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -79,15 +85,23 @@ export default function LoginPage() {
 
       if (!res.ok) {
         const err = await res.json().catch(() => null);
-        throw new Error(err?.message || t("auth.loginError"));
+        const msg = (err?.message || "").toLowerCase();
+        if (msg.includes("inactive")) {
+          setErrorKey("auth.accountInactive");
+        } else if (msg.includes("email and password are required")) {
+          setErrorKey("auth.emailRequired");
+        } else {
+          setErrorKey("auth.loginError");
+        }
+        return;
       }
 
       const data = await res.json();
       authStore.setAuth(data.user, data.accessToken);
-      router.push("/");
-      router.refresh();
-    } catch (err: any) {
-      setErrorMsg(err.message || t("auth.loginError"));
+      // Hard navigation ensures all cookies are immediately active in the document context
+      window.location.replace("/");
+    } catch {
+      setErrorKey("auth.serverError");
     } finally {
       setIsLoading(false);
     }
@@ -213,16 +227,21 @@ export default function LoginPage() {
             </Tabs>
           </div>
 
-          {errorMsg && (
+          {errorKey && (
             <div className="flex items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/10 p-3.5 text-xs text-destructive">
               <AlertCircle className="size-4 shrink-0" />
-              <span>{errorMsg}</span>
+              <span>{t(errorKey)}</span>
             </div>
           )}
 
           <form
             key={locale}
-            onSubmit={handleSubmit(onSubmit)}
+            method="POST"
+            action=""
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleSubmit(onSubmit)(e);
+            }}
             className="space-y-4"
           >
             <div className="space-y-1.5">
@@ -230,7 +249,7 @@ export default function LoginPage() {
                 {t("auth.email")}
               </Label>
               <div className="relative">
-                <Mail className="absolute left-3 top-2.5 size-4 text-muted-foreground" />
+                <Mail className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
                 <Input
                   id="email"
                   type="email"
@@ -252,19 +271,19 @@ export default function LoginPage() {
                 </Label>
               </div>
               <div className="relative">
-                <Lock className="absolute left-3 top-2.5 size-4 text-muted-foreground" />
+                <Lock className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
                 <Input
                   id="password"
                   type={showPassword ? "text" : "password"}
                   placeholder="••••••••••••"
                   autoComplete="current-password"
-                  className="pl-9 pr-9 text-xs h-10"
+                  className="pl-9 pr-10 text-xs h-10"
                   {...register("password")}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-2.5 text-muted-foreground hover:text-foreground"
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   aria-label={showPassword ? t("auth.hidePassword") : t("auth.showPassword")}
                 >
                   {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}

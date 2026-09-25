@@ -63,11 +63,11 @@ function DialogContent({
         className={cn(
           "fixed z-50 grid w-full bg-popover text-sm text-popover-foreground shadow-xl ring-1 ring-foreground/10 outline-none duration-200",
           // Mobile: Bottom Sheet full width, max 92vh, slide up from bottom
-          "inset-x-0 bottom-0 top-auto max-w-full rounded-b-none rounded-t-2xl p-4.5 max-h-[92svh] overflow-y-auto",
+          "max-sm:inset-x-0 max-sm:bottom-0 max-sm:top-auto max-sm:max-w-full max-sm:rounded-b-none max-sm:rounded-t-2xl max-sm:p-4.5 max-sm:max-h-[92svh] max-sm:overflow-y-auto",
           "data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
           "max-sm:data-open:slide-in-from-bottom max-sm:data-closed:slide-out-to-bottom",
           // Desktop: Centered modal
-          "sm:inset-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:max-w-sm sm:rounded-xl sm:p-5 sm:max-h-[85vh]",
+          "sm:fixed sm:left-1/2 sm:top-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:bottom-auto sm:right-auto sm:max-w-lg sm:rounded-2xl sm:p-6 sm:max-h-[88vh] sm:overflow-y-auto",
           "sm:data-open:zoom-in-95 sm:data-closed:zoom-out-95",
           className
         )}
@@ -115,7 +115,7 @@ function DialogFooter({
     <div
       data-slot="dialog-footer"
       className={cn(
-        "-mx-4.5 -mb-4.5 mt-2 flex flex-col-reverse gap-2 border-t bg-muted/40 p-4 sm:-mx-5 sm:-mb-5 sm:flex-row sm:justify-end sm:rounded-b-xl",
+        "-mx-4.5 -mb-4.5 mt-4 flex flex-col-reverse gap-2 bg-muted/40 px-4.5 py-3.5 sm:-mx-6 sm:-mb-6 sm:mt-5 sm:flex-row sm:justify-end sm:px-6 sm:py-3.5 sm:rounded-b-2xl",
         className
       )}
       {...props}

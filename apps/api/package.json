@@ -10,7 +10,9 @@
     "test": "tsc --noEmit -p tsconfig.json",
     "db:migrate": "tsx src/scripts/db-migrate.ts",
     "db:seed": "tsx src/scripts/seed.ts",
-    "db:seed:reset": "tsx src/scripts/seed.ts --reset"
+    "db:seed:reset": "tsx src/scripts/seed.ts --reset",
+    "simulate:mqtt": "tsx src/scripts/simulate-mqtt.ts",
+    "test:ingestion": "tsx src/scripts/test-gateway-ingestion.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1121.0",

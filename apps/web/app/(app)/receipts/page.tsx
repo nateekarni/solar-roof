@@ -9,6 +9,7 @@ export default function ReceiptsPage() {
       eyebrow="RECEIPTS & TAX INVOICES"
       title="ใบเสร็จรับเงิน / ใบกำกับภาษี"
       description="รายการใบเสร็จรับเงินและใบกำกับภาษีที่ออกอัตโนมัติเมื่อสถานะบิลเป็นชำระแล้ว"
+      action=""
     />
   );
 }

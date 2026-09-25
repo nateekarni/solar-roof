@@ -27,10 +27,12 @@ async function bootstrap() {
     limit: 10,
     standardHeaders: true,
     legacyHeaders: false,
+    validate: { xForwardedForHeader: false },
     message: { statusCode: 429, message: "Too many authentication requests, please try again in 1 minute" },
   });
 
   const expressApp = app.getHttpAdapter().getInstance();
+  expressApp.set("trust proxy", 1);
   expressApp.use("/v1/auth/login", authLimiter);
   expressApp.use("/v1/auth/refresh", authLimiter);
 
@@ -38,7 +40,19 @@ async function bootstrap() {
   // WEB_URL must be set in .env for production. Defaults to localhost:3000 for dev.
   const webOrigin = process.env.WEB_URL ?? "http://localhost:3000";
   app.enableCors({
-    origin: webOrigin,
+    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+      if (!origin) return callback(null, true);
+      if (
+        origin === webOrigin ||
+        origin.includes("localhost") ||
+        origin.includes("127.0.0.1") ||
+        origin.endsWith(".trycloudflare.com") ||
+        origin.endsWith(".loca.lt")
+      ) {
+        return callback(null, true);
+      }
+      return callback(null, true);
+    },
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],

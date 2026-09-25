@@ -1,6 +1,10 @@
 import { authStore } from "../stores/auth-store";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL?.trim() ||
+  (typeof window !== "undefined"
+    ? ""
+    : (process.env.API_INTERNAL_URL?.trim() || "http://localhost:3001"));
 
 let isRefreshing = false;
 let refreshSubscribers: ((token: string | null) => void)[] = [];
@@ -122,6 +126,26 @@ export const apiClient = {
     const res = await request(endpoint, {
       ...options,
       method: "PUT",
+      headers,
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: res.statusText }));
+      throw new Error(err.message || "Request failed");
+    }
+    return res.json();
+  },
+
+  async patch<T>(endpoint: string, body?: unknown, options?: RequestInit): Promise<T> {
+    const headers = new Headers(options?.headers || {});
+    if (!headers.has("Content-Type")) {
+      headers.set("Content-Type", "application/json");
+    }
+
+    const res = await request(endpoint, {
+      ...options,
+      method: "PATCH",
       headers,
       body: JSON.stringify(body),
     });

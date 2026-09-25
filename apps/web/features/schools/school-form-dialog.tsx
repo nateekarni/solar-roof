@@ -90,8 +90,8 @@ export function SchoolFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-lg sm:rounded-2xl sm:p-6">
+        <DialogHeader className="pb-1">
           <DialogTitle className="text-base font-semibold">
             {locale === "th" ? "เพิ่มโรงเรียนใหม่" : "Add New School"}
           </DialogTitle>
@@ -102,15 +102,15 @@ export function SchoolFormDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 py-2">
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 pt-3.5">
           <div className="space-y-1.5">
-            <Label htmlFor="school-name" className="text-xs font-medium">
-              {locale === "th" ? "ชื่อโรงเรียน *" : "School Name *"}
+            <Label htmlFor="school-name" required className="text-xs font-medium">
+              {locale === "th" ? "ชื่อโรงเรียน" : "School Name"}
             </Label>
             <Input
               id="school-name"
               placeholder={locale === "th" ? "เช่น โรงเรียนอนุบาลสาธิต" : "e.g. Demonstration School"}
-              className="text-xs h-9"
+              className="text-xs h-10"
               {...register("name")}
             />
             {errors.name && (
@@ -119,14 +119,14 @@ export function SchoolFormDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="school-region" className="text-xs font-medium">
-              {locale === "th" ? "ภูมิภาค *" : "Region *"}
+            <Label htmlFor="school-region" required className="text-xs font-medium">
+              {locale === "th" ? "ภูมิภาค" : "Region"}
             </Label>
             <Select
               defaultValue="ภาคกลาง"
               onValueChange={(val) => setValue("region", val)}
             >
-              <SelectTrigger id="school-region" className="text-xs h-9">
+              <SelectTrigger id="school-region" className="text-xs h-10 w-full">
                 <SelectValue placeholder="เลือกภูมิภาค" />
               </SelectTrigger>
               <SelectContent>
@@ -142,17 +142,17 @@ export function SchoolFormDialog({
             )}
           </div>
 
-          <DialogFooter className="pt-3 gap-2">
+          <DialogFooter>
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={() => onOpenChange(false)}
-              className="text-xs h-9"
+              className="text-xs h-10 px-4"
             >
               {t("common.cancel")}
             </Button>
-            <Button type="submit" size="sm" disabled={loading} className="text-xs h-9 font-semibold">
+            <Button type="submit" size="sm" disabled={loading} className="text-xs h-10 px-5 font-semibold">
               {loading ? t("common.saving") : t("common.confirm")}
             </Button>
           </DialogFooter>

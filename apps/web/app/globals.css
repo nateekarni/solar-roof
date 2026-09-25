@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Noto+Sans+Thai+Looped:wght@300;400;500;600;700&family=Sarabun:wght@400;500;600;700&display=swap");
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
@@ -59,9 +59,9 @@
 
 :root {
   --font-sans:
-    "IBM Plex Sans Thai", ui-sans-serif, system-ui, -apple-system,
+    "Noto Sans Thai Looped", "Sarabun", ui-sans-serif, system-ui, -apple-system,
     BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --background: oklch(0.985 0 0);
+  --background: oklch(0.967 0.001 286.375);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);
@@ -95,13 +95,13 @@
   --chart-5: oklch(0.6 0.18 295);
   --radius: 0.625rem;
 
-  --sidebar: oklch(0.145 0 0);
-  --sidebar-foreground: oklch(0.92 0 0);
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.75 0.18 72);
   --sidebar-primary-foreground: oklch(0.145 0 0);
-  --sidebar-accent: oklch(0.22 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(0.25 0 0);
+  --sidebar-accent: oklch(0.94 0 0);
+  --sidebar-accent-foreground: oklch(0.145 0 0);
+  --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.75 0.18 72);
 }
 
@@ -153,20 +153,70 @@
   * {
     @apply outline-ring/50;
     box-sizing: border-box;
+    scrollbar-width: none !important;
+    -ms-overflow-style: none !important;
   }
   *,
   ::before,
   ::after {
     border-color: var(--color-border, currentColor);
+    scrollbar-width: none !important;
+    -ms-overflow-style: none !important;
+  }
+  *::-webkit-scrollbar,
+  body::-webkit-scrollbar,
+  html::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
   }
   body {
     @apply bg-background text-foreground;
     margin: 0;
     font-family: var(--font-sans);
+    font-weight: 400;
     -webkit-font-smoothing: antialiased;
   }
   html {
     @apply font-sans;
+    font-family: var(--font-sans);
+  }
+
+  *,
+  *::before,
+  *::after,
+  input,
+  button,
+  select,
+  textarea,
+  optgroup,
+  option {
+    font-family: var(--font-sans) !important;
+  }
+
+  .recharts-text,
+  .recharts-default-tooltip,
+  .recharts-legend-item-text,
+  .maplibregl-popup,
+  .maplibregl-popup-content {
+    font-family: var(--font-sans) !important;
+  }
+
+  /* Kanit Font Weight Enforcement: Regular (400), Semi-bold (500), Bold (600 max) */
+  b, strong {
+    font-weight: 600;
+  }
+  .font-bold {
+    font-weight: 600 !important;
+  }
+  .font-semibold {
+    font-weight: 500 !important;
+  }
+  .font-medium {
+    font-weight: 500 !important;
+  }
+  .font-normal {
+    font-weight: 400 !important;
   }
 }
 
@@ -176,16 +226,30 @@ a {
 }
 
 .content {
-  padding: 24px 28px 40px;
+  padding: 16px 20px 16px;
   width: 100%;
   margin: 0 auto;
+}
+
+.dashboard-content {
+  min-height: calc(100svh - 3.5rem);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 16px 20px;
+}
+
+@media (min-width: 1024px) {
+  .dashboard-content .dashboard-3col {
+    flex: 1;
+  }
 }
 
 /* Stats Grid */
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(6, minmax(130px, 1fr));
-  gap: 12px;
+  gap: 10px;
 }
 
 .stat-card,
@@ -197,12 +261,12 @@ a {
 }
 
 .stat-card {
-  padding: 14px 16px;
-  min-height: 96px;
+  padding: 12px 14px;
+  min-height: 84px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
 }
 
 /* Row 1: Icon + Label */
@@ -282,20 +346,38 @@ a {
 .dashboard-3col {
   display: grid;
   grid-template-columns: 2.1fr 1.6fr 1fr;
-  gap: 16px;
-  margin-top: 16px;
+  gap: 12px;
+  margin-top: 12px;
   align-items: stretch;
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
+}
+
+.dashboard-3col > * {
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
 }
 
 .chart-stack,
 .right-stack {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
+  height: 100%;
+}
+
+.chart-stack > *,
+.right-stack > * {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .panel {
-  padding: 18px 20px;
+  padding: 14px 16px;
 }
 
 .panel-heading {
@@ -376,28 +458,21 @@ a {
 
 /* Map Component Styling */
 .map-panel {
-  overflow: hidden;
-  padding: 0;
-  border-radius: var(--radius-xl);
   display: flex;
   flex-direction: column;
 }
 
-.map-panel [data-slot="card-header"] {
-  padding: 14px 18px 10px;
-}
-
 .map-content {
-  padding: 0 !important;
   position: relative;
   flex: 1;
   display: flex;
   flex-direction: column;
+  min-height: 0;
 }
 
 .site-map {
   flex: 1;
-  min-height: 400px;
+  min-height: 350px;
   height: 100%;
   width: 100%;
 }
@@ -546,10 +621,9 @@ a {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  border-top: 1px solid var(--border);
-  padding: 10px 18px;
-  background: var(--card);
-  min-height: 52px;
+  margin-top: 10px;
+  padding: 4px 0 0;
+  min-height: 46px;
 }
 
 .site-info-bar > .site-info-left {
@@ -645,21 +719,21 @@ a {
   padding: 0;
 }
 
-table {
+.table-wrap > table {
   border-collapse: collapse;
   width: 100%;
   min-width: 650px;
   text-align: left;
 }
 
-th,
-td {
+.table-wrap > table th,
+.table-wrap > table td {
   padding: 14px 18px;
   border-bottom: 1px solid var(--border);
   font-size: 13px;
 }
 
-th {
+.table-wrap > table th {
   color: var(--muted-foreground);
   font-size: 11px;
   font-weight: 600;
@@ -668,8 +742,275 @@ th {
   background: color-mix(in oklch, var(--muted) 40%, transparent);
 }
 
-td:last-child {
+.table-wrap > table td:last-child {
   color: var(--foreground);
+}
+
+/* Shadcn Table Header height enforcement (strict 40px) */
+th[data-slot="table-head"] {
+  height: 40px !important;
+  min-height: 40px !important;
+  max-height: 40px;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  vertical-align: middle !important;
+}
+
+/* ==========================================================================
+   React Day Picker / Date Range Picker Styles (Target UI Alignment)
+   ========================================================================== */
+.rdp-root {
+  --rdp-cell-size: 36px;
+  position: relative;
+}
+
+.rdp-months {
+  position: relative !important;
+  display: flex !important;
+  flex-direction: row !important;
+  gap: 1.5rem !important;
+  justify-content: center !important;
+}
+
+@media (max-width: 640px) {
+  .rdp-months {
+    flex-direction: column !important;
+    gap: 1rem !important;
+  }
+}
+
+.rdp-nav {
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  pointer-events: none !important;
+  z-index: 10 !important;
+  height: 32px !important;
+}
+
+.rdp-button_previous,
+.rdp-button_next {
+  pointer-events: auto !important;
+  width: 32px !important;
+  height: 32px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 0.5rem !important;
+  border: 1px solid var(--border) !important;
+  background-color: var(--card) !important;
+  color: var(--foreground) !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+  opacity: 0.85 !important;
+}
+
+.rdp-button_previous:hover:not(:disabled),
+.rdp-button_next:hover:not(:disabled) {
+  background-color: var(--accent) !important;
+  color: var(--accent-foreground) !important;
+  opacity: 1 !important;
+}
+
+.rdp-button_previous:disabled,
+.rdp-button_next:disabled {
+  opacity: 0.3 !important;
+  cursor: not-allowed !important;
+}
+
+.rdp-month_caption {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  height: 32px !important;
+  margin-bottom: 0.75rem !important;
+}
+
+.rdp-caption_label {
+  font-size: 0.875rem !important;
+  font-weight: 600 !important;
+  color: var(--foreground) !important;
+  user-select: none !important;
+}
+
+/* Month Grid Table */
+.rdp-month_grid,
+table.rdp-month_grid {
+  width: 100% !important;
+  border-collapse: collapse !important;
+  border-spacing: 0 !important;
+  table-layout: fixed !important;
+  margin: 0 auto !important;
+}
+
+/* Header & Week Rows: Strict 36px height, native table layout */
+.rdp-weekdays tr,
+tr.rdp-weekdays,
+.rdp-weeks tr,
+tr.rdp-week {
+  display: table-row !important;
+  height: 36px !important;
+}
+
+/* Weekday header cells (Su, Mo, Tu, We, Th, Fr, Sa) */
+.rdp-weekday,
+th.rdp-weekday {
+  display: table-cell !important;
+  width: 36px !important;
+  min-width: 36px !important;
+  max-width: 36px !important;
+  height: 36px !important;
+  padding: 0 !important;
+  text-align: center !important;
+  vertical-align: middle !important;
+  font-size: 0.8125rem !important;
+  font-weight: 500 !important;
+  color: var(--muted-foreground) !important;
+  border-bottom: none !important;
+  background: transparent !important;
+  user-select: none !important;
+}
+
+/* Day table cells */
+.rdp-day,
+td.rdp-day {
+  display: table-cell !important;
+  width: 36px !important;
+  min-width: 36px !important;
+  max-width: 36px !important;
+  height: 36px !important;
+  padding: 0 !important;
+  text-align: center !important;
+  vertical-align: middle !important;
+  position: relative !important;
+  border-bottom: none !important;
+  background: transparent;
+}
+
+/* Day Button (the interactive date pill) */
+.rdp-day_button {
+  width: 36px !important;
+  height: 36px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  font-size: 0.875rem !important;
+  font-weight: 500 !important;
+  border-radius: 0.5rem !important;
+  border: none !important;
+  background: transparent !important;
+  color: var(--foreground) !important;
+  cursor: pointer !important;
+  transition: background-color 0.15s ease, color 0.15s ease !important;
+  user-select: none !important;
+  position: relative !important;
+  z-index: 2 !important;
+}
+
+.rdp-day_button:hover:not(:disabled) {
+  background-color: var(--accent) !important;
+  color: var(--accent-foreground) !important;
+}
+
+/* Today indicator: subtle rounded box (Image 2 style) */
+td.rdp-today:not(.rdp-range_start):not(.rdp-range_end):not(.rdp-range_middle) .rdp-day_button {
+  background-color: color-mix(in oklch, var(--muted) 75%, transparent) !important;
+  border: 1px solid var(--border) !important;
+  font-weight: 600 !important;
+}
+
+/* Outside / Dimmed Days */
+td.rdp-outside .rdp-day_button {
+  color: var(--muted-foreground) !important;
+  opacity: 0.35 !important;
+}
+
+/* Range Middle Cell (Continuous Subtle Yellow Brand Band - Opacity 5%) */
+td.rdp-range_middle {
+  background-color: rgba(234, 179, 8, 0.05) !important;
+}
+.dark td.rdp-range_middle {
+  background-color: rgba(234, 179, 8, 0.08) !important;
+}
+
+td.rdp-range_middle .rdp-day_button {
+  background: transparent !important;
+  color: var(--foreground) !important;
+  border-radius: 0 !important;
+  font-weight: 500 !important;
+}
+.dark td.rdp-range_middle .rdp-day_button {
+  color: var(--foreground) !important;
+}
+
+td.rdp-range_middle .rdp-day_button:hover {
+  background-color: rgba(234, 179, 8, 0.12) !important;
+}
+
+/* Range Start & Range End Connecting Bar */
+td.rdp-range_start:not(.rdp-range_end) {
+  background: linear-gradient(to right, transparent 50%, rgba(234, 179, 8, 0.05) 50%) !important;
+}
+.dark td.rdp-range_start:not(.rdp-range_end) {
+  background: linear-gradient(to right, transparent 50%, rgba(234, 179, 8, 0.08) 50%) !important;
+}
+
+td.rdp-range_end:not(.rdp-range_start) {
+  background: linear-gradient(to right, rgba(234, 179, 8, 0.05) 50%, transparent 50%) !important;
+}
+.dark td.rdp-range_end:not(.rdp-range_start) {
+  background: linear-gradient(to right, rgba(234, 179, 8, 0.08) 50%, transparent 50%) !important;
+}
+
+/* Range Start & Range End Buttons (Solid Yellow Pill) */
+td.rdp-range_start .rdp-day_button,
+td.rdp-range_end .rdp-day_button,
+td.rdp-selected:not(.rdp-range_middle) .rdp-day_button {
+  background-color: #EAB308 !important;
+  color: #0F172A !important;
+  font-weight: 700 !important;
+  border-radius: 0.5rem !important;
+  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.15) !important;
+}
+
+/* Row end rounding for Range Middle */
+td.rdp-range_middle:first-child {
+  border-top-left-radius: 0.5rem !important;
+  border-bottom-left-radius: 0.5rem !important;
+}
+
+td.rdp-range_middle:last-child {
+  border-top-right-radius: 0.5rem !important;
+  border-bottom-right-radius: 0.5rem !important;
+}
+
+td.rdp-range_start:first-child {
+  border-top-left-radius: 0.5rem !important;
+  border-bottom-left-radius: 0.5rem !important;
+}
+
+td.rdp-range_end:last-child {
+  border-top-right-radius: 0.5rem !important;
+  border-bottom-right-radius: 0.5rem !important;
+}
+
+/* When range_middle follows or precedes outside/hidden cells */
+td.rdp-outside + td.rdp-range_middle,
+td.rdp-hidden + td.rdp-range_middle {
+  border-top-left-radius: 0.5rem !important;
+  border-bottom-left-radius: 0.5rem !important;
+}
+
+td.rdp-range_middle:has(+ td.rdp-outside),
+td.rdp-range_middle:has(+ td.rdp-hidden) {
+  border-top-right-radius: 0.5rem !important;
+  border-bottom-right-radius: 0.5rem !important;
 }
 
 /* Responsive queries */
@@ -690,7 +1031,9 @@ td:last-child {
 
 @media (max-width: 860px) {
   .dashboard-3col {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr) !important;
+    width: 100%;
+    max-width: 100%;
   }
   .stats-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -710,7 +1053,14 @@ td:last-child {
 
 @media (max-width: 768px) {
   .content {
-    padding: 14px 14px 28px;
+    padding: 12px 12px 24px;
+  }
+  .dashboard-content {
+    padding: 12px 12px 24px !important;
+    min-height: auto;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
   }
   .stats-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -727,7 +1077,7 @@ td:last-child {
     font-size: 11px;
   }
   .panel {
-    padding: 14px 14px;
+    padding: 12px 12px;
   }
   .site-map {
     height: 250px;
@@ -735,20 +1085,55 @@ td:last-child {
   }
   .site-info-bar {
     flex-direction: column;
-    align-items: flex-start;
+    align-items: stretch;
+    gap: 10px;
+    padding: 8px 2px 0;
+  }
+  .site-info-bar > .site-info-left {
+    flex-direction: row;
+    align-items: baseline;
+    justify-content: space-between;
+    width: 100%;
     gap: 8px;
-    padding: 10px 12px;
+  }
+  .site-info-bar .site-name {
+    text-align: left;
+    font-size: 13px;
+  }
+  .site-info-bar .site-sub {
+    text-align: right;
+    white-space: nowrap;
+    font-size: 11px;
+    flex-shrink: 0;
   }
   .site-metrics {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
     width: 100%;
-    justify-content: space-between;
-    gap: 8px;
+    gap: 12px;
+  }
+  .site-metrics .metric {
+    align-items: center;
+    text-align: center;
+    justify-content: center;
+    width: 100%;
+  }
+  .site-metrics .metric b {
+    text-align: center;
+    font-size: 14px;
+  }
+  .site-metrics .metric span {
+    text-align: center;
+    font-size: 11px;
   }
 }
 
 @media (max-width: 480px) {
   .content {
-    padding: 12px 12px 24px;
+    padding: 10px 10px 20px;
+  }
+  .dashboard-content {
+    padding: 10px 10px 20px !important;
   }
   .stats-grid {
     grid-template-columns: 1fr;
