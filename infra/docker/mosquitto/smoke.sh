@@ -23,7 +23,9 @@ docker run --rm --user 1883:1883 -v "$tmp/config:/auth" "$image" mosquitto_passw
 docker run --rm --user 1883:1883 -v "$tmp/config:/auth" "$image" mosquitto_passwd -b /auth/passwords pilot-one test-gateway-password
 # CI tempdir may otherwise be unreadable by container UID 1883.
 chmod 755 "$tmp" "$tmp/config" "$tmp/certs"
-chmod 644 "$tmp/config/"* "$tmp/certs/"*
+# The password file belongs to container UID 1883 and is already readable by
+# Mosquitto. A nonroot Linux runner must not chmod that other user's file.
+chmod 644 "$tmp/config/acl" "$tmp/config/mosquitto.conf" "$tmp/certs/"*
 docker run -d --name "$name" -v "$tmp/config:/mosquitto/config:ro" -v "$tmp/config:/mosquitto/auth:ro" -v "$tmp/certs:/mosquitto/certs:ro" "$image" >/dev/null
 common=(-h localhost -p 8883 --cafile /mosquitto/certs/fullchain.pem -V mqttv5)
 ready=false
