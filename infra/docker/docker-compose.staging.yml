@@ -1,0 +1,145 @@
+# Coolify attaches its reverse proxy to web:3000. Only TLS MQTT is host-published.
+# Set app images to immutable ghcr.io/...@sha256:... references from CI.
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-timescale/timescaledb:2.18.2-pg16}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-solar_platform}
+      POSTGRES_USER: ${POSTGRES_USER:-solar}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+    volumes: [postgres-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -h 127.0.0.1 -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+  redis:
+    image: redis:7.4.2-alpine
+    restart: unless-stopped
+    command: [redis-server, --appendonly, 'yes']
+    volumes: [redis-data:/data]
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+  mqtt:
+    image: eclipse-mosquitto:2.0.21
+    restart: unless-stopped
+    ports: ['8883:8883']
+    volumes:
+      - ${MQTT_CONFIG_DIR:?absolute broker config directory required}:/mosquitto/config:ro
+      - ${MQTT_CONFIG_DIR:?absolute broker config directory required}:/mosquitto/auth:ro
+      - ${MQTT_CERTS_DIR:?absolute broker TLS directory required}:/mosquitto/certs:ro
+      - mqtt-data:/mosquitto/data
+  storage:
+    image: ${STORAGE_IMAGE:-ghcr.io/coollabsio/minio@sha256:69b55a1c1c5dc285ce04db96689f5b2102317fc77a50680a1874ca6efd1c87f9}
+    restart: unless-stopped
+    command: [server, /data, --console-address, ':9001']
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-solar}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?required}
+    volumes: [minio-data:/data]
+    healthcheck:
+      test: [CMD, mc, ready, local]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+  storage-init:
+    image: ${API_IMAGE:?immutable API image required}
+    restart: 'no'
+    environment:
+      STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:-solar}
+      STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?required}
+      STORAGE_BUCKET: ${STORAGE_BUCKET:-solar-platform}
+    working_dir: /app/apps/api
+    command:
+      - node
+      - --input-type=module
+      - -e
+      - >-
+        import {S3Client, CreateBucketCommand, HeadBucketCommand} from '@aws-sdk/client-s3';
+        const client = new S3Client({endpoint:'http://storage:9000',region:'us-east-1',forcePathStyle:true,credentials:{accessKeyId:process.env.STORAGE_ACCESS_KEY,secretAccessKey:process.env.STORAGE_SECRET_KEY}});
+        const Bucket = process.env.STORAGE_BUCKET;
+        try { await client.send(new HeadBucketCommand({Bucket})); }
+        catch (error) { if (error.$$metadata?.httpStatusCode !== 404) throw error; await client.send(new CreateBucketCommand({Bucket})); }
+    depends_on:
+      storage: {condition: service_healthy}
+  migrate:
+    image: ${API_IMAGE:?immutable API image required}
+    restart: 'no'
+    command: [pnpm, --filter, '@solar/api', 'db:migrate']
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?URL-encoded PostgreSQL connection URL required}
+    depends_on:
+      postgres: {condition: service_healthy}
+  api:
+    image: ${API_IMAGE:?immutable API image required}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      API_PORT: 3001
+      WEB_URL: https://solar.fowir.com
+      DATABASE_URL: ${DATABASE_URL:?required}
+      REDIS_URL: redis://redis:6379
+      MQTT_URL: mqtt://mqtt:1883
+      MQTT_USERNAME: solar-backend
+      MQTT_PASSWORD: ${MQTT_PASSWORD:?required}
+      STORAGE_ENDPOINT: http://storage:9000
+      STORAGE_REGION: ${STORAGE_REGION:-us-east-1}
+      STORAGE_BUCKET: ${STORAGE_BUCKET:-solar-platform}
+      STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:-solar}
+      STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?required}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?required}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?required}
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+      mqtt: {condition: service_started}
+      storage-init: {condition: service_completed_successfully}
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3001/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+  worker:
+    image: ${WORKER_IMAGE:?immutable worker image required}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      WORKER_PORT: 3002
+      DATABASE_URL: ${DATABASE_URL:?required}
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      api: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3002/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+  web:
+    image: ${WEB_IMAGE:?immutable web image required}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      API_INTERNAL_URL: http://api:3001
+    expose: ['3000']
+    depends_on:
+      api: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:
+  mqtt-data:

@@ -2,6 +2,7 @@ import { type CanActivate, type ExecutionContext, Inject, Injectable, Unauthoriz
 import { Reflector } from "@nestjs/core";
 import { AuthService } from "./auth.service.js";
 import { IS_PUBLIC_KEY } from "./public.decorator.js";
+import { DatabaseService } from "../../database/database.service.js";
 
 function extractToken(request: any): string | undefined {
   if (request.cookies && request.cookies.access_token) {
@@ -26,9 +27,10 @@ export class JwtAuthGuard implements CanActivate {
   constructor(
     @Inject(AuthService) private readonly authService: AuthService,
     @Inject(Reflector) private readonly reflector: Reflector
+    , @Inject(DatabaseService) private readonly db: DatabaseService
   ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       context.getHandler(),
       context.getClass(),
@@ -45,7 +47,10 @@ export class JwtAuthGuard implements CanActivate {
 
     try {
       const user = this.authService.verifyAccessToken(token);
-      request.user = user;
+      const result = await this.db.query("SELECT id, role, school_id, status FROM users WHERE id=$1", [user.id]);
+      const current = result.rows[0];
+      if (!current || current.status !== "active") throw new UnauthorizedException("Account is inactive");
+      request.user = { ...user, role: current.role, schoolId: current.school_id ?? undefined };
       return true;
     } catch {
       throw new UnauthorizedException("Invalid or expired access token");

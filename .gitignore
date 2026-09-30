@@ -1,15 +1,49 @@
-node_modules
-.next
-dist
-.turbo
-coverage
-.DS_Store
-.env
-.env.local
-.env.*.local
-pnpm-debug.log*
+# Dependencies and generated builds
+node_modules/
+.next/
+dist/
+.turbo/
+coverage/
 *.tsbuildinfo
 
+# Local environment; keep reviewed configuration templates
+.env
+.env.*
+!.env.example
+!.env.*.example
 
+# Credentials, private keys, and local broker state
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+/secrets/
+/.secrets/
+infra/docker/mosquitto/auth/
+infra/docker/mosquitto/certs/
+infra/docker/mosquitto/passwords
+
+# Runtime logs, backups, and local database files
+*.log
+*.dump
+*.backup
+*.sqlite
+*.sqlite3
+/backups/
+pnpm-debug.log*
+
+# Generated test evidence and browser authentication state
+**/test/artifacts/
+playwright-report/
+test-results/
+blob-report/
+playwright/.auth/
+
+# Local OS/editor and worktree files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
 .worktrees/
 .superpowers/sdd/*/task-1-report.md

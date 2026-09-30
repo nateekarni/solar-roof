@@ -42,6 +42,7 @@ export const th = {
     systemSettings: "ตั้งค่าระบบ",
     systemDefaults: "ค่าตั้งต้นระบบ",
     meterPresets: "ค่าจากมิเตอร์",
+    companyAndBanking: "ข้อมูลบริษัทและบัญชีธนาคาร",
     alerts: "การแจ้งเตือนระบบ",
     alertsList: "รายการแจ้งเตือน",
     alertAcknowledge: "รับทราบทั้งหมด",

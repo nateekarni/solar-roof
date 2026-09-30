@@ -16,6 +16,8 @@ import {
   Search,
   ShieldCheck,
   Trash2,
+  Award,
+  Zap,
 } from "lucide-react";
 import * as React from "react";
 import { useRouter } from "next/navigation";
@@ -29,6 +31,8 @@ import {
   DialogTitle,
 } from "../../components/ui/dialog";
 import { Input } from "../../components/ui/input";
+import { operationKeys } from "./operation-columns";
+import { telemetryAge } from "../../lib/telemetry-age";
 import { useLocale, useT } from "../../providers/locale-provider";
 import { formatAppDate, formatAppDateTime, isIsoDateLike } from "../../lib/date-format";
 import { renderStatusBadge, STATUS_MAP } from "../../lib/status-badge";
@@ -134,8 +138,8 @@ export function OperationCardList({
   const keys = React.useMemo(() => {
     const first = rows[0];
     if (!first) return [];
-    return Object.keys(first).filter((k) => k !== idKey);
-  }, [rows, idKey]);
+    return operationKeys(resource,first,idKey);
+  }, [rows, idKey, resource]);
 
   // Find primary title key & status key
   const titleKey = keys[0] || "title";
@@ -216,7 +220,7 @@ export function OperationCardList({
                 {/* Card Body: Secondary Details */}
                 {secondaryKeys.length > 0 && (
                   <div className="grid grid-cols-2 gap-2 pt-2 border-t border-border/50 text-xs">
-                    {secondaryKeys.slice(0, 4).map((key, kIdx) => {
+                    {(resource === "sites" ? secondaryKeys.filter(k=>k!=="lastSeenAt") : secondaryKeys.slice(0,4)).map((key, kIdx) => {
                       const colHeader = rawColumns[keys.indexOf(key)] ?? key;
                       const val = row[key];
                       const str = String(val ?? "-");
@@ -267,7 +271,9 @@ export function OperationCardList({
                                 ? ""
                                 : "text-foreground"
                             }`}>
-                              {isStatusValue(val) ? (
+                              {resource === "sites" && ["lastUpdated","lastSeenAt","last_seen_at"].includes(key) ? (
+                                <span className={telemetryAge(val,locale).fresh ? "text-emerald-600" : "text-muted-foreground"}>{telemetryAge(val,locale).text}</span>
+                              ) : isStatusValue(val) ? (
                                 getStatusBadge(str)
                               ) : isAmount ? (
                                 `฿${formatNumber(val)}`
@@ -343,6 +349,7 @@ export function OperationCardList({
                       onClick={() => {
                         setPreviewData({
                           type: "invoice",
+                          documentId: row.invoiceId,
                           title: `ใบแจ้งหนี้ #${row.invoiceNumber || row[idKey] || row.id}`,
                           documentNumber: row.invoiceNumber || row[idKey] || row.id,
                           schoolName: row.schoolName || row["ชื่อโรงเรียน"],
@@ -372,6 +379,7 @@ export function OperationCardList({
                             onClick={() => {
                               setPreviewData({
                                 type: "receipt",
+                                documentId: row.receiptId,
                                 title: `ใบเสร็จรับเงิน #${row.receiptNumber || row[idKey] || row.id}`,
                                 documentNumber: row.receiptNumber || row[idKey] || row.id,
                                 schoolName: row.schoolName || row["ชื่อโรงเรียน"],
@@ -405,7 +413,11 @@ export function OperationCardList({
                           title: `สัญญาซื้อขายไฟฟ้า #${row.contractNumber || row.id}`,
                           documentNumber: row.contractNumber,
                           schoolName: row.schoolName,
-                          amount: Number(row.rate || 4.25),
+                          siteName: row.siteName,
+                          signers: row.signerName,
+                          taxId: row.taxId,
+                          taxAddress: row.taxAddress,
+                          rates: row.rates || [],
                           period: row.startDate,
                         });
                         setPreviewOpen(true);
@@ -428,6 +440,7 @@ export function OperationCardList({
                       onClick={() => {
                         setPreviewData({
                           type: "receipt",
+                          documentId: row.id,
                           title: `ใบเสร็จรับเงิน #${row.receiptNumber || row.documentNumber || row.id}`,
                           documentNumber: row.receiptNumber || row.documentNumber,
                           schoolName: row.schoolName,
@@ -446,7 +459,29 @@ export function OperationCardList({
 
                 {/* Mobile Action Buttons for Sites */}
                 {resource === "sites" && (
-                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-border/40">
+                  <div className="flex items-center justify-end gap-1.5 pt-2 border-t border-border/40 flex-wrap">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setPreviewData({
+                          type: "handover",
+                          title: `หนังสือส่งมอบระบบ #${row.name || row[idKey]}`,
+                          documentNumber: row.certificateNumber,
+                          schoolName: row.schoolName,
+                          siteName: row.name,
+                          capacityMwp: row.capacityMwp,
+                          gatewaySerial: row.gatewaySerial,
+                          meterSerial: row.deviceSerial,
+                        });
+                        setPreviewOpen(true);
+                      }}
+                      className="h-7 text-xs px-2 gap-1 text-amber-600 dark:text-amber-400 border-amber-500/30 bg-amber-500/5 cursor-pointer font-medium"
+                    >
+                      <Award className="size-3" />
+                      <span>{locale === "th" ? "ส่งมอบ" : "Handover"}</span>
+                    </Button>
                     <Button
                       type="button"
                       variant="outline"
@@ -458,11 +493,12 @@ export function OperationCardList({
                         });
                         setTelemetryDialogOpen(true);
                       }}
-                      className="h-7 text-xs px-2.5 gap-1 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 bg-emerald-500/5 cursor-pointer font-medium"
+                      className="h-7 text-xs px-2 gap-1 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 bg-emerald-500/5 cursor-pointer font-medium"
                     >
                       <Radio className="size-3 text-emerald-600 dark:text-emerald-400" />
-                      <span>{locale === "th" ? "สัญญาณสด" : "Live"}</span>
+                      <span>{locale === "th" ? "สด" : "Live"}</span>
                     </Button>
+                    {user?.role === 'admin' && <>
                     <Button
                       type="button"
                       variant="outline"
@@ -471,7 +507,7 @@ export function OperationCardList({
                         setSelectedSiteId(row[idKey] || row.id);
                         setEditSiteOpen(true);
                       }}
-                      className="h-7 text-xs px-2.5 gap-1 cursor-pointer"
+                      className="h-7 text-xs px-2 gap-1 cursor-pointer"
                     >
                       <Edit className="size-3 text-primary" />
                       <span>{locale === "th" ? "แก้ไข" : "Edit"}</span>
@@ -487,16 +523,56 @@ export function OperationCardList({
                         });
                         setDeleteSiteOpen(true);
                       }}
-                      className="h-7 text-xs px-2.5 gap-1 text-destructive hover:text-destructive cursor-pointer"
+                      className="h-7 text-xs px-2 gap-1 text-destructive hover:text-destructive cursor-pointer"
                     >
                       <Trash2 className="size-3" />
                       <span>{locale === "th" ? "ลบ" : "Delete"}</span>
                     </Button>
+                    </>}
                   </div>
                 )}
 
-                {/* Mobile Action Buttons for Audit, Alerts, Users, Schools, Notifications, Reports */}
-                {["audit", "alerts", "users", "schools", "notifications", "reports"].includes(resource) && (
+                {/* Mobile Action Buttons for Reports */}
+                {resource === "reports" && (
+                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-border/40">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setPreviewData({
+                          type: "settlement",
+                          title: `รายงานสรุปพลังงาน #${row.id || "STM"}`,
+                          documentNumber: row.statementNumber || "STM2026080001",
+                          schoolName: row.schoolName || "สถานศึกษาในโครงการ",
+                          siteName: row.siteName || "ไซต์อาคารหลัก",
+                          amount: Number(row.amount || 10414.63),
+                          period: row.period || "2026-08",
+                          consumedKwh: row.consumedKwh,
+                          rate: row.rate,
+                        });
+                        setPreviewOpen(true);
+                      }}
+                      className="h-7 text-xs px-2.5 gap-1 text-emerald-600 dark:text-emerald-400 cursor-pointer"
+                    >
+                      <Zap className="size-3" />
+                      <span>{locale === "th" ? "สรุปพลังงาน" : "Settlement"}</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onOpenDetail?.(row)}
+                      className="h-7 text-xs px-2.5 gap-1 text-primary cursor-pointer hover:bg-primary/5"
+                    >
+                      <Eye className="size-3" />
+                      <span>{locale === "th" ? "ดูรายละเอียด" : "View Details"}</span>
+                    </Button>
+                  </div>
+                )}
+
+                {/* Mobile Action Buttons for Audit, Alerts, Users, Schools, Notifications */}
+                {["audit", "alerts", "users", "schools", "notifications"].includes(resource) && (
                   <div className="flex items-center justify-end gap-2 pt-2 border-t border-border/40">
                     <Button
                       type="button"
@@ -574,6 +650,7 @@ export function OperationCardList({
         onOpenInvoice={(detail) => {
           setPreviewData({
             type: "invoice",
+            documentId: detail.invoiceId,
             title: `ใบแจ้งหนี้ #${detail.invoiceNumber || detail.id}`,
             documentNumber: detail.invoiceNumber,
             schoolName: detail.schoolName,
@@ -585,8 +662,9 @@ export function OperationCardList({
         onOpenReceipt={(detail) => {
           setPreviewData({
             type: "receipt",
+            documentId: detail.receiptId,
             title: `ใบเสร็จรับเงิน #${detail.receiptNumber || detail.invoiceNumber || detail.id}`,
-            documentNumber: detail.receiptNumber || detail.invoiceNumber,
+            documentNumber: detail.receiptNumber,
             schoolName: detail.schoolName,
             amount: Number(detail.amount || 0),
             period: detail.periodEnd,
@@ -666,3 +744,6 @@ export function OperationCardList({
     </div>
   );
 }
+
+
+

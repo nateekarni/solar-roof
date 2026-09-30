@@ -15,7 +15,7 @@ export function RankingChart({ sites }: { sites?: SiteRanking[] }) {
       <CardContent className="p-0">
         <div className="mb-2.5">
           <h3 className="text-xs font-bold text-foreground">
-            โรงเรียนที่ผลิตไฟฟ้าได้สูงสุดวันนี้
+            ไซต์ที่ผลิตไฟฟ้าได้สูงสุดในช่วงเวลาที่เลือก
             {rankingList.length > 0 && (
               <span className="ml-1.5 text-[11px] font-normal text-muted-foreground">
                 (4 อันดับแรก)
@@ -27,7 +27,7 @@ export function RankingChart({ sites }: { sites?: SiteRanking[] }) {
         {rankingList.length === 0 ? (
           <div className="flex h-20 items-center justify-center gap-2 rounded-lg border border-dashed border-border text-xs text-muted-foreground">
             <Award className="size-4 text-muted-foreground/50" />
-            <span>ยังไม่มีข้อมูลการจัดอันดับการผลิตในวันนี้</span>
+            <span>ยังไม่มีข้อมูลการผลิตในช่วงเวลาที่เลือก</span>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 md:grid-cols-4">

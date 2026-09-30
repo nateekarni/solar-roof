@@ -96,7 +96,7 @@ export function CustomizeCardsModal({
                 <span>{locale === "th" ? `การ์ดที่ ${idx + 1}` : `Card #${idx + 1}`}</span>
               </Label>
               <Select
-                value={draftConfig[idx] ?? defaultConfig[idx] ?? "schools"}
+                value={draftConfig[idx] ?? defaultConfig[idx] ?? "totalSites"}
                 onValueChange={(val) => handleChange(idx, val)}
               >
                 <SelectTrigger className="h-10 text-xs bg-card">

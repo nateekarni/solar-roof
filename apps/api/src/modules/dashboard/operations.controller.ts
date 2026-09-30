@@ -2,15 +2,16 @@ import { Controller, Get, Inject, Param, Req, Res } from "@nestjs/common";
 import { type Response } from "express";
 import { OperationsService } from "./operations.service.js";
 
-function toCsv(columns: string[], rows: Record<string, unknown>[], idKey = "id"): string {
-  const header = columns.map(c => `"${String(c).replace(/"/g, '""')}"`).join(",");
+export function toCsv(columns: string[], rows: Record<string, unknown>[], idKey = "id"): string {
+  const keys=rows[0] ? Object.keys(rows[0]).filter(key=>key!==idKey) : columns;
+  const escape=(value:unknown)=>{
+    let text=value===null||value===undefined?"":typeof value==="object"?JSON.stringify(value):String(value);
+    if(typeof value==="string"&&/^\s*[=+@-]/.test(text))text="'"+text;
+    return `"${text.replace(/"/g,'""')}"`;
+  };
+  const header = keys.map(escape).join(",");
   const bodyLines = rows.map(row => {
-    const values = Object.entries(row)
-      .filter(([k]) => k !== idKey)
-      .map(([_, v]) => {
-        if (v === null || v === undefined) return '""';
-        return `"${String(v).replace(/"/g, '""')}"`;
-      });
+    const values = keys.map(key=>escape(row[key]));
     return values.join(",");
   });
   return [header, ...bodyLines].join("\r\n");

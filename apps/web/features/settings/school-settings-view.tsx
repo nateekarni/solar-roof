@@ -164,7 +164,7 @@ export function SchoolSettingsView() {
                 School Administrator
               </Badge>
             </div>
-            <p className="text-xs text-muted-foreground">{user?.email || "school@solar.local"}</p>
+            <p className="text-xs text-muted-foreground">{user?.email || "—"}</p>
             <div className="flex items-center justify-center sm:justify-start gap-1.5 text-xs text-foreground font-medium pt-1">
               <School className="size-3.5 text-muted-foreground" />
               <span>โรงเรียนบ้านคลองแสน (SCH-001)</span>
@@ -188,17 +188,17 @@ export function SchoolSettingsView() {
           <div className="grid grid-cols-2 gap-3 text-xs">
             <div className="p-3 rounded-xl bg-muted/40 border border-border/50">
               <span className="text-[11px] text-muted-foreground block">เลขที่สัญญา</span>
-              <span className="font-bold text-foreground">{contract?.contractNumber || "CNT-0001"}</span>
+              <span className="font-bold text-foreground">{contract?.contractNumber || "—"}</span>
             </div>
             <div className="p-3 rounded-xl bg-muted/40 border border-border/50">
               <span className="text-[11px] text-muted-foreground block">อัตราค่าไฟฟ้า PPA</span>
               <span className="font-bold text-emerald-600 dark:text-emerald-400">
-                {contract?.rate ?? 4.25} บาท/kWh
+                {contract?.rate ?? "—"} บาท/kWh
               </span>
             </div>
             <div className="p-3 rounded-xl bg-muted/40 border border-border/50">
               <span className="text-[11px] text-muted-foreground block">วันเริ่มต้นสัญญา</span>
-              <span className="font-medium text-foreground">{contract?.startDate || "2024-01-01"}</span>
+              <span className="font-medium text-foreground">{contract?.startDate || "—"}</span>
             </div>
             <div className="p-3 rounded-xl bg-muted/40 border border-border/50">
               <span className="text-[11px] text-muted-foreground block">สถานะสัญญา</span>
@@ -209,7 +209,7 @@ export function SchoolSettingsView() {
             </div>
           </div>
           <div className="text-[11px] text-muted-foreground pt-1 flex items-center justify-between">
-            <span>คู่สัญญา: {contract?.signers || "สพฐ. · Solar Energy Corp"}</span>
+            <span>คู่สัญญา: {contract?.signers || "—"}</span>
             <span className="text-primary hover:underline cursor-pointer font-medium">ดูสำเนาสัญญา PDF</span>
           </div>
         </CardContent>
@@ -434,3 +434,4 @@ export function SchoolSettingsView() {
     </div>
   );
 }
+

@@ -1,15 +1,9 @@
 import { NextResponse } from "next/server";
 
-import { buildDependencyHealth, loadEnv } from "@solar/domain";
-
 export const runtime = "nodejs";
 
+// Liveness only. The API owns database, MQTT and storage readiness; the web
+// container must not require those credentials merely to report that it runs.
 export async function GET() {
-  const env = loadEnv(process.env);
-
-  return NextResponse.json({
-    ...buildDependencyHealth("web", env),
-    checkedAt: new Date().toISOString()
-  });
+  return NextResponse.json({service: "web", status: "healthy", checkedAt: new Date().toISOString()});
 }
-

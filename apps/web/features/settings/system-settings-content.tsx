@@ -60,6 +60,8 @@ export function SystemSettingsContent({ showBackLink = false }: SystemSettingsCo
   const [editingCard, setEditingCard] = React.useState<string | null>(null);
   const [cardDraft, setCardDraft] = React.useState<SettingsForm>({ ...form });
   const [saving, setSaving] = React.useState(false);
+  const [loading,setLoading] = React.useState(true);
+  const [loadError,setLoadError] = React.useState(false);
 
   React.useEffect(() => {
     apiClient
@@ -73,7 +75,8 @@ export function SystemSettingsContent({ showBackLink = false }: SystemSettingsCo
           });
         }
       })
-      .catch(() => {});
+      .catch(() => setLoadError(true))
+      .finally(() => setLoading(false));
   }, []);
 
   const handleStartEdit = (cardKey: string) => {
@@ -100,6 +103,7 @@ export function SystemSettingsContent({ showBackLink = false }: SystemSettingsCo
     }
   };
 
+  if (loading || loadError) return <div className="ops-content text-sm" role={loadError ? "alert" : "status"}>{loadError ? (locale === "th" ? "ไม่สามารถโหลดการตั้งค่าระบบ" : "Unable to load system settings") : (locale === "th" ? "กำลังโหลดการตั้งค่า…" : "Loading settings…")}</div>;
   return (
     <div className="ops-content">
       {/* Mobile Back Button (Mobile Only) */}
@@ -472,3 +476,5 @@ export function SystemSettingsContent({ showBackLink = false }: SystemSettingsCo
     </div>
   );
 }
+
+

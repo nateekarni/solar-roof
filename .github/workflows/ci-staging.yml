@@ -1,0 +1,114 @@
+name: CI and staging
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+# Never terminate an active deployment/migration when a newer commit arrives.
+concurrency:
+  group: solar-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      api: ${{ steps.publish.outputs.api }}
+      worker: ${{ steps.publish.outputs.worker }}
+      web: ${{ steps.publish.outputs.web }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.24.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter './packages/**' --recursive build
+      - run: pnpm lint && pnpm test
+      - run: node --test scripts/ci/*.test.mjs
+      - name: Build immutable candidate images
+        run: |
+          for app in api worker web; do
+            docker build --label org.opencontainers.image.revision="$GITHUB_SHA" -f "infra/docker/Dockerfile.$app" -t "solar-$app:ci" .
+          done
+      - name: Install browser
+        run: pnpm --filter @solar/web exec playwright install --with-deps chromium
+      - name: Verify MQTT credentials and ACLs
+        run: bash infra/docker/mosquitto/smoke.sh
+      - name: Real integration and browser E2E in disposable stack
+        run: bash scripts/ci/integration.sh
+      - name: Test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-evidence
+          path: |
+            test/artifacts/compose.log
+            apps/web/test/artifacts/*.png
+          retention-days: 7
+      - name: Publish the tested image IDs
+        id: publish
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && github.repository == 'nateekarni/solar-roof'
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          for app in api worker web; do
+            ref="ghcr.io/nateekarni/solar-roof/$app:$GITHUB_SHA"
+            docker tag "solar-$app:ci" "$ref"
+            docker push "$ref"
+            digest=$(docker inspect --format '{{index .RepoDigests 0}}' "$ref")
+            [[ "$digest" =~ ^ghcr.io/nateekarni/solar-roof/$app@sha256:[a-f0-9]{64}$ ]]
+            echo "$app=$digest" >> "$GITHUB_OUTPUT"
+          done
+          docker logout ghcr.io
+  deploy-staging:
+    needs: verify
+    if: vars.STAGING_DEPLOY_ENABLED == 'true' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && github.repository == 'nateekarni/solar-roof'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: staging
+    concurrency:
+      group: solar-staging-deployment
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.20.0
+      - name: Reject stale main workflow reruns
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          current=$(gh api repos/nateekarni/solar-roof/git/ref/heads/main --jq '.object.sha')
+          if [ "$current" != "$GITHUB_SHA" ]; then
+            echo 'Refusing stale release: tested commit is no longer main. Run the latest main workflow.' >&2
+            exit 1
+          fi
+      - name: Deploy exact tested digests and await completion
+        env:
+          COOLIFY_URL: ${{ vars.COOLIFY_URL }}
+          COOLIFY_APPLICATION_UUID: ${{ vars.COOLIFY_APPLICATION_UUID }}
+          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
+          API_IMAGE: ${{ needs.verify.outputs.api }}
+          WORKER_IMAGE: ${{ needs.verify.outputs.worker }}
+          WEB_IMAGE: ${{ needs.verify.outputs.web }}
+          STAGING_WEB_URL: ${{ vars.STAGING_WEB_URL }}
+        run: |
+          : "${STAGING_WEB_URL:?Set staging environment STAGING_WEB_URL before enabling deployments}"
+          node scripts/ci/coolify-deploy.mjs
+          node scripts/ci/coolify-deploy.mjs wait "${STAGING_WEB_URL%/}/login"
+          node scripts/ci/coolify-deploy.mjs wait "${STAGING_WEB_URL%/}/health"
+

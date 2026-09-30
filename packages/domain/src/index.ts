@@ -1,5 +1,5 @@
-export { envSchema, loadEnv } from "./config/env.js";
-export type { AppEnv } from "./config/env.js";
+export { envSchema, loadEnv, workerEnvSchema, loadWorkerEnv } from "./config/env.js";
+export type { AppEnv, WorkerEnv } from "./config/env.js";
 export { buildDependencyHealth } from "./health/dependency-health.js";
 export type { DependencyHealth, DependencyStatus, ServiceHealth } from "./health/dependency-health.js";
 
@@ -37,3 +37,4 @@ export { calculateRate } from './billing/rate-calculator.js';
 export type { FixedRateVersion, Money } from './billing/rate-calculator.js';
 export { canTransition, assertTransition } from './billing/billing-lifecycle.js';
 export type { BillingStatus } from './billing/billing-lifecycle.js';
+

@@ -43,8 +43,10 @@ export function AuditDetailModal({
 
   if (!event) return null;
 
-  const copyToClipboard = (text: string, label: string) => {
-    navigator.clipboard.writeText(text);
+  const copyToClipboard = async (text: string, label: string) => {
+    try { await navigator.clipboard.writeText(text); } catch {
+      notify.error(locale === "th" ? "คัดลอกไม่สำเร็จ" : "Could not copy to clipboard"); return;
+    }
     notify.success(
       locale === "th" ? `คัดลอก ${label} แล้ว` : `Copied ${label} to clipboard`
     );
@@ -78,7 +80,7 @@ export function AuditDetailModal({
               className="shrink-0 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 font-semibold"
             >
               <CheckCircle2 className="size-3 mr-1" />
-              {event.status || (locale === "th" ? "สำเร็จ" : "Success")}
+              {event.status || (locale === "th" ? "ไม่มีข้อมูลผลลัพธ์" : "Outcome unavailable")}
             </Badge>
           </div>
         </DialogHeader>
@@ -239,3 +241,5 @@ export function AuditDetailModal({
     </Dialog>
   );
 }
+
+

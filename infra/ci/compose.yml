@@ -1,0 +1,100 @@
+x-api-env: &api-env
+  NODE_ENV: production
+  API_PORT: 3001
+  DATABASE_URL: postgresql://solar:ci-only-password@postgres:5432/solar_readiness
+  REDIS_URL: redis://redis:6379
+  MQTT_URL: mqtt://mqtt:1883
+  MQTT_USERNAME: ci-test
+  MQTT_PASSWORD: ci-test-password
+  JWT_ACCESS_SECRET: readiness-test-access-secret-000000000000
+  JWT_REFRESH_SECRET: readiness-test-refresh-secret-000000000000
+  STORAGE_ENDPOINT: http://storage:9000
+  STORAGE_REGION: us-east-1
+  STORAGE_BUCKET: solar-readiness
+  STORAGE_ACCESS_KEY: solar-ci
+  STORAGE_SECRET_KEY: ci-storage-only-password
+  BOOTSTRAP_ADMIN_EMAIL: bootstrap@example.test
+  BOOTSTRAP_ADMIN_PASSWORD: Ci-bootstrap-original-123!
+services:
+  postgres:
+    image: timescale/timescaledb:2.18.2-pg16
+    environment:
+      POSTGRES_DB: solar_readiness
+      POSTGRES_USER: solar
+      POSTGRES_PASSWORD: ci-only-password
+    ports: ["127.0.0.1:15432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U solar -d solar_readiness"]
+      interval: 2s
+      retries: 40
+  redis:
+    image: redis:7.4-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      retries: 30
+  mqtt:
+    image: emqx/emqx:5.8.5
+    ports: ["127.0.0.1:18883:1883"]
+    healthcheck:
+      test: ["CMD-SHELL", "emqx ctl status >/dev/null"]
+      interval: 5s
+      retries: 30
+  storage:
+    image: ghcr.io/coollabsio/minio@sha256:69b55a1c1c5dc285ce04db96689f5b2102317fc77a50680a1874ca6efd1c87f9
+    command: ["server", "/data"]
+    environment:
+      MINIO_ROOT_USER: solar-ci
+      MINIO_ROOT_PASSWORD: ci-storage-only-password
+    healthcheck:
+      test: ["CMD-SHELL", "MC_HOST_local=http://solar-ci:ci-storage-only-password@localhost:9000 mc ready local"]
+      interval: 2s
+      retries: 30
+  migrate:
+    image: solar-api:ci
+    environment: *api-env
+    command: ["pnpm", "--filter", "@solar/api", "db:migrate"]
+    depends_on:
+      postgres: {condition: service_healthy}
+  bootstrap:
+    image: solar-api:ci
+    environment: *api-env
+    command: ["pnpm", "--filter", "@solar/api", "db:bootstrap"]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      storage: {condition: service_healthy}
+  api:
+    image: solar-api:ci
+    environment: *api-env
+    ports: ["127.0.0.1:13001:3001"]
+    depends_on:
+      bootstrap: {condition: service_completed_successfully}
+      mqtt: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3001/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 3s
+      retries: 40
+  worker:
+    image: solar-worker:ci
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://solar:ci-only-password@postgres:5432/solar_readiness
+      MQTT_URL: mqtt://mqtt:1883
+      MQTT_USERNAME: ci-test
+      MQTT_PASSWORD: ci-test-password
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      api: {condition: service_healthy}
+  web:
+    image: solar-web:ci
+    environment:
+      NODE_ENV: production
+      API_INTERNAL_URL: http://api:3001
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+    ports: ["127.0.0.1:13000:3000"]
+    depends_on:
+      api: {condition: service_healthy}
+
+

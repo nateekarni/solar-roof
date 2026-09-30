@@ -52,8 +52,10 @@ export function NotificationDetailModal({
 
   if (!notification) return null;
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
+  const copyToClipboard = async (text: string) => {
+    try { await navigator.clipboard.writeText(text); } catch {
+      notify.error(locale === "th" ? "คัดลอกไม่สำเร็จ" : "Could not copy to clipboard"); return;
+    }
     setCopied(true);
     notify.success(locale === "th" ? "คัดลอกข้อความแล้ว" : "Message copied");
     setTimeout(() => setCopied(false), 2000);
@@ -82,13 +84,13 @@ export function NotificationDetailModal({
                   variant={isDelivered ? "default" : "secondary"}
                   className="text-xs shrink-0"
                 >
-                  {notification.status || (locale === "th" ? "ส่งแล้ว" : "Sent")}
+                  {notification.status || "—"}
                 </Badge>
               </div>
               <DialogDescription className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1.5 truncate">
                 <Clock className="size-3 shrink-0" />
                 <span>{notification.sentAt || "-"}</span>
-                <span>• ช่องทาง: {notification.channel || "In-App"}</span>
+                <span>• ช่องทาง: {notification.channel || "—"}</span>
               </DialogDescription>
             </div>
           </div>
@@ -127,7 +129,7 @@ export function NotificationDetailModal({
               </div>
               <div className="font-medium text-xs text-foreground flex items-center gap-1.5">
                 <Mail className="size-3.5 text-muted-foreground" />
-                <span>{notification.channel || "In-App Notification"}</span>
+                <span>{notification.channel || "—"}</span>
               </div>
             </div>
 
@@ -137,7 +139,7 @@ export function NotificationDetailModal({
                 <span>{locale === "th" ? "กลุ่มผู้รับ" : "Recipients"}</span>
               </div>
               <div className="font-medium text-xs text-foreground truncate">
-                {notification.recipient || (locale === "th" ? "ผู้ดูแลระบบและโรงเรียน" : "Admins & School Users")}
+                {notification.recipient || "—"}
               </div>
             </div>
 
@@ -158,7 +160,7 @@ export function NotificationDetailModal({
               </div>
               <div className="font-medium text-xs text-foreground flex items-center gap-1.5">
                 <span className={`inline-block size-2 rounded-full ${isDelivered ? "bg-emerald-500" : "bg-amber-500"}`} />
-                <span>{notification.status || (locale === "th" ? "ส่งสำเร็จ" : "Delivered")}</span>
+                <span>{notification.status || "—"}</span>
               </div>
             </div>
           </div>
@@ -167,3 +169,5 @@ export function NotificationDetailModal({
     </Dialog>
   );
 }
+
+

@@ -15,11 +15,13 @@ import {
   FileX,
   ImageIcon,
   Loader2,
+  Mail,
   QrCode,
   Receipt,
   RotateCcw,
   ShieldAlert,
   ShieldCheck,
+  UploadCloud,
   XCircle,
   Zap,
 } from "lucide-react";
@@ -27,6 +29,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "../../components/ui/dialog";
@@ -97,14 +100,81 @@ export function BillingDetailModal({
   const [rejectionReason, setRejectionReason] = React.useState("");
   const [slipZoomOpen, setSlipZoomOpen] = React.useState(false);
 
+  // Email invoice states
+  const [emailModalOpen, setEmailModalOpen] = React.useState(false);
+  const [recipientEmail, setRecipientEmail] = React.useState("");
+  const [isSendingEmail, setIsSendingEmail] = React.useState(false);
+
+  // Drag and drop slip upload states
+  const [isDragging, setIsDragging] = React.useState(false);
+  const [isUploadingSlip, setIsUploadingSlip] = React.useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  const handleSendEmail = async () => {
+    if (!data?.id || !recipientEmail.trim()) return;
+    setIsSendingEmail(true);
+    try {
+      await apiClient.post(`/v1/billing-cycles/${data.id}/send-email`, {
+        recipientEmail: recipientEmail.trim(),
+      });
+      notify.success(
+        locale === "th"
+          ? `ส่งอีเมลใบแจ้งหนี้ไปยัง ${recipientEmail} สำเร็จ`
+          : `Invoice email sent to ${recipientEmail} successfully`
+      );
+      setEmailModalOpen(false);
+    } catch (err: any) {
+      notify.error(err?.message || "ไม่สามารถส่งอีเมลใบแจ้งหนี้ได้");
+    } finally {
+      setIsSendingEmail(false);
+    }
+  };
+
+  const handleFileUpload = async (file: File) => {
+    if (!file || !data?.id) return;
+    if (!["image/jpeg", "image/png", "application/pdf"].includes(file.type) || file.size > 10 * 1024 * 1024) {
+      notify.error("Choose a PNG, JPEG or PDF file no larger than 10 MB");
+      return;
+    }
+    setIsUploadingSlip(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const dataUrl = e.target?.result as string;
+        try {
+          await apiClient.post(`/v1/billing-cycles/${data.id}/pay`, {
+            amount: data.amount,
+            slipUrl: dataUrl,
+            paidAt: new Date().toISOString(),
+            note: "Uploaded via Billing Detail Modal",
+          });
+          notify.success(
+            locale === "th"
+              ? "อัปโหลดสลิปหลักฐานสำเร็จ อยู่ระหว่างรอตรวจสอบ"
+              : "Payment slip uploaded successfully"
+          );
+          setData((prev) => (prev ? { ...prev, slipUrl: dataUrl, status: "pending_verification" } : null));
+          onUpdated?.();
+        } catch (err: any) {
+          notify.error(err?.message || "เกิดข้อผิดพลาดในการบันทึกสลิป");
+        } finally {
+          setIsUploadingSlip(false);
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch (err: any) {
+      setIsUploadingSlip(false);
+      notify.error("ไม่สามารถอ่านไฟล์ได้");
+    }
+  };
+
   const fetchDetails = React.useCallback(async (id: string) => {
     setLoading(true);
     try {
       const res = await apiClient.get<BillingDetailData>(`/v1/billing-cycles/${id}`);
       setData((prev) => ({ ...prev, ...res }));
-    } catch {
-      // If API fails or mock, fallback to initialData
-      if (initialData) setData(initialData);
+    } catch (error) {
+      notify.error(error instanceof Error ? error.message : "Unable to load billing details");
     } finally {
       setLoading(false);
     }
@@ -171,12 +241,11 @@ export function BillingDetailModal({
   };
 
   const amountNum = Number(data.amount) || 0;
-  const subtotal = amountNum > 0 ? amountNum / 1.07 : 0;
-  const vat = amountNum > 0 ? amountNum - subtotal : 0;
   const isPaid = data.status === "paid" || data.paymentStatus === "approved" || data.paymentStatus === "paid";
   const hasSlip = Boolean(data.slipUrl);
 
   const formatNumber = (val: any) => {
+    if (val === undefined || val === null || val === "") return "—";
     const num = Number(val);
     if (isNaN(num)) return val || "-";
     return new Intl.NumberFormat(locale === "th" ? "th-TH" : "en-US", {
@@ -217,9 +286,18 @@ export function BillingDetailModal({
               </div>
             </div>
 
-            {/* Quick Document Links */}
+            {/* Quick Document Links & Email Dispatch */}
             <div className="flex items-center gap-2 pr-6">
-              {data.invoiceNumber && onOpenInvoice && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setEmailModalOpen(true)}
+                className="h-8 text-xs gap-1.5 cursor-pointer text-foreground border-border hover:bg-accent"
+              >
+                <Mail className="size-3.5 text-primary" />
+                <span>{locale === "th" ? "ส่งอีเมลใบแจ้งหนี้" : "Email Invoice"}</span>
+              </Button>
+              {onOpenInvoice && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -266,17 +344,17 @@ export function BillingDetailModal({
               <div className="grid grid-cols-3 gap-2.5 pt-1">
                 <div className="p-2.5 rounded-lg bg-muted/30 border border-border/50 text-center">
                   <span className="text-[10px] text-muted-foreground block">{locale === "th" ? "หน่วยยกมา (เปิด)" : "Opening"}</span>
-                  <span className="font-mono font-bold text-xs">{formatNumber(data.openingEnergy || 0)}</span>
+                  <span className="font-mono font-bold text-xs">{formatNumber(data.openingEnergy)}</span>
                   <span className="text-[9px] text-muted-foreground block">kWh</span>
                 </div>
                 <div className="p-2.5 rounded-lg bg-muted/30 border border-border/50 text-center">
                   <span className="text-[10px] text-muted-foreground block">{locale === "th" ? "หน่วยยกไป (ปิด)" : "Closing"}</span>
-                  <span className="font-mono font-bold text-xs">{formatNumber(data.closingEnergy || data.consumedKwh || 2450.5)}</span>
+                  <span className="font-mono font-bold text-xs">{formatNumber(data.closingEnergy)}</span>
                   <span className="text-[9px] text-muted-foreground block">kWh</span>
                 </div>
                 <div className="p-2.5 rounded-lg bg-primary/10 border border-primary/20 text-center">
                   <span className="text-[10px] text-primary block font-semibold">{locale === "th" ? "พลังงานสุทธิ" : "Consumed"}</span>
-                  <span className="font-mono font-bold text-sm text-primary">{formatNumber(data.consumedKwh || 2450.5)}</span>
+                  <span className="font-mono font-bold text-sm text-primary">{formatNumber(data.consumedKwh)}</span>
                   <span className="text-[9px] text-primary/80 block">kWh</span>
                 </div>
               </div>
@@ -291,19 +369,11 @@ export function BillingDetailModal({
               <div className="divide-y divide-border/40 text-xs">
                 <div className="py-2 flex items-center justify-between">
                   <span className="text-muted-foreground">{locale === "th" ? "พลังงานไฟฟ้าที่ใช้" : "Consumed Energy"}</span>
-                  <span className="font-mono font-medium">{formatNumber(data.consumedKwh || 2450.5)} kWh</span>
+                  <span className="font-mono font-medium">{formatNumber(data.consumedKwh)} kWh</span>
                 </div>
                 <div className="py-2 flex items-center justify-between">
                   <span className="text-muted-foreground">{locale === "th" ? "อัตราค่าไฟตามสัญญา" : "Fixed PPA Tariff"}</span>
-                  <span className="font-mono font-medium">฿{formatNumber(data.rate || 4.25)} / kWh</span>
-                </div>
-                <div className="py-2 flex items-center justify-between">
-                  <span className="text-muted-foreground">{locale === "th" ? "มูลค่าก่อนภาษี (Subtotal)" : "Subtotal"}</span>
-                  <span className="font-mono font-medium">฿{formatNumber(subtotal)}</span>
-                </div>
-                <div className="py-2 flex items-center justify-between">
-                  <span className="text-muted-foreground">{locale === "th" ? "ภาษีมูลค่าเพิ่ม (VAT 7%)" : "VAT (7%)"}</span>
-                  <span className="font-mono font-medium">฿{formatNumber(vat)}</span>
+                  <span className="font-mono font-medium">฿{formatNumber(data.rate)} / kWh</span>
                 </div>
                 <div className="py-2.5 flex items-center justify-between border-t border-border font-bold text-sm text-foreground">
                   <span>{locale === "th" ? "ยอดเงินรวมทั้งสิ้นที่ต้องชำระ" : "Total Amount Due"}</span>
@@ -320,7 +390,7 @@ export function BillingDetailModal({
               </div>
               <div className="p-2.5 rounded-lg bg-muted/20 border border-border/40 space-y-0.5">
                 <span className="text-[10px] text-muted-foreground block">{locale === "th" ? "เลขที่ใบเสร็จรับเงิน" : "Receipt No."}</span>
-                <span className="font-mono font-medium">{data.receiptNumber || (isPaid ? "RCT-READY" : "-")}</span>
+                <span className="font-mono font-medium">{data.receiptNumber || "—"}</span>
               </div>
             </div>
           </div>
@@ -369,27 +439,86 @@ export function BillingDetailModal({
                   <div className="p-2.5 rounded-lg bg-muted/30 border border-border/40 text-[11px] space-y-1">
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">{locale === "th" ? "วันเวลาที่โอน:" : "Paid At:"}</span>
-                      <span className="font-medium text-foreground">{data.paidAt ? formatAppDateTime(data.paidAt, locale) : "2026-09-20 14:35 น."}</span>
+                      <span className="font-medium text-foreground">{data.paidAt ? formatAppDateTime(data.paidAt, locale) : "—"}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">{locale === "th" ? "ยอดเงินในสลิป:" : "Slip Amount:"}</span>
                       <span className="font-bold text-emerald-600 dark:text-emerald-400">฿{formatNumber(amountNum)}</span>
                     </div>
                   </div>
+                  <div className="flex justify-end pt-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="h-6 text-[10px] text-muted-foreground hover:text-foreground gap-1 cursor-pointer"
+                    >
+                      <UploadCloud className="size-3" />
+                      <span>{locale === "th" ? "อัปโหลดสลิปใหม่" : "Re-upload Slip"}</span>
+                    </Button>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*,application/pdf"
+                      className="hidden"
+                      onChange={(e) => {
+                        if (e.target.files?.[0]) {
+                          handleFileUpload(e.target.files[0]);
+                        }
+                      }}
+                    />
+                  </div>
                 </div>
               ) : (
-                <div className="p-8 rounded-lg border border-dashed border-border/80 bg-muted/10 text-center space-y-2">
-                  <div className="size-10 rounded-full bg-muted flex items-center justify-center mx-auto text-muted-foreground">
-                    <ImageIcon className="size-5" />
+                <div
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setIsDragging(true);
+                  }}
+                  onDragLeave={() => setIsDragging(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setIsDragging(false);
+                    if (e.dataTransfer.files?.[0]) {
+                      handleFileUpload(e.dataTransfer.files[0]);
+                    }
+                  }}
+                  onClick={() => fileInputRef.current?.click()}
+                  className={`p-6 rounded-xl border-2 border-dashed transition-all text-center space-y-2 cursor-pointer ${
+                    isDragging
+                      ? "border-primary bg-primary/10"
+                      : "border-border/80 bg-muted/15 hover:bg-muted/25"
+                  }`}
+                >
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*,application/pdf"
+                    className="hidden"
+                    onChange={(e) => {
+                      if (e.target.files?.[0]) {
+                        handleFileUpload(e.target.files[0]);
+                      }
+                    }}
+                  />
+                  <div className="size-11 rounded-full bg-primary/10 flex items-center justify-center mx-auto text-primary">
+                    <UploadCloud className="size-6" />
                   </div>
-                  <p className="font-semibold text-foreground">
-                    {locale === "th" ? "ยังไม่มีหลักฐานการชำระเงิน" : "No Payment Slip Uploaded"}
-                  </p>
-                  <p className="text-[11px] text-muted-foreground leading-relaxed">
-                    {locale === "th"
-                      ? "สถานศึกษาจะอัปโหลดสลิปหลักฐานเมื่อทำการโอนเงินค่าไฟฟ้าแล้ว"
-                      : "The institution will upload proof of payment upon bank transfer completion."}
-                  </p>
+                  <div>
+                    <p className="font-semibold text-foreground text-xs">
+                      {locale === "th" ? "ลากสลิปมาวางที่นี่ หรือคลิกเพื่ออัปโหลด" : "Drag and drop slip here, or click to upload"}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      {locale === "th" ? "รองรับไฟล์ภาพ JPG, PNG (สูงสุด 5MB)" : "Supports JPG, PNG images (Max 5MB)"}
+                    </p>
+                  </div>
+                  {isUploadingSlip && (
+                    <div className="flex items-center justify-center gap-1.5 text-xs text-primary font-medium">
+                      <Loader2 className="size-3.5 animate-spin" />
+                      <span>{locale === "th" ? "กำลังอัปโหลดสลิป..." : "Uploading slip..."}</span>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -507,6 +636,58 @@ export function BillingDetailModal({
             </DialogContent>
           </Dialog>
         )}
+
+        {/* Email Invoice Modal */}
+        <Dialog open={emailModalOpen} onOpenChange={setEmailModalOpen}>
+          <DialogContent className="sm:max-w-md w-full bg-card border-border">
+            <DialogHeader>
+              <DialogTitle className="text-base font-semibold flex items-center gap-2">
+                <Mail className="size-4 text-emerald-500" />
+                <span>{locale === "th" ? "ส่งอีเมลใบแจ้งหนี้" : "Send Invoice Email"}</span>
+              </DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground">
+                {locale === "th"
+                  ? `ส่งใบแจ้งหนี้รอบบิล ${data?.period || ""} พร้อมไฟล์แนบให้ลูกค้าทางอีเมล`
+                  : `Send billing invoice for period ${data?.period || ""} with attachment.`}
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="py-3 space-y-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium">
+                  {locale === "th" ? "อีเมลผู้รับ" : "Recipient Email"}
+                </Label>
+                <Input
+                  type="email"
+                  value={recipientEmail}
+                  onChange={(e) => setRecipientEmail(e.target.value)}
+                  placeholder="finance@school.ac.th"
+                  className="h-9 text-xs"
+                />
+              </div>
+            </div>
+
+            <DialogFooter className="gap-2 sm:gap-0">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setEmailModalOpen(false)}
+                className="text-xs"
+              >
+                {locale === "th" ? "ยกเลิก" : "Cancel"}
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleSendEmail}
+                disabled={isSendingEmail || !recipientEmail.trim()}
+                className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium gap-1.5"
+              >
+                {isSendingEmail ? <Loader2 className="size-3.5 animate-spin" /> : <Mail className="size-3.5" />}
+                <span>{locale === "th" ? "ยืนยันส่งอีเมล" : "Send Email"}</span>
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </DialogContent>
     </Dialog>
   );

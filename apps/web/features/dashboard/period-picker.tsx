@@ -11,6 +11,11 @@ import { useIsMobile } from "../../hooks/use-mobile";
 import { useLocale } from "../../providers/locale-provider";
 import { formatAppDateRange } from "../../lib/date-format";
 
+function bangkokToday(): Date {
+  const parts = new Intl.DateTimeFormat('en-US', {timeZone:'Asia/Bangkok',year:'numeric',month:'numeric',day:'numeric'}).formatToParts(new Date());
+  const value = (type: string) => Number(parts.find(part=>part.type===type)?.value);
+  return new Date(value('year'),value('month')-1,value('day'));
+}
 function toISODate(d: Date): string {
   const year = d.getFullYear();
   const month = String(d.getMonth() + 1).padStart(2, "0");
@@ -25,7 +30,7 @@ function parseISODate(str?: string | null): Date | undefined {
   return new Date(y, m - 1, d);
 }
 
-type ViewMode = "day" | "month" | "year";
+type ViewMode = "day" | "month";
 
 interface PresetItem {
   key: string;
@@ -40,7 +45,7 @@ const DAY_PRESETS: PresetItem[] = [
     labelTh: "เดือนนี้",
     labelEn: "This Month",
     getRange: () => {
-      const now = new Date();
+      const now = bangkokToday();
       return {
         from: new Date(now.getFullYear(), now.getMonth(), 1),
         to: new Date(now.getFullYear(), now.getMonth() + 1, 0),
@@ -52,7 +57,7 @@ const DAY_PRESETS: PresetItem[] = [
     labelTh: "เดือนที่แล้ว",
     labelEn: "Last Month",
     getRange: () => {
-      const now = new Date();
+      const now = bangkokToday();
       return {
         from: new Date(now.getFullYear(), now.getMonth() - 1, 1),
         to: new Date(now.getFullYear(), now.getMonth(), 0),
@@ -64,34 +69,10 @@ const DAY_PRESETS: PresetItem[] = [
     labelTh: "3 เดือนล่าสุด",
     labelEn: "Last 3 Months",
     getRange: () => {
-      const now = new Date();
+      const now = bangkokToday();
       return {
         from: new Date(now.getFullYear(), now.getMonth() - 2, 1),
         to: new Date(now.getFullYear(), now.getMonth() + 1, 0),
-      };
-    },
-  },
-  {
-    key: "last_6_months",
-    labelTh: "6 เดือนล่าสุด",
-    labelEn: "Last 6 Months",
-    getRange: () => {
-      const now = new Date();
-      return {
-        from: new Date(now.getFullYear(), now.getMonth() - 5, 1),
-        to: new Date(now.getFullYear(), now.getMonth() + 1, 0),
-      };
-    },
-  },
-  {
-    key: "this_year",
-    labelTh: "ปีนี้",
-    labelEn: "This Year",
-    getRange: () => {
-      const now = new Date();
-      return {
-        from: new Date(now.getFullYear(), 0, 1),
-        to: new Date(now.getFullYear(), 11, 31),
       };
     },
   },
@@ -103,10 +84,22 @@ const MONTH_PRESETS: PresetItem[] = [
     labelTh: "เดือนนี้",
     labelEn: "This Month",
     getRange: () => {
-      const now = new Date();
+      const now = bangkokToday();
       return {
         from: new Date(now.getFullYear(), now.getMonth(), 1),
         to: new Date(now.getFullYear(), now.getMonth() + 1, 0),
+      };
+    },
+  },
+  {
+    key: "last_month",
+    labelTh: "เดือนที่แล้ว",
+    labelEn: "Last Month",
+    getRange: () => {
+      const now = bangkokToday();
+      return {
+        from: new Date(now.getFullYear(), now.getMonth() - 1, 1),
+        to: new Date(now.getFullYear(), now.getMonth(), 0),
       };
     },
   },
@@ -115,104 +108,17 @@ const MONTH_PRESETS: PresetItem[] = [
     labelTh: "3 เดือนล่าสุด",
     labelEn: "Last 3 Months",
     getRange: () => {
-      const now = new Date();
+      const now = bangkokToday();
       return {
         from: new Date(now.getFullYear(), now.getMonth() - 2, 1),
         to: new Date(now.getFullYear(), now.getMonth() + 1, 0),
       };
     },
   },
-  {
-    key: "last_6_months",
-    labelTh: "6 เดือนล่าสุด",
-    labelEn: "Last 6 Months",
-    getRange: () => {
-      const now = new Date();
-      return {
-        from: new Date(now.getFullYear(), now.getMonth() - 5, 1),
-        to: new Date(now.getFullYear(), now.getMonth() + 1, 0),
-      };
-    },
-  },
-  {
-    key: "this_year",
-    labelTh: "ปีนี้",
-    labelEn: "This Year",
-    getRange: () => {
-      const now = new Date();
-      return {
-        from: new Date(now.getFullYear(), 0, 1),
-        to: new Date(now.getFullYear(), 11, 31),
-      };
-    },
-  },
-  {
-    key: "last_year",
-    labelTh: "ปีที่แล้ว",
-    labelEn: "Last Year",
-    getRange: () => {
-      const now = new Date();
-      return {
-        from: new Date(now.getFullYear() - 1, 0, 1),
-        to: new Date(now.getFullYear() - 1, 11, 31),
-      };
-    },
-  },
-];
-
-const YEAR_PRESETS: PresetItem[] = [
-  {
-    key: "this_year",
-    labelTh: "ปีนี้",
-    labelEn: "This Year",
-    getRange: () => {
-      const now = new Date();
-      return {
-        from: new Date(now.getFullYear(), 0, 1),
-        to: new Date(now.getFullYear(), 11, 31),
-      };
-    },
-  },
-  {
-    key: "last_year",
-    labelTh: "ปีที่แล้ว",
-    labelEn: "Last Year",
-    getRange: () => {
-      const now = new Date();
-      return {
-        from: new Date(now.getFullYear() - 1, 0, 1),
-        to: new Date(now.getFullYear() - 1, 11, 31),
-      };
-    },
-  },
-  {
-    key: "last_3_years",
-    labelTh: "ย้อนหลัง 3 ปี",
-    labelEn: "Last 3 Years",
-    getRange: () => {
-      const now = new Date();
-      return {
-        from: new Date(now.getFullYear() - 2, 0, 1),
-        to: new Date(now.getFullYear(), 11, 31),
-      };
-    },
-  },
-  {
-    key: "last_5_years",
-    labelTh: "ย้อนหลัง 5 ปี",
-    labelEn: "Last 5 Years",
-    getRange: () => {
-      const now = new Date();
-      return {
-        from: new Date(now.getFullYear() - 4, 0, 1),
-        to: new Date(now.getFullYear(), 11, 31),
-      };
-    },
-  },
 ];
 
 /**
- * Month Range Picker Component (12 Months in a Year)
+ * Month Range Picker Component (12 Months in a Year) - max 3 months
  */
 function MonthRangePicker({
   selected,
@@ -223,7 +129,7 @@ function MonthRangePicker({
   onSelect: (range: DateRange) => void;
   locale: "th" | "en";
 }) {
-  const currentYear = new Date().getFullYear();
+  const currentYear = bangkokToday().getFullYear();
   const [displayYear, setDisplayYear] = React.useState(
     selected?.from ? selected.from.getFullYear() : currentYear
   );
@@ -248,12 +154,30 @@ function MonthRangePicker({
       onSelect({ from: clickedStart, to: clickedEnd });
     } else {
       if (clickedStart < selected.from) {
-        onSelect({
-          from: clickedStart,
-          to: new Date(selected.from.getFullYear(), selected.from.getMonth() + 1, 0, 23, 59, 59),
-        });
+        // Distance in months
+        const diffMonths = (selected.from.getFullYear() - clickedStart.getFullYear()) * 12 + (selected.from.getMonth() - clickedStart.getMonth());
+        if (diffMonths > 2) {
+          // Clamp start to at most 3 months including selected.from
+          const clampedStart = new Date(selected.from.getFullYear(), selected.from.getMonth() - 2, 1);
+          onSelect({
+            from: clampedStart,
+            to: new Date(selected.from.getFullYear(), selected.from.getMonth() + 1, 0, 23, 59, 59),
+          });
+        } else {
+          onSelect({
+            from: clickedStart,
+            to: new Date(selected.from.getFullYear(), selected.from.getMonth() + 1, 0, 23, 59, 59),
+          });
+        }
       } else {
-        onSelect({ from: selected.from, to: clickedEnd });
+        const diffMonths = (clickedStart.getFullYear() - selected.from.getFullYear()) * 12 + (clickedStart.getMonth() - selected.from.getMonth());
+        if (diffMonths > 2) {
+          // Clamp end to 3 months max
+          const clampedEnd = new Date(selected.from.getFullYear(), selected.from.getMonth() + 3, 0, 23, 59, 59);
+          onSelect({ from: selected.from, to: clampedEnd });
+        } else {
+          onSelect({ from: selected.from, to: clickedEnd });
+        }
       }
     }
   };
@@ -329,111 +253,7 @@ function MonthRangePicker({
   );
 }
 
-/**
- * Year Range Picker Component (Single Column/Box Grid of Years)
- */
-function YearRangePicker({
-  selected,
-  onSelect,
-  locale,
-}: {
-  selected?: DateRange | undefined;
-  onSelect: (range: DateRange) => void;
-  locale: "th" | "en";
-}) {
-  const currentYear = new Date().getFullYear();
-  const [baseYear, setBaseYear] = React.useState(
-    selected?.from ? selected.from.getFullYear() : currentYear
-  );
 
-  // Generate 8 years around baseYear
-  const years = Array.from({ length: 8 }, (_, i) => baseYear - 4 + i);
-
-  const handleYearClick = (yr: number) => {
-    const clickedStart = new Date(yr, 0, 1);
-    const clickedEnd = new Date(yr, 11, 31, 23, 59, 59);
-
-    if (!selected?.from || (selected.from && selected.to && toISODate(selected.from) !== toISODate(selected.to))) {
-      onSelect({ from: clickedStart, to: clickedEnd });
-    } else {
-      if (clickedStart < selected.from) {
-        onSelect({
-          from: clickedStart,
-          to: new Date(selected.from.getFullYear(), 11, 31, 23, 59, 59),
-        });
-      } else {
-        onSelect({ from: selected.from, to: clickedEnd });
-      }
-    }
-  };
-
-  const isYearSelected = (yr: number) => {
-    if (!selected?.from) return { isStart: false, isEnd: false, isMiddle: false };
-    const fromYr = selected.from.getFullYear();
-    const toYr = selected.to ? selected.to.getFullYear() : fromYr;
-
-    const isStart = yr === fromYr;
-    const isEnd = yr === toYr;
-    const isMiddle = yr > fromYr && yr < toYr;
-
-    return { isStart, isEnd, isMiddle };
-  };
-
-  return (
-    <div className="w-full max-w-[320px] mx-auto space-y-3 py-2">
-      {/* Year Window Navigation */}
-      <div className="flex items-center justify-between px-1">
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={() => setBaseYear((y) => y - 8)}
-          className="size-8 rounded-lg border-border/70 bg-card hover:bg-accent cursor-pointer"
-        >
-          <ChevronLeft className="size-4 text-foreground" />
-        </Button>
-        <span className="text-xs font-semibold text-muted-foreground">
-          {locale === "th" ? "เลือกช่วงปี" : "Select Year Range"}
-        </span>
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={() => setBaseYear((y) => y + 8)}
-          className="size-8 rounded-lg border-border/70 bg-card hover:bg-accent cursor-pointer"
-        >
-          <ChevronRight className="size-4 text-foreground" />
-        </Button>
-      </div>
-
-      {/* Years 2x4 Grid */}
-      <div className="grid grid-cols-2 gap-2">
-        {years.map((yr) => {
-          const { isStart, isEnd, isMiddle } = isYearSelected(yr);
-          const isSelectedEndpoint = isStart || isEnd;
-          const displayLabel = locale === "th" ? `${yr + 543}` : `${yr}`;
-
-          let btnClass = "text-foreground hover:bg-accent hover:text-foreground";
-          if (isSelectedEndpoint) {
-            btnClass = "bg-[#EAB308] text-[#0F172A] font-bold shadow-xs hover:bg-[#EAB308]";
-          } else if (isMiddle) {
-            btnClass = "bg-[#FEF08A] dark:bg-[#EAB308]/25 text-[#0F172A] dark:text-[#FEF08A] font-semibold";
-          }
-
-          return (
-            <Button
-              key={yr}
-              variant="ghost"
-              size="sm"
-              onClick={() => handleYearClick(yr)}
-              className={`h-10 text-xs rounded-lg transition-colors cursor-pointer ${btnClass}`}
-            >
-              {displayLabel}
-            </Button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
 
 export function PeriodPicker() {
   const router = useRouter();
@@ -469,7 +289,7 @@ export function PeriodPicker() {
       }
     }
     // Default: this month
-    const now = new Date();
+    const now = bangkokToday();
     return {
       from: new Date(now.getFullYear(), now.getMonth(), 1),
       to: new Date(now.getFullYear(), now.getMonth() + 1, 0),
@@ -478,7 +298,6 @@ export function PeriodPicker() {
 
   // Determine active presets for current mode
   const currentPresets = React.useMemo(() => {
-    if (viewMode === "year") return YEAR_PRESETS;
     if (viewMode === "month") return MONTH_PRESETS;
     return DAY_PRESETS;
   }, [viewMode]);
@@ -505,7 +324,9 @@ export function PeriodPicker() {
     setCustomRange(initialRange);
   }, [detectedPreset, initialRange]);
 
+  const rangeValid = (from: Date, to: Date) => from <= to && (to.getFullYear()-from.getFullYear())*12 + to.getMonth()-from.getMonth() <= 2;
   const applyRange = (from: Date, to: Date) => {
+    if (!rangeValid(from,to)) return;
     setOpen(false);
     const params = new URLSearchParams(searchParams.toString());
     params.set("start_date", toISODate(from));
@@ -575,8 +396,8 @@ export function PeriodPicker() {
           </span>
         </div>
 
-        {/* View Mode Segmented Tabs (รายวัน / รายเดือน / รายปี) */}
-        <div className="flex items-center p-1 bg-muted/60 rounded-xl gap-1 w-full max-w-[280px] mx-auto">
+        {/* View Mode Segmented Tabs (รายวัน / รายเดือน) */}
+        <div className="flex items-center p-1 bg-muted/60 rounded-xl gap-1 w-full max-w-[220px] mx-auto">
           <button
             type="button"
             onClick={() => setViewMode("day")}
@@ -599,21 +420,10 @@ export function PeriodPicker() {
           >
             {locale === "th" ? "รายเดือน" : "Monthly"}
           </button>
-          <button
-            type="button"
-            onClick={() => setViewMode("year")}
-            className={`flex-1 py-1.5 text-xs font-medium rounded-lg transition-all cursor-pointer ${
-              viewMode === "year"
-                ? "bg-card text-foreground font-semibold shadow-xs"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {locale === "th" ? "รายปี" : "Yearly"}
-          </button>
         </div>
 
         {/* Preset buttons (Divider removed) */}
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 pt-1">
+        <div className="grid grid-cols-3 gap-1.5 pt-1">
           {currentPresets.map((p) => {
             const isSelected = activePresetKey === p.key;
             return (
@@ -665,21 +475,9 @@ export function PeriodPicker() {
               />
             </div>
           )}
-
-          {viewMode === "year" && (
-            <div className="flex justify-center">
-              <YearRangePicker
-                selected={customRange}
-                onSelect={(range) => {
-                  setCustomRange(range);
-                  setActivePresetKey("custom");
-                }}
-                locale={locale}
-              />
-            </div>
-          )}
         </div>
 
+        <p className="text-xs text-muted-foreground">{locale === "th" ? "เลือกได้สูงสุด 3 เดือน • ไม่รองรับรายปี" : "Select up to 3 calendar months • Annual selection disabled"}</p>
         {/* Action Footer: Divider removed */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-2.5 pt-2">
           <div className="text-xs text-muted-foreground text-center sm:text-left">
@@ -708,7 +506,7 @@ export function PeriodPicker() {
             </Button>
             <Button
               size="sm"
-              disabled={!customRange?.from || !customRange?.to}
+              disabled={!customRange?.from || !customRange?.to || !rangeValid(customRange.from,customRange.to)}
               onClick={handleApplyCustom}
               className="flex-1 sm:flex-none h-8 text-xs font-semibold bg-[#EAB308] text-[#0F172A] hover:bg-[#EAB308]/90 cursor-pointer shadow-xs"
             >

@@ -75,7 +75,7 @@ export function GenerateReportDialog({
       await apiClient.post("/v1/reports", values);
       notify.success(
         locale === "th"
-          ? "สร้างรายงานสำเร็จ ระบบได้นำข้อมูลเข้าสู่คิวเรียบร้อย"
+          ? "สร้างรายงานจากข้อมูลจริงเรียบร้อยแล้ว"
           : "Report generated successfully"
       );
       reset();
@@ -164,8 +164,6 @@ export function GenerateReportDialog({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="csv" className="text-xs">CSV (.csv)</SelectItem>
-                <SelectItem value="pdf" className="text-xs">PDF Document (.pdf)</SelectItem>
-                <SelectItem value="xlsx" className="text-xs">Excel Spreadsheet (.xlsx)</SelectItem>
               </SelectContent>
             </Select>
           </div>

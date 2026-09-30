@@ -11,20 +11,26 @@ export interface PaginatedResult<T> {
 }
 
 export interface DashboardSummaryParams {
+  site_id?: string;
   start_date?: string;
   end_date?: string;
 }
 
 export interface DashboardSummaryStats {
-  schools: number;
+  totalSites: number;
   onlineSites: number;
   installedMwp: number;
-  currentMw: number;
-  periodKwh: number;
+  currentMw: number | null;
+  periodKwh: number | null;
   periodAmount: number;
+  billCount: number;
+  paidBillCount: number;
 }
 
 export interface DashboardSummarySite {
+  gatewayId?: string | null;
+  gatewayName?: string | null;
+  lastUpdated?: string | null;
   id: string;
   name: string;
   latitude: number | null;
@@ -32,7 +38,7 @@ export interface DashboardSummarySite {
   status: string;
   capacityMwp: number;
   schoolName: string;
-  productionKwh: number;
+  productionKwh: number | null;
 }
 
 export interface DashboardSummaryDataPoint {
@@ -58,11 +64,14 @@ export interface DashboardSummaryCollection {
 }
 
 export interface DashboardCompareItem {
-  school: string;
-  value: number;
+  siteId: string;
+  site: string;
+  value: number | null;
 }
 
 export interface DashboardSummaryResponse {
+  range: {start: string; end: string};
+  availableSites: {id: string; name: string}[];
   sites: DashboardSummarySite[];
   stats: DashboardSummaryStats;
   production: DashboardSummaryDataPoint[];
@@ -71,4 +80,3 @@ export interface DashboardSummaryResponse {
   alerts: DashboardSummaryAlert[];
   collection: DashboardSummaryCollection;
 }
-

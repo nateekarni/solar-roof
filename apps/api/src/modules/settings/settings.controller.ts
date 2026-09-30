@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Patch, Put } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Put } from "@nestjs/common";
 import { SettingsService, type SystemSettings } from "./settings.service.js";
 import { Roles } from "../../common/roles.decorator.js";
 
@@ -40,6 +40,59 @@ export class SettingsController {
     return {
       success: true,
       message: "บันทึกการตั้งค่าการแจ้งเตือนเรียบร้อยแล้ว",
+    };
+  }
+
+  @Get("company")
+  async getCompanyProfile() {
+    return this.settingsService.getCompanyProfile();
+  }
+
+  @Roles("admin", "owner")
+  @Put("company")
+  async updateCompanyProfile(@Body() body: any) {
+    const updated = await this.settingsService.updateCompanyProfile(body);
+    return {
+      success: true,
+      message: "บันทึกข้อมูลบริษัทเรียบร้อยแล้ว",
+      profile: updated,
+    };
+  }
+
+  @Get("bank-accounts")
+  async listBankAccounts() {
+    return this.settingsService.listBankAccounts();
+  }
+
+  @Roles("admin", "owner")
+  @Put("bank-accounts")
+  async saveBankAccount(@Body() body: any) {
+    const account = await this.settingsService.saveBankAccount(body);
+    return {
+      success: true,
+      message: "บันทึกข้อมูลบัญชีธนาคารเรียบร้อยแล้ว",
+      account,
+    };
+  }
+
+  @Roles("admin", "owner")
+  @Put("bank-accounts/:id")
+  async updateBankAccount(@Param("id") id: string, @Body() body: any) {
+    const account = await this.settingsService.saveBankAccount({ ...body, id });
+    return {
+      success: true,
+      message: "บันทึกข้อมูลบัญชีธนาคารเรียบร้อยแล้ว",
+      account,
+    };
+  }
+
+  @Roles("admin", "owner")
+  @Delete("bank-accounts/:id")
+  async deleteBankAccount(@Param("id") id: string) {
+    await this.settingsService.deleteBankAccount(id);
+    return {
+      success: true,
+      message: "ลบบัญชีธนาคารเรียบร้อยแล้ว",
     };
   }
 }

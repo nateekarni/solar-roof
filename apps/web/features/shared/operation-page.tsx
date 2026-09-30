@@ -97,11 +97,11 @@ export async function OperationPage({
     action !== undefined ? action : t(`operations.${resource}.action`);
 
   const { data, summary } = await getOperationData(resource);
-  const isRealtime = resource === "alerts" || resource === "notifications";
+  const isRealtime = resource === "alerts" || resource === "notifications" || resource === "sites";
 
   return (
-    <main className="content">
-      {isRealtime && <OperationAutoRefresh intervalMs={30_000} />}
+    <div className="content">
+      {isRealtime && <OperationAutoRefresh intervalMs={10_000} />}
       <div className="ops-content space-y-4">
         <OperationPageHeader
           resource={resource}
@@ -119,6 +119,6 @@ export async function OperationPage({
           idKey={data.idKey}
         />
       </div>
-    </main>
+    </div>
   );
 }

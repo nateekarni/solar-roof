@@ -15,6 +15,8 @@ import {
   ShieldCheck,
   Trash2,
   ImageIcon,
+  Award,
+  Zap,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Button } from "../../components/ui/button";
@@ -33,6 +35,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "../../components/ui/dropdown-menu";
+import { operationKeys } from "./operation-columns";
+import { telemetryAge } from "../../lib/telemetry-age";
 import { useLocale, useT } from "../../providers/locale-provider";
 import { useAuth } from "../../stores/auth-store";
 import { OperationCardList } from "./operation-card-list";
@@ -110,6 +114,7 @@ const COLUMN_TRANSLATIONS: Record<string, string> = {
   "อัตรา (฿/kWh)": "Rate (฿/kWh)",
   "ยอดเงิน (฿)": "Amount (฿)",
   "หลักฐานการชำระ": "Payment Slip",
+  "อัปเดตล่าสุด": "Last Updated",
 };
 
 export function OperationTable({
@@ -125,6 +130,7 @@ export function OperationTable({
   const router = useRouter();
   const { user } = useAuth();
   const isSchoolUser = user?.role === "school_user";
+  const isOwner = user?.role === "owner";
 
   // Payment Dialog States
   const [payDialogOpen, setPayDialogOpen] = React.useState(false);
@@ -180,45 +186,38 @@ export function OperationTable({
     }).format(num);
   };
 
-  const openDocumentPreview = (type: "contract" | "invoice" | "receipt", row: Record<string, any>) => {
-    const periodStr =
-      row.period ||
-      row.periodStart ||
-      (row.periodEnd ? String(row.periodEnd).slice(0, 7) : undefined);
-
-    const amountVal = row.amount || row.totalAmount || 0;
-    const docNumber =
-      type === "contract"
-        ? row.contractNumber || (row.id ? `CNT-${String(row.id).slice(-4).padStart(4, "0")}` : "CNT-0001")
-        : type === "invoice"
-        ? row.documentNumber || row.invoiceNumber || (row.period ? `INV${String(row.period).replace("-", "")}0001` : "INV2026080001")
-        : row.receiptNumber || row.taxInvoiceNumber || (row.documentNumber ? String(row.documentNumber).replace("INV", "RCT") : "RCT2026080001");
-
+  const openDocumentPreview = (
+    type: "contract" | "invoice" | "receipt" | "settlement" | "handover",
+    row: Record<string, any>
+  ) => {
     setPreviewData({
       type,
-      documentNumber: docNumber,
-      schoolName: row.schoolName || row.name || "โรงเรียน",
-      siteName: row.siteName || row.name || "ไซต์ติดตั้งหลัก",
-      period: periodStr,
-      issueDate:
-        row.issueDate ||
-        row.startDate ||
-        row.periodEnd ||
-        new Date().toISOString().slice(0, 10),
-      dueDate:
-        row.dueDate ||
-        (row.periodEnd
-          ? new Date(new Date(row.periodEnd).getTime() + 30 * 86400000)
-              .toISOString()
-              .slice(0, 10)
-          : undefined),
-      consumedKwh: row.consumedKwh || row.productionKwh || 2450.5,
-      rate: row.rate || 4.25,
-      amount: amountVal,
+      documentId: type === "invoice" ? row.invoiceId || (resource === "documents" ? row.id : undefined) : type === "receipt" ? row.receiptId || (resource === "receipts" ? row.id : undefined) : undefined,
+      siteId: row.siteId,
+      billingCycleId: row.billingCycleId,
+      documentNumber: row.documentNumber || (type === "receipt" ? row.receiptNumber : row.invoiceNumber),
+      schoolName: row.schoolName,
+      siteName: row.siteName,
+      period: row.period || row.periodStart,
+      issueDate: row.issueDate || row.startDate,
+      dueDate: row.dueDate,
+      consumedKwh: row.consumedKwh,
+      rate: row.rate,
+      amount: row.amount ?? row.totalAmount,
       status: row.status,
-      signers: row.signers || "สพฐ. · Solar Rooftop Energy Co., Ltd.",
-      version: row.version || "v1",
-      capacityMwp: row.capacityMwp || 0.45,
+      signers: row.signerName || row.signers,
+      version: row.version,
+      capacityMwp: row.capacityMwp,
+      taxId: row.taxId,
+      taxBranch: row.branch,
+      taxAddress: row.taxAddress,
+      taxEmail: row.billingEmail,
+      taxPhone: row.billingPhone,
+      rates: row.rates || [],
+      gatewaySerial: row.gatewaySerial,
+      meterSerial: row.meterSerial,
+      paymentMethod: row.paymentMethod,
+      paidAt: row.paidAt,
     });
     setPreviewOpen(true);
   };
@@ -264,7 +263,7 @@ export function OperationTable({
     const firstRow = rows[0];
     if (!firstRow) return [];
 
-    const keys = Object.keys(firstRow).filter((k) => k !== idKey);
+    const keys = operationKeys(resource,firstRow,idKey);
 
     const cols: ColumnDef<Record<string, any>, any>[] = keys.map((key, idx) => {
       const rawTitle = rawColumns[idx] ?? key;
@@ -339,6 +338,44 @@ export function OperationTable({
               );
             }
             return <span className="text-xs text-muted-foreground/60 italic">{locale === "th" ? "ยังไม่แนบ" : "No Slip"}</span>;
+          }
+
+          if (
+            key === "lastUpdated" ||
+            key === "lastSeenAt" ||
+            key === "last_seen_at" ||
+            key === "อัปเดตล่าสุด" ||
+            headerTitle === "Last Updated" ||
+            headerTitle === "อัปเดตล่าสุด"
+          ) {
+            if (!val || str === "-" || str === "null" || str === "") {
+              return (
+                <span className="text-xs text-muted-foreground/60 italic">
+                  {locale === "th" ? "ยังไม่มีข้อมูล" : "No telemetry"}
+                </span>
+              );
+            }
+            const date = new Date(val as any);
+            const age = telemetryAge(val,locale);
+            const isFresh = age.fresh;
+            const timeStr = age.text;
+            return (
+              <div className="flex items-center gap-1.5 text-xs">
+                <span
+                  className={`size-2 rounded-full shrink-0 ${
+                    isFresh ? "bg-emerald-500 animate-pulse" : "bg-amber-500"
+                  }`}
+                />
+                <span className={isFresh ? "text-foreground font-medium" : "text-muted-foreground"}>
+                  {timeStr}
+                </span>
+                {!isFresh && (
+                  <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
+                    (Offline)
+                  </span>
+                )}
+              </div>
+            );
           }
 
           if (
@@ -509,6 +546,13 @@ export function OperationTable({
                 ) : resource === "sites" ? (
                   <>
                     <DropdownMenuItem
+                      onClick={() => openDocumentPreview("handover", item)}
+                      className="gap-2 cursor-pointer font-medium text-amber-600 dark:text-amber-400"
+                    >
+                      <Award className="size-3.5 text-amber-600 dark:text-amber-400" />
+                      <span>{locale === "th" ? "ดูหนังสือส่งมอบระบบ (Handover)" : "Handover Certificate"}</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
                       onClick={() => {
                         setSelectedTelemetrySite({
                           id: itemId,
@@ -521,28 +565,49 @@ export function OperationTable({
                       <Radio className="size-3.5 text-emerald-600 dark:text-emerald-400" />
                       <span>{locale === "th" ? "สัญญาณสด & Raw Registers" : "Live Telemetry & Registers"}</span>
                     </DropdownMenuItem>
+                    {user?.role === "admin" && (
+                      <>
+                        <DropdownMenuItem
+                          onClick={() => {
+                            setSelectedSiteId(itemId);
+                            setEditSiteOpen(true);
+                          }}
+                          className="gap-2 cursor-pointer font-medium"
+                        >
+                          <Edit className="size-3.5 text-primary" />
+                          <span>{locale === "th" ? "แก้ไขข้อมูลไซต์งาน" : "Edit Site"}</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => {
+                            setSelectedDeleteSite({
+                              id: itemId,
+                              name: item.name || item["ชื่อไซต์"] || item["ชื่อไซต์งาน"] || "ไซต์งาน",
+                            });
+                            setDeleteSiteOpen(true);
+                          }}
+                          className="gap-2 cursor-pointer text-destructive focus:text-destructive font-medium"
+                        >
+                          <Trash2 className="size-3.5 text-destructive" />
+                          <span>{locale === "th" ? "ลบไซต์งาน" : "Delete Site"}</span>
+                        </DropdownMenuItem>
+                      </>
+                    )}
+                  </>
+                ) : resource === "reports" ? (
+                  <>
                     <DropdownMenuItem
-                      onClick={() => {
-                        setSelectedSiteId(itemId);
-                        setEditSiteOpen(true);
-                      }}
-                      className="gap-2 cursor-pointer font-medium"
+                      onClick={() => openDocumentPreview("settlement", item)}
+                      className="gap-2 cursor-pointer font-medium text-emerald-600 dark:text-emerald-400"
                     >
-                      <Edit className="size-3.5 text-primary" />
-                      <span>{locale === "th" ? "แก้ไขข้อมูลไซต์งาน" : "Edit Site"}</span>
+                      <Zap className="size-3.5 text-emerald-600 dark:text-emerald-400" />
+                      <span>{locale === "th" ? "ดูสรุปรายงานพลังงาน (Settlement)" : "View Settlement Statement"}</span>
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      onClick={() => {
-                        setSelectedDeleteSite({
-                          id: itemId,
-                          name: item.name || item["ชื่อไซต์"] || item["ชื่อไซต์งาน"] || "ไซต์งาน",
-                        });
-                        setDeleteSiteOpen(true);
-                      }}
-                      className="gap-2 cursor-pointer text-destructive focus:text-destructive font-medium"
+                      onClick={() => openResourceDetail(resource, item)}
+                      className="gap-2 cursor-pointer font-medium"
                     >
-                      <Trash2 className="size-3.5 text-destructive" />
-                      <span>{locale === "th" ? "ลบไซต์งาน" : "Delete Site"}</span>
+                      <Eye className="size-3.5 text-primary" />
+                      <span>{locale === "th" ? "ดูรายละเอียด" : "View Details"}</span>
                     </DropdownMenuItem>
                   </>
                 ) : (

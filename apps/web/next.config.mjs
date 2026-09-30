@@ -14,15 +14,8 @@ const nextConfig = {
   env: {
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL ?? "",
   },
-  async rewrites() {
-    const apiTarget = process.env.API_INTERNAL_URL || "http://localhost:3001";
-    return [
-      {
-        source: "/v1/:path*",
-        destination: `${apiTarget}/v1/:path*`,
-      },
-    ];
-  },
+  // /v1 is proxied by app/v1/[...path]/route.ts using the runtime API URL.
+  // A build-time rewrite would silently override that route after deployment.
   async redirects() {
     return [
       {

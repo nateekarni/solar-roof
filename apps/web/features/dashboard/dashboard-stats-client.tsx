@@ -20,7 +20,7 @@ import { CustomizeCardsModal } from "./customize-cards-modal";
 const STORAGE_KEY = "solar_dashboard_card_config";
 
 const DEFAULT_CARD_CONFIG = [
-  "schools",
+  "totalSites",
   "onlineSites",
   "installedMwp",
   "currentMw",
@@ -32,7 +32,7 @@ export function DashboardStatsClient({
   stats,
   totalSites,
 }: {
-  stats: DashboardSummaryStats;
+  stats: Omit<DashboardSummaryStats,"currentMw"|"periodKwh"> & {currentMw:number|null;periodKwh:number|null;billCount:number;paidBillCount:number};
   totalSites?: number;
 }) {
   const t = useT();
@@ -47,7 +47,7 @@ export function DashboardStatsClient({
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length === 6) {
-          setCardConfig(parsed);
+          setCardConfig(parsed.map(key => key === "schools" ? "totalSites" : key));
         }
       }
     } catch {
@@ -70,14 +70,15 @@ export function DashboardStatsClient({
     }
   };
 
-  const formatNumber = (value: number, digits = 2) =>
+  const formatNumber = (value: number | null, digits = 2) =>
+    value === null ? (locale === "th" ? "ไม่มีข้อมูล" : "No data") :
     new Intl.NumberFormat(locale === "th" ? "th-TH" : "en-US", {
       maximumFractionDigits: digits,
     }).format(value);
 
   interface MetricDef {
     label: string;
-    value: number;
+    value: number | null;
     unit: string;
     note: string;
     tone: string;
@@ -86,24 +87,24 @@ export function DashboardStatsClient({
   }
 
   const defaultMetricDef: MetricDef = {
-    label: t("dashboard.stats.schools"),
-    value: stats.schools || 0,
-    unit: t("dashboard.stats.unitSchools"),
-    note: t("dashboard.stats.registered"),
+    label: locale === "th" ? "ไซต์งานทั้งหมด" : "Total Sites",
+    value: totalSites ?? 0,
+    unit: locale === "th" ? "ไซต์" : "Sites",
+    note: locale === "th" ? "จุดติดตั้งระบบ" : "All sites",
     tone: "blue",
-    icon: GraduationCap,
+    icon: Laptop,
     digits: 0,
   };
 
   const metricDefinitions: Record<string, MetricDef> = {
-    schools: defaultMetricDef,
+    totalSites: defaultMetricDef,
     onlineSites: {
       label: t("dashboard.stats.onlineSites") || "ไซต์ออนไลน์",
       value: stats.onlineSites || 0,
       unit: t("dashboard.stats.unitSites") || (locale === "th" ? "ไซต์" : "sites"),
       note:
-        (totalSites || 18) > 0
-          ? `${((stats.onlineSites / (totalSites || 18)) * 100).toFixed(1)}${t("dashboard.stats.onlinePercent")}`
+        (totalSites ?? 0) > 0
+          ? `${((stats.onlineSites / (totalSites ?? 0)) * 100).toFixed(1)}${t("dashboard.stats.onlinePercent")}`
           : t("common.noData"),
       tone: "green",
       icon: Laptop,
@@ -120,10 +121,10 @@ export function DashboardStatsClient({
     },
     currentMw: {
       label: t("dashboard.stats.currentProduction"),
-      value: stats.currentMw || 0,
+      value: stats.currentMw,
       unit: t("dashboard.stats.unitMw"),
       note:
-        stats.installedMwp > 0
+        stats.installedMwp > 0 && stats.currentMw !== null
           ? `${((stats.currentMw / stats.installedMwp) * 100).toFixed(1)}${t("dashboard.stats.capacityPercent")}`
           : "-",
       tone: "teal",
@@ -132,8 +133,8 @@ export function DashboardStatsClient({
     },
     periodKwh: {
       label: t("dashboard.stats.monthlyEnergy"),
-      value: stats.periodKwh ? stats.periodKwh / 1000 : 0,
-      unit: t("dashboard.stats.unitMwh"),
+      value: stats.periodKwh,
+      unit: locale === "th" ? "kWh" : "kWh",
       note: t("dashboard.stats.cycleAccumulated"),
       tone: "amber",
       icon: Sun,
@@ -141,8 +142,8 @@ export function DashboardStatsClient({
     },
     periodAmount: {
       label: t("dashboard.stats.monthlyRevenue"),
-      value: stats.periodAmount ? stats.periodAmount / 1000000 : 0,
-      unit: t("dashboard.stats.unitMillionBaht"),
+      value: stats.periodAmount ? stats.periodAmount : 0,
+      unit: locale === "th" ? "บาท" : "THB",
       note: t("dashboard.stats.cycleRevenue"),
       tone: "green",
       icon: TrendingUp,
@@ -160,6 +161,7 @@ export function DashboardStatsClient({
   return (
     <>
 
+      <div className="mb-3 flex gap-4 text-sm"><span>{locale === "th" ? "จำนวนบิล" : "Bills"}: <strong>{stats.billCount}</strong></span><span>{locale === "th" ? "ชำระแล้ว" : "Paid bills"}: <strong>{stats.paidBillCount}</strong></span></div>
       <section className="stats-grid">
         {cardConfig.map((metricKey, idx) => {
           const def = metricDefinitions[metricKey] ?? defaultMetricDef;

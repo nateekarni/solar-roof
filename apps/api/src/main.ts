@@ -42,16 +42,10 @@ async function bootstrap() {
   app.enableCors({
     origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
       if (!origin) return callback(null, true);
-      if (
-        origin === webOrigin ||
-        origin.includes("localhost") ||
-        origin.includes("127.0.0.1") ||
-        origin.endsWith(".trycloudflare.com") ||
-        origin.endsWith(".loca.lt")
-      ) {
+      if (origin === webOrigin) {
         return callback(null, true);
       }
-      return callback(null, true);
+      return callback(null, false);
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],

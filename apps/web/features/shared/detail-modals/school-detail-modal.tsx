@@ -54,8 +54,10 @@ export function SchoolDetailModal({
 
   if (!school) return null;
 
-  const copyToClipboard = (text: string, key: string) => {
-    navigator.clipboard.writeText(text);
+  const copyToClipboard = async (text: string, key: string) => {
+    try { await navigator.clipboard.writeText(text); } catch {
+      notify.error(locale === "th" ? "คัดลอกไม่สำเร็จ" : "Could not copy to clipboard"); return;
+    }
     setCopiedKey(key);
     notify.success(locale === "th" ? "คัดลอกลงคลิปบอร์ดแล้ว" : "Copied to clipboard");
     setTimeout(() => setCopiedKey(null), 2000);
@@ -86,12 +88,12 @@ export function SchoolDetailModal({
                   variant={isWarning ? "destructive" : "default"}
                   className="text-xs shrink-0"
                 >
-                  {school.status || (locale === "th" ? "ออนไลน์" : "Online")}
+                  {school.status || (locale === "th" ? "ไม่มีข้อมูลสถานะ" : "Status unavailable")}
                 </Badge>
               </div>
               <DialogDescription className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1.5 truncate">
                 <MapPin className="size-3 shrink-0" />
-                <span>{school.region || "ประเทศไทย"}</span>
+                <span>{school.region || "—"}</span>
                 {school.code && <span>• รหัสสถานศึกษา: {school.code}</span>}
               </DialogDescription>
             </div>
@@ -108,7 +110,7 @@ export function SchoolDetailModal({
                 <span>{locale === "th" ? "กำลังติดตั้ง" : "Capacity"}</span>
               </div>
               <div className="text-base font-bold text-foreground">
-                {Number(school.capacityMwp || 0).toFixed(3)}
+                {school.capacityMwp == null ? "—" : Number(school.capacityMwp).toFixed(3)}
               </div>
               <div className="text-[10px] text-muted-foreground">MWp</div>
             </div>
@@ -119,7 +121,7 @@ export function SchoolDetailModal({
                 <span>{locale === "th" ? "ไซต์ระบบ" : "Solar Sites"}</span>
               </div>
               <div className="text-base font-bold text-foreground">
-                {school.sitesCount ?? 1}
+                {school.sitesCount ?? "—"}
               </div>
               <div className="text-[10px] text-muted-foreground">{locale === "th" ? "จุดติดตั้ง" : "Sites"}</div>
             </div>
@@ -130,44 +132,9 @@ export function SchoolDetailModal({
                 <span>{locale === "th" ? "IOT Gateway" : "Gateways"}</span>
               </div>
               <div className="text-base font-bold text-foreground">
-                {school.gatewaysCount ?? 1}
+                {school.gatewaysCount ?? "—"}
               </div>
               <div className="text-[10px] text-muted-foreground">{locale === "th" ? "ชุดอุปกรณ์" : "Units"}</div>
-            </div>
-          </div>
-
-          {/* Operational Status Card */}
-          <div
-            className={`p-3.5 rounded-xl border flex items-start gap-3 ${
-              isWarning
-                ? "bg-amber-500/10 border-amber-500/30 text-amber-950 dark:text-amber-200"
-                : "bg-emerald-500/10 border-emerald-500/30 text-emerald-950 dark:text-emerald-200"
-            }`}
-          >
-            {isWarning ? (
-              <AlertTriangle className="size-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-            ) : (
-              <CheckCircle2 className="size-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
-            )}
-            <div className="text-xs space-y-1">
-              <div className="font-semibold text-foreground">
-                {isWarning
-                  ? locale === "th"
-                    ? "มีอุปกรณ์ที่ต้องได้รับการตรวจสอบ"
-                    : "Attention Required"
-                  : locale === "th"
-                  ? "ระบบเชื่อมต่อและทำงานปกติ"
-                  : "All Systems Operational"}
-              </div>
-              <p className="text-muted-foreground leading-relaxed">
-                {isWarning
-                  ? locale === "th"
-                    ? "ตรวจพบ Gateway หรือ Inverter บางตัวในโรงเรียนนี้ขาดการติดต่อ กรุณาตรวจสอบแท็บ ไซต์ และ แจ้งเตือน"
-                    : "One or more telemetry gateways at this location are currently offline or reporting errors."
-                  : locale === "th"
-                  ? "การส่งข้อมูลโทรมาตรและการผลิตกระแสไฟฟ้าของโรงเรียนนี้เป็นไปตามเกณฑ์มาตรฐาน"
-                  : "Continuous telemetry transmission and energy generation are stable and within expected thresholds."}
-              </p>
             </div>
           </div>
 
@@ -187,7 +154,7 @@ export function SchoolDetailModal({
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">{locale === "th" ? "สถานะการดำเนินงาน" : "Status"}</span>
-                <span className="font-medium text-foreground">{school.status || "ปกติ"}</span>
+                <span className="font-medium text-foreground">{school.status || "—"}</span>
               </div>
             </div>
           </div>
@@ -224,3 +191,5 @@ export function SchoolDetailModal({
     </Dialog>
   );
 }
+
+

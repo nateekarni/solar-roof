@@ -62,9 +62,13 @@ export function PaymentDialog({
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
   const [successMsg, setSuccessMsg] = React.useState<string | null>(null);
+  const [bankAccounts, setBankAccounts] = React.useState<Array<{id:string;bankName:string;accountNumber:string;accountName:string}>>([]);
 
   React.useEffect(() => {
     if (open) {
+      setBankAccounts([]);
+      apiClient.get<Array<{id:string;bankName:string;accountNumber:string;accountName:string}>>("/v1/settings/bank-accounts")
+        .then(setBankAccounts).catch(error => setErrorMsg(error.message));
       setSlipFile(null);
       setSlipPreviewUrl(null);
       setPaidAt(new Date().toISOString().slice(0, 16));
@@ -77,6 +81,10 @@ export function PaymentDialog({
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      setErrorMsg("File must be no larger than 10 MB");
+      return;
+    }
 
     if (!file.type.startsWith("image/") && file.type !== "application/pdf") {
       setErrorMsg("กรุณาเลือกไฟล์รูปภาพ (PNG, JPEG) หรือเอกสาร PDF เท่านั้น");
@@ -127,7 +135,7 @@ export function PaymentDialog({
 
   const amount = Number(billingCycle?.amount ?? 0);
   const energyKwh = Number(billingCycle?.consumedKwh ?? 0);
-  const rate = Number(billingCycle?.rate ?? 4.25);
+  const rate = billingCycle?.rate === undefined ? null : Number(billingCycle.rate);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -161,12 +169,8 @@ export function PaymentDialog({
             {/* Amount Summary Card */}
             <div className="p-3.5 rounded-xl bg-muted/40 border border-border/60 space-y-2">
               <div className="flex justify-between items-center text-xs text-muted-foreground">
-                <span>พลังงานที่ใช้ ({energyKwh.toLocaleString()} kWh @ ฿{rate.toFixed(2)})</span>
+                <span>พลังงานที่ใช้ ({energyKwh.toLocaleString()} kWh @ ฿{rate?.toFixed(2) ?? "—"})</span>
                 <span className="font-medium text-foreground">฿{amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-              </div>
-              <div className="flex justify-between items-center text-xs text-muted-foreground">
-                <span>ภาษีมูลค่าเพิ่ม (VAT 7% รวมแล้ว)</span>
-                <span className="font-medium text-foreground">฿{(amount * 0.07 / 1.07).toFixed(2)}</span>
               </div>
               <div className="pt-2 border-t border-border/60 flex justify-between items-center">
                 <span className="text-sm font-semibold text-foreground">ยอดชำระสุทธิ</span>
@@ -180,26 +184,15 @@ export function PaymentDialog({
             <div className="flex flex-col items-center justify-center p-4 rounded-xl border border-dashed border-border/80 bg-card text-center space-y-2">
               <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 text-xs font-semibold">
                 <QrCode className="size-3.5" />
-                PromptPay QR Payment
-              </div>
-
-              {/* QR Image Simulation */}
-              <div className="p-2.5 bg-white rounded-xl shadow-xs border border-neutral-200">
-                <img
-                  src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=PROMPTPAY:SOLAR:${billingCycle?.id}:${amount}`}
-                  alt="PromptPay QR Code"
-                  className="size-40 rounded object-contain"
-                  onError={(e) => {
-                    // Fallback to SVG placeholder if offline
-                    e.currentTarget.style.display = "none";
-                  }}
-                />
+                บัญชีรับชำระ / Payment accounts
               </div>
 
               <div className="text-[11px] text-muted-foreground leading-tight space-y-0.5">
-                <p className="font-medium text-foreground">ธนาคารกรุงไทย (Krungthai Bank)</p>
-                <p>เลขที่บัญชี: <span className="font-mono font-bold text-foreground">123-4-56789-0</span></p>
-                <p className="text-[10px]">ชื่อบัญชี: กองทุนพลังงานแสงอาทิตย์เพื่อการศึกษา</p>
+                {bankAccounts.length ? bankAccounts.map(account => <div key={account.id} className="py-2">
+                  <p className="font-medium text-foreground">{account.bankName}</p>
+                  <p>เลขที่บัญชี: <span className="font-mono font-bold text-foreground">{account.accountNumber}</span></p>
+                  <p>{account.accountName}</p>
+                </div>) : <p>ยังไม่ได้ตั้งค่าบัญชีรับชำระ กรุณาติดต่อผู้ดูแล</p>}
               </div>
             </div>
 

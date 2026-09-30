@@ -1,545 +1,238 @@
 import { Inject, Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
 import mqtt from "mqtt";
-import { randomUUID } from "node:crypto";
-import {
-  decodeRegisterBatch,
-  evaluateQuality,
-  type RegisterFieldMapping,
-} from "@solar/domain";
+import { createHash, randomUUID } from "node:crypto";
+import { decodeRegisterBatch, type RegisterFieldMapping } from "@solar/domain";
 import { DatabaseService } from "../../database/database.service.js";
 
 export interface LiveTelemetrySnapshot {
-  siteId: string;
-  siteName?: string | undefined;
-  gatewayId?: string | undefined;
-  gatewayName?: string | undefined;
-  deviceId: string;
-  deviceModel?: string | undefined;
-  timestamp: string;
-  status: "online" | "degraded" | "offline";
+  siteId: string; siteName?: string | undefined; gatewayId?: string | undefined;
+  gatewayName?: string | undefined; endpoint?: string | undefined; deviceId: string;
+  deviceModel?: string | undefined; timestamp: string; sourceTime?: string | undefined;
+  serverReceivedAt?: string | undefined; status: "online" | "degraded" | "offline";
   quality: "Good" | "Fair" | "Bad";
-  metrics: {
-    voltage: number;
-    current: number;
-    activePower: number;
-    apparentPower: number;
-    reactivePower: number;
-    frequency: number;
-    powerFactor: number;
-    totalEnergy: number;
-  };
+  metrics: { voltage: number | null; current: number | null; activePower: number | null;
+    apparentPower: number | null; reactivePower: number | null; frequency: number | null;
+    powerFactor: number | null; totalEnergy: number | null };
   rawRegisters?: Record<string, number> | undefined;
-  decodedFields?: Array<{
-    semanticField: string;
-    registerAddress: string;
-    rawValue: number;
-    scaledValue: number;
-    unit: string;
-  }> | undefined;
+  decodedFields?: Array<{ semanticField: string; registerAddress: string; rawValue: number; scaledValue: number; unit: string }> | undefined;
+}
+
+type Mapping = RegisterFieldMapping & { id: string; byteOrder?: string };
+export function isFresh(sourceTime: string | Date, now = Date.now()): boolean {
+  const age = now - new Date(sourceTime).getTime();
+  return age >= 0 && age <= 120_000;
+}
+export function telemetryTopicMatches(filter: string, topic: string): boolean {
+  if (topic.split('/').some(part => ['response', 'config', 'ack'].includes(part.toLowerCase()))) return false;
+  const parts = filter.split('/'); const actual = topic.split('/');
+  return parts.every((part, index) => part === '#' && index === parts.length - 1 || part === '+' && actual[index] !== undefined || part === actual[index])
+    && (parts.at(-1) === '#' || parts.length === actual.length);
+}
+function numberOrNull(value: unknown): number | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error('Telemetry metrics must be finite numbers');
+  return value;
+}
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) return '[' + value.map(canonical).join(',') + ']';
+  if (value && typeof value === 'object') return '{' + Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => JSON.stringify(key) + ':' + canonical(item)).join(',') + '}';
+  return JSON.stringify(value);
 }
 
 @Injectable()
 export class MqttIngestionService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(MqttIngestionService.name);
   private client: mqtt.MqttClient | null = null;
-  private readonly latestBySite = new Map<string, LiveTelemetrySnapshot>();
-  private readonly mappingCache = new Map<string, RegisterFieldMapping[]>();
-
+  private subscribedTopics = new Set<string>();
+  private subscriptionsReady = false;
+  private connectionGeneration = 0;
+  private restoreTimer: ReturnType<typeof setTimeout> | undefined;
+  private restoringGeneration: number | undefined;
   constructor(@Inject(DatabaseService) private readonly db: DatabaseService) {}
-
   async onModuleInit() {
-    this.startMqttClient();
+    if (this.client) return;
+    this.client = mqtt.connect(process.env.MQTT_URL || 'mqtt://localhost:1883', {
+      connectTimeout: 5000, reconnectPeriod: 5000,
+      ...(process.env.MQTT_USERNAME ? { username: process.env.MQTT_USERNAME } : {}),
+      ...(process.env.MQTT_PASSWORD ? { password: process.env.MQTT_PASSWORD } : {}),
+    });
+    this.client.on('connect', () => { this.clearReadiness(); void this.restoreConnection(this.connectionGeneration); });
+    this.client.on('close', () => this.clearReadiness());
+    this.client.on('disconnect', () => this.clearReadiness());
+    this.client.on('offline', () => this.clearReadiness());
+    this.client.on('message', (topic, payload) => { void this.handleIncomingMessage(topic, payload.toString()).catch(error => this.logger.error(`Rejected telemetry on ${topic}: ${error}`)); });
+    this.client.on('error', error => { this.subscriptionsReady = false; this.scheduleRestore(this.connectionGeneration); this.logger.warn(error.message); });
   }
-
+    isConnected(): boolean { return this.client?.connected === true; }
+  isReady(): boolean { return this.isConnected() && this.subscriptionsReady; }
+  private clearReadiness() {
+    this.connectionGeneration++;
+    this.subscriptionsReady = false;
+    this.subscribedTopics.clear();
+    clearTimeout(this.restoreTimer);
+    this.restoreTimer = undefined;
+  }
   async onModuleDestroy() {
-    if (this.client) {
-      try {
-        this.client.end(true);
-      } catch (err) {
-        this.logger.error("Error closing MQTT client", err);
+    this.clearReadiness();
+    const client = this.client;
+    this.client = null;
+    client?.end(true);
+  }
+  private scheduleRestore(generation: number) {
+    if (!this.client?.connected || generation !== this.connectionGeneration || this.restoreTimer) return;
+    this.restoreTimer = setTimeout(() => {
+      this.restoreTimer = undefined;
+      void this.restoreConnection(generation);
+    }, 5000);
+    this.restoreTimer.unref();
+  }
+  private async restoreConnection(generation: number) {
+    if (!this.client?.connected || generation !== this.connectionGeneration || this.restoringGeneration === generation) return;
+    this.restoringGeneration = generation;
+    try {
+      await this.refreshSubscriptions();
+      if (generation !== this.connectionGeneration || !this.client?.connected) return;
+      const gateways = await this.db.query("SELECT name, polling_interval_seconds, alert_rules FROM gateways WHERE protocol = 'mqtt'");
+      for (const gateway of gateways.rows) {
+        if (generation !== this.connectionGeneration || !this.client?.connected) return;
+        await this.publishHardwareConfig(gateway.name, { pollingIntervalSeconds: gateway.polling_interval_seconds, alertRules: gateway.alert_rules });
       }
-      this.client = null;
+    } catch (error) {
+      this.logger.warn('Gateway restoration failed; retrying in 5 seconds');
+      this.scheduleRestore(generation);
+    } finally {
+      if (this.restoringGeneration === generation) this.restoringGeneration = undefined;
     }
   }
-
-  private startMqttClient() {
-    const brokerUrl = process.env.MQTT_URL || "mqtt://localhost:1883";
-    const username = process.env.MQTT_USERNAME || "solar";
-    const password = process.env.MQTT_PASSWORD || "solar-mqtt-local-only";
-
-    this.logger.log(`Connecting to MQTT broker at ${brokerUrl}...`);
-
-    const options: mqtt.IClientOptions = {
-      connectTimeout: 5000,
-      reconnectPeriod: 5000,
-    };
-    if (username) options.username = username;
-    if (password) options.password = password;
-
+  async refreshSubscriptions() {
+    const client = this.client;
+    const generation = this.connectionGeneration;
+    this.subscriptionsReady = false;
+    if (!client?.connected) return;
     try {
-      this.client = mqtt.connect(brokerUrl, options);
-    } catch (err) {
-      this.logger.error(`Failed to initiate MQTT connection: ${err}`);
-      return;
+      const result = await this.db.query("SELECT endpoint FROM gateways WHERE protocol = 'mqtt'");
+      if (generation !== this.connectionGeneration || !client.connected) return;
+      const topics = new Set<string>(result.rows.map(row => row.endpoint));
+      for (const topic of this.subscribedTopics) if (!topics.has(topic)) client.unsubscribe(topic);
+      for (const topic of topics) if (!this.subscribedTopics.has(topic)) {
+        await new Promise<void>((resolve, reject) => client.subscribe(topic, { qos: 1 }, error => error ? reject(error) : resolve()));
+        if (generation !== this.connectionGeneration || !client.connected) return;
+      }
+      this.subscribedTopics = topics;
+      this.subscriptionsReady = true;
+    } catch (error) {
+      this.scheduleRestore(generation);
+      throw error;
     }
-
-    this.client.on("connect", () => {
-      this.logger.log("Connected to MQTT Broker successfully");
-      this.client?.subscribe(
-        ["energy/+/telemetry", "energy/+/+/telemetry"],
-        (err) => {
-          if (err) {
-            this.logger.error("Failed to subscribe to telemetry topics", err);
-          } else {
-            this.logger.log("Subscribed to [energy/+/telemetry, energy/+/+/telemetry]");
-          }
+  }
+async handleIncomingMessage(topic: string, messageStr: string) {
+    if (topic.split('/').some(part => ['response', 'config', 'ack'].includes(part.toLowerCase()))) return;
+    const data = JSON.parse(messageStr);
+    if (!data || typeof data !== 'object' || ['acknowledged', 'ack', 'config'].includes(data.status ?? data.type)) return;
+    const deviceHint = data.deviceId ?? data.device ?? data.serialNumber;
+    // A gateway can contain many devices, so a device identity is mandatory.
+    if (typeof deviceHint !== 'string' || !deviceHint.trim()) return;
+    const result = await this.db.query(
+      `SELECT d.id AS "deviceId", d.site_id AS "siteId", g.id AS "gatewayId", g.name AS "gatewayName", g.endpoint
+       FROM devices d JOIN gateways g ON g.id = d.gateway_id AND g.site_id = d.site_id
+       JOIN sites s ON s.id = d.site_id
+       WHERE (d.id::text = $1 OR d.serial_number = $1) AND g.protocol = 'mqtt' AND s.status <> 'archived'`, [deviceHint]);
+    const candidates = result.rows.filter(row => telemetryTopicMatches(row.endpoint, topic)
+      && (!data.gatewayId || data.gatewayId === row.gatewayId)
+      && (!data.gateway || data.gateway === row.gatewayName || data.gateway === row.gatewayId)
+      && (!data.siteId || data.siteId === row.siteId));
+    if (candidates.length !== 1) return;
+    const entity = candidates[0]!;
+    if (!data.timestamp && !data.sourceTime) throw new Error('Source timestamp is required for replay-safe telemetry');
+    const sourceTime = new Date(data.sourceTime ?? data.timestamp); const receivedTime = new Date();
+    if (!Number.isFinite(sourceTime.getTime()) || sourceTime.getTime() > receivedTime.getTime() + 30_000) throw new Error('Invalid source timestamp');
+    const ingestionId = `${entity.deviceId}:${createHash('sha256').update(String(data.ingestionId ?? canonical(data))).digest('hex')}`;
+    const rawRegisters = data.registers ?? data.rawRegisters;
+    const mappings = rawRegisters ? await this.getDeviceMappings(entity.deviceId, sourceTime) : [];
+    if (rawRegisters && !mappings.length) throw new Error('No effective register mapping is configured');
+    if (rawRegisters && Object.values(rawRegisters).some(value => typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > 65535)) throw new Error('Raw registers must be unsigned 16-bit words');
+    const decoded = mappings.reduce<ReturnType<typeof decodeRegisterBatch>>((fields, mapping) => {
+      const ordered = mapping.byteOrder === 'little_endian' || mapping.byteOrder === 'little-endian'
+        ? Object.fromEntries(Object.entries(rawRegisters).map(([key, value]) => { const word = Number(value); return [key, ((word & 255) << 8) | (word >>> 8)]; }))
+        : rawRegisters;
+      return { ...fields, ...decodeRegisterBatch(ordered, [mapping]) };
+    }, {});
+    const m = data.metrics ?? data;
+    const field = (semantic: string, ...values: unknown[]) => numberOrNull(rawRegisters ? decoded[semantic]?.scaledValue : values.find(value => value !== null && value !== undefined));
+    const metrics: LiveTelemetrySnapshot['metrics'] = {
+      voltage: field('voltage', m.voltage, m.voltage_v), current: field('current', m.current, m.current_a),
+      activePower: field('active_power', m.activePower, m.active_power, m.activePowerKw === undefined ? undefined : numberOrNull(m.activePowerKw)! * 1000),
+      apparentPower: field('apparent_power', m.apparentPower, m.apparent_power), reactivePower: field('reactive_power', m.reactivePower, m.reactive_power),
+      frequency: field('frequency', m.frequency, m.frequency_hz), powerFactor: field('power_factor', m.powerFactor, m.power_factor),
+      totalEnergy: field('total_energy', m.totalEnergy, m.totalEnergyKwh, m.total_energy_kwh),
+    };
+    if (Object.values(metrics).every(value => value === null) && !Object.keys(decoded).length) throw new Error('No measured fields');
+    const quality = isFresh(sourceTime, receivedTime.getTime()) ? 'complete' : 'partial';
+    const client = await this.db.pool.connect(); let accepted = false;
+    try {
+      await client.query('BEGIN');
+      const inserted = await client.query(
+        `INSERT INTO telemetry_raw (id, device_id, site_id, source_time, received_time, raw_payload, normalized_value, unit, quality, ingestion_id, semantic_field,
+         voltage_v, current_a, active_power_w, apparent_power_va, reactive_power_var, frequency_hz, power_factor, total_energy_kwh, mapping_version_id, mapping_version_ids)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'total_energy',$11,$12,$13,$14,$15,$16,$17,$18,$19,$20::uuid[])
+         ON CONFLICT (ingestion_id, source_time) DO NOTHING RETURNING id`,
+        [randomUUID(), entity.deviceId, entity.siteId, sourceTime, receivedTime, JSON.stringify(data), metrics.totalEnergy, 'kWh', quality, ingestionId,
+          metrics.voltage, metrics.current, metrics.activePower, metrics.apparentPower, metrics.reactivePower, metrics.frequency, metrics.powerFactor, metrics.totalEnergy,
+          mappings.find(mapping => mapping.semanticField === 'total_energy')?.id ?? null, mappings.map(mapping => mapping.id)]);
+      accepted = inserted.rows.length > 0;
+      if (accepted) {
+        await client.query("UPDATE gateways SET last_seen_at = GREATEST(last_seen_at, $2), status = CASE WHEN $2 >= now() - interval '120 seconds' THEN 'online' ELSE status END WHERE id = $1", [entity.gatewayId, sourceTime]);
+        if (metrics.totalEnergy !== null) {
+          const bucket = new Date(Math.floor(sourceTime.getTime() / 900_000) * 900_000);
+          await client.query(
+            `INSERT INTO telemetry_aggregate (id,site_id,device_id,semantic_field,bucket,bucket_start,value,sample_count,quality,last_source_time)
+             VALUES ($1,$2,$3,'total_energy','15m',$4,$5,1,$6,$7)
+             ON CONFLICT (device_id,semantic_field,bucket,bucket_start) DO UPDATE SET
+             value = CASE WHEN EXCLUDED.last_source_time >= COALESCE(telemetry_aggregate.last_source_time, '-infinity') THEN EXCLUDED.value ELSE telemetry_aggregate.value END,
+             quality = CASE WHEN EXCLUDED.last_source_time >= COALESCE(telemetry_aggregate.last_source_time, '-infinity') THEN EXCLUDED.quality ELSE telemetry_aggregate.quality END,
+             last_source_time = GREATEST(telemetry_aggregate.last_source_time, EXCLUDED.last_source_time), sample_count = telemetry_aggregate.sample_count + 1`,
+            [randomUUID(), entity.siteId, entity.deviceId, bucket, metrics.totalEnergy, quality, sourceTime]);
         }
-      );
-    });
-
-    this.client.on("message", async (topic, payload) => {
-      try {
-        await this.handleIncomingMessage(topic, payload.toString());
-      } catch (err) {
-        this.logger.error(`Error processing MQTT message on topic ${topic}`, err);
       }
-    });
-
-    this.client.on("error", (err) => {
-      this.logger.warn(`MQTT connection error: ${err.message}`);
-    });
+      await client.query('COMMIT');
+    } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
+    // Both a committed insert and a durable duplicate are safe to acknowledge. No ACK is emitted before COMMIT.
+    this.client?.publish(entity.endpoint.replace(/\/#$/, '') + '/response', JSON.stringify({
+      status: 'acknowledged', gateway: entity.gatewayName, deviceId: entity.deviceId, ingestionId: data.ingestionId ?? ingestionId,
+      sourceTime: sourceTime.toISOString(), serverReceivedAt: receivedTime.toISOString(), duplicate: !accepted,
+    }), { qos: 1 });
   }
-
-  /**
-   * Process incoming telemetry message (supports both Raw Registers and Pre-decoded Metrics)
-   */
-  async handleIncomingMessage(topic: string, messageStr: string) {
-    let data: any;
-    try {
-      data = JSON.parse(messageStr);
-    } catch {
-      this.logger.warn(`Non-JSON message received on ${topic}`);
-      return;
-    }
-
-    const topicParts = topic.split("/");
-    const siteHint = data.siteId || data.site || (topicParts.length >= 2 ? topicParts[1] : "");
-    const deviceHint = data.deviceId || data.device || (topicParts.length >= 4 ? topicParts[2] : "");
-    const gatewayHint = data.gatewayId || data.gateway || "";
-
-    // Resolve site, gateway, and device from database
-    const resolved = await this.resolveEntity(siteHint, gatewayHint, deviceHint, topic);
-    if (!resolved.siteId || !resolved.deviceId) {
-      this.cacheVolatileTelemetry(siteHint, gatewayHint, deviceHint, data);
-      return;
-    }
-
-    const { siteId, gatewayId, deviceId } = resolved;
-    const sourceTime = data.timestamp ? new Date(data.timestamp) : new Date();
-    const receivedTime = new Date();
-    const ingestionId = data.ingestionId || `${deviceId}-${sourceTime.getTime()}-${Math.random().toString(36).slice(2, 6)}`;
-
-    // Extracted electrical parameters
-    let voltage = 0;
-    let current = 0;
-    let activePower = 0;
-    let apparentPower = 0;
-    let reactivePower = 0;
-    let frequency = 50.0;
-    let powerFactor = 1.0;
-    let totalEnergy = 0;
-    let decodedFields: LiveTelemetrySnapshot["decodedFields"] = [];
-
-    // Check if payload contains raw Modbus registers (e.g. CodeDee Industrial Energy Gateway)
-    const rawRegisters = data.registers || data.rawRegisters;
-    if (rawRegisters && typeof rawRegisters === "object") {
-      const mappings = await this.getDeviceMappings(deviceId);
-      const decoded = decodeRegisterBatch(rawRegisters, mappings);
-
-      decodedFields = Object.values(decoded).map((d) => ({
-        semanticField: d.semanticField,
-        registerAddress: d.registerAddress,
-        rawValue: d.rawValue,
-        scaledValue: d.scaledValue,
-        unit: d.unit,
-      }));
-
-      totalEnergy = decoded.total_energy?.scaledValue ?? 0;
-      voltage = decoded.voltage?.scaledValue ?? 0;
-      current = decoded.current?.scaledValue ?? 0;
-      activePower = decoded.active_power?.scaledValue ?? 0;
-      apparentPower = decoded.apparent_power?.scaledValue ?? 0;
-      reactivePower = decoded.reactive_power?.scaledValue ?? 0;
-      frequency = decoded.frequency?.scaledValue ?? 50.0;
-      powerFactor = decoded.power_factor?.scaledValue ?? 1.0;
-    } else {
-      // Pre-decoded metrics format
-      const m = data.metrics || data;
-      voltage = Number(m.voltage ?? m.voltage_v ?? 0);
-      current = Number(m.current ?? m.current_a ?? 0);
-      activePower = Number(m.activePower ?? m.active_power ?? m.activePowerKw ? Number(m.activePowerKw) * 1000 : 0);
-      apparentPower = Number(m.apparentPower ?? m.apparent_power ?? 0);
-      reactivePower = Number(m.reactivePower ?? m.reactive_power ?? 0);
-      frequency = Number(m.frequency ?? m.frequency_hz ?? 50.0);
-      powerFactor = Number(m.powerFactor ?? m.power_factor ?? 1.0);
-      totalEnergy = Number(m.totalEnergy ?? m.totalEnergyKwh ?? m.total_energy_kwh ?? 0);
-    }
-
-    // Evaluate Quality
-    const qualityEval = evaluateQuality(voltage > 0 ? voltage : activePower, sourceTime, receivedTime, {
-      min: 0,
-      maxAgeSeconds: 86400,
-    });
-    const isQualityGood =
-      qualityEval.status === "complete" &&
-      (voltage === 0 || (voltage >= 180 && voltage <= 260)) &&
-      (frequency === 0 || (frequency >= 47 && frequency <= 53));
-    const qualityLabel: "Good" | "Fair" | "Bad" = isQualityGood ? "Good" : "Fair";
-
-    // 1. Insert into telemetry_raw
-    try {
-      const sql = `
-        INSERT INTO telemetry_raw (
-          id, device_id, site_id, source_time, received_time,
-          raw_payload, normalized_value, unit, quality, ingestion_id, semantic_field,
-          voltage_v, current_a, active_power_w, apparent_power_va, reactive_power_var,
-          frequency_hz, power_factor, total_energy_kwh
-        ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'total_energy',
-          $11, $12, $13, $14, $15, $16, $17, $18
-        ) ON CONFLICT (ingestion_id, source_time) DO NOTHING
-      `;
-      await this.db.query(sql, [
-        randomUUID(),
-        deviceId,
-        siteId,
-        sourceTime,
-        receivedTime,
-        JSON.stringify(data),
-        totalEnergy,
-        "kWh",
-        qualityEval.status,
-        ingestionId,
-        voltage,
-        current,
-        activePower,
-        apparentPower,
-        reactivePower,
-        frequency,
-        powerFactor,
-        totalEnergy,
-      ]);
-    } catch (dbErr) {
-      this.logger.error("Failed to insert telemetry_raw:", dbErr);
-    }
-
-    // 2. Update Gateway & Device Online Status
-    try {
-      if (gatewayId) {
-        await this.db.query(
-          "UPDATE gateways SET status = 'online', last_seen_at = now() WHERE id = $1",
-          [gatewayId]
-        );
-      }
-      await this.db.query(
-        "UPDATE devices SET status = 'online' WHERE id = $1",
-        [deviceId]
-      );
-      await this.db.query(
-        "UPDATE sites SET status = 'online', updated_at = now() WHERE id = $1 AND status = 'offline'",
-        [siteId]
-      );
-    } catch {}
-
-    // 3. Update 15m & hourly aggregate if energy is valid
-    if (totalEnergy > 0) {
-      this.updateAggregate(siteId, deviceId, sourceTime, totalEnergy, qualityEval.status).catch(
-        () => {}
-      );
-    }
-
-    // 4. Cache latest snapshot in memory for live viewer
-    const snapshot: LiveTelemetrySnapshot = {
-      siteId,
-      gatewayId: gatewayId ?? undefined,
-      deviceId,
-      timestamp: sourceTime.toISOString(),
-      status: "online",
-      quality: qualityLabel,
-      metrics: {
-        voltage,
-        current,
-        activePower,
-        apparentPower,
-        reactivePower,
-        frequency,
-        powerFactor,
-        totalEnergy,
-      },
-      rawRegisters: rawRegisters || undefined,
-      decodedFields,
-    };
-    this.latestBySite.set(siteId, snapshot);
+  async publishHardwareConfig(gatewayName: string, configData: Record<string, unknown>) {
+    if (!this.client?.connected) return false;
+    const result = await this.db.query("SELECT endpoint FROM gateways WHERE name = $1 AND protocol = 'mqtt'", [gatewayName]);
+    if (result.rows.length !== 1) return false;
+    const topic = result.rows[0]!.endpoint.replace(/\/#$/, '') + '/config';
+    await new Promise<void>((resolve, reject) => this.client!.publish(topic, JSON.stringify({ ...configData, gateway: gatewayName, timestamp: new Date().toISOString() }), { qos: 1, retain: true }, error => error ? reject(error) : resolve()));
+    return true;
   }
-
-  private async updateAggregate(
-    siteId: string,
-    deviceId: string,
-    sourceTime: Date,
-    totalEnergy: number,
-    quality: string
-  ) {
-    const d15 = new Date(sourceTime);
-    d15.setUTCSeconds(0, 0);
-    d15.setUTCMinutes(Math.floor(d15.getUTCMinutes() / 15) * 15);
-
-    await this.db.query(
-      `INSERT INTO telemetry_aggregate (id, site_id, device_id, semantic_field, bucket, bucket_start, value, sample_count, quality)
-       VALUES ($1, $2, $3, 'total_energy', '15m', $4, $5, 1, $6)
-       ON CONFLICT (device_id, semantic_field, bucket, bucket_start)
-       DO UPDATE SET value = EXCLUDED.value, sample_count = telemetry_aggregate.sample_count + 1, quality = EXCLUDED.quality`,
-      [randomUUID(), siteId, deviceId, d15, totalEnergy, quality]
-    );
+  async getDeviceMappings(deviceId: string, sourceTime = new Date()): Promise<Mapping[]> {
+    const result = await this.db.query(
+      `SELECT id, semantic_field AS "semanticField", register_address AS "registerAddress", register_count AS "registerCount", word_order AS "wordOrder", byte_order AS "byteOrder", data_type AS "dataType", scale, unit
+       FROM register_mapping_versions WHERE device_id = $1 AND effective_from <= $2 AND (effective_to IS NULL OR effective_to > $2) ORDER BY register_address`, [deviceId, sourceTime]);
+    return result.rows.map(row => ({ ...row, scale: Number(row.scale) })) as Mapping[];
   }
-
-  /**
-   * Resolves siteId, gatewayId, and deviceId based on identifiers in payload or topic
-   */
-  private async resolveEntity(
-    siteHint: string,
-    gatewayHint: string,
-    deviceHint: string,
-    topic: string
-  ): Promise<{ siteId: string | null; gatewayId: string | null; deviceId: string | null }> {
-    // 1. Try resolving by device serial or id
-    if (deviceHint) {
-      const devRes = await this.db.query(
-        `SELECT d.id AS "deviceId", d.gateway_id AS "gatewayId", d.site_id AS "siteId"
-         FROM devices d
-         WHERE d.id::text = $1 OR d.serial_number = $1 OR d.name ILIKE $1 OR d.serial_number ILIKE '%' || $1 || '%'
-         LIMIT 1`,
-        [deviceHint]
-      );
-      if (devRes.rows.length > 0 && devRes.rows[0]) {
-        return {
-          siteId: devRes.rows[0].siteId,
-          gatewayId: devRes.rows[0].gatewayId,
-          deviceId: devRes.rows[0].deviceId,
-        };
-      }
-    }
-
-    // 2. Try resolving by gateway endpoint or name
-    if (gatewayHint || topic) {
-      const gwRes = await this.db.query(
-        `SELECT g.id AS "gatewayId", g.site_id AS "siteId", d.id AS "deviceId"
-         FROM gateways g
-         LEFT JOIN devices d ON d.gateway_id = g.id
-         WHERE g.id::text = $1 OR g.name = $1 OR g.endpoint = $2 OR g.endpoint ILIKE '%' || $2 || '%'
-         LIMIT 1`,
-        [gatewayHint || "none", topic]
-      );
-      if (gwRes.rows.length > 0 && gwRes.rows[0] && gwRes.rows[0].siteId) {
-        return {
-          siteId: gwRes.rows[0].siteId,
-          gatewayId: gwRes.rows[0].gatewayId,
-          deviceId: gwRes.rows[0].deviceId,
-        };
-      }
-    }
-
-    // 3. Try resolving by site id or name
-    if (siteHint) {
-      const siteRes = await this.db.query(
-        `SELECT s.id AS "siteId", g.id AS "gatewayId", d.id AS "deviceId"
-         FROM sites s
-         LEFT JOIN gateways g ON g.site_id = s.id
-         LEFT JOIN devices d ON d.site_id = s.id
-         WHERE s.id::text = $1 OR s.name ILIKE '%' || $1 || '%'
-         LIMIT 1`,
-        [siteHint]
-      );
-      if (siteRes.rows.length > 0 && siteRes.rows[0]) {
-        return {
-          siteId: siteRes.rows[0].siteId,
-          gatewayId: siteRes.rows[0].gatewayId,
-          deviceId: siteRes.rows[0].deviceId,
-        };
-      }
-    }
-
-    // 4. Fallback: match first site with gateway
-    const fallbackRes = await this.db.query(
-      `SELECT s.id AS "siteId", g.id AS "gatewayId", d.id AS "deviceId"
-       FROM sites s
-       JOIN gateways g ON g.site_id = s.id
-       JOIN devices d ON d.site_id = s.id
-       ORDER BY s.created_at ASC
-       LIMIT 1`
-    );
-    if (fallbackRes.rows.length > 0 && fallbackRes.rows[0]) {
-      return {
-        siteId: fallbackRes.rows[0].siteId,
-        gatewayId: fallbackRes.rows[0].gatewayId,
-        deviceId: fallbackRes.rows[0].deviceId,
-      };
-    }
-
-    return { siteId: null, gatewayId: null, deviceId: null };
-  }
-
-  /**
-   * Retrieves register mappings for device (cached in memory)
-   */
-  async getDeviceMappings(deviceId: string): Promise<RegisterFieldMapping[]> {
-    if (this.mappingCache.has(deviceId)) {
-      return this.mappingCache.get(deviceId)!;
-    }
-
-    const res = await this.db.query(
-      `SELECT 
-        semantic_field AS "semanticField",
-        register_address AS "registerAddress",
-        register_count AS "registerCount",
-        word_order AS "wordOrder",
-        data_type AS "dataType",
-        scale,
-        unit
-       FROM register_mapping_versions
-       WHERE device_id = $1
-       ORDER BY register_address`,
-      [deviceId]
-    );
-
-    if (res.rows.length > 0) {
-      const mappings: RegisterFieldMapping[] = res.rows.map((r: any) => ({
-        semanticField: r.semanticField,
-        registerAddress: r.registerAddress,
-        registerCount: r.registerCount ?? 1,
-        wordOrder: r.wordOrder ?? "little_word_first",
-        dataType: r.dataType,
-        scale: Number(r.scale),
-        unit: r.unit,
-      }));
-      this.mappingCache.set(deviceId, mappings);
-      return mappings;
-    }
-
-    // Default PILOT SPM91 mappings if none configured yet
-    const defaultMappings: RegisterFieldMapping[] = [
-      { semanticField: "total_energy", registerAddress: "R0", registerCount: 2, wordOrder: "little_word_first", dataType: "uint32", scale: 0.1, unit: "kWh" },
-      { semanticField: "voltage", registerAddress: "R2", registerCount: 1, wordOrder: "little_word_first", dataType: "uint16", scale: 0.01, unit: "V" },
-      { semanticField: "current", registerAddress: "R3", registerCount: 2, wordOrder: "little_word_first", dataType: "uint32", scale: 0.001, unit: "A" },
-      { semanticField: "active_power", registerAddress: "R5", registerCount: 2, wordOrder: "little_word_first", dataType: "int32", scale: 0.1, unit: "W" },
-      { semanticField: "apparent_power", registerAddress: "R7", registerCount: 2, wordOrder: "little_word_first", dataType: "uint32", scale: 0.1, unit: "VA" },
-      { semanticField: "reactive_power", registerAddress: "R9", registerCount: 2, wordOrder: "little_word_first", dataType: "int32", scale: 0.1, unit: "var" },
-      { semanticField: "frequency", registerAddress: "R11", registerCount: 1, wordOrder: "little_word_first", dataType: "uint16", scale: 0.01, unit: "Hz" },
-      { semanticField: "power_factor", registerAddress: "R12", registerCount: 1, wordOrder: "little_word_first", dataType: "int16", scale: 0.001, unit: "" },
-    ];
-    return defaultMappings;
-  }
-
-  clearMappingCache(deviceId: string) {
-    this.mappingCache.delete(deviceId);
-  }
-
-  /**
-   * Retrieves latest live telemetry snapshot for a site
-   */
+  clearMappingCache(_deviceId: string) { /* mappings are selected at source time, never cached across versions */ }
   async getLatestTelemetry(siteId: string): Promise<LiveTelemetrySnapshot | null> {
-    if (this.latestBySite.has(siteId)) {
-      return this.latestBySite.get(siteId)!;
-    }
-
-    const sql = `
-      SELECT 
-        tr.site_id AS "siteId",
-        s.name AS "siteName",
-        d.id AS "deviceId",
-        d.model AS "deviceModel",
-        g.id AS "gatewayId",
-        g.name AS "gatewayName",
-        tr.source_time AS "sourceTime",
-        tr.quality,
-        coalesce(tr.voltage_v, 230.8) AS voltage,
-        coalesce(tr.current_a, 0.44) AS current,
-        coalesce(tr.active_power_w, 87.8) AS "activePower",
-        coalesce(tr.apparent_power_va, 103.0) AS "apparentPower",
-        coalesce(tr.reactive_power_var, -40.9) AS "reactivePower",
-        coalesce(tr.frequency_hz, 50.0) AS frequency,
-        coalesce(tr.power_factor, 0.91) AS "powerFactor",
-        coalesce(tr.total_energy_kwh, tr.normalized_value, 0.20) AS "totalEnergy",
-        tr.raw_payload AS "rawPayload"
-      FROM telemetry_raw tr
-      JOIN sites s ON s.id = tr.site_id
-      LEFT JOIN devices d ON d.id = tr.device_id
-      LEFT JOIN gateways g ON g.id = d.gateway_id
-      WHERE tr.site_id = $1
-      ORDER BY tr.source_time DESC
-      LIMIT 1
-    `;
-    const res = await this.db.query(sql, [siteId]);
-    if (res.rows.length === 0 || !res.rows[0]) return null;
-
-    const row = res.rows[0];
-    const rawPayload = typeof row.rawPayload === "string" ? JSON.parse(row.rawPayload) : row.rawPayload;
-    const rawRegisters = rawPayload?.registers || rawPayload?.rawRegisters;
-
-    const snapshot: LiveTelemetrySnapshot = {
-      siteId: row.siteId,
-      siteName: row.siteName,
-      gatewayId: row.gatewayId ?? undefined,
-      gatewayName: row.gatewayName ?? undefined,
-      deviceId: row.deviceId,
-      deviceModel: row.deviceModel ?? undefined,
-      timestamp: row.sourceTime?.toISOString?.() || new Date().toISOString(),
-      status: "online",
-      quality: row.quality === "complete" ? "Good" : "Fair",
-      metrics: {
-        voltage: Number(row.voltage),
-        current: Number(row.current),
-        activePower: Number(row.activePower),
-        apparentPower: Number(row.apparentPower),
-        reactivePower: Number(row.reactivePower),
-        frequency: Number(row.frequency),
-        powerFactor: Number(row.powerFactor),
-        totalEnergy: Number(row.totalEnergy),
-      },
-      rawRegisters: rawRegisters ?? undefined,
+    const result = await this.db.query(
+      `SELECT tr.*, s.name AS "siteName", d.model AS "deviceModel", g.id AS "gatewayId", g.name AS "gatewayName", g.endpoint
+       FROM telemetry_raw tr JOIN sites s ON s.id = tr.site_id JOIN devices d ON d.id = tr.device_id JOIN gateways g ON g.id = d.gateway_id
+       WHERE tr.site_id = $1 ORDER BY tr.source_time DESC, tr.received_time DESC LIMIT 1`, [siteId]);
+    const row = result.rows[0]; if (!row) return null;
+    const numeric = (value: unknown) => value === null || value === undefined ? null : Number(value);
+    return {
+      siteId, siteName: row.siteName, deviceId: row.device_id, deviceModel: row.deviceModel, gatewayId: row.gatewayId, gatewayName: row.gatewayName, endpoint: row.endpoint,
+      timestamp: new Date(row.source_time).toISOString(), sourceTime: new Date(row.source_time).toISOString(), serverReceivedAt: new Date(row.received_time).toISOString(),
+      status: isFresh(row.source_time) ? 'online' : 'offline', quality: row.quality === 'complete' ? 'Good' : 'Fair',
+      metrics: { voltage: numeric(row.voltage_v), current: numeric(row.current_a), activePower: numeric(row.active_power_w), apparentPower: numeric(row.apparent_power_va),
+        reactivePower: numeric(row.reactive_power_var), frequency: numeric(row.frequency_hz), powerFactor: numeric(row.power_factor), totalEnergy: numeric(row.total_energy_kwh) },
+      rawRegisters: row.raw_payload?.registers ?? row.raw_payload?.rawRegisters,
     };
-    this.latestBySite.set(siteId, snapshot);
-    return snapshot;
-  }
-
-  private cacheVolatileTelemetry(
-    siteHint: string,
-    gatewayHint: string,
-    deviceHint: string,
-    data: any
-  ) {
-    const rawRegisters = data.registers || data.rawRegisters;
-    const m = data.metrics || {};
-    const snapshot: LiveTelemetrySnapshot = {
-      siteId: siteHint || "unknown",
-      gatewayId: gatewayHint || undefined,
-      deviceId: deviceHint || "unknown",
-      timestamp: data.timestamp || new Date().toISOString(),
-      status: "online",
-      quality: "Good",
-      metrics: {
-        voltage: Number(m.voltage || 230.81),
-        current: Number(m.current || 0.44),
-        activePower: Number(m.activePower || 87.8),
-        apparentPower: Number(m.apparentPower || 103),
-        reactivePower: Number(m.reactivePower || -40.9),
-        frequency: Number(m.frequency || 50.0),
-        powerFactor: Number(m.powerFactor || 0.91),
-        totalEnergy: Number(m.totalEnergy || 0.2),
-      },
-      rawRegisters: rawRegisters ?? undefined,
-    };
-    if (siteHint) {
-      this.latestBySite.set(siteHint, snapshot);
-    }
   }
 }
+
+

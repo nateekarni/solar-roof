@@ -15,6 +15,7 @@ import { TelemetryModule } from "./modules/telemetry/telemetry.module.js";
 import { APP_GUARD } from "@nestjs/core";
 import { JwtAuthGuard } from "./modules/identity/jwt.guard.js";
 import { RolesGuard } from "./common/roles.guard.js";
+import { PlatformAccessGuard } from "./common/auth/platform-access.guard.js";
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { RolesGuard } from "./common/roles.guard.js";
       provide: APP_GUARD,
       useClass: RolesGuard,
     },
+    { provide: APP_GUARD, useClass: PlatformAccessGuard },
   ],
 })
 export class AppModule {}

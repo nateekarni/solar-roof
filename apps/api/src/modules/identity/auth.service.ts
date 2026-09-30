@@ -1,6 +1,6 @@
 import { createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 
-export interface AuthUser { id: string; email: string; role: "owner" | "admin" | "school_user"; schoolId?: string | undefined; }
+export interface AuthUser { id: string; email: string; role: "owner" | "admin" | "operator" | "accountant" | "school_user"; schoolId?: string | undefined; }
 export interface TokenPair { accessToken: string; refreshToken: string; expiresInSeconds: number; }
 
 function encode(input: string): string { return Buffer.from(input).toString("base64url"); }

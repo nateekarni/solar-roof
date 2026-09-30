@@ -1,17 +1,16 @@
 import { Injectable } from "@nestjs/common";
-
-import { buildDependencyHealth, type AppEnv } from "@solar/domain";
+import type { WorkerEnv } from "@solar/domain";
 
 @Injectable()
 export class WorkerHealthService {
-  constructor(private readonly env: AppEnv) {}
+  constructor(private readonly env: WorkerEnv) {}
 
   getSnapshot() {
     return {
-      ...buildDependencyHealth("worker", this.env),
+      service: "worker",
+      status: "healthy",
       checkedAt: new Date().toISOString(),
       queue: "idle"
     };
   }
 }
-

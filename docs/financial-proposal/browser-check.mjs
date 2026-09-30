@@ -1,0 +1,38 @@
+import {createRequire} from 'node:module';
+import assert from 'node:assert/strict';
+import {mkdir} from 'node:fs/promises';
+const {chromium}=createRequire(new URL('./validation/apps/web/package.json',import.meta.url))('@playwright/test');
+const browser=await chromium.launch({headless:true,executablePath:'C:/Users/User/AppData/Local/ms-playwright/chromium-1234/chrome-win64/chrome.exe'});
+const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];
+page.on('pageerror',error=>errors.push(error.message));
+page.on('response',response=>{if(response.url().includes('/v1/')&&response.status()>=500&&!response.url().endsWith('/email-verification/request'))errors.push(`${response.status()} ${response.url()}`);});
+try{
+ await page.goto('http://localhost:13100/login');
+ await page.getByLabel('อีเมล',{exact:true}).fill('financial-preview@example.test');
+ await page.getByLabel('รหัสผ่าน',{exact:true}).fill('Local-preview-only-123!');
+ await page.getByRole('button',{name:'เข้าสู่ระบบ',exact:true}).click();
+ await page.waitForURL('http://localhost:13100/');
+ await page.goto('http://localhost:13100/settings/account');
+ await page.getByText('ยังไม่ยืนยันอีเมล',{exact:true}).waitFor();
+ await page.getByRole('button',{name:'ส่งรหัสยืนยัน',exact:true}).click();
+ await page.getByRole('status').filter({hasText:'Configure SMTP'}).waitFor();
+ await page.goto('http://localhost:13100/billing');
+ await page.getByRole('heading',{name:'สถานะการออกและส่งเอกสารอัตโนมัติ'}).waitFor();
+ await page.getByText(/รอบบิลที่ยังไม่เสร็จ/).waitFor();
+ assert.equal(await page.getByRole('button',{name:'สร้างรอบบิล',exact:true}).count(),0);
+ await mkdir(new URL('./artifacts/',import.meta.url),{recursive:true});
+ await page.screenshot({path:new URL('./artifacts/billing-desktop.png',import.meta.url).pathname.replace(/^\/([A-Z]:)/,'$1'),fullPage:true});
+ await page.goto('http://localhost:13100/settings/general');
+ await page.getByRole('heading',{level:1}).waitFor();
+ await page.locator('#default-payment-days').waitFor();
+ await page.waitForFunction(()=>!document.querySelector('#default-payment-days')?.disabled);
+ assert.equal((await page.locator('body').innerText()).includes('999 อาคารดิจิทัล'),false);
+ await page.screenshot({path:new URL('./artifacts/settings-desktop.png',import.meta.url).pathname.replace(/^\/([A-Z]:)/,'$1'),fullPage:true});
+ await page.setViewportSize({width:390,height:844});
+ await page.goto('http://localhost:13100/billing');
+ await page.getByText(/รอบบิลที่ยังไม่เสร็จ/).waitFor();
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+ await page.screenshot({path:new URL('./artifacts/billing-mobile.png',import.meta.url).pathname.replace(/^\/([A-Z]:)/,'$1'),fullPage:true});
+ assert.deepEqual(errors,[]);
+ console.log('PASS proposed browser: login, unverified email, honest SMTP error, financial jobs, no manual create, absent sample company, mobile width, zero JS errors');
+}finally{await browser.close();}

@@ -36,3 +36,14 @@ export function loadEnv(input: Record<string, unknown>): AppEnv {
   return result.data;
 }
 
+
+// The current worker hosts in-process jobs and has no external clients.
+export const workerEnvSchema = envSchema.pick({ NODE_ENV: true, WORKER_PORT: true });
+export type WorkerEnv = z.infer<typeof workerEnvSchema>;
+export function loadWorkerEnv(input: Record<string, unknown>): WorkerEnv {
+  const result = workerEnvSchema.safeParse(input);
+  if (!result.success) {
+    throw new Error(`Invalid worker environment configuration: ${result.error.issues.map(issue => `${issue.path.join(".")}: ${issue.message}`).join("; ")}`);
+  }
+  return result.data;
+}

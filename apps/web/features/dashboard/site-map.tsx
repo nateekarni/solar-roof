@@ -20,7 +20,7 @@ type Site = {
   status: string;
   capacityMwp: number;
   schoolName: string;
-  productionKwh: number;
+  productionKwh: number | null;
 };
 
 const style: StyleSpecification = {
@@ -36,7 +36,8 @@ const style: StyleSpecification = {
   layers: [{ id: "osm", type: "raster", source: "osm" }],
 } as const;
 
-const formatNumber = (value: number) =>
+const formatNumber = (value: number | null) =>
+  value === null ? "ไม่มีข้อมูล" :
   new Intl.NumberFormat("th-TH", { maximumFractionDigits: 2 }).format(value);
 
 export function SiteMap({ sites }: { sites: Site[] }) {
@@ -70,7 +71,7 @@ export function SiteMap({ sites }: { sites: Site[] }) {
       <CardHeader className="p-0 pb-2.5">
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm font-semibold text-foreground">
-            แผนที่โรงเรียนทั้งหมด
+            แผนที่ไซต์
           </CardTitle>
           <Badge variant="secondary" className="text-xs font-normal">
             {validSites.length} ไซต์
@@ -166,7 +167,7 @@ export function SiteMap({ sites }: { sites: Site[] }) {
           {/* Status Legend Overlay in Bottom-Left */}
           <div className="absolute bottom-3 left-3 z-10 rounded-lg border border-border/70 bg-card/95 p-3 shadow-md backdrop-blur-sm">
             <p className="text-[11px] font-bold text-foreground mb-1.5">
-              สถานะโรงเรียน
+              สถานะไซต์
             </p>
             <div className="space-y-1 text-[11px]">
               <div className="flex items-center justify-between gap-3">
@@ -209,17 +210,17 @@ export function SiteMap({ sites }: { sites: Site[] }) {
             <span className="site-sub">
               {selected
                 ? selected.schoolName
-                : `${validSites.length} ไซต์ จาก ${schoolCount} โรงเรียน`}
+                : `${validSites.length} ไซต์`}
             </span>
           </div>
           <div className="site-metrics">
             <div className="metric">
               <b>
                 {formatNumber(
-                  selected ? selected.productionKwh : totalProductionKwh,
+                  selected ? selected.productionKwh : validSites.some(s=>s.productionKwh!==null) ? totalProductionKwh : null,
                 )}
               </b>
-              <span>kWh {selected ? "วันนี้" : "ผลิตสะสมรวมวันนี้"}</span>
+              <span>kWh {selected ? "ช่วงเวลาที่เลือก" : "ช่วงเวลาที่เลือก"}</span>
             </div>
             <div className="metric">
               <b>

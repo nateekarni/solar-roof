@@ -20,17 +20,21 @@ import { CompareModal } from "./compare-modal";
 import { DashboardAutoRefresh } from "./dashboard-auto-refresh";
 import { DashboardStatsClient } from "./dashboard-stats-client";
 import { PeriodPicker } from "./period-picker";
+import { PowerFlowCard } from "./power-flow-card";
 import { ProductionChart } from "./production-chart";
 import { RankingChart } from "./ranking-chart";
 import { RevenueChart } from "./revenue-chart";
+import { SiteFilter } from "./site-filter";
 import { SiteMap } from "./site-map";
 
+type DashboardData = DashboardSummaryResponse;
 async function getDashboardData(
   startDate?: string,
   endDate?: string,
   month?: string,
   year?: string,
-): Promise<DashboardSummaryResponse> {
+  siteId?: string,
+): Promise<DashboardData> {
   const baseUrl = getApiBaseUrl();
 
   const params = new URLSearchParams();
@@ -38,6 +42,7 @@ async function getDashboardData(
   if (endDate) params.set("end_date", endDate);
   if (month) params.set("month", month);
   if (year) params.set("year", year);
+  if (siteId) params.set("site_id",siteId);
   const query = params.toString() ? `?${params.toString()}` : "";
 
   const response = await serverFetch(`${baseUrl}/v1/dashboard/summary${query}`, {
@@ -49,7 +54,7 @@ async function getDashboardData(
   if (!response.ok) {
     throw new Error(`ไม่สามารถโหลดข้อมูลจาก API ได้ (HTTP ${response.status})`);
   }
-  return response.json() as Promise<DashboardSummaryResponse>;
+  return response.json() as Promise<DashboardData>;
 }
 
 export async function Dashboard({
@@ -61,6 +66,7 @@ export async function Dashboard({
         end_date?: string;
         month?: string;
         year?: string;
+        site_id?: string;
       }>
     | undefined;
 } = {}) {
@@ -74,24 +80,31 @@ export async function Dashboard({
     resolvedParams?.end_date,
     resolvedParams?.month,
     resolvedParams?.year,
+    resolvedParams?.site_id,
   );
 
   const alerts = data.alerts || [];
 
   return (
-    <main className="content dashboard-content w-full min-w-0 max-w-full overflow-x-hidden">
+    <div className="content dashboard-content w-full min-w-0 max-w-full overflow-x-hidden">
       <DashboardAutoRefresh />
       {/* Dashboard Top Header */}
-      <div className="mb-3 flex items-center justify-between gap-2 w-full min-w-0">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2 w-full min-w-0">
         <div className="shrink-0 min-w-0">
           <h1 className="text-lg sm:text-xl font-bold tracking-tight text-foreground md:text-2xl whitespace-nowrap">
             {t("dashboard.homeTitle") || "หน้าแรก"}
           </h1>
         </div>
-        <div className="flex items-center justify-end gap-1.5 sm:gap-2 min-w-0">
-          <CompareModal />
+        <div className="flex flex-wrap items-center justify-end gap-1.5 sm:gap-2 min-w-0">
+          <SiteFilter sites={data.availableSites} />
+          <CompareModal sites={data.availableSites} startDate={data.range.start} endDate={data.range.end} />
           <PeriodPicker />
         </div>
+      </div>
+
+      {/* Live Power Flow Diagram & System Overview */}
+      <div className="mb-4 w-full min-w-0">
+        <PowerFlowCard siteId={resolvedParams?.site_id} />
       </div>
 
       {/* Top 6 Stat Cards (Customizable) */}
@@ -109,16 +122,16 @@ export async function Dashboard({
             hasCustomRange={Boolean(
               resolvedParams?.start_date && resolvedParams?.end_date
             )}
-            startDate={resolvedParams?.start_date}
-            endDate={resolvedParams?.end_date}
+            startDate={data.range.start}
+            endDate={data.range.end}
           />
           <RevenueChart
             initialData={data.revenue}
             hasCustomRange={Boolean(
               resolvedParams?.start_date && resolvedParams?.end_date
             )}
-            startDate={resolvedParams?.start_date}
-            endDate={resolvedParams?.end_date}
+            startDate={data.range.start}
+            endDate={data.range.end}
           />
         </div>
 
@@ -192,6 +205,6 @@ export async function Dashboard({
       <section className="mt-3 w-full min-w-0 max-w-full">
         <RankingChart sites={data.rankings} />
       </section>
-    </main>
+    </div>
   );
 }

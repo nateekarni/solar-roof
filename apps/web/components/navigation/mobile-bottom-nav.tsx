@@ -37,11 +37,6 @@ export function MobileBottomNav() {
           icon: LayoutDashboard,
         },
         {
-          label: "ระบบ",
-          href: "/system",
-          icon: Zap,
-        },
-        {
           label: "ใบแจ้งหนี้",
           href: "/billing",
           icon: Receipt,
@@ -60,11 +55,6 @@ export function MobileBottomNav() {
           label: "ภาพรวม",
           href: "/",
           icon: LayoutDashboard,
-        },
-        {
-          label: "ระบบ",
-          href: "/system",
-          icon: Zap,
         },
         {
           label: "ไซต์งาน",
@@ -92,14 +82,9 @@ export function MobileBottomNav() {
         icon: LayoutDashboard,
       },
       {
-        label: "ระบบ",
-        href: "/system",
-        icon: Zap,
-      },
-      {
-        label: "โรงเรียน",
-        href: "/schools",
-        icon: GraduationCap,
+        label: "ไซต์งาน",
+        href: "/sites",
+        icon: MapPin,
       },
       {
         label: "เอกสาร",

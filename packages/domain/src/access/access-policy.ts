@@ -1,4 +1,4 @@
-export type PlatformRole = "owner" | "admin" | "school_user";
+export type PlatformRole = "owner" | "admin" | "operator" | "accountant" | "school_user";
 export type AccessAction = "read" | "manage" | "finalize" | "mark_paid" | "upload_evidence";
 
 export interface AccessActor {

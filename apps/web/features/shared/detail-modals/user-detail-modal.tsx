@@ -52,25 +52,30 @@ export function UserDetailModal({
 
   if (!user) return null;
 
-  const copyToClipboard = (text: string, key: string) => {
-    navigator.clipboard.writeText(text);
+  const copyToClipboard = async (text: string, key: string) => {
+    try { await navigator.clipboard.writeText(text); } catch {
+      notify.error(locale === "th" ? "คัดลอกไม่สำเร็จ" : "Could not copy to clipboard"); return;
+    }
     setCopiedKey(key);
     notify.success(locale === "th" ? "คัดลอกลงคลิปบอร์ดแล้ว" : "Copied to clipboard");
     setTimeout(() => setCopiedKey(null), 2000);
   };
 
-  const role = user.role?.toLowerCase() || "school_user";
+  const role = user.role?.toLowerCase() || "";
   const isOwner = role === "owner";
   const isAdmin = role === "admin";
   const isSchoolUser = role === "school_user";
 
   const getRoleLabel = () => {
+    if (!role) return locale === "th" ? "ไม่มีข้อมูลบทบาท" : "Role unavailable";
     if (isOwner) return locale === "th" ? "เจ้าของระบบ (Owner)" : "System Owner";
     if (isAdmin) return locale === "th" ? "ผู้ดูแลระบบ (Admin)" : "Administrator";
-    return locale === "th" ? "ผู้ดูแลโรงเรียน (School Staff)" : "School User";
+    if (isSchoolUser) return locale === "th" ? "ผู้ดูแลโรงเรียน (School Staff)" : "School User";
+    return role;
   };
 
   const getRoleDescription = () => {
+    if (!role) return locale === "th" ? "ไม่มีข้อมูลสิทธิ์" : "Permission information unavailable";
     if (isOwner) {
       return locale === "th"
         ? "มีสิทธิ์สูงสุดในการจัดการผู้ใช้ สัญญา อัตราค่าไฟฟ้า และการตั้งค่าความปลอดภัยทั้งระบบ"
@@ -78,15 +83,15 @@ export function UserDetailModal({
     }
     if (isAdmin) {
       return locale === "th"
-        ? "เข้าถึงข้อมูลทุกโรงเรียน ตรวจสอบสลิปการชำระเงิน ออกใบแจ้งหนี้ และมอนิเตอร์ฮาร์ดแวร์"
-        : "Cross-school management, billing verification, documents generation, and telemetry.";
+        ? "จัดการข้อมูลและอุปกรณ์ภายในขอบเขตที่บัญชีได้รับอนุญาต"
+        : "Manage records and equipment within the scope assigned to this account.";
     }
     return locale === "th"
       ? `เข้าถึงและจัดการข้อมูลเฉพาะ ${user.schoolName || "โรงเรียนต้นสังกัด"} ดูยอดบิล และอัปโหลดสลิป`
       : `Access restricted to ${user.schoolName || "assigned school"} dashboards and payment submissions.`;
   };
 
-  const isActive = user.status === "active" || user.status === "ใช้งานปกติ" || !user.status;
+  const isActive = user.status === "active" || user.status === "ใช้งานปกติ";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -120,7 +125,7 @@ export function UserDetailModal({
                   variant={isActive ? "default" : "secondary"}
                   className="text-xs shrink-0"
                 >
-                  {isActive ? (locale === "th" ? "ใช้งานปกติ" : "Active") : (locale === "th" ? "ระงับการใช้งาน" : "Inactive")}
+                  {user.status || (locale === "th" ? "ไม่มีข้อมูลสถานะ" : "Status unavailable")}
                 </Badge>
               </div>
               <DialogDescription className="text-xs text-muted-foreground mt-0.5 truncate">
@@ -177,7 +182,7 @@ export function UserDetailModal({
                 <span>{locale === "th" ? "สังกัดโรงเรียน" : "School Assignment"}</span>
               </div>
               <div className="font-medium text-xs text-foreground truncate">
-                {user.schoolName || (locale === "th" ? "ทุกโรงเรียน (ส่วนกลาง)" : "All Schools (Platform)")}
+                {user.schoolName || "—"}
               </div>
             </div>
 
@@ -221,3 +226,6 @@ export function UserDetailModal({
     </Dialog>
   );
 }
+
+
+

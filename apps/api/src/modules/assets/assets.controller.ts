@@ -10,20 +10,26 @@ import {
   Patch,
   Post,
   Query,
+  Req,
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import net from "node:net";
+
 import mqtt from "mqtt";
 import { DatabaseService } from "../../database/database.service.js";
+import { MqttIngestionService } from "../telemetry/mqtt-ingestion.service.js";
 
 @Controller("v1")
 export class AssetsController {
-  constructor(@Inject(DatabaseService) private readonly db: DatabaseService) {}
+  constructor(
+    @Inject(DatabaseService) private readonly db: DatabaseService,
+    @Inject(MqttIngestionService) private readonly mqttService: MqttIngestionService
+  ) {}
 
   @Get("schools")
-  async listSchools() {
+  async listSchools(@Req() req: { user?: { role?: string; schoolId?: string | null } }) {
     const res = await this.db.query(
-      "SELECT id, name, code, region, status FROM schools ORDER BY name"
+      "SELECT id, name, code, region, status FROM schools WHERE ($1::uuid IS NULL OR id = $1) AND $2 ORDER BY name",
+      [req.user?.schoolId ?? null, req.user?.role !== "school_user" || Boolean(req.user?.schoolId)]
     );
     return res.rows;
   }
@@ -67,72 +73,11 @@ export class AssetsController {
       };
     }
 
-    if (protocol === "modbus-tcp") {
-      return new Promise((resolve) => {
-        let host = endpoint;
-        let port = 502;
-
-        if (host.includes(":")) {
-          const parts = host.split(":");
-          host = parts[0] || "localhost";
-          port = parseInt(parts[1] || "502", 10) || 502;
-        }
-
-        if (host.includes("/")) {
-          return resolve({
-            status: "offline",
-            protocol,
-            endpoint,
-            latencyMs: null,
-            message: "รูปแบบ Endpoint สำหรับ Modbus TCP ต้องเป็น Host/IP:Port (เช่น 192.168.1.50:502)",
-          });
-        }
-
-        const start = Date.now();
-        const socket = new net.Socket();
-        let settled = false;
-
-        const finish = (res: { status: "online" | "offline"; latencyMs: number | null; message: string }) => {
-          if (settled) return;
-          settled = true;
-          socket.destroy();
-          resolve({ ...res, protocol, endpoint });
-        };
-
-        socket.setTimeout(3000);
-        socket.connect(port, host, () => {
-          const latencyMs = Date.now() - start;
-          finish({
-            status: "online",
-            latencyMs,
-            message: `เชื่อมต่อ Modbus TCP (${host}:${port}) สำเร็จ [Latency: ${latencyMs}ms]`,
-          });
-        });
-
-        socket.on("error", (err) => {
-          finish({
-            status: "offline",
-            latencyMs: null,
-            message: `ไม่สามารถเชื่อมต่อ Modbus TCP (${host}:${port}) ได้: ${err.message}`,
-          });
-        });
-
-        socket.on("timeout", () => {
-          finish({
-            status: "offline",
-            latencyMs: null,
-            message: `การเชื่อมต่อ Modbus TCP (${host}:${port}) หมดเวลา (Timeout 3s)`,
-          });
-        });
-      });
-    }
-
+    if (protocol !== "mqtt") throw new BadRequestException("Only MQTT is supported");
     // Default: MQTT Protocol Test
     return new Promise((resolve) => {
       const brokerUrl =
-        endpoint.startsWith("mqtt://") || endpoint.startsWith("ws://") || endpoint.startsWith("wss://")
-          ? endpoint
-          : process.env.MQTT_URL || "mqtt://localhost:1883";
+        process.env.MQTT_URL || "mqtt://localhost:1883";
 
       const start = Date.now();
       const mqttOptions: mqtt.IClientOptions = {
@@ -175,7 +120,7 @@ export class AssetsController {
         finish({
           status: "online",
           latencyMs,
-          message: `เชื่อมต่อ MQTT Broker สำเร็จ พร้อมรับข้อมูล Telemetry บน Topic: ${endpoint} [Latency: ${latencyMs}ms]`,
+          message: `เชื่อมต่อ MQTT Broker สำเร็จ (ยังไม่ได้ยืนยัน Gateway) Topic: ${endpoint} [Latency: ${latencyMs}ms]`,
         });
       });
 
@@ -198,10 +143,40 @@ export class AssetsController {
   }
 
   @Get("sites")
-  async listSites() {
-    const res = await this.db.query(
-      'SELECT id, school_id AS "schoolId", name, capacity_mwp AS "capacityMwp", status FROM sites ORDER BY name'
-    );
+  async listSites(@Req() req: { user?: { role?: string; schoolId?: string | null } }) {
+    const sql = `
+      SELECT 
+        si.id,
+        si.school_id AS "schoolId",
+        si.name,
+        coalesce(round(si.capacity_mwp::numeric, 4), 0) AS "capacityMwp",
+        CASE WHEN si.status = 'archived' THEN 'archived' WHEN g.last_seen_at >= now() - interval '120 seconds' THEN 'online' ELSE 'offline' END AS status,
+        s.name AS "schoolName",
+        g.id AS "gatewayId",
+        g.name AS "gatewayName",
+        CASE WHEN g.last_seen_at >= now() - interval '120 seconds' THEN 'online' ELSE 'offline' END AS "gatewayStatus",
+        g.last_seen_at AS "lastSeenAt",
+        coalesce(g.polling_interval_seconds, 10) AS "pollingIntervalSeconds",
+        g.alert_rules AS "alertRules",
+        coalesce(bc_stats.invoice_count, 0) AS "invoiceCount",
+        coalesce(bc_stats.paid_count, 0) AS "paidInvoiceCount",
+        coalesce(round(bc_stats.total_amount::numeric, 2), 0) AS "totalAmount"
+      FROM sites si
+      JOIN schools s ON s.id = si.school_id
+      LEFT JOIN gateways g ON g.site_id = si.id
+      LEFT JOIN (
+        SELECT 
+          site_id,
+          count(*)::int AS invoice_count,
+          count(*) FILTER (WHERE status = 'paid')::int AS paid_count,
+          coalesce(sum(amount), 0)::numeric AS total_amount
+        FROM billing_cycles
+        GROUP BY site_id
+      ) bc_stats ON bc_stats.site_id = si.id
+      WHERE ($1::uuid IS NULL OR si.school_id = $1) AND $2
+      ORDER BY si.name
+    `;
+    const res = await this.db.query(sql, [req.user?.schoolId ?? null, req.user?.role !== "school_user" || Boolean(req.user?.schoolId)]);
     return res.rows;
   }
 
@@ -215,14 +190,17 @@ export class AssetsController {
         coalesce(round(si.capacity_mwp::numeric, 4), 0) AS "capacityMwp",
         si.latitude,
         si.longitude,
-        si.status,
+        CASE WHEN si.status = 'archived' THEN 'archived' WHEN g.last_seen_at >= now() - interval '120 seconds' THEN 'online' ELSE 'offline' END AS status,
         s.name AS "schoolName",
         g.id AS "gatewayId",
-        coalesce(g.name, 'GW-01') AS "gatewayName",
+        g.name AS "gatewayName",
         coalesce(g.protocol, 'mqtt') AS protocol,
         coalesce(g.endpoint, '') AS endpoint,
+        coalesce(g.polling_interval_seconds, 10) AS "pollingIntervalSeconds",
+        g.alert_rules AS "alertRules",
+        g.last_seen_at AS "lastSeenAt",
         d.id AS "deviceId",
-        coalesce(d.model, 'PM5350') AS "deviceModel",
+        d.model AS "deviceModel",
         coalesce(d.serial_number, '') AS "deviceSerial"
       FROM sites si
       JOIN schools s ON s.id = si.school_id
@@ -244,6 +222,7 @@ export class AssetsController {
     body: {
       name?: string;
       schoolId?: string;
+      schoolName?: string;
       capacityMwp?: number;
       latitude?: number;
       longitude?: number;
@@ -253,21 +232,27 @@ export class AssetsController {
       deviceModel?: string;
       deviceSerial?: string;
       meterPresetId?: string;
+      pollingIntervalSeconds?: number;
+      interval?: number;
+      alertRules?: Record<string, unknown>;
       status?: string;
     }
   ) {
     const name = body.name?.trim();
-    const schoolId = body.schoolId;
+    let schoolId = body.schoolId?.trim();
+    const schoolName = body.schoolName?.trim();
+    if (body.protocol && body.protocol !== "mqtt") throw new BadRequestException("Only MQTT is supported");
     const capacityMwp = Number(body.capacityMwp ?? 0.5);
     const lat = body.latitude ? Number(body.latitude) : 13.7563;
     const lng = body.longitude ? Number(body.longitude) : 100.5018;
 
-    if (!name || !schoolId) {
+    if (!name || (!schoolId && !schoolName)) {
       throw new BadRequestException("กรุณาระบุชื่อไซต์งานและโรงเรียนสังกัด");
     }
 
     const siteId = randomUUID();
-    const devSerial = body.deviceSerial?.trim() || `SN-${siteId.slice(0, 8).toUpperCase()}`;
+    const devSerial = body.deviceSerial?.trim();
+    if (!devSerial) throw new BadRequestException("Meter serial number is required");
 
     // Verify serial number uniqueness before starting transaction
     const dupDev = await this.db.query("SELECT id FROM devices WHERE serial_number = $1", [devSerial]);
@@ -277,14 +262,19 @@ export class AssetsController {
       );
     }
 
-    const initialStatus = body.status === "offline" ? "offline" : "online";
+    const initialStatus = "offline";
 
     const countRes = await this.db.query("SELECT count(*)::int AS count FROM gateways");
     const gwCount = countRes.rows[0]?.count ?? 0;
     const gwId = randomUUID();
     const gwName = body.gatewayName?.trim() || `GW-${String(gwCount + 1).padStart(3, "0")}`;
-    const protocol = body.protocol?.trim() || "mqtt";
-    const endpoint = body.endpoint?.trim() || `energy/site-${siteId.slice(0, 8)}/telemetry`;
+    const protocol = "mqtt";
+    const endpoint = gatewayTopic(gwName, body.endpoint);
+    const intervalSec = validatedInterval(body.pollingIntervalSeconds ?? body.interval ?? 10);
+    validateAlertRules(body.alertRules);
+    const alertRulesJson = body.alertRules
+      ? JSON.stringify(body.alertRules)
+      : '{"voltageMin": 200, "voltageMax": 250, "frequencyMin": 48, "frequencyMax": 52, "offlineTimeoutSec": 120}';
 
     const deviceId = randomUUID();
     const devModel = body.deviceModel?.trim() || "PM5350";
@@ -294,6 +284,19 @@ export class AssetsController {
     try {
       await client.query("BEGIN");
 
+      if (!schoolId) {
+        await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [schoolName]);
+        const existing = await client.query("SELECT id FROM schools WHERE name = $1 ORDER BY id FOR UPDATE", [schoolName]);
+        if (existing.rows.length > 1) throw new BadRequestException("Multiple schools share that name; reconcile before creating a site");
+        schoolId = existing.rows[0]?.id;
+        if (!schoolId) {
+          schoolId = randomUUID();
+          await client.query("INSERT INTO schools (id,name,code,region,status) VALUES ($1,$2,$3,'ภาคกลาง','active')", [schoolId,schoolName,`SCH-${schoolId}`]);
+        }
+      }
+      await client.query("SELECT id FROM schools WHERE id = $1 FOR UPDATE", [schoolId]);
+      const linked = await client.query("SELECT id FROM sites WHERE school_id = $1", [schoolId]);
+      if (linked.rows.length) throw new BadRequestException("โรงเรียนนี้มีไซต์งานแล้ว (หนึ่งโรงเรียนต่อหนึ่งไซต์งาน)");
       // 1. Create Site
       const siteSql = `
         INSERT INTO sites (id, school_id, name, capacity_mwp, latitude, longitude, status)
@@ -304,9 +307,9 @@ export class AssetsController {
 
       // 2. Create Gateway
       await client.query(
-        `INSERT INTO gateways (id, site_id, name, protocol, endpoint, status, last_seen_at) 
-         VALUES ($1, $2, $3, $4, $5, $6, now())`,
-        [gwId, siteId, gwName, protocol, endpoint, initialStatus]
+        `INSERT INTO gateways (id, site_id, name, protocol, endpoint, status, polling_interval_seconds, alert_rules, last_seen_at) 
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, NULL)`,
+        [gwId, siteId, gwName, protocol, endpoint, initialStatus, intervalSec, alertRulesJson]
       );
 
       // 3. Create Device
@@ -332,6 +335,7 @@ export class AssetsController {
             [body.meterPresetId]
           );
           const registers = presetRes.rows[0]?.registers;
+          if (!Array.isArray(registers)) throw new BadRequestException("Meter preset not found");
           if (Array.isArray(registers)) {
             for (const reg of registers) {
               await client.query(
@@ -355,12 +359,14 @@ export class AssetsController {
             }
           }
         } catch (presetErr) {
-          console.warn("Non-fatal: Failed to clone preset registers:", presetErr);
+          throw presetErr;
         }
       }
 
       await client.query("COMMIT");
-      return res.rows[0];
+      await this.mqttService.refreshSubscriptions().catch(() => {});
+      const delivered = await this.mqttService.publishHardwareConfig(gwName, { pollingIntervalSeconds: intervalSec, alertRules: JSON.parse(alertRulesJson) }).catch(() => false);
+      return { ...res.rows[0], configDelivery: delivered ? "published" : "pending" };
     } catch (err) {
       await client.query("ROLLBACK");
       throw err;
@@ -376,6 +382,10 @@ export class AssetsController {
     body: {
       name?: string;
       schoolId?: string;
+      schoolName?: string;
+      deviceId?: string;
+      pollingIntervalSeconds?: number;
+      alertRules?: Record<string, unknown>;
       capacityMwp?: number;
       latitude?: number;
       longitude?: number;
@@ -387,6 +397,9 @@ export class AssetsController {
       deviceSerial?: string;
     }
   ) {
+    if (body.protocol && body.protocol !== "mqtt") throw new BadRequestException("Only MQTT is supported");
+    if (body.pollingIntervalSeconds !== undefined) validatedInterval(body.pollingIntervalSeconds);
+    validateAlertRules(body.alertRules);
     const client = await this.db.pool.connect();
     try {
       await client.query("BEGIN");
@@ -396,6 +409,16 @@ export class AssetsController {
         throw new NotFoundException("ไม่พบไซต์งานที่ต้องการแก้ไข");
       }
 
+      if (body.schoolName !== undefined) {
+        if (!body.schoolName.trim()) throw new BadRequestException("School name is required");
+        await client.query("UPDATE schools SET name = $1, updated_at = now() WHERE id = (SELECT school_id FROM sites WHERE id = $2)", [body.schoolName.trim(), id]);
+      }
+      const gateway = await client.query("SELECT id,name,endpoint FROM gateways WHERE site_id = $1 FOR UPDATE", [id]);
+      const gw = gateway.rows[0];
+      if (gw && (body.gatewayName !== undefined || body.endpoint !== undefined)) {
+        body.gatewayName = body.gatewayName?.trim() || gw.name;
+        body.endpoint = gatewayTopic(body.gatewayName!, body.endpoint);
+      }
       // Check unique serial number if provided
       if (body.deviceSerial?.trim()) {
         const dupDev = await client.query(
@@ -453,6 +476,7 @@ export class AssetsController {
         body.gatewayName !== undefined ||
         body.protocol !== undefined ||
         body.endpoint !== undefined ||
+        body.pollingIntervalSeconds !== undefined || body.alertRules !== undefined ||
         body.status !== undefined
       ) {
         const gwUpdates: string[] = [];
@@ -476,6 +500,8 @@ export class AssetsController {
           gwValues.push(body.status);
         }
 
+        if (body.pollingIntervalSeconds !== undefined) { gwUpdates.push(`polling_interval_seconds = $${gIdx++}`); gwValues.push(body.pollingIntervalSeconds); }
+        if (body.alertRules !== undefined) { gwUpdates.push(`alert_rules = $${gIdx++}::jsonb`); gwValues.push(JSON.stringify(body.alertRules)); }
         if (gwUpdates.length > 0) {
           gwValues.push(id);
           await client.query(
@@ -485,6 +511,13 @@ export class AssetsController {
         }
       }
 
+      // Device edits must identify a single meter when the gateway has several.
+      if (body.deviceModel !== undefined || body.deviceSerial !== undefined) {
+        const meters = await client.query("SELECT id FROM devices WHERE site_id = $1 AND device_type = 'meter'", [id]);
+        if (!body.deviceId && meters.rows.length !== 1) throw new BadRequestException("Select the meter device to edit");
+        body.deviceId ??= meters.rows[0]?.id;
+        if (!meters.rows.some(meter => meter.id === body.deviceId)) throw new BadRequestException("Meter does not belong to this site");
+      }
       // 3. Update Meter Device
       if (
         body.deviceModel !== undefined ||
@@ -511,16 +544,18 @@ export class AssetsController {
         }
 
         if (devUpdates.length > 0) {
-          devValues.push(id);
+          devValues.push(id, body.deviceId ?? null);
           await client.query(
-            `UPDATE devices SET ${devUpdates.join(", ")} WHERE site_id = $${dIdx} AND device_type = 'meter'`,
+            `UPDATE devices SET ${devUpdates.join(", ")} WHERE site_id = $${dIdx} AND id = $${dIdx + 1} AND device_type = 'meter'`,
             devValues
           );
         }
       }
 
       await client.query("COMMIT");
-      return { success: true, message: "อัปเดตข้อมูลไซต์งานเรียบร้อยแล้ว" };
+      await this.mqttService.refreshSubscriptions().catch(() => {});
+      const delivered = gw ? await this.mqttService.publishHardwareConfig(body.gatewayName ?? gw.name, { pollingIntervalSeconds: body.pollingIntervalSeconds, alertRules: body.alertRules }).catch(() => false) : false;
+      return { success: true, configDelivery: delivered ? 'published' : 'pending', message: "อัปเดตข้อมูลไซต์งานเรียบร้อยแล้ว" };
     } catch (err) {
       await client.query("ROLLBACK");
       throw err;
@@ -596,5 +631,108 @@ export class AssetsController {
     } finally {
       client.release();
     }
+  }
+
+  @Get("sites/:id/devices")
+  async listDevices(@Param("id") siteId: string) {
+    const result = await this.db.query(`SELECT id, name, model, serial_number AS "serialNumber", device_type AS "deviceType", slave_id AS "slaveId" FROM devices WHERE site_id = $1 ORDER BY name, id`, [siteId]);
+    return result.rows;
+  }
+
+  @Post("sites/:id/devices")
+  async addDevice(@Param("id") siteId: string, @Body() body: { name?: string; model?: string; serialNumber?: string; slaveId?: number; meterPresetId?: string }) {
+    if (!body.name?.trim() || !body.model?.trim() || !body.serialNumber?.trim()) throw new BadRequestException("Device name, model and meter serial are required");
+    const slaveId = Number(body.slaveId ?? 1);
+    if (!Number.isInteger(slaveId) || slaveId < 1 || slaveId > 247) throw new BadRequestException("Slave ID must be 1–247");
+    const client = await this.db.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const gateway = await client.query("SELECT id FROM gateways WHERE site_id = $1 FOR UPDATE", [siteId]);
+      if (gateway.rows.length !== 1) throw new BadRequestException("Site must have one configured gateway");
+      const deviceId = randomUUID();
+      await client.query(`INSERT INTO devices (id,gateway_id,site_id,name,model,serial_number,device_type,slave_id,status) VALUES ($1,$2,$3,$4,$5,$6,'meter',$7,'offline')`, [deviceId,gateway.rows[0].id,siteId,body.name.trim(),body.model.trim(),body.serialNumber.trim(),slaveId]);
+      if (body.meterPresetId) {
+        const preset = await client.query("SELECT registers FROM meter_presets WHERE id = $1", [body.meterPresetId]);
+        if (!Array.isArray(preset.rows[0]?.registers)) throw new BadRequestException("Preset not found");
+        for (const reg of preset.rows[0].registers) await client.query(`INSERT INTO register_mapping_versions
+          (id,device_id,semantic_field,register_address,register_count,word_order,byte_order,data_type,scale,unit,effective_from)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now())`, [randomUUID(),deviceId,reg.semanticField ?? reg.semantic_field,String(reg.registerAddress ?? reg.register_address),reg.registerCount ?? reg.register_count ?? 1,reg.wordOrder ?? reg.word_order ?? 'little_word_first',reg.byteOrder ?? reg.byte_order ?? 'big_endian',reg.dataType ?? reg.data_type,reg.scale ?? 1,reg.unit ?? '']);
+      }
+      await client.query("COMMIT");
+      return { id: deviceId, siteId, gatewayId: gateway.rows[0].id };
+    } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
+  }
+
+  @Post("gateways/:gatewayName/hardware-config")
+  async configureHardware(
+    @Param("gatewayName") gatewayName: string,
+    @Body()
+    body: {
+      interval?: number;
+      pollingIntervalSeconds?: number;
+      alertRules?: Record<string, unknown>;
+      registers?: any[];
+      parameters?: Record<string, unknown>;
+    }
+  ) {
+    const gwRes = await this.db.query(
+      "SELECT id, name, site_id FROM gateways WHERE name = $1 OR id::text = $1 LIMIT 1",
+      [gatewayName]
+    );
+    const gw = gwRes.rows[0];
+    if (!gw) {
+      throw new NotFoundException(`ไม่พบ Gateway "${gatewayName}"`);
+    }
+    const interval = validatedInterval(body.pollingIntervalSeconds ?? body.interval ?? 10);
+    validateAlertRules(body.alertRules);
+
+    if (body.alertRules) {
+      await this.db.query(
+        "UPDATE gateways SET polling_interval_seconds = $1, alert_rules = $2 WHERE id = $3",
+        [interval, JSON.stringify(body.alertRules), gw.id]
+      );
+    } else {
+      await this.db.query(
+        "UPDATE gateways SET polling_interval_seconds = $1 WHERE id = $2",
+        [interval, gw.id]
+      );
+    }
+
+    const payload = {
+      gateway: gw.name,
+      pollingIntervalSeconds: interval,
+      alertRules: body.alertRules || undefined,
+      registers: body.registers || undefined,
+      parameters: body.parameters || undefined,
+      appliedAt: new Date().toISOString(),
+    };
+
+    // Broadcast to hardware over MQTT
+    const delivered = await this.mqttService.publishHardwareConfig(gw.name, payload).catch(() => false);
+
+    return {
+      success: true,
+      delivery: delivered ? "published" : "pending",
+      message: delivered ? `บันทึกและส่ง MQTT config ไปยัง "${gw.name}" แล้ว (รอ Hardware นำไปใช้)` : "บันทึกแล้ว แต่ยังส่ง MQTT ไม่สำเร็จ กรุณาลองส่งอีกครั้ง",
+      config: payload,
+    };
+  }
+}
+
+function gatewayTopic(name: string, requested?: string) {
+  if (!name.trim() || /[/+#]/.test(name) || ["response", "config", "ack"].includes(name.toLowerCase())) throw new BadRequestException("Gateway name cannot contain MQTT separators or wildcards");
+  return requested?.startsWith('/') ? `/${name}/#` : `energy/${name}/#`;
+}
+function validatedInterval(value: unknown) {
+  const interval = Number(value);
+  if (!Number.isInteger(interval) || interval < 1 || interval > 86400) throw new BadRequestException("Interval must be 1–86400 seconds");
+  return interval;
+}
+function validateAlertRules(rules?: Record<string, unknown>) {
+  if (!rules) return;
+  for (const [key, value] of Object.entries(rules)) {
+    if (key.endsWith('Severity')) {
+      if (!['info','warning','critical'].includes(String(value))) throw new BadRequestException("Invalid alert severity");
+    } else if (typeof value !== 'number' || !Number.isFinite(value)) throw new BadRequestException("Alert thresholds must be finite numbers");
   }
 }

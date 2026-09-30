@@ -37,9 +37,6 @@ export default function SecuritySettingsPage() {
   const [passwordError, setPasswordError] = React.useState<string | null>(null);
   const [passwordSuccess, setPasswordSuccess] = React.useState(false);
 
-  // 2FA state
-  const [twoFactorEnabled, setTwoFactorEnabled] = React.useState(false);
-
   const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setPasswordError(null);
@@ -88,23 +85,6 @@ export default function SecuritySettingsPage() {
       notify.error(msg);
     } finally {
       setIsChangingPassword(false);
-    }
-  };
-
-  const handleToggle2FA = (checked: boolean) => {
-    setTwoFactorEnabled(checked);
-    if (checked) {
-      notify.success(
-        locale === "th"
-          ? "เปิดใช้งานการยืนยันตัวตน 2FA เรียบร้อยแล้ว (จำลอง)"
-          : "Two-factor authentication enabled (Mockup)"
-      );
-    } else {
-      notify.info(
-        locale === "th"
-          ? "ปิดการยืนยันตัวตน 2FA แล้ว"
-          : "Two-factor authentication disabled"
-      );
     }
   };
 
@@ -232,108 +212,13 @@ export default function SecuritySettingsPage() {
           </CardContent>
         </Card>
 
-        {/* 2. Two-Factor Authentication (2FA) */}
         <Card className="panel">
-          <CardHeader className="p-0 pb-3 border-b border-border/40">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <Shield className="size-4 text-primary" />
-                <span>{locale === "th" ? "การยืนยันตัวตน 2 ขั้นตอน (2FA)" : "Two-Factor Authentication (2FA)"}</span>
-              </CardTitle>
-              <Badge
-                variant="outline"
-                className={`text-[10px] ${
-                  twoFactorEnabled
-                    ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/30"
-                    : "bg-muted text-muted-foreground border-border/60"
-                }`}
-              >
-                {twoFactorEnabled
-                  ? (locale === "th" ? "เปิดใช้งานแล้ว" : "Active")
-                  : (locale === "th" ? "ปิดใช้งาน" : "Disabled")}
-              </Badge>
-            </div>
-            <CardDescription className="text-xs">
-              {locale === "th"
-                ? "เพิ่มความปลอดภัยให้บัญชีของคุณด้วยรหัสผ่านแบบใช้ครั้งเดียวจาก Authenticator App"
-                : "Add an extra layer of security using Google Authenticator or Microsoft Authenticator"}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="p-0 pt-3.5 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label htmlFor="2fa-toggle" className="text-xs font-medium cursor-pointer">
-                  {locale === "th" ? "เปิดใช้งาน 2-Factor Authentication" : "Enable 2FA"}
-                </Label>
-                <p className="text-[11px] text-muted-foreground">
-                  {locale === "th"
-                    ? "ต้องกรอกรหัส 6 หลักทุกครั้งที่มีการเข้าสู่ระบบจากอุปกรณ์ใหม่"
-                    : "Require 6-digit TOTP code on new device sign-ins"}
-                </p>
-              </div>
-              <Switch
-                id="2fa-toggle"
-                checked={twoFactorEnabled}
-                onCheckedChange={handleToggle2FA}
-              />
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* 3. Active Sessions */}
-        <Card className="panel">
-          <CardHeader className="p-0 pb-3 border-b border-border/40">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              <Laptop className="size-4 text-primary" />
-              <span>{locale === "th" ? "อุปกรณ์ที่เข้าสู่ระบบอยู่ในปัจจุบัน" : "Active Login Sessions"}</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-0 pt-3.5 space-y-3">
-            <div className="flex items-center justify-between text-xs p-2.5 rounded-xl bg-muted/40 border border-border/50">
-              <div className="flex items-center gap-3">
-                <div className="size-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
-                  <Laptop className="size-4" />
-                </div>
-                <div>
-                  <div className="font-semibold text-foreground flex items-center gap-1.5">
-                    <span>Windows PC · Google Chrome</span>
-                    <Badge variant="outline" className="text-[9px] bg-emerald-500/10 text-emerald-600 border-emerald-500/30">
-                      {locale === "th" ? "อุปกรณ์ปัจจุบัน" : "This device"}
-                    </Badge>
-                  </div>
-                  <p className="text-[10px] text-muted-foreground">Bangkok, Thailand · ใช้งานอยู่ขณะนี้</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between text-xs p-2.5 rounded-xl bg-muted/20 border border-border/30">
-              <div className="flex items-center gap-3">
-                <div className="size-8 rounded-lg bg-muted text-muted-foreground flex items-center justify-center">
-                  <Smartphone className="size-4" />
-                </div>
-                <div>
-                  <div className="font-medium text-foreground">
-                    <span>iPhone 15 · Safari Mobile</span>
-                  </div>
-                  <p className="text-[10px] text-muted-foreground">Bangkok, Thailand · 2 ชั่วโมงที่แล้ว</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="pt-2 flex justify-end">
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 text-xs text-destructive border-destructive/30 hover:bg-destructive/10 gap-1.5 cursor-pointer"
-                onClick={() => notify.success(locale === "th" ? "ออกจากระบบอุปกรณ์อื่นทั้งหมดแล้ว" : "Signed out of all other sessions")}
-              >
-                <LogOut className="size-3.5" />
-                <span>{locale === "th" ? "ออกจากระบบอุปกรณ์อื่นทั้งหมด" : "Sign out other sessions"}</span>
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+          <CardHeader className="p-0 pb-2"><CardTitle className="text-sm">{locale === "th" ? "การยืนยันตัวตนสองขั้นตอนและอุปกรณ์ที่เข้าสู่ระบบ" : "Two-factor authentication and login devices"}</CardTitle></CardHeader>
+          <CardContent className="p-0 text-xs text-muted-foreground">{locale === "th" ? "ระบบยังไม่รองรับการตั้งค่า 2FA หรือการดูและยกเลิกเซสชันอุปกรณ์จากหน้านี้" : "Two-factor setup and device session viewing or revocation are not available on this page."}</CardContent>
+        </Card></div>
     </main>
   );
 }
+
+
+

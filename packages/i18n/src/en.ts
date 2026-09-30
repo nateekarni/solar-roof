@@ -42,6 +42,7 @@ export const en = {
     systemSettings: "System Settings",
     systemDefaults: "System Defaults",
     meterPresets: "Meter Presets",
+    companyAndBanking: "Company & Banking",
     alerts: "System Alerts",
     alertsList: "All Alerts",
     alertAcknowledge: "Acknowledge All",

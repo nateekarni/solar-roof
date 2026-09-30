@@ -37,31 +37,41 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../components/ui/select";
+import { useAuth } from "../../stores/auth-store";
 import { apiClient } from "../../lib/api-client";
 import { useLocale, useT } from "../../providers/locale-provider";
 
 const siteSchema = z.object({
   // Step 1: Site Info
   name: z.string().min(2, "ชื่อไซต์งานต้องมีอย่างน้อย 2 ตัวอักษร"),
-  schoolId: z.string().min(1, "กรุณาเลือกโรงเรียนสังกัด"),
+  schoolName: z.string().min(1, "กรุณากรอกชื่อโรงเรียน"),
   capacityMwp: z.number().min(0.01, "กำลังติดตั้งต้องมากกว่า 0"),
   latitude: z.number().optional(),
   longitude: z.number().optional(),
 
   // Step 2: Gateway & Meter Config
   gatewayName: z.string().min(2, "กรุณาระบุชื่อหรือรหัส Gateway"),
-  protocol: z.string().min(1, "กรุณาเลือกโปรโตคอล"),
+  protocol: z.literal("mqtt"),
   endpoint: z.string().min(3, "กรุณาระบุ Endpoint หรือ MQTT Topic"),
   meterPresetId: z.string().optional(),
   deviceModel: z.string().optional(),
-  deviceSerial: z.string().min(2, "กรุณาระบุรหัสซีเรียลของมิเตอร์"),
+  deviceSerial: z.string().min(1, "กรุณาระบุรหัสซีเรียลมิเตอร์"),
+  pollingIntervalSeconds: z.number().min(1).default(10),
+  voltageMin: z.number().optional(),
+  voltageMax: z.number().optional(),
+  currentMax: z.number().optional(),
+  alertSeverity: z.enum(["info", "warning", "critical"]),
 });
 
 type SiteFormValues = z.infer<typeof siteSchema>;
 
-interface SchoolOption {
-  id: string;
-  name: string;
+interface MeterRegister {
+  semanticField: string;
+  nameTh: string;
+  registerAddress: string;
+  dataType: string;
+  scale: number;
+  unit: string;
 }
 
 interface MeterPresetOption {
@@ -69,6 +79,7 @@ interface MeterPresetOption {
   brand: string;
   model: string;
   deviceType: string;
+  registers?: MeterRegister[];
 }
 
 export function SiteFormDialog({
@@ -79,6 +90,7 @@ export function SiteFormDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const router = useRouter();
+  const { user } = useAuth();
   const t = useT();
   const locale = useLocale();
   const [step, setStep] = React.useState<1 | 2 | 3>(1);
@@ -86,7 +98,6 @@ export function SiteFormDialog({
   const [pingStatus, setPingStatus] = React.useState<"idle" | "testing" | "online" | "offline">("idle");
   const [pingMessage, setPingMessage] = React.useState<string>("");
   const [pingLatency, setPingLatency] = React.useState<number | null>(null);
-  const [schools, setSchools] = React.useState<SchoolOption[]>([]);
   const [presets, setPresets] = React.useState<MeterPresetOption[]>([]);
 
   const {
@@ -98,19 +109,24 @@ export function SiteFormDialog({
     reset,
     formState: { errors },
   } = useForm<SiteFormValues>({
-    resolver: zodResolver(siteSchema),
+    resolver: zodResolver(siteSchema) as any,
     defaultValues: {
       name: "",
-      schoolId: "",
+      alertSeverity: "warning",
+      schoolName: "",
       capacityMwp: 0.48,
       latitude: 13.7563,
       longitude: 100.5018,
       gatewayName: "GW-020",
       protocol: "mqtt",
-      endpoint: "energy/site020/telemetry",
+      endpoint: "energy/GW-020/#",
       meterPresetId: "",
       deviceModel: "PM5350",
-      deviceSerial: "SN-020-MTR01",
+      deviceSerial: "", // Empty by default as requested
+      pollingIntervalSeconds: 10,
+      voltageMin: 200,
+      voltageMax: 250,
+      currentMax: 100,
     },
   });
 
@@ -123,17 +139,12 @@ export function SiteFormDialog({
       setPingMessage("");
       setPingLatency(null);
 
-      // Fetch schools, meter presets, and existing sites concurrently to generate unique defaults
+      // Fetch meter presets and existing sites concurrently to generate unique defaults
       Promise.all([
-        apiClient.get<SchoolOption[]>("/v1/schools"),
         apiClient.get<MeterPresetOption[]>("/v1/meter-presets").catch(() => []),
         apiClient.get<any[]>("/v1/sites").catch(() => []),
       ])
-        .then(([schoolList, presetList, siteList]) => {
-          setSchools(schoolList);
-          if (schoolList.length > 0 && schoolList[0]) {
-            setValue("schoolId", schoolList[0].id);
-          }
+        .then(([presetList, siteList]) => {
           if (Array.isArray(presetList)) {
             setPresets(presetList);
             if (presetList.length > 0 && presetList[0]) {
@@ -142,12 +153,13 @@ export function SiteFormDialog({
             }
           }
 
-          // Suggest next unique site/gateway code based on existing sites count
+          // Suggest next unique gateway code based on existing sites count
           const nextCount = Array.isArray(siteList) ? siteList.length + 1 : 20;
           const nextCode = String(nextCount).padStart(3, "0");
-          setValue("gatewayName", `GW-${nextCode}`);
-          setValue("endpoint", `energy/site${nextCode}/telemetry`);
-          setValue("deviceSerial", `SN-${nextCode}-MTR01`);
+          const gw = `GW-${nextCode}`;
+          setValue("gatewayName", gw);
+          setValue("endpoint", `energy/${gw}/#`);
+          setValue("deviceSerial", ""); // Never auto-fill serial
         })
         .catch(() => {});
     }
@@ -162,18 +174,26 @@ export function SiteFormDialog({
     const match = val.match(/\d+/);
     if (match) {
       const code = match[0].padStart(3, "0");
-      setValue("gatewayName", `GW-${code}`);
-      setValue("endpoint", `energy/site${code}/telemetry`);
-      setValue("deviceSerial", `SN-${code}-MTR01`);
+      const gw = `GW-${code}`;
+      setValue("gatewayName", gw);
+      setValue("endpoint", `energy/${gw}/#`);
+    }
+  };
+
+  const handleGatewayNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const gw = e.target.value;
+    setValue("gatewayName", gw, { shouldValidate: true });
+    if (gw) {
+      setValue("endpoint", `energy/${gw}/#`, { shouldValidate: true });
     }
   };
 
   const handleNextStep = async () => {
     if (step === 1) {
-      const valid = await trigger(["name", "schoolId", "capacityMwp", "latitude", "longitude"]);
+      const valid = await trigger(["name", "schoolName", "capacityMwp", "latitude", "longitude"]);
       if (valid) setStep(2);
     } else if (step === 2) {
-      const valid = await trigger(["gatewayName", "protocol", "endpoint", "deviceSerial"]);
+      const valid = await trigger(["gatewayName", "protocol", "endpoint", "deviceSerial", "pollingIntervalSeconds"]);
       if (valid) {
         setStep(3);
         setPingStatus("idle");
@@ -214,11 +234,30 @@ export function SiteFormDialog({
     setLoading(true);
     try {
       const finalStatus = pingStatus === "online" ? "online" : "offline";
-      await apiClient.post("/v1/sites", {
-        ...values,
+      const created = await apiClient.post<{ configDelivery: string }>("/v1/sites", {
+        name: values.name,
+        schoolName: values.schoolName,
+        capacityMwp: values.capacityMwp,
+        latitude: values.latitude,
+        longitude: values.longitude,
+        gatewayName: values.gatewayName,
+        protocol: values.protocol,
+        endpoint: values.endpoint,
+        deviceModel: values.deviceModel,
+        deviceSerial: values.deviceSerial,
+        meterPresetId: values.meterPresetId,
+        pollingIntervalSeconds: values.pollingIntervalSeconds || 10,
+        alertRules: {
+          voltageMin: values.voltageMin ?? 200,
+          voltageMax: values.voltageMax ?? 250,
+          currentMax: values.currentMax ?? 100,
+          voltageSeverity: values.alertSeverity,
+          currentSeverity: values.alertSeverity,
+        },
         status: finalStatus,
       });
 
+      if (created.configDelivery === "pending") notify.error("สร้างไซต์งานแล้ว แต่ MQTT config ยังส่งไม่สำเร็จ กรุณาส่งอีกครั้งเมื่อ Broker พร้อม");
       notify.success(
         locale === "th"
           ? `เพิ่มไซต์งาน "${values.name}" เรียบร้อยแล้ว (สถานะ: ${finalStatus === "online" ? "ออนไลน์" : "ออฟไลน์"})`
@@ -234,6 +273,7 @@ export function SiteFormDialog({
     }
   };
 
+  if (user?.role !== "admin") return null;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-xl sm:rounded-2xl sm:p-6">
@@ -318,7 +358,7 @@ export function SiteFormDialog({
         </DialogHeader>
 
         <form
-          onSubmit={handleSubmit(onSubmit)}
+          onSubmit={handleSubmit(onSubmit as any)}
           onKeyDown={(e) => {
             // Prevent accidental form submission on Enter key in Step 1 or 2
             if (e.key === "Enter" && step !== 3) {
@@ -348,26 +388,17 @@ export function SiteFormDialog({
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="school-select" required className="text-xs font-medium">
-                  {locale === "th" ? "โรงเรียนต้นสังกัด" : "Associated School"}
+                <Label htmlFor="school-name" required className="text-xs font-medium">
+                  {locale === "th" ? "ชื่อโรงเรียน" : "School Name"}
                 </Label>
-                <Select
-                  value={formValues.schoolId}
-                  onValueChange={(val) => setValue("schoolId", val, { shouldValidate: true })}
-                >
-                  <SelectTrigger id="school-select" className="text-xs h-10 w-full">
-                    <SelectValue placeholder="เลือกโรงเรียนสังกัด" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {schools.map((sch) => (
-                      <SelectItem key={sch.id} value={sch.id} className="text-xs">
-                        {sch.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {errors.schoolId && (
-                  <p className="text-[11px] text-destructive">{errors.schoolId.message}</p>
+                <Input
+                  id="school-name"
+                  placeholder={locale === "th" ? "ระบุชื่อโรงเรียน เช่น โรงเรียนบ้านดอนสำราญ" : "e.g. Demonstration School"}
+                  className="text-xs h-10"
+                  {...register("schoolName")}
+                />
+                {errors.schoolName && (
+                  <p className="text-[11px] text-destructive">{errors.schoolName.message}</p>
                 )}
               </div>
 
@@ -431,7 +462,8 @@ export function SiteFormDialog({
                     id="gw-name"
                     placeholder="GW-020"
                     className="text-xs h-10 font-mono"
-                    {...register("gatewayName")}
+                    value={formValues.gatewayName}
+                    onChange={handleGatewayNameChange}
                   />
                   {errors.gatewayName && (
                     <p className="text-[11px] text-destructive">{errors.gatewayName.message}</p>
@@ -443,8 +475,9 @@ export function SiteFormDialog({
                     {locale === "th" ? "โปรโตคอลการเชื่อมต่อ" : "Protocol"}
                   </Label>
                   <Select
-                    defaultValue={formValues.protocol}
-                    onValueChange={(val) => setValue("protocol", val, { shouldValidate: true })}
+                    defaultValue="mqtt"
+                    value={formValues.protocol}
+                    onValueChange={(val) => setValue("protocol", val as "mqtt", { shouldValidate: true })}
                   >
                     <SelectTrigger id="gw-protocol" className="text-xs h-10 w-full">
                       <SelectValue placeholder="เลือกโปรโตคอล" />
@@ -453,32 +486,90 @@ export function SiteFormDialog({
                       <SelectItem value="mqtt" className="text-xs">
                         MQTT (Standard Telemetry Ingestion)
                       </SelectItem>
-                      <SelectItem value="modbus-tcp" className="text-xs">
-                        Modbus TCP (Industrial Polling)
-                      </SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
               </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="gw-endpoint" required className="text-xs font-medium">
-                  {locale === "th" ? "Endpoint / MQTT Topic" : "Telemetry Endpoint / Topic"}
-                </Label>
-                <Input
-                  id="gw-endpoint"
-                  placeholder="energy/site020/telemetry"
-                  className="text-xs h-10 font-mono"
-                  {...register("endpoint")}
-                />
-                {errors.endpoint && (
-                  <p className="text-[11px] text-destructive">{errors.endpoint.message}</p>
-                )}
-                <span className="text-[10px] text-muted-foreground">
-                  {formValues.protocol === "modbus-tcp"
-                    ? "ระบุ Host:Port เช่น 192.168.1.50:502 หรือ localhost:502"
-                    : "หัวข้อ MQTT Topic เช่น energy/site020/telemetry หรือ URL เต็ม mqtt://broker:1883"}
-                </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="gw-endpoint" required className="text-xs font-medium">
+                    {locale === "th" ? "Endpoint / MQTT Topic" : "Telemetry Endpoint / Topic"}
+                  </Label>
+                  <Input
+                    readOnly
+                    id="gw-endpoint"
+                    placeholder="energy/GW-020/#"
+                    className="text-xs h-10 font-mono"
+                    {...register("endpoint")}
+                  />
+                  {errors.endpoint && (
+                    <p className="text-[11px] text-destructive">{errors.endpoint.message}</p>
+                  )}
+                  <span className="text-[10px] text-muted-foreground">
+                    {locale === "th"
+                      ? `หัวข้อ MQTT Topic เช่น energy/${formValues.gatewayName || "GW-001"}/#`
+                      : `MQTT Topic format: energy/${formValues.gatewayName || "GW-001"}/#`}
+                  </span>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="polling-interval" className="text-xs font-medium">
+                    {locale === "th" ? "ช่วงเวลาที่ Gateway ส่งข้อมูล (วินาที)" : "Gateway Push Interval (Seconds)"}
+                  </Label>
+                  <Input
+                    id="polling-interval"
+                    type="number"
+                    min="1"
+                    placeholder="10"
+                    className="text-xs h-10 font-mono"
+                    {...register("pollingIntervalSeconds", { valueAsNumber: true })}
+                  />
+                  <span className="text-[10px] text-muted-foreground">
+                    {locale === "th" ? "ส่งค่าไปแทนช่วงเวลาบน Hardware Gateway" : "Overrides the interval on the named hardware gateway"}
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-1"><Label htmlFor="alert-severity">ระดับความรุนแรง (Severity)</Label>
+                <select id="alert-severity" className="h-10 w-full rounded-md border bg-background px-3" {...register("alertSeverity")}>
+                  <option value="info">Info</option><option value="warning">Warning</option><option value="critical">Critical</option>
+                </select>
+              </div>
+              {/* Alert Rules Config */}
+              <div className="rounded-xl border border-border/80 bg-muted/20 p-3 space-y-2.5">
+                <div className="text-xs font-semibold text-foreground">
+                  {locale === "th" ? "เกณฑ์แจ้งเตือนความผิดปกติ (Alert Threshold Rules)" : "Alert Threshold Rules"}
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="space-y-1">
+                    <Label className="text-[10px] text-muted-foreground">Min Voltage (V)</Label>
+                    <Input
+                      type="number"
+                      placeholder="200"
+                      className="h-8 text-xs font-mono bg-background"
+                      {...register("voltageMin", { valueAsNumber: true })}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[10px] text-muted-foreground">Max Voltage (V)</Label>
+                    <Input
+                      type="number"
+                      placeholder="250"
+                      className="h-8 text-xs font-mono bg-background"
+                      {...register("voltageMax", { valueAsNumber: true })}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[10px] text-muted-foreground">Max Current (A)</Label>
+                    <Input
+                      type="number"
+                      placeholder="100"
+                      className="h-8 text-xs font-mono bg-background"
+                      {...register("currentMax", { valueAsNumber: true })}
+                    />
+                  </div>
+                </div>
               </div>
 
               <div className="rounded-xl border border-border/80 bg-muted/20 p-3 space-y-3">
@@ -512,10 +603,51 @@ export function SiteFormDialog({
                       ))}
                     </SelectContent>
                   </Select>
-                  <span className="text-[10px] text-muted-foreground">
-                    การเลือก Preset จะทำการดึงตาราง Register (Total Energy, Voltage, Current) เข้าสู่อุปกรณ์อัตโนมัติ
-                  </span>
                 </div>
+
+                {/* Meter Register Mapping Preview */}
+                {(() => {
+                  const selectedPreset = presets.find((p) => p.id === formValues.meterPresetId);
+                  if (!selectedPreset?.registers || selectedPreset.registers.length === 0) return null;
+                  return (
+                    <div className="space-y-1.5 pt-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-medium text-foreground">
+                          {locale === "th" ? "ตารางการจับคู่ Register (Register Mapping)" : "Register Mapping"}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground font-mono">
+                          {selectedPreset.registers.length} registers
+                        </span>
+                      </div>
+                      <div className="max-h-36 overflow-y-auto rounded-lg border border-border bg-card">
+                        <table className="w-full text-left text-[11px]">
+                          <thead className="bg-muted/70 sticky top-0 border-b border-border text-[10px] font-semibold text-muted-foreground uppercase">
+                            <tr>
+                              <th className="p-1.5 pl-2">ฟิลด์</th>
+                              <th className="p-1.5">ชื่อ</th>
+                              <th className="p-1.5 font-mono">Register</th>
+                              <th className="p-1.5">Type</th>
+                              <th className="p-1.5">Scale</th>
+                              <th className="p-1.5 pr-2">หน่วย</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-border/50 font-mono text-[10px]">
+                            {selectedPreset.registers.map((reg, rIdx) => (
+                              <tr key={rIdx} className="hover:bg-muted/30">
+                                <td className="p-1.5 pl-2 font-sans font-medium text-foreground">{reg.semanticField}</td>
+                                <td className="p-1.5 font-sans text-muted-foreground truncate max-w-[110px]">{reg.nameTh}</td>
+                                <td className="p-1.5 text-primary">{reg.registerAddress}</td>
+                                <td className="p-1.5 text-muted-foreground">{reg.dataType}</td>
+                                <td className="p-1.5 text-muted-foreground">{reg.scale}</td>
+                                <td className="p-1.5 pr-2 font-sans text-muted-foreground">{reg.unit || "-"}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
@@ -531,11 +663,11 @@ export function SiteFormDialog({
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="meter-serial" required className="text-xs font-medium">
-                      {locale === "th" ? "หมายเลขซีเรียล (Serial No.)" : "Meter Serial No."}
+                      {locale === "th" ? "รหัสซีเรียลมิเตอร์" : "Meter Serial Number"}
                     </Label>
                     <Input
                       id="meter-serial"
-                      placeholder="SN-020-MTR01"
+                      placeholder={locale === "th" ? "ระบุรหัสซีเรียลมิเตอร์" : "Enter meter serial number"}
                       className="text-xs h-10 font-mono bg-background"
                       {...register("deviceSerial")}
                     />
@@ -558,11 +690,15 @@ export function SiteFormDialog({
                 </h4>
                 <div className="grid grid-cols-2 gap-2 text-[11px]">
                   <div>
-                    <span className="text-muted-foreground">ชื่อไซต์งาน:</span>{" "}
+                    <span className="text-muted-foreground">{locale === "th" ? "ชื่อไซต์งาน:" : "Site Name:"}</span>{" "}
                     <strong className="text-foreground">{formValues.name}</strong>
                   </div>
                   <div>
-                    <span className="text-muted-foreground">กำลังติดตั้ง:</span>{" "}
+                    <span className="text-muted-foreground">{locale === "th" ? "โรงเรียน:" : "School:"}</span>{" "}
+                    <strong className="text-foreground">{formValues.schoolName}</strong>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">{locale === "th" ? "กำลังติดตั้ง:" : "Capacity:"}</span>{" "}
                     <strong className="text-foreground">{formValues.capacityMwp} MWp</strong>
                   </div>
                   <div>
@@ -570,8 +706,12 @@ export function SiteFormDialog({
                     <strong className="text-foreground font-mono">{formValues.gatewayName}</strong>
                   </div>
                   <div>
-                    <span className="text-muted-foreground">โปรโตคอล:</span>{" "}
+                    <span className="text-muted-foreground">{locale === "th" ? "โปรโตคอล:" : "Protocol:"}</span>{" "}
                     <strong className="text-foreground uppercase">{formValues.protocol}</strong>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">{locale === "th" ? "ความถี่ดึงข้อมูล:" : "Polling:"}</span>{" "}
+                    <strong className="text-foreground">{formValues.pollingIntervalSeconds} วินาที</strong>
                   </div>
                   <div className="col-span-2">
                     <span className="text-muted-foreground">Endpoint/Topic:</span>{" "}
@@ -580,11 +720,11 @@ export function SiteFormDialog({
                     </code>
                   </div>
                   <div>
-                    <span className="text-muted-foreground">รุ่นมิเตอร์:</span>{" "}
+                    <span className="text-muted-foreground">{locale === "th" ? "รุ่นมิเตอร์:" : "Meter Model:"}</span>{" "}
                     <strong className="text-foreground">{formValues.deviceModel || "PM5350"}</strong>
                   </div>
                   <div>
-                    <span className="text-muted-foreground">Serial No.:</span>{" "}
+                    <span className="text-muted-foreground">{locale === "th" ? "รหัสซีเรียลมิเตอร์:" : "Serial No.:"}</span>{" "}
                     <strong className="text-foreground font-mono">{formValues.deviceSerial}</strong>
                   </div>
                 </div>

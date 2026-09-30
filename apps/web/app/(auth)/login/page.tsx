@@ -160,16 +160,16 @@ export default function LoginPage() {
 
           <div className="grid grid-cols-3 gap-4 pt-4 border-t border-white/15">
             <div>
-              <div className="text-2xl font-bold text-white">18+</div>
-              <div className="text-xs text-amber-200/70">{t("auth.statSites")}</div>
+              <div className="text-sm font-semibold text-white">{locale === "th" ? "ติดตามไซต์งาน" : "Site monitoring"}</div>
+              <div className="text-xs text-amber-200/70">{locale === "th" ? "สถานะไซต์และ Gateway" : "Site and gateway status"}</div>
             </div>
             <div>
-              <div className="text-2xl font-bold text-white">16.3 MWp</div>
-              <div className="text-xs text-amber-200/70">{t("auth.statCapacity")}</div>
+              <div className="text-sm font-semibold text-white">{locale === "th" ? "ข้อมูลพลังงาน" : "Energy readings"}</div>
+              <div className="text-xs text-amber-200/70">{locale === "th" ? "จากมิเตอร์ที่เชื่อมต่อ" : "From connected meters"}</div>
             </div>
             <div>
-              <div className="text-2xl font-bold text-white">100%</div>
-              <div className="text-xs text-amber-200/70">{t("auth.statSecurity")}</div>
+              <div className="text-sm font-semibold text-white">{locale === "th" ? "สิทธิ์ตามบทบาท" : "Role-based access"}</div>
+              <div className="text-xs text-amber-200/70">{locale === "th" ? "ข้อมูลตามสิทธิ์บัญชี" : "Account-scoped data"}</div>
             </div>
           </div>
         </div>
@@ -314,3 +314,4 @@ export default function LoginPage() {
     </div>
   );
 }
+

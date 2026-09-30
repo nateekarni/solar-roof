@@ -1,764 +1,129 @@
-import { Inject, Injectable } from "@nestjs/common";
-import { DatabaseService } from "../../database/database.service.js";
+import { BadRequestException, ForbiddenException, Inject, Injectable } from '@nestjs/common';
+import { schoolScope } from '../../common/auth/resource-scope.js';
+import { DatabaseService } from '../../database/database.service.js';
+
+export interface DashboardPrincipal { id?:string; role?:string; schoolId?:string; assignedSchoolIds?:readonly string[]; assignedSiteIds?:readonly string[] }
+interface SiteRow {id:string;name:string;school_name:string;capacity_mwp:string;latitude:string|null;longitude:string|null;gateway_id:string|null;gateway_name:string|null;last_seen_at:string|null}
+// Ingested aggregates are cumulative meter snapshots, not energy increments. Calculate
+// consecutive per-device deltas once, with a bounded previous-day baseline. Never sum snapshots.
+const ENERGY_CTE = `WITH samples AS (
+ SELECT site_id, device_id, source_time, total_energy_kwh,
+ lag(total_energy_kwh) OVER (PARTITION BY device_id ORDER BY source_time) previous,
+ lag(source_time) OVER (PARTITION BY device_id ORDER BY source_time) previous_time
+ FROM telemetry_raw r WHERE site_id = ANY($1::uuid[]) AND total_energy_kwh IS NOT NULL
+ AND EXISTS (SELECT 1 FROM billing_meters bm WHERE bm.site_id=r.site_id AND bm.device_id=r.device_id AND bm.active)
+ AND quality IN ('complete','partial')
+ AND source_time >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok') - interval '1 day'
+ AND source_time < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
+), increments AS (
+ SELECT site_id, (source_time AT TIME ZONE 'Asia/Bangkok')::date::text AS day,
+ total_energy_kwh-previous value FROM samples
+ WHERE source_time >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
+ AND previous_time >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
+ AND previous IS NOT NULL AND total_energy_kwh >= previous
+)`;
 
 @Injectable()
 export class DashboardService {
-  constructor(@Inject(DatabaseService) private readonly db: DatabaseService) {}
+  constructor(@Inject(DatabaseService) private readonly db:DatabaseService) {}
 
-  async getSummary(startDate: string, endDate: string) {
-    const days =
-      Math.ceil(
-        (new Date(endDate).getTime() - new Date(startDate).getTime()) /
-          86_400_000
-      ) + 1;
-    const bucket = days <= 60 ? "day" : "month";
+  private async sites(user:DashboardPrincipal, siteId?:string):Promise<SiteRow[]> {
+    if (!user || !['owner','admin','operator','accountant','school_user'].includes(user.role || '')) throw new ForbiddenException('Dashboard access denied');
+    const schoolIds = [...new Set([...(user.assignedSchoolIds || []), ...(user.schoolId ? [user.schoolId] : [])])];
+    const schools = schoolIds.length && user.role !== 'owner' ? schoolIds : schoolScope(user);
+    const assignedSites = user.assignedSiteIds?.length ? [...user.assignedSiteIds] : null;
+    if (siteId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(siteId)) throw new BadRequestException('Invalid site_id');
+    const result = await this.db.query<SiteRow>(`SELECT s.id,s.name,sc.name school_name,s.capacity_mwp,s.latitude,s.longitude,
+      g.id gateway_id,g.name gateway_name,g.last_seen_at::text
+      FROM sites s JOIN schools sc ON sc.id=s.school_id
+      LEFT JOIN LATERAL (SELECT id,name,last_seen_at FROM gateways WHERE site_id=s.id ORDER BY created_at,id LIMIT 1) g ON true
+      WHERE ($1::uuid[] IS NULL OR s.school_id=ANY($1::uuid[]))
+      AND ($2::uuid[] IS NULL OR s.id=ANY($2::uuid[]))
+      AND ($3::uuid IS NULL OR s.id=$3::uuid) ORDER BY s.name`,[schools,assignedSites,siteId || null]);
+    if (siteId && !result.rows.length) throw new ForbiddenException('Site outside assigned scope');
+    return result.rows;
+  }
 
-    const [stats, series, rankings, alerts, collection, sites, revenueSeries] =
-      await Promise.all([
-        this.db.query<{
-          schools: string;
-          online_sites: string;
-          installed_mwp: string;
-          current_mw: string;
-          period_kwh: string;
-          period_amount: string;
-        }>(
-          `SELECT 
-            (SELECT count(*) FROM schools WHERE status='active') schools, 
-            (SELECT count(*) FROM sites WHERE status='online') online_sites, 
-            (SELECT coalesce(sum(capacity_mwp),0) FROM sites WHERE status <> 'inactive') installed_mwp, 
-            (SELECT coalesce(sum(site_mw),0) FROM (
-              SELECT site_id, greatest(max(normalized_value)-min(normalized_value),0) * 4 / 1000 site_mw 
-              FROM telemetry_raw 
-              WHERE semantic_field='total_energy' 
-                AND source_time >= (SELECT coalesce(max(source_time), now()) FROM telemetry_raw WHERE semantic_field='total_energy') - interval '15 minutes' 
-              GROUP BY site_id
-            ) current_values) current_mw, 
-            (SELECT coalesce(sum(consumed_kwh),0) FROM billing_cycles WHERE period_start >= $1 AND period_start <= $2) period_kwh, 
-            (SELECT coalesce(sum(amount),0) FROM billing_cycles WHERE period_start >= $1 AND period_start <= $2) period_amount`,
-          [startDate, endDate]
-        ),
+  private async energy(ids:string[],start:string,end:string) {
+    return this.db.query<{site_id:string;day:string;value:string}>(`${ENERGY_CTE} SELECT site_id,day,sum(value)::text value FROM increments GROUP BY site_id,day ORDER BY day`,[ids,start,end]);
+  }
 
-        this.db.query<{ bucket_start: string; value: string; quality: string }>(
-          `SELECT date_trunc($1, bucket_start)::date::text AS bucket_start, round(sum(value)::numeric, 2) AS value,
-                  CASE WHEN bool_and(quality = 'complete') THEN 'complete' ELSE 'partial' END AS quality
-           FROM telemetry_aggregate 
-           WHERE bucket = $1 
-             AND semantic_field = 'total_energy'
-             AND bucket_start >= $2::date
-             AND bucket_start < ($3::date + interval '1 day')
-           GROUP BY date_trunc($1, bucket_start)
-           ORDER BY 1 ASC`,
-          [bucket, startDate, endDate]
-        ),
+  private async power(ids:string[]) {
+    return this.db.query<{site_id:string;power_kw:string;source_time:string;received_time:string}>(`SELECT site_id,sum(active_power_w)/1000 power_kw,max(source_time)::text source_time,max(received_time)::text received_time
+      FROM (SELECT DISTINCT ON (device_id) site_id,device_id,active_power_w,source_time,received_time FROM telemetry_raw r
+        WHERE EXISTS (SELECT 1 FROM billing_meters bm WHERE bm.site_id=r.site_id AND bm.device_id=r.device_id AND bm.active) AND site_id=ANY($1::uuid[]) AND source_time >= now()-interval '120 seconds' AND source_time <= now()
+        AND received_time >= now()-interval '120 seconds' AND active_power_w IS NOT NULL AND quality IN ('complete','partial')
+        ORDER BY device_id,source_time DESC,received_time DESC) latest GROUP BY site_id`,[ids]);
+  }
 
-        this.db.query<{ site_name: string; production_kwh: string }>(
-          `SELECT s.name AS site_name, round(greatest(coalesce(max(a.value)-min(a.value), 0), 0)::numeric,2) AS production_kwh 
-           FROM sites s 
-           LEFT JOIN telemetry_aggregate a ON s.id=a.site_id AND a.bucket='15m' AND a.semantic_field='total_energy'
-           GROUP BY s.id, s.name 
-           ORDER BY production_kwh DESC 
-           LIMIT 5`,
-        ),
-
-        this.db.query<{
-          title: string;
-          detail: string;
-          severity: string;
-          status: string;
-          occurred_at: string;
-        }>(
-          `SELECT title, detail, severity, status, occurred_at 
-           FROM alerts 
-           ORDER BY occurred_at DESC 
-           LIMIT 5`,
-        ),
-
-        this.db.query<{
-          total: string;
-          paid: string;
-          pending: string;
-          unbilled: string;
-        }>(
-          `SELECT 
-            coalesce(sum(b.amount),0) total, 
-            coalesce(sum(b.amount) FILTER (WHERE p.status='paid'),0) paid, 
-            coalesce(sum(b.amount) FILTER (WHERE p.status='pending'),0) pending,
-            coalesce(sum(b.amount) FILTER (WHERE p.status IS NULL),0) unbilled
-           FROM billing_cycles b 
-           LEFT JOIN payments p ON p.billing_cycle_id=b.id 
-           WHERE b.period_start >= $1 AND b.period_start <= $2`,
-          [startDate, endDate]
-        ),
-
-        this.db.query<{
-          id: string;
-          name: string;
-          latitude: string | null;
-          longitude: string | null;
-          status: string;
-          capacity_mwp: string;
-          school_name: string;
-          production_kwh: string;
-        }>(
-          `SELECT 
-            s.id, s.name, s.latitude, s.longitude, s.status, s.capacity_mwp, 
-            sc.name AS school_name, 
-            round(greatest(coalesce(max(a.value)-min(a.value), 0), 0)::numeric,2) AS production_kwh 
-           FROM sites s 
-           JOIN schools sc ON sc.id=s.school_id 
-           LEFT JOIN telemetry_aggregate a ON a.site_id=s.id AND a.semantic_field='total_energy' AND a.bucket='15m' 
-           GROUP BY s.id, s.name, s.latitude, s.longitude, s.status, s.capacity_mwp, sc.name 
-           ORDER BY s.name`,
-        ),
-
-        this.db.query<{ day: string; revenue: string }>(
-          `SELECT 
-            period_end::text AS day,
-            coalesce(sum(amount), 0) AS revenue
-           FROM billing_cycles
-           WHERE period_start >= $1 AND period_start <= $2
-           GROUP BY period_end
-           ORDER BY day ASC`,
-          [startDate, endDate]
-        ),
-      ]);
-
-    const stat = stats.rows[0] ?? {
-      schools: "0",
-      online_sites: "0",
-      installed_mwp: "0",
-      current_mw: "0",
-      period_kwh: "0",
-      period_amount: "0",
-    };
-
-    const money = Number(collection.rows[0]?.total ?? 0);
-    const paid = Number(collection.rows[0]?.paid ?? 0);
-    const pending = Number(collection.rows[0]?.pending ?? 0);
-    const unbilled = Number(collection.rows[0]?.unbilled ?? 0);
-
-    const revenueData = revenueSeries.rows.map((r) => ({
-      date: r.day,
-      value: Number(r.revenue),
-    }));
-
+  async getSummary(user:DashboardPrincipal,start:string,end:string,siteId?:string) {
+    const availableSites=await this.sites(user);
+    const sites=siteId ? await this.sites(user,siteId) : availableSites;
+    const ids=sites.map(s=>s.id);
+    const [energy,power,billing,alerts]=await Promise.all([
+      this.energy(ids,start,end),this.power(ids),
+      this.db.query<{site_id:string;day:string;amount:string;consumed_kwh:string;paid:boolean}>(`SELECT b.site_id,b.period_end::text AS day,b.amount::text,b.consumed_kwh::text,
+        EXISTS(SELECT 1 FROM payments p WHERE p.billing_cycle_id=b.id AND p.status='paid') paid
+        FROM billing_cycles b WHERE b.site_id=ANY($1::uuid[]) AND b.period_start >= $2::date AND b.period_start <= $3::date ORDER BY b.period_end`,[ids,start,end]),
+      this.db.query<{title:string;detail:string;severity:string;status:string;occurred_at:string}>(`SELECT title,detail,severity,status,occurred_at::text FROM alerts WHERE site_id=ANY($1::uuid[])
+        AND occurred_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok') AND occurred_at < (($3::date+1)::timestamp AT TIME ZONE 'Asia/Bangkok') ORDER BY occurred_at DESC LIMIT 5`,[ids,start,end]),
+    ]);
+    const production=new Map<string,number>(); const revenue=new Map<string,number>(); const perSite=new Map<string,number>();
+    for (const row of energy.rows) {production.set(row.day,(production.get(row.day)||0)+Number(row.value));perSite.set(row.site_id,(perSite.get(row.site_id)||0)+Number(row.value));}
+    for (const row of billing.rows) revenue.set(row.day,(revenue.get(row.day)||0)+Number(row.amount));
+    const total=billing.rows.reduce((sum,r)=>sum+Number(r.amount),0);
+    const paid=billing.rows.filter(r=>r.paid).reduce((sum,r)=>sum+Number(r.amount),0);
+    const online=(s:SiteRow)=>Boolean(s.last_seen_at && Date.now()-Date.parse(s.last_seen_at)>=0 && Date.now()-Date.parse(s.last_seen_at)<=120000);
     return {
-      stats: {
-        schools: Number(stat.schools),
-        onlineSites: Number(stat.online_sites),
-        installedMwp: Number(stat.installed_mwp),
-        currentMw: Number(stat.current_mw),
-        periodKwh: Number(stat.period_kwh),
-        periodAmount: Number(stat.period_amount),
-      },
-      production: series.rows.map((row) => ({
-        date: row.bucket_start,
-        value: Number(row.value),
-        quality: row.quality,
-      })),
-      revenue: revenueData,
-      rankings: rankings.rows.map((row) => ({
-        name: row.site_name,
-        productionKwh: Number(row.production_kwh),
-      })),
-      alerts: alerts.rows,
-      collection: {
-        total: money,
-        paid: paid,
-        pending: pending,
-        unbilled: unbilled,
-        paidPercent:
-          money > 0 ? Number(((paid / money) * 100).toFixed(1)) : 0,
-      },
-      sites: sites.rows.map((row) => ({
-        id: row.id,
-        name: row.name,
-        latitude: row.latitude ? Number(row.latitude) : null,
-        longitude: row.longitude ? Number(row.longitude) : null,
-        status: row.status,
-        capacityMwp: Number(row.capacity_mwp),
-        schoolName: row.school_name,
-        productionKwh: Number(row.production_kwh),
-      })),
+      range:{start,end},availableSites:availableSites.map(s=>({id:s.id,name:s.name})),
+      stats:{totalSites:sites.length,onlineSites:sites.filter(online).length,installedMwp:sites.reduce((n,s)=>n+Number(s.capacity_mwp),0),
+        currentMw:power.rows.length ? power.rows.reduce((n,r)=>n+Number(r.power_kw),0)/1000 : null,
+        periodKwh:energy.rows.length ? [...production.values()].reduce((a,b)=>a+b,0) : null,periodAmount:total,
+        billCount:billing.rows.length,paidBillCount:billing.rows.filter(r=>r.paid).length},
+      production:[...production].map(([date,value])=>({date,value,quality:'partial'})),
+      revenue:[...revenue].map(([date,value])=>({date,value})),
+      rankings:sites.filter(s=>perSite.has(s.id)).map(s=>({name:s.name,productionKwh:perSite.get(s.id)!})).sort((a,b)=>b.productionKwh-a.productionKwh).slice(0,5),
+      alerts:alerts.rows,collection:{total,paid,pending:total-paid,paidPercent:total ? paid/total*100 : 0},
+      sites:sites.map(s=>({id:s.id,name:s.name,schoolName:s.school_name,latitude:s.latitude===null?null:Number(s.latitude),longitude:s.longitude===null?null:Number(s.longitude),
+        status:online(s)?'online':'offline',capacityMwp:Number(s.capacity_mwp),productionKwh:perSite.get(s.id)??null,
+        gatewayId:s.gateway_id,gatewayName:s.gateway_name,lastUpdated:s.last_seen_at})),
     };
   }
 
-  async getProduction(period = "day", month?: number, year?: number) {
-    if (period === "day") {
-      const result = await this.db.query<{ label: string; value: string; unit: string }>(
-        `SELECT lpad(h::text, 2, '0') || ':00' AS label,
-                coalesce(round(sum(t.value)::numeric, 2), 0) AS value,
-                'MWh' AS unit
-         FROM generate_series(0, 23) AS h
-         LEFT JOIN telemetry_aggregate t
-           ON to_char(t.bucket_start, 'HH24') = lpad(h::text, 2, '0')
-           AND t.bucket_start::date = current_date
-           AND t.semantic_field = 'total_energy'
-           AND t.bucket = 'hour'
-         GROUP BY h
-         ORDER BY h ASC`
-      );
-      return result.rows.map((r) => ({
-        label: r.label,
-        value: Number(r.value),
-        unit: r.unit,
-      }));
+  async compare(user:DashboardPrincipal,metric:string,siteIds:string[],start:string,end:string) {
+    if (!['installedMwp','onlineSites','currentMw','periodKwh','periodAmount'].includes(metric)) throw new BadRequestException('Invalid comparison metric');
+    const allowed=await this.sites(user);
+    if (siteIds.some(id=>!allowed.some(s=>s.id===id))) throw new ForbiddenException('Site outside assigned scope');
+    const ids=(siteIds.length ? siteIds : allowed.map(s=>s.id)).slice(0,10);
+    const selected=allowed.filter(site=>ids.includes(site.id));
+    const values=new Map<string,number>();
+    if (metric==='periodKwh') {
+      const result=await this.energy(ids,start,end);
+      for (const row of result.rows) values.set(row.site_id,(values.get(row.site_id)||0)+Number(row.value));
+    } else if (metric==='currentMw') {
+      const result=await this.power(ids);
+      for (const row of result.rows) values.set(row.site_id,Number(row.power_kw)/1000);
+    } else if (metric==='periodAmount') {
+      const result=await this.db.query<{site_id:string;amount:string}>(`SELECT site_id,sum(amount)::text amount FROM billing_cycles
+        WHERE site_id=ANY($1::uuid[]) AND period_start >= $2::date AND period_start <= $3::date GROUP BY site_id`,[ids,start,end]);
+      for (const row of result.rows) values.set(row.site_id,Number(row.amount));
     }
-
-    if (period === "week") {
-      const result = await this.db.query<{ label: string; value: string; unit: string }>(
-        `SELECT to_char(bucket_start::date, 'DD/MM') AS label,
-                round(coalesce(sum(value), 0)::numeric, 2) AS value,
-                'MWh' AS unit
-         FROM telemetry_aggregate
-         WHERE bucket_start >= current_date - interval '7 days' AND semantic_field='total_energy' AND bucket='day'
-         GROUP BY bucket_start::date
-         ORDER BY bucket_start::date ASC`
-      );
-      return result.rows.map((r) => ({
-        label: r.label,
-        value: Number(r.value),
-        unit: r.unit,
-      }));
-    }
-
-    if (period === "year") {
-      const targetYear = year ?? new Date().getFullYear();
-      const result = await this.db.query<{ label: string; value: string; unit: string }>(
-        `SELECT to_char(date_trunc('month', bucket_start), 'Mon') AS label,
-                round((coalesce(sum(value), 0) / 1000)::numeric, 2) AS value,
-                'GWh' AS unit
-         FROM telemetry_aggregate
-         WHERE extract(year from bucket_start) = $1 AND semantic_field='total_energy' AND bucket='month'
-         GROUP BY date_trunc('month', bucket_start)
-         ORDER BY date_trunc('month', bucket_start) ASC`,
-        [targetYear]
-      );
-      return result.rows.map((r) => ({
-        label: r.label,
-        value: Number(r.value),
-        unit: r.unit,
-      }));
-    }
-
-    // Default: month (31 days)
-    const targetMonth = month ?? new Date().getMonth() + 1;
-    const targetYear = year ?? new Date().getFullYear();
-    const result = await this.db.query<{ label: string; value: string; unit: string }>(
-      `SELECT to_char(bucket_start::date, 'DD') AS label,
-              round(coalesce(sum(value), 0)::numeric, 2) AS value,
-              'MWh' AS unit
-       FROM telemetry_aggregate
-       WHERE bucket_start >= date_trunc('month', make_date($1, $2, 1))
-         AND bucket_start < date_trunc('month', make_date($1, $2, 1)) + interval '1 month'
-         AND semantic_field='total_energy'
-         AND bucket='day'
-       GROUP BY bucket_start::date
-       ORDER BY bucket_start::date ASC`,
-      [targetYear, targetMonth]
-    );
-    return result.rows.map((r) => ({
-      label: r.label,
-      value: Number(r.value),
-      unit: r.unit,
-    }));
+    // Response identities are site IDs, including when display names are duplicated.
+    return selected.map(site=>({siteId:site.id,site:site.name,value:
+      metric==='installedMwp'?Number(site.capacity_mwp):
+      metric==='onlineSites'?(site.last_seen_at && Date.now()-Date.parse(site.last_seen_at)>=0 && Date.now()-Date.parse(site.last_seen_at)<=120000?1:0):
+      values.get(site.id)??(metric==='periodAmount'?0:null)}));
   }
-
-  async getRevenue(period = "month", month?: number, year?: number) {
-    if (period === "day") {
-      const result = await this.db.query<{ label: string; value: string }>(
-        `SELECT to_char(period_end, 'HH24:00') AS label,
-                coalesce(sum(amount), 0) AS value
-         FROM billing_cycles
-         WHERE period_end::date = current_date
-         GROUP BY to_char(period_end, 'HH24:00')
-         ORDER BY label ASC`
-      );
-      return result.rows.map((r) => ({
-        label: r.label,
-        value: Number(r.value),
-      }));
-    }
-
-    if (period === "week") {
-      const result = await this.db.query<{ label: string; value: string }>(
-        `SELECT to_char(period_end::date, 'DD/MM') AS label,
-                coalesce(sum(amount), 0) AS value
-         FROM billing_cycles
-         WHERE period_end >= current_date - interval '7 days'
-         GROUP BY period_end::date
-         ORDER BY period_end::date ASC`
-      );
-      return result.rows.map((r) => ({
-        label: r.label,
-        value: Number(r.value),
-      }));
-    }
-
-    if (period === "multi-year" || period === "multi_year") {
-      const result = await this.db.query<{ label: string; value: string }>(
-        `SELECT to_char(date_trunc('year', period_end), 'YYYY') AS label,
-                coalesce(sum(amount), 0) AS value
-         FROM billing_cycles
-         GROUP BY date_trunc('year', period_end)
-         ORDER BY date_trunc('year', period_end) ASC`
-      );
-      return result.rows.map((r) => ({
-        label: r.label,
-        value: Number(r.value),
-      }));
-    }
-
-    if (period === "year") {
-      const targetYear = year ?? new Date().getFullYear();
-      const result = await this.db.query<{ label: string; value: string }>(
-        `SELECT to_char(date_trunc('month', period_end), 'YYYY-MM') AS label,
-                coalesce(sum(amount), 0) AS value
-         FROM billing_cycles
-         WHERE extract(year from period_end) = $1
-         GROUP BY date_trunc('month', period_end)
-         ORDER BY date_trunc('month', period_end) ASC`,
-        [targetYear]
-      );
-      return result.rows.map((r) => ({
-        label: r.label,
-        value: Number(r.value),
-      }));
-    }
-
-    // Default: month
-    const targetMonth = month ?? new Date().getMonth() + 1;
-    const targetYear = year ?? new Date().getFullYear();
-    const result = await this.db.query<{ label: string; value: string }>(
-      `SELECT to_char(period_end::date, 'DD') AS label,
-              coalesce(sum(amount), 0) AS value
-       FROM billing_cycles
-       WHERE period_start >= date_trunc('month', make_date($1, $2, 1))
-         AND period_start < date_trunc('month', make_date($1, $2, 1)) + interval '1 month'
-       GROUP BY period_end::date
-       ORDER BY period_end::date ASC`,
-      [targetYear, targetMonth]
-    );
-    return result.rows.map((r) => ({
-      label: r.label,
-      value: Number(r.value),
-    }));
-  }
-
-  async compare(
-    metric: string,
-    schoolIds: string[] = [],
-    _startDate?: string,
-    _endDate?: string,
-  ): Promise<{ school: string; value: number }[]> {
-    const hasFilter = schoolIds.length > 0;
-    const filterClause = hasFilter ? "WHERE sc.id = ANY($1)" : "";
-    const params: any[] = hasFilter ? [schoolIds] : [];
-
-    switch (metric) {
-      case "installedMwp": {
-        const sql = `
-          SELECT sc.name AS school, coalesce(round(sum(s.capacity_mwp)::numeric, 2), 0) AS value
-          FROM schools sc
-          LEFT JOIN sites s ON s.school_id = sc.id
-          ${filterClause}
-          GROUP BY sc.id, sc.name
-          ORDER BY value DESC
-          LIMIT 10
-        `;
-        const res = await this.db.query<{ school: string; value: string }>(sql, params);
-        return res.rows.map((r) => ({ school: r.school, value: Number(r.value) }));
-      }
-
-      case "onlineSites": {
-        const sql = `
-          SELECT sc.name AS school, count(s.id) FILTER (WHERE s.status = 'online')::int AS value
-          FROM schools sc
-          LEFT JOIN sites s ON s.school_id = sc.id
-          ${filterClause}
-          GROUP BY sc.id, sc.name
-          ORDER BY value DESC
-          LIMIT 10
-        `;
-        const res = await this.db.query<{ school: string; value: number }>(sql, params);
-        return res.rows.map((r) => ({ school: r.school, value: Number(r.value) }));
-      }
-
-      case "currentMw": {
-        const sql = `
-          SELECT sc.name AS school, coalesce(round(sum(t.site_mw)::numeric, 2), 0) AS value
-          FROM schools sc
-          LEFT JOIN (
-            SELECT site_id, greatest(max(normalized_value)-min(normalized_value), 0) * 4 / 1000 AS site_mw
-            FROM telemetry_raw
-            WHERE semantic_field='total_energy'
-              AND source_time >= (SELECT coalesce(max(source_time), now()) FROM telemetry_raw WHERE semantic_field='total_energy') - interval '15 minutes'
-            GROUP BY site_id
-          ) t ON t.site_id IN (SELECT id FROM sites WHERE school_id = sc.id)
-          ${filterClause}
-          GROUP BY sc.id, sc.name
-          ORDER BY value DESC
-          LIMIT 10
-        `;
-        const res = await this.db.query<{ school: string; value: string }>(sql, params);
-        return res.rows.map((r) => ({ school: r.school, value: Number(r.value) }));
-      }
-
-      case "periodKwh": {
-        const sql = `
-          SELECT sc.name AS school, coalesce(round((sum(a.value) / 1000)::numeric, 2), 0) AS value
-          FROM schools sc
-          LEFT JOIN sites s ON s.school_id = sc.id
-          LEFT JOIN telemetry_aggregate a ON a.site_id = s.id AND a.semantic_field = 'total_energy'
-          ${filterClause}
-          GROUP BY sc.id, sc.name
-          ORDER BY value DESC
-          LIMIT 10
-        `;
-        const res = await this.db.query<{ school: string; value: string }>(sql, params);
-        return res.rows.map((r) => ({ school: r.school, value: Number(r.value) }));
-      }
-
-      case "periodAmount": {
-        const sql = `
-          SELECT sc.name AS school, coalesce(round((sum(b.amount) / 1000000)::numeric, 2), 0) AS value
-          FROM schools sc
-          LEFT JOIN sites s ON s.school_id = sc.id
-          LEFT JOIN billing_cycles b ON b.site_id = s.id
-          ${filterClause}
-          GROUP BY sc.id, sc.name
-          ORDER BY value DESC
-          LIMIT 10
-        `;
-        const res = await this.db.query<{ school: string; value: string }>(sql, params);
-        return res.rows.map((r) => ({ school: r.school, value: Number(r.value) }));
-      }
-
-      case "schools":
-      default: {
-        const sql = `
-          SELECT sc.name AS school, count(s.id)::int AS value
-          FROM schools sc
-          LEFT JOIN sites s ON s.school_id = sc.id
-          ${filterClause}
-          GROUP BY sc.id, sc.name
-          ORDER BY value DESC
-          LIMIT 10
-        `;
-        const res = await this.db.query<{ school: string; value: number }>(sql, params);
-        return res.rows.map((r) => ({ school: r.school, value: Number(r.value) }));
-      }
-    }
-  }
-
-  async getPowerFlow(schoolId?: string, siteId?: string) {
-    // Fetch all available schools for selector
-    const schoolsRes = await this.db.query<{ id: string; name: string }>(
-      `SELECT id, name FROM schools ORDER BY name ASC`
-    );
-    const availableSchools = schoolsRes.rows;
-
-    const isAggregate = (!schoolId || schoolId === "all") && !siteId;
-
-    if (isAggregate) {
-      // 1. Real-time active solar power (kW) from latest telemetry_raw
-      const solarKwRes = await this.db.query<{ solar_kw: string }>(
-        `SELECT coalesce(sum(site_kw), 0)::numeric AS solar_kw
-         FROM (
-           SELECT site_id, greatest(max(normalized_value) - min(normalized_value), 0) * 4 AS site_kw
-           FROM telemetry_raw
-           WHERE semantic_field = 'total_energy'
-             AND source_time >= (SELECT coalesce(max(source_time), now()) FROM telemetry_raw WHERE semantic_field = 'total_energy') - interval '15 minutes'
-           GROUP BY site_id
-         ) sub`
-      );
-      const solarKw = Number(Number(solarKwRes.rows[0]?.solar_kw ?? 0).toFixed(1));
-
-      // 2. Today's cumulative generation (kWh) from telemetry_aggregate
-      const todayGenRes = await this.db.query<{ total: string }>(
-        `SELECT coalesce(sum(value), 0)::numeric AS total
-         FROM telemetry_aggregate
-         WHERE semantic_field = 'total_energy'
-           AND bucket = 'hour'
-           AND bucket_start >= current_date`
-      );
-      let todayGenKwh = Number(Number(todayGenRes.rows[0]?.total ?? 0).toFixed(1));
-      if (todayGenKwh === 0) {
-        const delta15mRes = await this.db.query<{ total: string }>(
-          `SELECT coalesce(sum(prod), 0)::numeric AS total
-           FROM (
-             SELECT greatest(max(value) - min(value), 0) AS prod
-             FROM telemetry_aggregate
-             WHERE semantic_field = 'total_energy'
-               AND bucket = '15m'
-               AND bucket_start >= current_date
-             GROUP BY site_id
-           ) t`
-        );
-        todayGenKwh = Number(Number(delta15mRes.rows[0]?.total ?? 0).toFixed(1));
-      }
-
-      // 3. Today's cumulative export (kWh) from telemetry_aggregate (energy_export_kwh)
-      const exportRes = await this.db.query<{ total: string }>(
-        `SELECT coalesce(sum(value), 0)::numeric AS total
-         FROM telemetry_aggregate
-         WHERE semantic_field = 'energy_export_kwh'
-           AND bucket = 'hour'
-           AND bucket_start >= current_date`
-      );
-      let totalExportKwh = Number(Number(exportRes.rows[0]?.total ?? 0).toFixed(1));
-      if (totalExportKwh === 0 && todayGenKwh > 0) {
-        const deltaExp15m = await this.db.query<{ total: string }>(
-          `SELECT coalesce(sum(prod), 0)::numeric AS total
-           FROM (
-             SELECT greatest(max(value) - min(value), 0) AS prod
-             FROM telemetry_aggregate
-             WHERE semantic_field = 'energy_export_kwh'
-               AND bucket = '15m'
-               AND bucket_start >= current_date
-             GROUP BY site_id
-           ) t`
-        );
-        totalExportKwh = Number(Number(deltaExp15m.rows[0]?.total ?? 0).toFixed(1));
-      }
-
-      // 4. Total consumed energy (kWh) & import (kWh)
-      const consumedFromSolar = Math.max(0, todayGenKwh - totalExportKwh);
-      const totalConsumedKwh = Number((consumedFromSolar * 1.25).toFixed(1));
-      const totalImportKwh = Number(Math.max(0, totalConsumedKwh - consumedFromSolar).toFixed(1));
-
-      // 5. Real-time active power balance (kW)
-      let solarToSchoolKw = 0;
-      let gridExportKw = 0;
-      let schoolLoadKw = 0;
-      let gridImportKw = 0;
-
-      if (solarKw > 0) {
-        const exportRatio = todayGenKwh > 0 ? Math.min(0.5, totalExportKwh / todayGenKwh) : 0.35;
-        gridExportKw = Number((solarKw * exportRatio).toFixed(1));
-        solarToSchoolKw = Number(Math.max(0, solarKw - gridExportKw).toFixed(1));
-        schoolLoadKw = solarToSchoolKw;
-        gridImportKw = 0.0;
-      } else {
-        solarToSchoolKw = 0.0;
-        gridExportKw = 0.0;
-        schoolLoadKw = 14.2;
-        gridImportKw = 14.2;
-      }
-
-      const solarToSchoolPercent = solarKw > 0 ? Math.round((solarToSchoolKw / solarKw) * 100) : 0;
-      const gridExportPercent = solarKw > 0 ? Math.max(0, 100 - solarToSchoolPercent) : 0;
-
-      // 6. Rate from rate_versions
-      const rateRes = await this.db.query<{ rate: string }>(
-        `SELECT coalesce(avg(rate), 4.25)::numeric AS rate
-         FROM rate_versions
-         WHERE effective_to IS NULL OR effective_to >= current_date`
-      );
-      const rate = Number(rateRes.rows[0]?.rate ?? 4.25);
-      const todayRevenueThb = Number((todayGenKwh * rate).toFixed(2));
-      const todayCo2ReductionKg = Number((todayGenKwh * 0.4999).toFixed(2));
-
-      // 7. Global alert severity
-      const alertRes = await this.db.query(
-        `SELECT severity FROM alerts WHERE status = 'open' LIMIT 5`
-      );
-      let equipmentHealth: "normal" | "warning" | "critical" = "normal";
-      if (alertRes.rows.some((a) => a.severity === "critical")) {
-        equipmentHealth = "critical";
-      } else if (alertRes.rows.length > 0) {
-        equipmentHealth = "warning";
-      }
-
-      // 8. Latest timestamp
-      const timeRes = await this.db.query<{ latest: string }>(
-        `SELECT coalesce(max(source_time), now())::text AS latest FROM telemetry_raw`
-      );
-      const timestamp = timeRes.rows[0]?.latest || new Date().toISOString();
-
-      return {
-        isAggregate: true,
-        siteId: undefined,
-        siteName: `ระบบภาพรวมทั้งหมด (${availableSchools.length} โรงเรียน)`,
-        schoolId: "all",
-        schoolName: "ภาพรวมระบบทั้งหมด",
-        timestamp,
-        solarKw,
-        schoolLoadKw,
-        solarToSchoolKw,
-        solarToSchoolPercent,
-        gridExportKw,
-        gridExportPercent,
-        gridImportKw,
-        todaySummary: {
-          solarGenerationKwh: todayGenKwh,
-          totalConsumedKwh,
-          totalExportKwh,
-          totalImportKwh,
-          solarRevenueThb: todayRevenueThb,
-          co2ReductionKg: todayCo2ReductionKg,
-          equipmentHealth,
-        },
-        availableSchools,
-      };
-    }
-
-    // Single school or site
-    let siteQuery = `
-      SELECT s.id, s.name, s.capacity_mwp, s.status, sc.id AS school_id, sc.name AS school_name
-      FROM sites s
-      JOIN schools sc ON sc.id = s.school_id
-    `;
-    const params: any[] = [];
-    if (siteId) {
-      siteQuery += ` WHERE s.id = $1`;
-      params.push(siteId);
-    } else if (schoolId && schoolId !== "all") {
-      siteQuery += ` WHERE sc.id = $1`;
-      params.push(schoolId);
-    }
-    siteQuery += ` ORDER BY s.created_at ASC LIMIT 1`;
-
-    const siteRes = await this.db.query(siteQuery, params);
-    const site = siteRes.rows[0];
-
-    const targetSiteId = site?.id;
-    const targetSchoolId = site?.school_id;
-    const schoolName = site?.school_name || "โรงเรียน";
-    const siteName = site?.name || "Solar Rooftop System";
-
-    // 1. Real-time active solar power (kW) for this site
-    const solarKwRes = await this.db.query<{ solar_kw: string }>(
-      `SELECT coalesce(sum(site_kw), 0)::numeric AS solar_kw
-       FROM (
-         SELECT r.site_id, greatest(max(r.normalized_value) - min(r.normalized_value), 0) * 4 AS site_kw
-         FROM telemetry_raw r
-         WHERE r.site_id = $1 AND r.semantic_field = 'total_energy'
-           AND r.source_time >= (SELECT coalesce(max(source_time), now()) FROM telemetry_raw WHERE semantic_field = 'total_energy') - interval '15 minutes'
-         GROUP BY r.site_id
-       ) sub`,
-      [targetSiteId]
-    );
-    const solarKw = Number(Number(solarKwRes.rows[0]?.solar_kw ?? 0).toFixed(1));
-
-    // 2. Today's cumulative generation (kWh) for this site
-    const todayGenRes = await this.db.query<{ total: string }>(
-      `SELECT coalesce(sum(value), 0)::numeric AS total
-       FROM telemetry_aggregate
-       WHERE site_id = $1 AND semantic_field = 'total_energy'
-         AND bucket = 'hour'
-         AND bucket_start >= current_date`,
-      [targetSiteId]
-    );
-    let todayGenKwh = Number(Number(todayGenRes.rows[0]?.total ?? 0).toFixed(1));
-    if (todayGenKwh === 0) {
-      const delta15mRes = await this.db.query<{ total: string }>(
-        `SELECT coalesce(greatest(max(value) - min(value), 0), 0)::numeric AS total
-         FROM telemetry_aggregate
-         WHERE site_id = $1 AND semantic_field = 'total_energy'
-           AND bucket = '15m'
-           AND bucket_start >= current_date`,
-        [targetSiteId]
-      );
-      todayGenKwh = Number(Number(delta15mRes.rows[0]?.total ?? 0).toFixed(1));
-    }
-
-    // 3. Today's export (kWh)
-    const exportRes = await this.db.query<{ total: string }>(
-      `SELECT coalesce(sum(value), 0)::numeric AS total
-       FROM telemetry_aggregate
-       WHERE site_id = $1 AND semantic_field = 'energy_export_kwh'
-         AND bucket = 'hour'
-         AND bucket_start >= current_date`,
-      [targetSiteId]
-    );
-    let totalExportKwh = Number(Number(exportRes.rows[0]?.total ?? 0).toFixed(1));
-
-    // 4. Power balance
-    const consumedFromSolar = Math.max(0, todayGenKwh - totalExportKwh);
-    const totalConsumedKwh = Number((consumedFromSolar * 1.25).toFixed(1));
-    const totalImportKwh = Number(Math.max(0, totalConsumedKwh - consumedFromSolar).toFixed(1));
-
-    let solarToSchoolKw = 0;
-    let gridExportKw = 0;
-    let schoolLoadKw = 0;
-    let gridImportKw = 0;
-
-    if (solarKw > 0) {
-      const exportRatio = todayGenKwh > 0 ? Math.min(0.5, totalExportKwh / todayGenKwh) : 0.35;
-      gridExportKw = Number((solarKw * exportRatio).toFixed(1));
-      solarToSchoolKw = Number(Math.max(0, solarKw - gridExportKw).toFixed(1));
-      schoolLoadKw = solarToSchoolKw;
-      gridImportKw = 0.0;
-    } else {
-      solarToSchoolKw = 0.0;
-      gridExportKw = 0.0;
-      schoolLoadKw = 3.5;
-      gridImportKw = 3.5;
-    }
-
-    const solarToSchoolPercent = solarKw > 0 ? Math.round((solarToSchoolKw / solarKw) * 100) : 0;
-    const gridExportPercent = solarKw > 0 ? Math.max(0, 100 - solarToSchoolPercent) : 0;
-
-    // 5. Rate
-    const rateRes = await this.db.query<{ rate: string }>(
-      `SELECT coalesce(r.rate, 4.25)::numeric AS rate
-       FROM rate_versions r
-       JOIN contracts c ON c.id = r.contract_id
-       WHERE c.site_id = $1 AND (r.effective_to IS NULL OR r.effective_to >= current_date)
-       LIMIT 1`,
-      [targetSiteId]
-    );
-    const rate = Number(rateRes.rows[0]?.rate ?? 4.25);
-    const todayRevenueThb = Number((todayGenKwh * rate).toFixed(2));
-    const todayCo2ReductionKg = Number((todayGenKwh * 0.4999).toFixed(2));
-
-    // 6. Alerts
-    let equipmentHealth: "normal" | "warning" | "critical" = "normal";
-    if (targetSiteId) {
-      const alertRes = await this.db.query(
-        `SELECT severity FROM alerts WHERE site_id = $1 AND status = 'open' LIMIT 5`,
-        [targetSiteId]
-      );
-      if (alertRes.rows.some((a) => a.severity === "critical")) {
-        equipmentHealth = "critical";
-      } else if (alertRes.rows.length > 0) {
-        equipmentHealth = "warning";
-      }
-    }
-
-    // 7. Timestamp
-    const timeRes = await this.db.query<{ latest: string }>(
-      `SELECT coalesce(max(source_time), now())::text AS latest FROM telemetry_raw WHERE site_id = $1`,
-      [targetSiteId]
-    );
-    const timestamp = timeRes.rows[0]?.latest || new Date().toISOString();
-
-    return {
-      isAggregate: false,
-      siteId: targetSiteId,
-      siteName,
-      schoolId: targetSchoolId,
-      schoolName,
-      timestamp,
-      solarKw,
-      schoolLoadKw,
-      solarToSchoolKw,
-      solarToSchoolPercent,
-      gridExportKw,
-      gridExportPercent,
-      gridImportKw,
-      todaySummary: {
-        solarGenerationKwh: todayGenKwh,
-        totalConsumedKwh,
-        totalExportKwh,
-        totalImportKwh,
-        solarRevenueThb: todayRevenueThb,
-        co2ReductionKg: todayCo2ReductionKg,
-        equipmentHealth,
-      },
-      availableSchools,
-    };
+  async getPowerFlow(user:DashboardPrincipal,siteId?:string) {
+    const sites=await this.sites(user,siteId);
+    const values=await this.power(sites.map(s=>s.id));
+    return {sites:sites.map(s=>{
+      const reading=values.rows.find(r=>r.site_id===s.id);
+      return {siteId:s.id,siteName:s.name,gatewayId:s.gateway_id,gatewayName:s.gateway_name,
+        timestamp:reading?.source_time??null,serverReceivedAt:reading?.received_time??null,lastUpdated:s.last_seen_at,
+        solarKw:reading?Number(reading.power_kw):null,
+        // A generation meter cannot establish building load, grid import or export.
+        schoolLoadKw:null,gridImportKw:null,gridExportKw:null};
+    })};
   }
 }

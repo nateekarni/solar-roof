@@ -117,18 +117,20 @@ export class UsersController {
   }
 
   @Put("notifications/settings")
-  async updateNotificationSettings(@Body() body: {
+  async updateNotificationSettings(@Req() req: any, @Body() body: {
     criticalEmailAlert?: boolean;
     inAppNotification?: boolean;
     emailAddress?: string;
   }) {
+    const settings = {
+      criticalEmailAlert: body.criticalEmailAlert ?? true,
+      inAppNotification: body.inAppNotification ?? true,
+      emailAddress: body.emailAddress?.trim() || "",
+    };
+    await this.db.query("UPDATE users SET notification_preferences=$1::jsonb,updated_at=now() WHERE id=$2", [JSON.stringify(settings),req.user.id]);
     return {
       success: true,
-      settings: {
-        criticalEmailAlert: body.criticalEmailAlert ?? true,
-        inAppNotification: body.inAppNotification ?? true,
-        emailAddress: body.emailAddress || "",
-      },
+      settings,
       message: "บันทึกการตั้งค่าการแจ้งเตือนเรียบร้อยแล้ว",
     };
   }

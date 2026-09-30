@@ -96,7 +96,7 @@ export default function SettingsPage() {
                   {user?.displayName || "User"}
                 </span>
               </div>
-              <p className="text-xs text-muted-foreground truncate">{user?.email || "admin@solar.local"}</p>
+              <p className="text-xs text-muted-foreground truncate">{user?.email || "—"}</p>
               <Badge variant="outline" className="mt-1 text-[10px] bg-primary/10 text-primary border-primary/20">
                 {getRoleName()}
               </Badge>
@@ -121,12 +121,12 @@ export default function SettingsPage() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-xs font-semibold text-foreground">
-                    {locale === "th" ? "การตั้งค่าทั่วไป" : "General Settings"}
+                    {locale === "th" ? "การตั้งค่าทั่วไป & บัญชีบริษัท" : "General & Company Settings"}
                   </div>
                   <p className="text-[11px] text-muted-foreground truncate">
                     {locale === "th"
-                      ? "ภาษา, ธีมการแสดงผล, การแจ้งเตือน"
-                      : "Language, theme, notifications"}
+                      ? "ข้อมูลบริษัท, บัญชีธนาคารรับเงิน, ภาษา, ธีม"
+                      : "Company profile, bank accounts, theme, language"}
                   </p>
                 </div>
                 <ChevronRight className="size-4 text-muted-foreground shrink-0" />
@@ -337,3 +337,4 @@ export default function SettingsPage() {
     </>
   );
 }
+

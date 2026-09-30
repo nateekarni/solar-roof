@@ -1,0 +1,10 @@
+# Pilot convention: endpoint energy/<gateway-username>/#; publish to its telemetry child.
+user solar-backend
+topic read energy/+/telemetry
+topic write energy/+/response
+topic write energy/+/config
+
+# %u is the authenticated unique gateway username. Never share credentials.
+pattern write energy/%u/telemetry
+pattern read energy/%u/response
+pattern read energy/%u/config

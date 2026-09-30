@@ -30,18 +30,6 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/",
   },
   {
-    key: "system",
-    labelKey: "navigation.system",
-    icon: Zap,
-    href: "/system",
-  },
-  {
-    key: "schools",
-    labelKey: "navigation.schools",
-    icon: GraduationCap,
-    href: "/schools",
-  },
-  {
     key: "sites",
     labelKey: "navigation.sites",
     icon: MapPin,
@@ -70,6 +58,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Settings2,
     href: "/settings",
     subItems: [
+      { href: "/settings/general", labelKey: "navigation.companyAndBanking" },
       { href: "/settings/system", labelKey: "navigation.systemDefaults" },
       { href: "/settings/meter-presets", labelKey: "navigation.meterPresets" },
       { href: "/settings/audit", labelKey: "navigation.audit" },

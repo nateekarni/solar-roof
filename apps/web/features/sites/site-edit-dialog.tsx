@@ -34,19 +34,24 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../components/ui/select";
+import { useAuth } from "../../stores/auth-store";
 import { apiClient } from "../../lib/api-client";
 import { useLocale, useT } from "../../providers/locale-provider";
 
 const editSiteSchema = z.object({
   name: z.string().min(2, "ชื่อไซต์งานต้องมีอย่างน้อย 2 ตัวอักษร"),
-  schoolId: z.string().min(1, "กรุณาเลือกโรงเรียนสังกัด"),
+  schoolName: z.string().min(1, "กรุณาเลือกโรงเรียนสังกัด"),
   capacityMwp: z.number().min(0.01, "กำลังติดตั้งต้องมากกว่า 0"),
   latitude: z.number().optional(),
   longitude: z.number().optional(),
   status: z.string().optional(),
 
   gatewayName: z.string().min(2, "กรุณาระบุชื่อหรือรหัส Gateway"),
-  protocol: z.string().min(1, "กรุณาเลือกโปรโตคอล"),
+  protocol: z.literal("mqtt"),
+  deviceId: z.string().optional(),
+  pollingIntervalSeconds: z.number().int().min(1).max(86400),
+  voltageMin: z.number(), voltageMax: z.number(), currentMax: z.number(),
+  alertSeverity: z.enum(["info", "warning", "critical"]),
   endpoint: z.string().min(3, "กรุณาระบุ Endpoint หรือ MQTT Topic"),
   deviceModel: z.string().optional(),
   deviceSerial: z.string().min(2, "กรุณาระบุรหัสซีเรียลของมิเตอร์"),
@@ -69,11 +74,16 @@ export function SiteEditDialog({
   siteId: string | null;
 }) {
   const router = useRouter();
+  const { user } = useAuth();
   const t = useT();
   const locale = useLocale();
+  const [meterPresets, setMeterPresets] = React.useState<Array<{ id: string; model: string; registers: unknown[] }>>([]);
+  const [devices, setDevices] = React.useState<Array<{ id: string; name: string; model: string; serialNumber: string }>>([]);
+  const [newDevice, setNewDevice] = React.useState({ name: "", model: "", serialNumber: "", slaveId: 2, meterPresetId: "" });
+  const [addingDevice, setAddingDevice] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
   const [fetching, setFetching] = React.useState(false);
-  const [schools, setSchools] = React.useState<SchoolOption[]>([]);
+
   const [pingStatus, setPingStatus] = React.useState<"idle" | "testing" | "online" | "offline">("idle");
   const [pingMessage, setPingMessage] = React.useState("");
   const [pingLatency, setPingLatency] = React.useState<number | null>(null);
@@ -89,7 +99,8 @@ export function SiteEditDialog({
     resolver: zodResolver(editSiteSchema),
     defaultValues: {
       name: "",
-      schoolId: "",
+      pollingIntervalSeconds: 10, voltageMin: 200, voltageMax: 250, currentMax: 100, alertSeverity: "warning",
+      schoolName: "",
       capacityMwp: 0.5,
       latitude: 13.7563,
       longitude: 100.5018,
@@ -107,20 +118,22 @@ export function SiteEditDialog({
   React.useEffect(() => {
     if (open && siteId) {
       setFetching(true);
+      apiClient.get<typeof meterPresets>("/v1/meter-presets").then(setMeterPresets).catch(() => setMeterPresets([]));
+      apiClient.get<typeof devices>(`/v1/sites/${siteId}/devices`).then(setDevices).catch(() => setDevices([]));
       setPingStatus("idle");
       setPingMessage("");
       setPingLatency(null);
 
-      Promise.all([
-        apiClient.get<SchoolOption[]>("/v1/schools"),
-        apiClient.get<any>(`/v1/sites/${siteId}`),
-      ])
-        .then(([schoolList, siteData]) => {
-          setSchools(schoolList);
+      apiClient.get<any>(`/v1/sites/${siteId}`)
+        .then((siteData) => {
           if (siteData) {
             reset({
               name: siteData.name || "",
-              schoolId: siteData.schoolId || "",
+              deviceId: siteData.deviceId,
+              pollingIntervalSeconds: Number(siteData.pollingIntervalSeconds ?? 10),
+              voltageMin: Number(siteData.alertRules?.voltageMin ?? 200), voltageMax: Number(siteData.alertRules?.voltageMax ?? 250), currentMax: Number(siteData.alertRules?.currentMax ?? 100),
+              alertSeverity: siteData.alertRules?.voltageSeverity ?? "warning",
+              schoolName: siteData.schoolName || "",
               capacityMwp: Number(siteData.capacityMwp || 0.5),
               latitude: Number(siteData.latitude || 13.7563),
               longitude: Number(siteData.longitude || 100.5018),
@@ -174,7 +187,10 @@ export function SiteEditDialog({
     if (!siteId) return;
     setLoading(true);
     try {
-      await apiClient.patch(`/v1/sites/${siteId}`, values);
+      const result = await apiClient.patch<{ configDelivery: string }>(`/v1/sites/${siteId}`, { ...values,
+        alertRules: { voltageMin: values.voltageMin, voltageMax: values.voltageMax, currentMax: values.currentMax, voltageSeverity: values.alertSeverity, currentSeverity: values.alertSeverity },
+      });
+      if (result.configDelivery === "pending") notify.error("บันทึกแล้ว แต่ MQTT config ยังส่งไม่สำเร็จ กรุณาลองอีกครั้ง");
       notify.success(
         locale === "th"
           ? `แก้ไขข้อมูลไซต์งาน "${values.name}" เรียบร้อยแล้ว`
@@ -189,6 +205,18 @@ export function SiteEditDialog({
     }
   };
 
+  const addDevice = async () => {
+    if (!siteId) return;
+    setAddingDevice(true);
+    try {
+      await apiClient.post(`/v1/sites/${siteId}/devices`, newDevice);
+      setDevices(await apiClient.get<typeof devices>(`/v1/sites/${siteId}/devices`));
+      setNewDevice({ name: "", model: "", serialNumber: "", slaveId: newDevice.slaveId + 1, meterPresetId: "" });
+      notify.success("เพิ่มมิเตอร์พร้อม Register Mapping แล้ว");
+    } catch (error) { notify.error(error instanceof Error ? error.message : "Unable to add device"); }
+    finally { setAddingDevice(false); }
+  };
+  if (user?.role !== "admin") return null;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-xl sm:rounded-2xl sm:p-6 max-h-[90vh] overflow-y-auto">
@@ -243,21 +271,7 @@ export function SiteEditDialog({
                   <Label htmlFor="edit-school-select" required className="text-xs font-medium">
                     {locale === "th" ? "โรงเรียนต้นสังกัด" : "Associated School"}
                   </Label>
-                  <Select
-                    value={formValues.schoolId || ""}
-                    onValueChange={(val) => setValue("schoolId", val, { shouldValidate: true })}
-                  >
-                    <SelectTrigger id="edit-school-select" className="text-xs h-10 w-full">
-                      <SelectValue placeholder="เลือกโรงเรียนสังกัด" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {schools.map((sch) => (
-                        <SelectItem key={sch.id} value={sch.id} className="text-xs">
-                          {sch.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Input id="edit-school-select" {...register("schoolName")} />
                 </div>
 
                 <div className="space-y-1.5">
@@ -336,7 +350,7 @@ export function SiteEditDialog({
                   <Input
                     id="edit-gw-name"
                     className="text-xs h-10 font-mono bg-background"
-                    {...register("gatewayName")}
+                    {...register("gatewayName", { onChange: (event) => setValue("endpoint", `energy/${event.target.value}/#`) })}
                   />
                 </div>
 
@@ -346,14 +360,14 @@ export function SiteEditDialog({
                   </Label>
                   <Select
                     value={formValues.protocol}
-                    onValueChange={(val) => setValue("protocol", val)}
+                    onValueChange={(val) => setValue("protocol", val as "mqtt")}
                   >
                     <SelectTrigger id="edit-gw-proto" className="text-xs h-10 w-full bg-background">
                       <SelectValue placeholder="โปรโตคอล" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="mqtt" className="text-xs">MQTT</SelectItem>
-                      <SelectItem value="modbus-tcp" className="text-xs">Modbus TCP</SelectItem>
+
                     </SelectContent>
                   </Select>
                 </div>
@@ -364,12 +378,17 @@ export function SiteEditDialog({
                   {locale === "th" ? "Endpoint / MQTT Topic" : "Telemetry Endpoint"}
                 </Label>
                 <Input
+                  readOnly
                   id="edit-gw-endpoint"
                   className="text-xs h-10 font-mono bg-background"
                   {...register("endpoint")}
                 />
               </div>
 
+              <div><Label htmlFor="edit-device">Meter Device</Label><select id="edit-device" value={formValues.deviceId ?? ""} className="h-10 w-full rounded-md border bg-background" onChange={event => {
+                const device = devices.find(item => item.id === event.target.value);
+                if (device) { setValue("deviceId", device.id); setValue("deviceModel", device.model); setValue("deviceSerial", device.serialNumber); }
+              }}>{devices.map(device => <option key={device.id} value={device.id}>{device.name} · {device.serialNumber}</option>)}</select></div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="edit-dev-model" className="text-xs font-medium">
@@ -383,7 +402,7 @@ export function SiteEditDialog({
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="edit-dev-serial" required className="text-xs font-medium">
-                    {locale === "th" ? "หมายเลขซีเรียล" : "Serial No."}
+                    {locale === "th" ? "รหัสซีเรียลมิเตอร์" : "Meter Serial Number"}
                   </Label>
                   <Input
                     id="edit-dev-serial"
@@ -397,6 +416,30 @@ export function SiteEditDialog({
               </div>
             </div>
 
+            <div className="grid grid-cols-2 gap-3 rounded-lg border p-3">
+              <div><Label htmlFor="edit-interval">Gateway Push Interval (seconds)</Label><Input id="edit-interval" type="number" {...register("pollingIntervalSeconds", { valueAsNumber: true })} /></div>
+              <div><Label htmlFor="edit-severity">Alert Severity</Label><select id="edit-severity" className="h-10 w-full rounded-md border bg-background" {...register("alertSeverity")}><option value="info">Info</option><option value="warning">Warning</option><option value="critical">Critical</option></select></div>
+              <div><Label htmlFor="edit-vmin">Min Voltage (V)</Label><Input id="edit-vmin" type="number" {...register("voltageMin", { valueAsNumber: true })} /></div>
+              <div><Label htmlFor="edit-vmax">Max Voltage (V)</Label><Input id="edit-vmax" type="number" {...register("voltageMax", { valueAsNumber: true })} /></div>
+              <div><Label htmlFor="edit-imax">Max Current (A)</Label><Input id="edit-imax" type="number" {...register("currentMax", { valueAsNumber: true })} /></div>
+              <p className="text-xs text-muted-foreground">บันทึกและส่งค่าไปยัง Hardware Gateway ตามชื่อที่ระบุ</p>
+            </div>
+            <div className="space-y-2 rounded-lg border p-3">
+              <h3 className="text-sm font-semibold">เพิ่มมิเตอร์ใน Gateway นี้</h3>
+              <div className="grid grid-cols-2 gap-2">
+                <Input aria-label="New meter name" placeholder="Meter Name" value={newDevice.name} onChange={event => setNewDevice({ ...newDevice, name: event.target.value })} />
+                <Input aria-label="New meter model" placeholder="Model" value={newDevice.model} onChange={event => setNewDevice({ ...newDevice, model: event.target.value })} />
+                <Input aria-label="New meter serial" placeholder="Meter Serial Number" value={newDevice.serialNumber} onChange={event => setNewDevice({ ...newDevice, serialNumber: event.target.value })} />
+                <Input aria-label="New meter slave ID" type="number" min={1} max={247} value={newDevice.slaveId} onChange={event => setNewDevice({ ...newDevice, slaveId: Number(event.target.value) })} />
+              </div>
+              <Label htmlFor="new-meter-preset">Meter Preset</Label>
+              <select id="new-meter-preset" className="h-10 w-full rounded-md border bg-background" value={newDevice.meterPresetId} onChange={event => { const preset = meterPresets.find(item => item.id === event.target.value); setNewDevice({ ...newDevice, meterPresetId: event.target.value, model: preset?.model ?? newDevice.model }); }}>
+                <option value="">เลือก Register Preset</option>{meterPresets.map(preset => <option key={preset.id} value={preset.id}>{preset.model}</option>)}
+              </select>
+              {newDevice.meterPresetId && <pre className="max-h-40 overflow-auto rounded bg-muted p-2 text-xs">{JSON.stringify(meterPresets.find(preset => preset.id === newDevice.meterPresetId)?.registers, null, 2)}</pre>}
+              <Button type="button" variant="outline" disabled={addingDevice || !newDevice.meterPresetId} onClick={() => void addDevice()}>เพิ่มมิเตอร์</Button>
+              <p className="text-xs text-muted-foreground">มิเตอร์เพิ่มเติมไม่เปลี่ยนมิเตอร์ที่ใช้คำนวณบิล</p>
+            </div>
             {/* Section 3: Connection Test */}
             <div className="rounded-xl border border-border p-3 bg-muted/30 flex flex-col gap-2">
               <div className="flex items-center justify-between">

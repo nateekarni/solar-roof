@@ -7,6 +7,7 @@ import { notify } from "../../components/feedback/notifications";
 import { Button } from "../../components/ui/button";
 import { apiClient } from "../../lib/api-client";
 import { useLocale, useT } from "../../providers/locale-provider";
+import { useAuth } from "../../stores/auth-store";
 
 // Import all 9 Dialogs
 import { AcknowledgeDialog } from "../alerts/acknowledge-dialog";
@@ -29,18 +30,21 @@ export function OperationActions({
 }) {
   const t = useT();
   const locale = useLocale();
+  const { user } = useAuth();
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
   const [exporting, setExporting] = React.useState(false);
   const [dialogOpen, setDialogOpen] = React.useState(false);
 
+  const canCreate = resource !== "sites" || (user?.role === "admin" && !user.schoolId);
+
   React.useEffect(() => {
     const act = searchParams.get("action");
-    if (act === "new" || act === "create") {
+    if (canCreate && (act === "new" || act === "create")) {
       setDialogOpen(true);
     }
-  }, [searchParams]);
+  }, [searchParams, canCreate]);
 
   const handleDialogOpenChange = (open: boolean) => {
     setDialogOpen(open);
@@ -95,7 +99,7 @@ export function OperationActions({
         <span>{exporting ? t("common.loading") : t("common.exportCsv")}</span>
       </Button>
 
-      {action && action.trim() !== "" && (
+      {canCreate && action && action.trim() !== "" && (
         <Button
           type="button"
           size="sm"
@@ -111,7 +115,7 @@ export function OperationActions({
       {resource === "schools" && (
         <SchoolFormDialog open={dialogOpen} onOpenChange={handleDialogOpenChange} />
       )}
-      {resource === "sites" && (
+      {resource === "sites" && canCreate && (
         <SiteFormDialog open={dialogOpen} onOpenChange={handleDialogOpenChange} />
       )}
       {resource === "billing" && (

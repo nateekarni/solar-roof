@@ -23,6 +23,7 @@ import {
 } from "../../../components/ui/dialog";
 import { notify } from "../../../components/feedback/notifications";
 import { useLocale } from "../../../providers/locale-provider";
+import { apiClient } from "../../../lib/api-client";
 
 export interface ReportItemData {
   id?: string;
@@ -51,30 +52,26 @@ export function ReportDetailModal({
 
   if (!report) return null;
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     setDownloading(true);
-    setTimeout(() => {
-      // Create a mock download blob trigger
+    try {
+      if(!report.id) throw new Error("ไม่พบรายงาน");
       const element = document.createElement("a");
-      const file = new Blob(
-        [
-          `Solar Roof Operations Report: ${report.title}\nCategory: ${report.category}\nScope: ${report.scope}\nGenerated: ${report.generatedAt || new Date().toISOString()}`,
-        ],
-        { type: "text/plain;charset=utf-8" }
-      );
+      const file = await apiClient.getBlob(`/v1/reports/${encodeURIComponent(report.id)}/download`);
       element.href = URL.createObjectURL(file);
-      element.download = `${(report.title || "report").replace(/[^a-zA-Z0-9\u0E00-\u0E7F]/g, "_")}.txt`;
+      element.download = `report-${report.id}.csv`;
       document.body.appendChild(element);
       element.click();
       document.body.removeChild(element);
+      URL.revokeObjectURL(element.href);
 
       notify.success(
         locale === "th"
           ? `เริ่มดาวน์โหลดรายงาน ${report.title} เรียบร้อยแล้ว`
           : `Download started for ${report.title}`
       );
-      setDownloading(false);
-    }, 600);
+    } catch(error) { notify.error(error instanceof Error?error.message:"ดาวน์โหลดไม่สำเร็จ"); }
+    finally { setDownloading(false); }
   };
 
   const isSpreadsheet = report.format?.includes("CSV") || report.format?.includes("XLSX");
@@ -103,7 +100,7 @@ export function ReportDetailModal({
               </div>
               <DialogDescription className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1.5 truncate">
                 <Layers className="size-3 shrink-0" />
-                <span>{report.scope || "ทุกไซต์งาน"}</span>
+                <span>{report.scope || "—"}</span>
               </DialogDescription>
             </div>
           </div>
@@ -120,8 +117,8 @@ export function ReportDetailModal({
             <p className="text-xs text-muted-foreground leading-relaxed">
               {report.description ||
                 (locale === "th"
-                  ? "รายงานฉบับนี้รวบรวมข้อมูลโทรมาตร สถิติ และสรุปผลการดำเนินงานสำหรับใช้ในการประเมินประสิทธิภาพและการตรวจสอบความถูกต้อง"
-                  : "This report consolidates system metrics, generation statistics, and operational records for audit and compliance.")}
+                  ? "ยังไม่มีคำอธิบายรายงาน"
+                  : "No report description is available.")}
             </p>
           </div>
 
@@ -143,7 +140,7 @@ export function ReportDetailModal({
                 <span>{locale === "th" ? "รูปแบบไฟล์" : "Export Format"}</span>
               </div>
               <div className="font-medium text-xs text-foreground font-mono">
-                {report.format || "CSV / PDF"}
+                {report.format || "—"}
               </div>
             </div>
 
@@ -153,7 +150,7 @@ export function ReportDetailModal({
                 <span>{locale === "th" ? "ประมวลผลล่าสุด" : "Generated Date"}</span>
               </div>
               <div className="font-medium text-xs text-foreground">
-                {report.generatedAt || "2026-09-22 06:00"}
+                {report.generatedAt || "—"}
               </div>
             </div>
 
@@ -163,7 +160,7 @@ export function ReportDetailModal({
                 <span>{locale === "th" ? "ขนาดไฟล์โดยประมาณ" : "Estimated File Size"}</span>
               </div>
               <div className="font-medium text-xs text-foreground">
-                {report.fileSize || "1.5 MB"}
+                {report.fileSize || "—"}
               </div>
             </div>
           </div>
@@ -194,3 +191,4 @@ export function ReportDetailModal({
     </Dialog>
   );
 }
+

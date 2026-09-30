@@ -10,7 +10,9 @@ export default function Page({
     end_date?: string;
     month?: string;
     year?: string;
+    site_id?: string;
   }>;
 }) {
   return <Dashboard searchParams={searchParams} />;
 }
+
