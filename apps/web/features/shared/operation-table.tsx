@@ -36,7 +36,7 @@ import {
   DropdownMenuTrigger,
 } from "../../components/ui/dropdown-menu";
 import { operationKeys } from "./operation-columns";
-import { telemetryAge } from "../../lib/telemetry-age";
+import { TelemetryAgeLabel } from "./telemetry-age-label";
 import { useLocale, useT } from "../../providers/locale-provider";
 import { useAuth } from "../../stores/auth-store";
 import { OperationCardList } from "./operation-card-list";
@@ -355,27 +355,7 @@ export function OperationTable({
                 </span>
               );
             }
-            const date = new Date(val as any);
-            const age = telemetryAge(val,locale);
-            const isFresh = age.fresh;
-            const timeStr = age.text;
-            return (
-              <div className="flex items-center gap-1.5 text-xs">
-                <span
-                  className={`size-2 rounded-full shrink-0 ${
-                    isFresh ? "bg-emerald-500 animate-pulse" : "bg-amber-500"
-                  }`}
-                />
-                <span className={isFresh ? "text-foreground font-medium" : "text-muted-foreground"}>
-                  {timeStr}
-                </span>
-                {!isFresh && (
-                  <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
-                    (Offline)
-                  </span>
-                )}
-              </div>
-            );
+            return <TelemetryAgeLabel value={val} locale={locale} />;
           }
 
           if (

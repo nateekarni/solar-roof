@@ -1,0 +1,7 @@
+FROM certbot/dns-cloudflare:v5.1.0@sha256:8181d9632ee6af74234ede88469f9f4d9b7faab4ed4cd7e77e66afca908ea992
+WORKDIR /opt/solar-certbot
+COPY infra/docker/certbot/service.py ./service.py
+COPY infra/docker/certbot/test_managed_cert.py ./tests/test_managed_cert.py
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+HEALTHCHECK --interval=30s --timeout=5s --start-period=90s --retries=3 CMD ["python", "/opt/solar-certbot/service.py", "--healthcheck"]
+ENTRYPOINT ["python", "/opt/solar-certbot/service.py"]

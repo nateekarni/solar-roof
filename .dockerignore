@@ -24,3 +24,6 @@ infra/docker/mosquitto/certs
 
 docs
 .github
+**/__pycache__
+**/*.pyc
+**/*.pyo

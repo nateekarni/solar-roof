@@ -8,7 +8,7 @@ This records local evidence. No remote deployment, DNS change, public certificat
 
 - Three pinned Node/pnpm application Dockerfiles, nonroot runtime, secret/build-artifact exclusions.
 - Staging Compose with persistent PostgreSQL/TimescaleDB, Redis, authenticated Mosquitto, S3 storage, migrations, bucket initialization and dependency readiness. Only MQTT TLS is host-published; web is routed by Coolify.
-- Cloudflare DNS-01 certificate provisioning and renewal hook; per-Gateway ACL and backend credentials.
+- Managed Cloudflare DNS-01 certificate image with atomic named-volume export and renewal; embedded broker configuration and environment-derived per-Gateway credentials.
 - Non-destructive administrator bootstrap and database backup script.
 - PR checks and main build/test/publish pipeline; deployment consumes the same tested image IDs by digest. Initial deploy-enable gate, target validation, main-SHA validation and deployment serialization.
 - Isolated integration/browser tests, all five roles, school isolation, MQTT persistence/replay and restart durability.
@@ -19,7 +19,7 @@ This records local evidence. No remote deployment, DNS change, public certificat
 |---|---|
 | Workspace lint | PASS, all 8 package tasks |
 | Workspace tests | PASS, all 8 package tasks; API 44 pass, 1 DB-dependent skip in unit invocation |
-| Deploy-helper tests | PASS, 9 tests including bad target, active deploy, mutable refs, exact outage status and redacted API errors |
+| Deploy-helper tests | PASS, 10 tests including bad target, active deploy, mutable refs, exact outage status and redacted API errors |
 | Initial three Docker image builds | PASS |
 | Staging Compose startup | PASS: migrations and storage-init exit 0; API ready, worker health and web login 200 |
 | Broker TLS/authentication/ACL/HUP | PASS with disposable self-signed test certificate; anonymous, wrong-password and cross-Gateway access denied |
@@ -40,8 +40,8 @@ Docker Desktop became unresponsive during parallel rebuilds. Recovery preserved 
 
 1. Merge the complete app and deployment change into main and obtain a successful GitHub Actions run and published digests.
 2. Set Cloudflare DNS, issue/verify MQTT certificate, create broker credentials and open intended ports.
-3. Configure the Coolify application, GHCR pull credentials, environment values and CI API token.
-4. Deploy, bootstrap the administrator, register the pilot site/Gateway/meter, then verify TLS → MQTT → database → authenticated browser with the real serial and source timestamp.
+3. Configure the Coolify application, public GHCR package visibility (or company-provisioned registry access), environment values and CI API token.
+4. Deploy (bootstrap service creates the administrator), register the pilot site/Gateway/meter, then verify TLS → MQTT → database → authenticated browser with the real serial and source timestamp.
 5. Verify real Gateway offline buffering/replay and backups before accumulating continuous real data. A 24-hour soak remains deferred by the user.
 
 See [Thai deployment runbook](../runbooks/coolify-staging-deployment-th.md) and [Gateway handoff draft](../gateway-handoff/gateway-connection-draft-th.md). Browser checks cover deployment-critical journeys across all roles; they are not exhaustive business acceptance tests for every billing/financial workflow.
@@ -59,3 +59,16 @@ Local detailed evidence: [runner output](../../test/artifacts/full-run.log), [se
 
 
 Domain update after the local verification above: web staging now targets `solar.nateekarn.dev` and MQTT `mqtt-solar.nateekarn.dev`. The recorded tests used localhost and did not validate either public hostname. Public DNS/TLS and Coolify routing remain unverified.
+
+## Coolify UI-only update (30 September 2026)
+
+- Five-image CI includes managed MQTT and Cloudflare certificate service. Staging has no host-file bind mounts, Docker socket or host Certbot dependency.
+- One-shot bootstrap runs automatically after migrations/storage initialization; repeated deployment preserves the existing administrator.
+- Unit verification: MQTT 5 tests including real leaf/intermediate chain and stale served certificate rejection; certificate service 6 tests with synthetic certificates/mocked ACME; deploy helper10 tests.
+- Managed staging Compose smoke passed using disposable named volumes and a synthetic certificate producer: initial boot, repeat bootstrap, verified TLS hostname, API readiness, worker and web readiness. No real ACME request was made.
+- Local lint/test passed all8 workspace tasks. Web includes5 regression tests, including deterministic initial telemetry age markup across clock/freshness boundaries. This fixes an intermittent React hydration418 found in the previous GitHub run.
+- Actual Cloudflare token, public certificate issuance, Coolify routing, company firewall and end-to-end hardware telemetry are still unverified. DNS provider Cloudflare confirmed by user.
+
+Deployment instructions now use GitHub/Cloudflare/Coolify UI. A company backup policy and off-server restore drill remain a prerequisite for continuous real-data collection; named volumes alone are not backups.
+
+Final local full runner after rebuilding the hydration fix: PASS exit0 (`test/artifacts/managed-final-e2e.log`), all five roles, zero browser page errors, real PostgreSQL test without skip, dependency outage recovery and replay durability. Tested web image: `sha256:ff0caa4b91a474b1f07cc510c5fbe0be1e9a877b31a361bd56759cd9f9a2d161`. Independent whole-change review found no remaining P1/P2 blockers. The GitHub run must still succeed before using published image digests.

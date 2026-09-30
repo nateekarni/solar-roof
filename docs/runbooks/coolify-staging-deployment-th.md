@@ -1,241 +1,192 @@
-# Deploy Solar staging บน Coolify
+# Deploy Solar staging ผ่านหน้าเว็บทีละขั้น
 
-เป้าหมาย: server `live`, เว็บ `solar.nateekarn.dev`, MQTT `mqtt-solar.nateekarn.dev:8883`, repository `nateekarni/solar-roof`, branch `main`.
+ใช้ Coolify ของบริษัทที่มีอยู่แล้ว ไม่ต้องเพิ่ม server, SSH, SCP หรือติดตั้งอะไรบนเครื่องส่วนตัว งาน build/test ทำบน GitHub ส่วน Coolify ดึง image มารัน
 
-ไฟล์ deployment จัดเตรียมแล้วใน repository การตั้ง DNS, TLS, secrets, สิทธิ์ GHCR และ resource จริงยังต้องทำในบัญชีของผู้ดูแล ผลการทดสอบและขอบเขตที่ตรวจจริงดู `docs/deployment/verification.md`
+- เว็บ: https://solar.nateekarn.dev
+- Gateway ส่ง MQTT ผ่าน TLS: mqtt-solar.nateekarn.dev พอร์ต 8883
+- GitHub: nateekarni/solar-roof, branch main
+- Coolify project: https://coolify.fowir.com/project/lskcgscsooocwo8o8kwgsgsw
+- Server: live
 
-## ไฟล์ที่ใช้จริง
+ขั้นตอนนี้เป็นการตั้งครั้งแรก ยังไม่ใช่หลักฐานว่า deploy บนบริษัทแล้ว อ่านผลที่ตรวจจริงใน [verification](../deployment/verification.md)
 
-- `infra/docker/docker-compose.staging.yml` — ใช้ไฟล์นี้ใน Coolify ไม่ใช้ production Compose เดิม
-- `infra/docker/.env.staging.example` — รายการตัวแปร ต้องเปลี่ยนค่าตัวอย่าง
-- `infra/docker/Dockerfile.api`, `Dockerfile.web`, `Dockerfile.worker` — image ที่ CI สร้าง
-- `.github/workflows/ci-staging.yml` — PR checks และ main build/test/publish/deploy
-- `scripts/ci/integration.sh` และ `infra/ci/compose.yml` — ฐาน/broker ทิ้งได้สำหรับ E2E
-- `infra/docker/mosquitto/README.md` — การตั้ง MQTT, Cloudflare certificate และการต่ออายุ
-- `scripts/ops/backup-postgres.sh` — สำรองฐานข้อมูลแบบไม่ล้างข้อมูล
+## 1. รอ image จาก GitHub
 
-## 1. เตรียม GitHub ครั้งแรก
+1. เปิด repository → **Settings → Secrets and variables → Actions → Variables**
+2. สร้าง repository variable `STAGING_DEPLOY_ENABLED` ค่า `false` เพื่อยังไม่ deploy อัตโนมัติ
+3. เปิด **Actions → CI and staging** เลือก run ของ main ล่าสุด รอ job `verify` สีเขียว หากแดง ให้แก้ก่อน
+4. เปิด Summary ของ run นั้น คัดลอกทั้งห้าบรรทัด `API_IMAGE`, `WEB_IMAGE`, `WORKER_IMAGE`, `MQTT_IMAGE`, `CERTBOT_IMAGE` เก็บไว้ แต่ละค่าเป็น `ghcr.io/nateekarni/solar-roof/...@sha256:...`
+5. ใช้ห้าค่าจาก run เดียวกัน ห้ามใช้ `latest` หรือใส่ข้อความตัวอย่าง `REPLACE...`
 
-1. รวมงานแอปที่ต้องใช้งานและงาน deployment บน branch แก้ไขเดียวกันให้ครบ รวม migrations ที่ยังไม่ได้ commit; ห้ามส่งเฉพาะ Dockerfile โดยละไฟล์แอปที่ image ต้องใช้
-2. เปิด PR เข้า main และรอ checks ผ่าน
-3. ครั้งแรกให้ตัวแปร repository `STAGING_DEPLOY_ENABLED` ยังไม่เป็น `true` เพื่อให้ CI ทดสอบและเผยแพร่ image ก่อน โดยยังไม่เรียก resource ที่ไม่ได้ตั้งค่า
-4. เมื่อ merge แล้วดู GitHub Actions งาน `CI and staging` ให้ verify/publish สำเร็จ
-5. Image ที่ผ่านการทดสอบจะอยู่ที่:
-   - `ghcr.io/nateekarni/solar-roof/api:<commit SHA>`
-   - `ghcr.io/nateekarni/solar-roof/worker:<commit SHA>`
-   - `ghcr.io/nateekarni/solar-roof/web:<commit SHA>`
-6. ใช้ digest ของ image แต่ละตัวใน Coolify รูปแบบ `ghcr.io/nateekarni/solar-roof/api@sha256:...` ไม่ใช้คำว่า latest
-7. GitHub Settings -> Rules -> Rulesets/Branches: กำหนด main ให้แก้ผ่าน PR และ checks ของ workflow ต้องผ่าน ความสามารถตั้งกฎขึ้นกับ repository/account
+ครั้งแรกที่ยังไม่มี run ให้ Actions → CI and staging → Run workflow → Branch main → Run workflow
 
-CI จะรันบน GitHub-hosted runner ไม่ใช้เครื่อง live เป็น runner และไม่ส่งข้อมูลจริงเข้า E2E
+## 2. ให้ Coolify ดาวน์โหลด image ได้โดยไม่ใช้ SSH
 
-## 2. ตั้ง DNS ของ nateekarn.dev
+Repository เป็น public แต่ GitHub container package ที่สร้างใหม่อาจยัง private วิธีผ่านหน้าเว็บทั้งหมดคือให้เจ้าของ package ตั้ง **public** หลังตรวจว่าเปิดเผยได้ โดย image มีโค้ดของ repository นี้ และไม่มีรหัสจริงจาก Coolify
 
-ตั้ง DNS ทั้งเว็บและ MQTT ใน zone `nateekarn.dev` ที่ผู้ให้บริการ DNS ของโดเมนนี้ หากใช้ Cloudflare ให้เข้า DNS -> Records:
+1. GitHub → โปรไฟล์ **nateekarni** → **Packages**
+2. เปิด package ของ Solar แต่ละตัว: api, web, worker, mqtt, certbot (ชื่ออาจแสดงพร้อม prefix solar-roof/)
+3. **Package settings → Danger Zone → Change visibility → Public** อ่านและยืนยันตามหน้า GitHub
+4. ทำให้ครบทั้งห้าตัว
 
-| Zone | Type | Name | Content | Proxy (ถ้าใช้ Cloudflare) |
-|---|---|---|---|---|
-| nateekarn.dev | A | solar | public IPv4 ของเครื่อง live | เริ่ม DNS only เพื่อทดสอบ HTTPS โดยตรง |
-| nateekarn.dev | A | mqtt-solar | public IPv4 ของเครื่อง live | DNS only |
+การเปิด public ทำให้คนทั่วไปดาวน์โหลด image ได้ ถ้านโยบายบริษัทต้อง private ให้ใช้ registry ที่บริษัทเตรียมสิทธิ์ดาวน์โหลดให้ server ไว้แล้ว การเชื่อม GitHub repository อย่างเดียวไม่ได้ให้สิทธิ์ดึง private GHCR และไม่ควรใส่ token ลง Compose หรือ Dockerfile
 
-IP ของเครื่อง live ยังไม่ได้ส่งมา อย่าคัดลอก IP สมมติหรือ IP ของ Coolify หากเป็นคนละเครื่อง หากมี AAAA ต้องเป็น IPv6 ที่เข้าถึงเครื่องนี้ได้จริง
+## 3. ตรวจ DNS และช่องทางเข้า server
 
-เปิด inbound 80/443 สำหรับเว็บ และ 8883 สำหรับ MQTT ตาม firewall ของผู้ให้บริการ/host โดยรักษา SSH และงานเดิม อย่าเปิดฐานข้อมูล, Redis, API 3001 หรือ worker 3002 สู่ภายนอก
+Cloudflare → nateekarn.dev → **DNS → Records** ตรวจ:
 
-ตรวจจากเครื่องภายนอก:
+| Type | Name | Content | Proxy status |
+|---|---|---|---|
+| A | solar | Public IPv4 ของ server live | DNS only / เมฆเทา |
+| A | mqtt-solar | Public IPv4 ของ server live | DNS only / เมฆเทา |
 
-```sh
-nslookup solar.nateekarn.dev
-nslookup mqtt-solar.nateekarn.dev
-```
+สอง record นี้ผู้ใช้แจ้งว่าตั้งแล้ว ตรวจอีกครั้งว่า IP ตรงกับ live ถ้ามี AAAA ต้องชี้ IPv6 ที่ใช้งานได้จริง
 
-## 3. เตรียม MQTT และ certificate บนเครื่อง live
+ผู้ดูแล server ต้องอนุญาต inbound TCP **80, 443, 8883** ผ่าน firewall ของบริษัท/ผู้ให้บริการ โดย 8883 ต้องไม่ถูกแอปอื่นใช้ เมนู Coolify ไม่สามารถเปลี่ยน firewall ภายนอกแทนได้ หากพอร์ตปิดให้ผู้ดูแลเปิดจากระบบที่บริษัทใช้อยู่ ไม่ต้องเพิ่ม server ใหม่
 
-อ่าน `infra/docker/mosquitto/README.md` ซึ่งมีตัวอย่าง Cloudflare DNS-01 หาก DNS ของ nateekarn.dev อยู่กับผู้ให้บริการอื่น ต้องใช้ Certbot DNS plugin ของผู้ให้บริการนั้น
+## 4. สร้าง Cloudflare token สำหรับ certificate MQTT
 
-- ใช้ Mosquitto สำหรับ staging เพื่อลดภาระเครื่อง 4 GB; local stack เดิมอาจยังใช้ EMQX
-- สร้าง `/data/solar-staging/mqtt/config` และ `/data/solar-staging/mqtt/certs`
-- วาง `mosquitto.conf`, `acl` และไฟล์ password ตามคู่มือ; ตรวจ owner/mode ให้ UID 1883 อ่านได้
-- สร้างผู้ใช้ backend ชื่อ `solar-backend` และ password แบบสุ่ม ค่านี้ต้องตรงกับ `MQTT_PASSWORD` ใน Coolify
-- แต่ละ Gateway ใช้ username ตรงกับ Gateway name ในระบบ, password แยก และ endpoint `energy/GATEWAY_NAME/#`
-- ห้ามใช้ชื่อ `solar-backend` เป็นชื่อ Gateway
-- Cloudflare token: Zone / DNS / Edit เฉพาะ nateekarn.dev เก็บใน root-only file บนเครื่อง ไม่ส่งในแชตหรือ commit
-- ออก certificate สำหรับ mqtt-solar.nateekarn.dev ผ่าน Certbot DNS-01 และติดตั้ง `renew-certificate.sh` เป็น deploy hook
-- ตรวจ `certbot renew --dry-run` และ certbot timer
+1. Cloudflare → รูปโปรไฟล์ → **My Profile → API Tokens → Create Token**
+2. เลือก template **Edit zone DNS** หรือ Custom token
+3. Permissions: **Zone → DNS → Edit**
+4. Zone Resources: **Include → Specific zone → nateekarn.dev** เท่านั้น
+5. Continue to summary → Create Token
+6. เก็บ token ใน password manager เพื่อใส่ Coolify ขั้น7 ไม่ส่งในแชตหรือ GitHub
 
+บริการ certificate ใช้ token นี้สร้าง DNS challenge และขอ/ต่ออายุใบรับรองสาธารณะจาก Let's Encrypt สำหรับ mqtt-solar.nateekarn.dev โดยการ deploy เป็นการใช้บริการและยอมรับ [เงื่อนไข Let's Encrypt](https://letsencrypt.org/repository/) ตามที่ certbot ต้องใช้ ใส่อีเมลติดต่อจริงใน ACME_EMAIL ส่วน certificate HTTPS เว็บ Coolify ดูแลแยกให้
 
-หากยังไม่มีไฟล์ repository บน server ให้ส่งเฉพาะไฟล์ตั้งค่าเหล่านี้จาก PowerShell ใน `E:\solar-roof` โดยแทน `LIVE_SERVER_IP` ด้วย IP จริง:
+## 5. เพิ่ม Application ใน Coolify
 
-```powershell
-scp infra/docker/mosquitto/mosquitto.conf root@LIVE_SERVER_IP:/tmp/solar-mosquitto.conf
-scp infra/docker/mosquitto/acl.example root@LIVE_SERVER_IP:/tmp/solar-mqtt-acl
-scp infra/docker/mosquitto/renew-certificate.sh root@LIVE_SERVER_IP:/tmp/solar-mqtt-renew.sh
-scp scripts/ops/backup-postgres.sh root@LIVE_SERVER_IP:/tmp/solar-backup-postgres.sh
-```
+1. เปิด project ตามลิงก์ต้นเอกสาร
+2. เลือก/สร้าง Environment ชื่อ **staging** ภายใน project นี้ (ชื่อ production ที่เห็นในภาพเดิมเป็นชื่อ environment ของ Coolify)
+3. กด **+ New / New Resource**
+4. ในหมวด **Git Based** กด **Public Repository**
+5. ใส่ `https://github.com/nateekarni/solar-roof` → **Check Repository**
+6. เลือก branch **main** และ server **live** หากมีหน้าถาม Destination ให้เลือก Docker destination ของ live ที่บริษัทใช้อยู่
+7. ตั้งชื่อ application เช่น **solar-staging**
+8. ใน **Configuration → General** ตั้ง:
 
-จาก Terminal ของเครื่อง live เตรียมครั้งแรก:
-
-```sh
-install -d -m 0750 -o 1883 -g 1883 /data/solar-staging/mqtt/config /data/solar-staging/mqtt/certs
-install -m 0640 -o 1883 -g 1883 /tmp/solar-mosquitto.conf /data/solar-staging/mqtt/config/mosquitto.conf
-install -m 0640 -o 1883 -g 1883 /tmp/solar-mqtt-acl /data/solar-staging/mqtt/config/acl
-install -d -m 0755 /etc/letsencrypt/renewal-hooks/deploy
-install -m 0755 /tmp/solar-mqtt-renew.sh /etc/letsencrypt/renewal-hooks/deploy/solar-mqtt.sh
-install -m 0750 /tmp/solar-backup-postgres.sh /data/solar-staging/backup-postgres.sh
-```
-
-จากนั้นทำส่วนสร้าง password และออก certificate ใน README เมื่อติดตั้ง hook ด้วยคำสั่งข้างบนแล้ว ข้ามคำสั่งที่คัดลอกจาก `infra/docker/mosquitto/renew-certificate.sh` บน server ได้ เพราะใช้ไฟล์เดียวกัน ห้ามรัน `mosquitto_passwd -c` ซ้ำเมื่อมีบัญชี Gateway แล้ว เพราะจะเขียนทับรายชื่อผู้ใช้เดิม
-
-Gateway ใช้ MQTT ผ่าน TLS ที่พอร์ต 8883 พร้อมตรวจ CA/hostname ไม่ใช้ HTTPS POST ส่วน backend ต่อ broker ผ่าน authenticated private port 1883 ซึ่งไม่ publish ออก host
-
-## 4. ให้เครื่อง live ดึง private GHCR image ได้
-
-ใน Terminal ของเครื่อง live ใช้บัญชีเดียวกับที่ Coolify รัน Docker (ภาพเดิมระบุ root):
-
-```sh
-docker login ghcr.io -u YOUR_GITHUB_USERNAME
-```
-
-กรอก token ที่ prompt ใช้สิทธิ์อ่าน package และสิทธิ์ repository ตามเงื่อนไของค์กร อย่าใส่ token ใน command line/history ตรวจ pull digest ของทั้งสาม image ได้ก่อน deploy การเชื่อม GitHub App/deploy key เพื่ออ่านโค้ดเป็นคนละสิทธิ์กับ GHCR
-
-## 5. เพิ่ม resource ใน Coolify
-
-1. เปิด https://coolify.fowir.com/project/lskcgscsooocwo8o8kwgsgsw
-2. สร้าง/เลือก environment `staging`
-3. กด New Resource -> เลือก GitHub App หรือ Deploy Key ที่อ่าน repository ได้; ถ้า repository public ใช้ Public Repository ได้
-4. เลือก `nateekarni/solar-roof`, branch `main`, server `live`
-5. Configuration -> General -> Build Pack: Docker Compose
-6. Base Directory: `/`
-7. Docker Compose Location: `/infra/docker/docker-compose.staging.yml`
-8. Save แล้วตรวจ rendered Compose ว่า `api`, `worker`, `web` ใช้ `image:` ไม่มี build บนเครื่อง live
-9. ตั้ง Domains เฉพาะ service web เป็น `https://solar.nateekarn.dev:3000` เลข3000 คือพอร์ตภายใน ผู้ใช้ยังเปิด https://solar.nateekarn.dev
-10. ปิด Auto Deploy จาก Git push โดยตรงเพื่อให้ GitHub Actions เป็นผู้เรียกหลัง checks ผ่าน
-11. จด **Application UUID ของ resource ใหม่นี้** ไม่ใช่ Project UUID ในลิงก์ด้านบน
-
-Compose มี database, Redis, broker, storage, migration และ bucket initialization ครบใน stack เดียว persistent volumes อยู่ใน Compose; อย่าลบ resource/volumes เพื่อแก้ deployment failure
-
-## 6. ใส่ environment ใน Coolify
-
-ใช้ `infra/docker/.env.staging.example` เป็นรายการหลัก:
-
-| ตัวแปร | สิ่งที่ต้องใส่ |
+| ช่อง | ค่า |
 |---|---|
-| API_IMAGE / WEB_IMAGE / WORKER_IMAGE | digest ของ image ที่ verify ผ่าน |
-| POSTGRES_DB / POSTGRES_USER | solar_platform / solar หรือค่าที่ตั้งเอง |
-| POSTGRES_PASSWORD | รหัสสุ่มใหม่ |
-| DATABASE_URL | postgresql://solar:PASSWORD_ENCODED@postgres:5432/solar_platform โดย URL-encode รหัสผ่าน |
-| JWT_ACCESS_SECRET / JWT_REFRESH_SECRET | สุ่มอย่างน้อย32ตัวอักษร แยกคนละค่า |
-| MQTT_PASSWORD | password ของ solar-backend ที่สร้างในขั้น3 |
-| MQTT_CONFIG_DIR | /data/solar-staging/mqtt/config |
-| MQTT_CERTS_DIR | /data/solar-staging/mqtt/certs |
-| MINIO_ROOT_USER / MINIO_ROOT_PASSWORD | บัญชี storage ภายในและรหัสสุ่ม |
-| STORAGE_REGION / STORAGE_BUCKET | us-east-1 / solar-platform ตาม default |
+| Build Pack | Docker Compose |
+| Base Directory | / |
+| Docker Compose Location | /infra/docker/docker-compose.staging.yml |
+| Branch | main |
 
-Compose ตั้ง WEB_URL, API_INTERNAL_URL, internal URLs และ worker runtime ให้แล้ว เว็บใช้ /v1 ผ่านโดเมนเดียว ไม่ต้องตั้ง API domain ใหม่ และไม่ต้องแจก JWT/database secrets ให้เว็บ
+9. กด **Save** และโหลด Compose ตามปุ่มที่แสดง ตรวจว่ามี postgres, redis, certbot, mqtt, storage, storage-init, migrate, bootstrap, api, worker, web
+10. ปิด **Auto Deploy** จาก Git push และ **Preview Deployments** เพื่อให้ CI เป็นผู้สั่งหลังตรวจผ่าน
 
-## 7. เชื่อม GitHub ให้ deploy อัตโนมัติ
+ใช้ Git-based Application ตามนี้ เพราะระบบ CI เรียก API สำหรับ Application และดึง Compose จาก main โดยตรง
 
-GitHub repository -> Settings -> Environments -> สร้าง `staging` ไม่ตั้ง required reviewer ถ้าต้องการ deploy อัตโนมัติตามที่ตกลง
+## 6. ตั้ง Domain ของเว็บ
 
-ตั้ง environment variables:
+1. ในการตั้งค่า service **web** หา **Domains**
+2. ใส่ `https://solar.nateekarn.dev:3000` แล้ว Save
+3. 3000 คือพอร์ตภายใน container เวลาเข้าเว็บใช้ `https://solar.nateekarn.dev` ตามปกติ
+4. service อื่นไม่ต้องใส่ HTTP domain; MQTT ใช้ mapping 8883 ใน Compose อยู่แล้ว
+5. Proxy ของ server live ถ้าสถานะ Running ให้ใช้งานต่อได้ ไม่ต้องแก้ Proxy configuration หรือ restart proxy รวมของบริษัท
 
-| ชื่อ | ค่า |
+## 7. ใส่ Environment Variables
+
+เปิด application → **Environment Variables** ใช้รายการด้านล่าง หรือดู [ไฟล์ตัวอย่าง](../../infra/docker/.env.staging.example) ใส่ค่าจริงใน Coolify แล้ว Save ทั้งหมด เปิดให้เป็น runtime variables หากมีตัวเลือก ไม่ใช้ Build Time secrets และไม่ตั้ง PUBLIC/NEXT_PUBLIC ให้รหัสเหล่านี้
+
+สร้างรหัสด้วย password manager แนะนำอักษรอังกฤษและตัวเลขสุ่ม 32 ตัวแต่ละค่า เพื่อคัดลอกง่ายและไม่ติดปัญหา URL/Compose interpolation แต่ละระบบใช้รหัสคนละค่า
+
+| ตัวแปร | ใส่อะไร |
 |---|---|
-| COOLIFY_URL | https://coolify.fowir.com |
-| COOLIFY_APPLICATION_UUID | UUID ของ application จากขั้น5 |
-| STAGING_WEB_URL | https://solar.nateekarn.dev |
+| API_IMAGE | บรรทัด API_IMAGE จาก GitHub Summary |
+| WEB_IMAGE | บรรทัด WEB_IMAGE จาก run เดียวกัน |
+| WORKER_IMAGE | บรรทัด WORKER_IMAGE จาก run เดียวกัน |
+| MQTT_IMAGE | บรรทัด MQTT_IMAGE จาก run เดียวกัน |
+| CERTBOT_IMAGE | บรรทัด CERTBOT_IMAGE จาก run เดียวกัน |
+| POSTGRES_DB | solar_platform |
+| POSTGRES_USER | solar |
+| POSTGRES_PASSWORD | รหัสฐานข้อมูลที่สุ่มใหม่ |
+| DATABASE_URL | postgresql://solar:รหัสเดียวกับPOSTGRES_PASSWORD@postgres:5432/solar_platform |
+| JWT_ACCESS_SECRET | รหัสสุ่มอย่างน้อย32ตัว |
+| JWT_REFRESH_SECRET | รหัสสุ่มอย่างน้อย32ตัว อีกค่า |
+| MQTT_PASSWORD | รหัสสุ่มบัญชี backend อย่างน้อย16ตัว แนะนำ32ตัว |
+| MQTT_GATEWAY_CREDENTIALS | JSON ตามตัวอย่างข้างล่าง ใช้รหัสอีกค่า |
+| CLOUDFLARE_API_TOKEN | token จากขั้น4 |
+| ACME_EMAIL | อีเมลจริงสำหรับแจ้งเรื่อง certificate |
+| BOOTSTRAP_ADMIN_EMAIL | อีเมลสำหรับ login ผู้ดูแลระบบคนแรก |
+| BOOTSTRAP_ADMIN_PASSWORD | รหัสผู้ดูแลอย่างน้อย16ตัว แนะนำ32ตัว |
+| MINIO_ROOT_USER | solar |
+| MINIO_ROOT_PASSWORD | รหัส storage อย่างน้อย16ตัว แนะนำ32ตัว |
+| STORAGE_REGION | us-east-1 |
+| STORAGE_BUCKET | solar-platform |
 
-ตั้ง environment secret `COOLIFY_API_TOKEN` จาก Coolify Keys & Tokens ให้สิทธิ์อ่าน/แก้ environment ของ application และเริ่ม deployment เท่าที่จำเป็น อย่าใช้ Project UUID แทน Application UUID
+ช่อง Value ของ MQTT_GATEWAY_CREDENTIALS ใส่ JSON บรรทัดเดียว ไม่ต้องใส่เครื่องหมาย quote ครอบทั้งหมด:
 
-เมื่อทุกอย่างพร้อม ตั้ง **repository variable** `STAGING_DEPLOY_ENABLED=true` แล้ว Actions -> CI and staging -> Run workflow -> main สำหรับรอบแรก
-
-หลังจากนั้นทุกครั้งที่ merge เข้า main จะทดสอบ/build/publish แล้ว deploy อัตโนมัติด้วย digest ของ revision ที่ผ่าน พร้อมตรวจว่าคือ main ล่าสุดและ target ถูกต้อง การ deploy ถูกจัดคิวไม่ขัดจังหวะ migration
-
-## 8. หลัง deploy ครั้งแรก: สร้างผู้ดูแลแบบไม่ล้างข้อมูล
-
-รอ migration และ storage-init สำเร็จ จากนั้น API /ready ต้อง healthy และเว็บเปิดได้ ก่อนสร้างบัญชีให้เข้า Terminal ของ **service api** (ไม่ใช่ shell host เปล่า) แล้วใช้ shell ที่รองรับ read -s เช่น bash ใน image:
-
-```bash
-read -r -p 'Admin email: ' BOOTSTRAP_ADMIN_EMAIL
-read -r -s -p 'Admin password (16+ characters): ' BOOTSTRAP_ADMIN_PASSWORD
-printf '\n'
-export BOOTSTRAP_ADMIN_EMAIL BOOTSTRAP_ADMIN_PASSWORD
-pnpm --filter @solar/api db:bootstrap
-unset BOOTSTRAP_ADMIN_EMAIL BOOTSTRAP_ADMIN_PASSWORD
+```json
+{"pilot-01":"เปลี่ยนเป็นรหัสสุ่มภาษาอังกฤษและตัวเลข32ตัว"}
 ```
 
-Script สร้าง admin และ bucket ที่จำเป็น โดยไม่ seed โรงเรียนหรือ telemetry ปลอม รันซ้ำด้วย email เดิมจะไม่เปลี่ยน password เดิม หากพบ account ที่ role/scope ไม่ตรงจะหยุดให้ตรวจเอง ไม่มีคำสั่งล้างข้อมูล
+ชื่อ `pilot-01` เป็นทั้งชื่อบัญชี MQTT และชื่อ Gateway ที่จะสร้างในเว็บ ต้องตรงกันทุกตัว ใช้ได้เฉพาะ A-Z, a-z, 0-9, `_`, `-` และเริ่มด้วยตัวอักษรหรือตัวเลข ห้ามใช้ solar-backend เมื่อเพิ่ม Gateway ภายหลังให้เพิ่มคู่ชื่อ/รหัสใน JSON เดิม อย่าลบรายการของ Gateway ที่ยังใช้งาน
 
-จากนั้น login ที่ solar.nateekarn.dev สร้าง Pilot school/site/gateway/device ด้วย admin และใช้ serial จริง; แยกบัญชีทดสอบแต่ละ role ตามสิทธิ์ อย่าใช้ db:seed:reset กับ staging
+ถ้ารหัสฐานข้อมูลมีเครื่องหมายพิเศษ ต้อง URL-encode เฉพาะส่วนรหัสใน DATABASE_URL; ถ้าใช้ alphanumeric สุ่มตามที่แนะนำ คัดลอกตรงได้
 
-## 9. ตรวจรับก่อนส่ง connection sheet ให้ Gateway
+ไม่ต้องสร้างไฟล์ password, certificate หรือโฟลเดอร์บน server ระบบสร้างให้ใน container/named volumes บัญชี admin ที่มีอยู่แล้วจะไม่ถูกเปลี่ยนรหัสเมื่อ deploy ซ้ำ
 
-1. HTTPS เว็บและ login สำเร็จ
-2. API /ready ตรวจ DB, MQTT subscription และ storage จริง; /health เป็น liveness
-3. ส่ง payload สดของมิเตอร์ที่ลงทะเบียนผ่าน TLS8883
-4. subscribe response ก่อนส่ง ตรวจ acknowledged ตรง ingestionId/sourceTime/device
-5. ตรวจข้อมูลในเว็บและฐานตรงค่าที่ส่ง; ส่งซ้ำต้องไม่เพิ่ม raw/aggregate ซ้ำ
-6. ลองบัญชีผิดและ topic ของอีก Gateway ต้องถูกปฏิเสธ
-7. ตรวจ restart/reconnect และ RAM/CPU โดยไม่รบกวนแอปเดิม
-8. เติม connection sheet ให้ครบ ส่ง credentials แยกช่องทาง แล้วนัด Pilot จริง ไม่ต้องรอ soak24ชั่วโมง
+## 8. Deploy ครั้งแรก
 
-## 10. สำรองข้อมูลและการย้อนเวอร์ชัน
+1. ตรวจว่า image ทั้งห้าจาก CI main ล่าสุดตรงกันและไม่มี deployment อื่นกำลังทำงาน
+2. กด **Deploy** ใน Coolify
+3. เปิด **Deployments → deployment ล่าสุด → Logs**
+4. ระบบดึง image, เริ่มฐานข้อมูล/storage และ certbot, migrate ฐาน, สร้าง admin แล้วเปิด API/worker/web
+5. การออก certificate ครั้งแรกอาจใช้หลายนาที ดู service **certbot → Logs** ต้องมี `Certificate is ready; next check in 12 hours.`
+6. **migrate / storage-init / bootstrap** ทำงานครั้งเดียวแล้วหยุดด้วย exit code0 เป็นปกติ ไม่ต้องกด restart ให้ทำงานตลอด
+7. postgres, redis, storage, certbot, mqtt, api, worker, web ต้อง Running/Healthy
+8. เปิด https://solar.nateekarn.dev/login แล้ว login ด้วย BOOTSTRAP_ADMIN_EMAIL/PASSWORD
 
-บนเครื่อง live ดู container ID ของ postgres ของ Solar เท่านั้น แล้ว:
+ใช้ named volumes เก็บ DB, Redis, storage, MQTT และ certificate ต่อเนื่อง อย่าลบ resource หรือ volumes เพื่อแก้ปัญหา ไม่ใช้ seed/reset กับ staging ที่รับข้อมูลจริง
 
-```bash
-bash /data/solar-staging/backup-postgres.sh POSTGRES_CONTAINER_ID /data/solar-staging/backups
-```
+## 9. ถ้า Deploy ไม่ผ่าน ดูตรงไหน
 
-Script ใช้ pg_dump และตรวจว่า archive อ่านได้ พร้อม checksum แต่ยังต้องสำเนาไปพื้นที่ปลอดภัยนอกเครื่องและทดสอบ restore จริงไปฐานแยก ไม่ใช่ทับ staging เก็บ bucket objects, broker config/password hashes และ certificate configuration ด้วยวิธีสำรองแยกตามหน้าที่
+| อาการ | ตรวจ/แก้จากหน้าเว็บ |
+|---|---|
+| pull access denied / unauthorized | ตรวจ package visibility ทั้ง5ตัวและ image digest ใน Coolify |
+| required variable / interpolation error | เติมตัวแปรในขั้น7และ Save |
+| certbot unhealthy | ตรวจ token zone DNS Edit, zone nateekarn.dev, อีเมลจริง, outbound DNS/HTTPS และ Logs; แก้แล้ว redeploy ระบบเก็บ certificate เดิมไว้ |
+| mqtt unhealthy | ดู mqtt Logs, รูปแบบ JSON, รหัสอย่างน้อย16ตัว และ certbot healthy |
+| migrate/bootstrap exit nonzero | อ่าน Logs ของ service นั้น ตรวจ DATABASE_URL/password และ admin env; ห้ามล้าง volume |
+| เว็บ502/503 | ตรวจ api healthy, one-shot exit0 และ Domains ของ web ระบุ :3000 |
+| เว็บใช้ได้แต่ Gateway ต่อไม่ได้ | ตรวจ mqtt-solar DNS only และ firewall8883; ไม่ใส่ https:// ใน MQTT hostname |
 
-เก็บ digest เวอร์ชันที่ใช้งานได้ไว้ การย้อน image ต้องตรวจ schema compatibility ก่อน ไม่ย้อนหรือล้างฐานข้อมูลอัตโนมัติ เพราะมีข้อมูล Gateway เข้ามาต่อเนื่อง
+หากต้องส่งภาพให้ช่วยตรวจ ให้ปิดบังรหัส/token และค่า Environment ก่อน
 
-## วิธีทดสอบในเครื่องพัฒนา/CI
+## 10. ให้ main Deploy อัตโนมัติหลังตั้งครั้งแรก
 
-ใช้ Linux/Bash + Docker หรือ Git Bash ที่ตั้ง path สำหรับเครื่องมือถูกต้อง:
+1. ใน Coolify จด **Application UUID** ของ solar-staging จากหน้าทรัพยากร/URL ไม่ใช่ Project UUID lskcgscsooocwo8o8kwgsgsw
+2. Coolify **Keys & Tokens** → สร้าง API token ที่อ่าน/แก้ application env และ deploy ได้ จำกัด team/resource ตามสิทธิ์ที่ระบบรองรับ
+3. GitHub repository → **Settings → Environments → New environment → staging** จำกัด deployment branch เป็น main
+4. Environment variables ของ staging: COOLIFY_URL=`https://coolify.fowir.com`, COOLIFY_APPLICATION_UUID=UUID ข้อ1, STAGING_WEB_URL=`https://solar.nateekarn.dev`
+5. Environment secret ของ staging: COOLIFY_API_TOKEN=token ข้อ2
+6. กลับ **Settings → Secrets and variables → Actions → Variables** เปลี่ยน repository variable STAGING_DEPLOY_ENABLED เป็น `true`
+7. Actions → CI and staging → Run workflow → main แล้วรอ verify และ deploy-staging สีเขียว
+8. หลังจากนี้แตก branch แก้ → เปิด PR → checks ผ่าน → merge main ระบบจะทดสอบและ deploy ด้วย image ที่ผ่านชุดตรวจเดียวกัน
 
-```bash
-pnpm install --frozen-lockfile
-pnpm --filter './packages/**' --recursive build
-pnpm lint
-pnpm test
-node --test scripts/ci/*.test.mjs
-for app in api worker web; do docker build -f infra/docker/Dockerfile.$app -t solar-$app:ci .; done
-pnpm --filter @solar/web exec playwright install --with-deps chromium
-bash infra/docker/mosquitto/smoke.sh
-bash scripts/ci/integration.sh
-```
+ตั้ง branch protection/ruleset ให้ main ผ่าน PR และ verify ตามความสามารถบัญชี ไม่กด Deploy เองระหว่าง CI กำลัง deploy ถ้า CI timeout ให้ดู Coolify ก่อนรันซ้ำ เพราะ deployment ฝั่ง Coolify อาจยังทำงาน
 
-E2E จำกัดไว้ที่ฐาน solar_readiness และ localhost โดยใช้ credentials จำลอง ห้ามเปลี่ยนให้ชี้ไปข้อมูล staging จริง
+## 11. เตรียมส่งให้ผู้จัดการ Gateway
+
+1. Login admin สร้างข้อมูลโรงเรียน/site/Gateway/มิเตอร์จริง ใช้ Gateway name `pilot-01` ตามบัญชี MQTT และ endpoint `energy/pilot-01/#`
+2. ลงทะเบียน serial มิเตอร์ให้ถูกต้อง
+3. ทดสอบ MQTT จริงหนึ่งข้อความ → ได้ ACK หลังบันทึก → เห็นข้อมูลบนเว็บ รวมการส่งซ้ำและ reconnect ด้วยบัญชีทดสอบเฉพาะ
+4. เติม [connection sheet](../gateway-handoff/gateway-connection-draft-th.md) ด้วยข้อมูลที่ตรวจแล้วก่อนระบุว่าพร้อมเชื่อมต่อ
+5. ส่งให้ผู้จัดการ: host mqtt-solar.nateekarn.dev, port8883, TLSตรวจCA/hostname, username pilot-01, topics และ payload ส่วนรหัสส่งช่องทางแยก
+
+เว็บ login และ MQTT login เป็นคนละบัญชี ระบบรอรับ MQTT จาก Gateway ตามเดิม ไม่มี HTTP POST telemetry ในรอบนี้ ดู [release checklist](../gateway-handoff/internal-release-checklist.md)
+
+## 12. การเก็บข้อมูลจริงและสำรอง
+
+Persistent volume ช่วยให้ redeploy ไม่ล้างข้อมูล แต่ไม่ใช่ backup ก่อนรับข้อมูลจริงต่อเนื่องให้ผู้ดูแลบริษัทจัด backup PostgreSQL/TimescaleDB และไฟล์ storage ไปนอก server พร้อมทดลอง restore ไปฐานแยก ระบบนี้ใช้ PostgreSQL ใน Compose จึงอย่าสมมติว่ามีเมนู Scheduled Backups แบบ database resource แยกให้โดยอัตโนมัติ
+
+หากบริษัทมีระบบสำรอง VM/volumes ให้ตกลงความถี่ ระยะเก็บ และทดสอบกู้คืนกับผู้ดูแลก่อนรับข้อมูลจริงต่อเนื่อง; คู่มือนี้ไม่ได้ตั้งงาน backup ของบริษัทให้แล้ว การย้อน image ต้องตรวจ migration compatibility และห้ามล้างข้อมูลจริง ส่วน E2E ใช้ฐาน/broker ทิ้งได้บน GitHub เสมอ
 
 ## อ้างอิง
 
-- Coolify Compose: https://coolify.io/docs/applications/builds/docker-compose
-- GitHub Actions integration: https://coolify.io/docs/applications/sources/github/actions
-- Coolify deploy API: https://coolify.io/docs/core/automation/deploy-webhooks
-- Cloudflare Certbot plugin: https://certbot-dns-cloudflare.readthedocs.io/en/stable/
-
-รายการที่เตรียมไว้ใน repo ไม่ได้หมายความว่า DNS, certificate จริง, remote secrets, GitHub workflow run หรือ Coolify deployment ถูกตั้งแล้ว ต้องตรวจผลบนระบบเป้าหมายตามข้อ9
-
-## Restore drill ที่ทดสอบแล้ว
-
-ทดสอบกับ TimescaleDB 2.18.2/PostgreSQL 16 ในชุดทดสอบแยกเท่านั้น ตัวอย่างนี้สร้างฐานใหม่ ไม่ทับฐานที่รับข้อมูล Gateway:
-
-```bash
-set -euo pipefail
-# แทน TEST_POSTGRES_CONTAINER_ID ด้วย container ของฐานทดสอบเท่านั้น
-# คัดลอก dump ที่สำรองไว้เข้า /tmp/restore.dump ของ container ก่อน
-# หากชื่อ solar_restore_check มีอยู่แล้ว ให้หยุดตรวจเอง ไม่ drop ฐานเดิม
-
-docker cp /path/to/backup.dump TEST_POSTGRES_CONTAINER_ID:/tmp/restore.dump
-docker exec TEST_POSTGRES_CONTAINER_ID createdb -U solar solar_restore_check
-docker exec TEST_POSTGRES_CONTAINER_ID psql -U solar -d solar_restore_check -v ON_ERROR_STOP=1 -c 'CREATE EXTENSION IF NOT EXISTS timescaledb; SELECT timescaledb_pre_restore();'
-docker exec TEST_POSTGRES_CONTAINER_ID pg_restore -U solar -d solar_restore_check --no-owner --no-acl --exit-on-error /tmp/restore.dump
-docker exec TEST_POSTGRES_CONTAINER_ID psql -U solar -d solar_restore_check -v ON_ERROR_STOP=1 -c 'SELECT timescaledb_post_restore(); SELECT count(*) FROM schema_migrations;'
-```
-
-ตรวจจำนวนและค่าข้อมูลสำคัญเทียบกับต้นทาง รวมถึงเปิดแอปทดสอบอ่านข้อมูลที่กู้คืนก่อนถือว่า backup ใช้งานได้จริง รอบทดสอบในเครื่องนี้กู้คืน schema/migrations และ hypertable สำเร็จ; ยังไม่ได้ทดสอบกู้ข้อมูล Gateway จริงซึ่งยังไม่มีเข้ามา
-
-
-
+- [Coolify Git-based Docker Compose](https://coolify.io/docs/applications/builds/docker-compose)
+- [Coolify Domains](https://coolify.io/docs/core/networking/domains)
+- [Cloudflare DNS plugin ของ Certbot](https://certbot-dns-cloudflare.readthedocs.io/en/stable/)
+- [CI contract](../../.github/CI.md)

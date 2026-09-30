@@ -47,3 +47,6 @@ Thumbs.db
 *.swo
 .worktrees/
 .superpowers/sdd/*/task-1-report.md
+# Python runtime/test caches
+__pycache__/
+*.py[cod]

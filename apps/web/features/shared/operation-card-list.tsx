@@ -32,7 +32,7 @@ import {
 } from "../../components/ui/dialog";
 import { Input } from "../../components/ui/input";
 import { operationKeys } from "./operation-columns";
-import { telemetryAge } from "../../lib/telemetry-age";
+import { TelemetryAgeLabel } from "./telemetry-age-label";
 import { useLocale, useT } from "../../providers/locale-provider";
 import { formatAppDate, formatAppDateTime, isIsoDateLike } from "../../lib/date-format";
 import { renderStatusBadge, STATUS_MAP } from "../../lib/status-badge";
@@ -272,7 +272,7 @@ export function OperationCardList({
                                 : "text-foreground"
                             }`}>
                               {resource === "sites" && ["lastUpdated","lastSeenAt","last_seen_at"].includes(key) ? (
-                                <span className={telemetryAge(val,locale).fresh ? "text-emerald-600" : "text-muted-foreground"}>{telemetryAge(val,locale).text}</span>
+                                <TelemetryAgeLabel value={val} locale={locale} compact />
                               ) : isStatusValue(val) ? (
                                 getStatusBadge(str)
                               ) : isAmount ? (

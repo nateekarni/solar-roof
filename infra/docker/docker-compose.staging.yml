@@ -24,15 +24,41 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
+  certbot:
+    image: ${CERTBOT_IMAGE:?immutable certificate service image required}
+    restart: unless-stopped
+    environment:
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:?Cloudflare DNS token required}
+      ACME_EMAIL: ${ACME_EMAIL:?certificate contact email required}
+      MQTT_TLS_DOMAIN: mqtt-solar.nateekarn.dev
+    volumes:
+      - letsencrypt-data:/etc/letsencrypt
+      - mqtt-certs:/export
+    healthcheck:
+      test: [CMD, python3, /opt/solar-certbot/service.py, --healthcheck]
+      interval: 15s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
   mqtt:
-    image: eclipse-mosquitto:2.0.21
+    image: ${MQTT_IMAGE:?immutable managed MQTT image required}
     restart: unless-stopped
     ports: ['8883:8883']
+    environment:
+      MQTT_PASSWORD: ${MQTT_PASSWORD:?backend MQTT password required}
+      MQTT_GATEWAY_CREDENTIALS: ${MQTT_GATEWAY_CREDENTIALS:?Gateway credentials JSON required}
+      MQTT_TLS_DOMAIN: mqtt-solar.nateekarn.dev
     volumes:
-      - ${MQTT_CONFIG_DIR:?absolute broker config directory required}:/mosquitto/config:ro
-      - ${MQTT_CONFIG_DIR:?absolute broker config directory required}:/mosquitto/auth:ro
-      - ${MQTT_CERTS_DIR:?absolute broker TLS directory required}:/mosquitto/certs:ro
+      - mqtt-certs:/mosquitto/certs:ro
       - mqtt-data:/mosquitto/data
+    depends_on:
+      certbot: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, python3, /usr/local/bin/mqtt-runtime.py, --healthcheck]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
   storage:
     image: ${STORAGE_IMAGE:-ghcr.io/coollabsio/minio@sha256:69b55a1c1c5dc285ce04db96689f5b2102317fc77a50680a1874ca6efd1c87f9}
     restart: unless-stopped
@@ -74,6 +100,22 @@ services:
       DATABASE_URL: ${DATABASE_URL:?URL-encoded PostgreSQL connection URL required}
     depends_on:
       postgres: {condition: service_healthy}
+  bootstrap:
+    image: ${API_IMAGE:?immutable API image required}
+    restart: 'no'
+    command: [pnpm, --filter, '@solar/api', 'db:bootstrap']
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?required}
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:?initial administrator email required}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:?initial administrator password required}
+      STORAGE_ENDPOINT: http://storage:9000
+      STORAGE_REGION: ${STORAGE_REGION:-us-east-1}
+      STORAGE_BUCKET: ${STORAGE_BUCKET:-solar-platform}
+      STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:-solar}
+      STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?required}
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      storage-init: {condition: service_completed_successfully}
   api:
     image: ${API_IMAGE:?immutable API image required}
     restart: unless-stopped
@@ -96,7 +138,8 @@ services:
     depends_on:
       migrate: {condition: service_completed_successfully}
       redis: {condition: service_healthy}
-      mqtt: {condition: service_started}
+      mqtt: {condition: service_healthy}
+      bootstrap: {condition: service_completed_successfully}
       storage-init: {condition: service_completed_successfully}
     healthcheck:
       test: [CMD, node, -e, "fetch('http://127.0.0.1:3001/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
@@ -143,3 +186,5 @@ volumes:
   redis-data:
   minio-data:
   mqtt-data:
+  mqtt-certs:
+  letsencrypt-data:

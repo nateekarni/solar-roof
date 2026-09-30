@@ -13,8 +13,8 @@
 | เว็บสำหรับดูข้อมูล | https://solar.nateekarn.dev — ชื่อที่เลือกไว้ ยังไม่ยืนยันว่าเปิดใช้งานแล้ว |
 | MQTT hostname | mqtt-solar.nateekarn.dev — ชื่อที่เลือกไว้ ยังไม่ยืนยัน DNS และการเชื่อมต่อ |
 | วิธีส่งข้อมูล | MQTT; รูปแบบข้อความ JSON |
-| การเข้ารหัส | เสนอใช้ MQTT ผ่าน TLS; ต้องยืนยันว่า firmware รองรับและทดสอบ certificate ก่อนใช้งาน |
-| Port | รอทีมระบบแจ้งหลังตั้งค่าและทดสอบ; ยังไม่มี port ที่ยืนยันพร้อมใช้ |
+| การเข้ารหัส | MQTT ผ่าน TLS พร้อมตรวจ CA/hostname; รอทดสอบกับ firmware จริง |
+| Port | 8883 ตาม deployment configuration; ยังรอทดสอบการเชื่อมต่อภายนอก |
 | MQTT version | รอยืนยันร่วมกับ firmware และ broker ที่ตั้งค่าจริง |
 | Username / Password | ทีมระบบจะสร้างสำหรับ Gateway นี้และส่งแยกผ่านช่องทางที่ตกลงกัน |
 | Gateway name / Device serial | รอข้อมูลจริงและลงทะเบียนในระบบ |

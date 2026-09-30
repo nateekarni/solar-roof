@@ -1,0 +1,10 @@
+FROM eclipse-mosquitto:2.0.21
+USER root
+RUN apk add --no-cache python3 openssl
+COPY infra/docker/mosquitto/runtime.py /usr/local/bin/mqtt-runtime.py
+COPY infra/docker/mosquitto/managed.conf /mosquitto/config/managed.conf
+COPY infra/docker/mosquitto/acl.example /mosquitto/config/managed.acl
+ENTRYPOINT ["python3", "/usr/local/bin/mqtt-runtime.py"]
+COPY infra/docker/mosquitto/test_runtime.py /opt/solar-mqtt/tests/test_runtime.py
+ENV PYTHONPATH=/usr/local/bin
+RUN ln -s /usr/local/bin/mqtt-runtime.py /usr/local/bin/runtime.py

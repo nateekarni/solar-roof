@@ -21,6 +21,8 @@ jobs:
       api: ${{ steps.publish.outputs.api }}
       worker: ${{ steps.publish.outputs.worker }}
       web: ${{ steps.publish.outputs.web }}
+      mqtt: ${{ steps.publish.outputs.mqtt }}
+      certbot: ${{ steps.publish.outputs.certbot }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -38,9 +40,17 @@ jobs:
       - run: node --test scripts/ci/*.test.mjs
       - name: Build immutable candidate images
         run: |
-          for app in api worker web; do
+          for app in api worker web mqtt certbot; do
             docker build --label org.opencontainers.image.revision="$GITHUB_SHA" -f "infra/docker/Dockerfile.$app" -t "solar-$app:ci" .
           done
+      - name: Test managed MQTT and certificate lifecycle without external credentials
+        run: |
+          docker run --rm --entrypoint python3 solar-mqtt:ci -m unittest discover -s /opt/solar-mqtt/tests
+          docker run --rm --entrypoint python3 solar-certbot:ci -m unittest discover -s /opt/solar-certbot/tests
+      - name: Verify managed MQTT TLS, credentials, ACLs and certificate reload
+        run: bash infra/docker/mosquitto/managed-smoke.sh
+      - name: Verify staging Compose with synthetic certificates
+        run: bash infra/ci/managed-staging-smoke.sh
       - name: Install browser
         run: pnpm --filter @solar/web exec playwright install --with-deps chromium
       - name: Verify MQTT credentials and ACLs
@@ -54,6 +64,7 @@ jobs:
           name: test-evidence
           path: |
             test/artifacts/compose.log
+            test/artifacts/managed-staging.log
             apps/web/test/artifacts/*.png
           retention-days: 7
       - name: Publish the tested image IDs
@@ -63,13 +74,14 @@ jobs:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-          for app in api worker web; do
+          for app in api worker web mqtt certbot; do
             ref="ghcr.io/nateekarni/solar-roof/$app:$GITHUB_SHA"
             docker tag "solar-$app:ci" "$ref"
             docker push "$ref"
             digest=$(docker inspect --format '{{index .RepoDigests 0}}' "$ref")
             [[ "$digest" =~ ^ghcr.io/nateekarni/solar-roof/$app@sha256:[a-f0-9]{64}$ ]]
             echo "$app=$digest" >> "$GITHUB_OUTPUT"
+            printf '%s_IMAGE=%s\n' "${app^^}" "$digest" >> "$GITHUB_STEP_SUMMARY"
           done
           docker logout ghcr.io
   deploy-staging:
@@ -105,6 +117,8 @@ jobs:
           API_IMAGE: ${{ needs.verify.outputs.api }}
           WORKER_IMAGE: ${{ needs.verify.outputs.worker }}
           WEB_IMAGE: ${{ needs.verify.outputs.web }}
+          MQTT_IMAGE: ${{ needs.verify.outputs.mqtt }}
+          CERTBOT_IMAGE: ${{ needs.verify.outputs.certbot }}
           STAGING_WEB_URL: ${{ vars.STAGING_WEB_URL }}
         run: |
           : "${STAGING_WEB_URL:?Set staging environment STAGING_WEB_URL before enabling deployments}"

@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start -p 3000",
     "lint": "tsc --noEmit -p tsconfig.json",
-    "test": "tsc --noEmit -p tsconfig.json"
+    "test": "tsc --noEmit -p tsconfig.json && tsx --test lib/telemetry-age.spec.ts features/shared/operation-columns.spec.ts features/shared/telemetry-age-label.spec.tsx"
   },
   "dependencies": {
     "@date-fns/tz": "^1.5.0",
