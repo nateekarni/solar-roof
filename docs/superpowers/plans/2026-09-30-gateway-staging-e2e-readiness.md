@@ -160,3 +160,8 @@ Confirmed: Gateway handoff follows passing ingestion, persistence and display ac
 - Reinspection confirms deployment blockers still exist; prior work produced planning/handoff documents, not deployment implementation.
 - Added docs/runbooks/coolify-staging-deployment-th.md with prerequisite fixes, CI/image publication, DNS, Coolify setup, runtime variables, broker TLS/ACL, migrations, smoke checks and recovery procedure.
 - Guide clearly marks proposed files/settings and unexecuted steps. No deployment or CI implementation occurred in this step.
+
+
+## Staging domain update — 2026-09-30
+
+User changed the current web staging hostname to `solar.nateekarn.dev`; `solar.fowir.com` is deferred until its Cloudflare administrator is available. This supersedes the earlier web hostname decisions above. User also confirmed MQTT `mqtt-solar.nateekarn.dev`; update the broker certificate hostname and renewal hook accordingly. DNS provider for nateekarn.dev is not yet verified; Cloudflare DNS-01 instructions are conditional on using Cloudflare for that zone. No DNS or remote Coolify setting has been changed.

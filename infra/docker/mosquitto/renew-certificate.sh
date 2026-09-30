@@ -3,7 +3,7 @@
 # Install as /etc/letsencrypt/renewal-hooks/deploy/solar-mqtt.sh.
 set -eu
 case "${RENEWED_DOMAINS:-}" in
-  *mqtt-solar.fowir.com*) ;;
+  *mqtt-solar.nateekarn.dev*) ;;
   *) exit 0 ;;
 esac
 cert_dir=/data/solar-staging/mqtt/certs

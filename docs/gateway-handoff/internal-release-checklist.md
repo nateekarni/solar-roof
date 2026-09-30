@@ -7,7 +7,7 @@ Status: preparing a handoff draft is authorized. This checklist is not a deploym
 - [ ] Resolve current image runtime, environment, migrations and readiness blockers in the staging plan.
 - [ ] Configure existing Coolify project and agreed main -> CI -> tested images -> auto-deploy workflow.
 - [ ] Confirm available server headroom with the full stack; preserve other applications.
-- [ ] Configure and verify solar.fowir.com and mqtt-solar.fowir.com, DNS, listener port, TLS trust and firewall.
+- [ ] Configure and verify solar.nateekarn.dev and mqtt-solar.nateekarn.dev, DNS, listener port, TLS trust and firewall.
 - [ ] Configure per-Gateway authentication, publish/subscribe ACL and durable broker/database storage.
 - [ ] Provision actual school/site/gateway/device; record exact topic prefix and serial-to-device UUID mapping. Never run destructive demo seed on real staging data.
 - [ ] Agree timestamp, energy semantics, retry timeout/backoff, offline persistence and replay rate with firmware owner.

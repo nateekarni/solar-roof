@@ -1,6 +1,6 @@
 # Deploy Solar staging บน Coolify
 
-เป้าหมาย: server `live`, เว็บ `solar.fowir.com`, MQTT `mqtt-solar.fowir.com:8883`, repository `nateekarni/solar-roof`, branch `main`.
+เป้าหมาย: server `live`, เว็บ `solar.nateekarn.dev`, MQTT `mqtt-solar.nateekarn.dev:8883`, repository `nateekarni/solar-roof`, branch `main`.
 
 ไฟล์ deployment จัดเตรียมแล้วใน repository การตั้ง DNS, TLS, secrets, สิทธิ์ GHCR และ resource จริงยังต้องทำในบัญชีของผู้ดูแล ผลการทดสอบและขอบเขตที่ตรวจจริงดู `docs/deployment/verification.md`
 
@@ -29,14 +29,14 @@
 
 CI จะรันบน GitHub-hosted runner ไม่ใช้เครื่อง live เป็น runner และไม่ส่งข้อมูลจริงเข้า E2E
 
-## 2. ตั้ง Cloudflare DNS
+## 2. ตั้ง DNS ของ nateekarn.dev
 
-Cloudflare -> เลือก zone fowir.com -> DNS -> Records:
+ตั้ง DNS ทั้งเว็บและ MQTT ใน zone `nateekarn.dev` ที่ผู้ให้บริการ DNS ของโดเมนนี้ หากใช้ Cloudflare ให้เข้า DNS -> Records:
 
-| Type | Name | Content | Proxy |
-|---|---|---|---|
-| A | solar | public IPv4 ของเครื่อง live | เริ่ม DNS only เพื่อทดสอบ HTTPS โดยตรง |
-| A | mqtt-solar | public IPv4 ของเครื่อง live | DNS only |
+| Zone | Type | Name | Content | Proxy (ถ้าใช้ Cloudflare) |
+|---|---|---|---|---|
+| nateekarn.dev | A | solar | public IPv4 ของเครื่อง live | เริ่ม DNS only เพื่อทดสอบ HTTPS โดยตรง |
+| nateekarn.dev | A | mqtt-solar | public IPv4 ของเครื่อง live | DNS only |
 
 IP ของเครื่อง live ยังไม่ได้ส่งมา อย่าคัดลอก IP สมมติหรือ IP ของ Coolify หากเป็นคนละเครื่อง หากมี AAAA ต้องเป็น IPv6 ที่เข้าถึงเครื่องนี้ได้จริง
 
@@ -45,13 +45,13 @@ IP ของเครื่อง live ยังไม่ได้ส่งม�
 ตรวจจากเครื่องภายนอก:
 
 ```sh
-nslookup solar.fowir.com
-nslookup mqtt-solar.fowir.com
+nslookup solar.nateekarn.dev
+nslookup mqtt-solar.nateekarn.dev
 ```
 
 ## 3. เตรียม MQTT และ certificate บนเครื่อง live
 
-อ่าน `infra/docker/mosquitto/README.md` และทำตามคำสั่ง Cloudflare DNS-01 ในนั้น
+อ่าน `infra/docker/mosquitto/README.md` ซึ่งมีตัวอย่าง Cloudflare DNS-01 หาก DNS ของ nateekarn.dev อยู่กับผู้ให้บริการอื่น ต้องใช้ Certbot DNS plugin ของผู้ให้บริการนั้น
 
 - ใช้ Mosquitto สำหรับ staging เพื่อลดภาระเครื่อง 4 GB; local stack เดิมอาจยังใช้ EMQX
 - สร้าง `/data/solar-staging/mqtt/config` และ `/data/solar-staging/mqtt/certs`
@@ -59,8 +59,8 @@ nslookup mqtt-solar.fowir.com
 - สร้างผู้ใช้ backend ชื่อ `solar-backend` และ password แบบสุ่ม ค่านี้ต้องตรงกับ `MQTT_PASSWORD` ใน Coolify
 - แต่ละ Gateway ใช้ username ตรงกับ Gateway name ในระบบ, password แยก และ endpoint `energy/GATEWAY_NAME/#`
 - ห้ามใช้ชื่อ `solar-backend` เป็นชื่อ Gateway
-- Cloudflare token: Zone / DNS / Edit เฉพาะ fowir.com เก็บใน root-only file บนเครื่อง ไม่ส่งในแชตหรือ commit
-- ออก certificate สำหรับ mqtt-solar.fowir.com ผ่าน Certbot DNS-01 และติดตั้ง `renew-certificate.sh` เป็น deploy hook
+- Cloudflare token: Zone / DNS / Edit เฉพาะ nateekarn.dev เก็บใน root-only file บนเครื่อง ไม่ส่งในแชตหรือ commit
+- ออก certificate สำหรับ mqtt-solar.nateekarn.dev ผ่าน Certbot DNS-01 และติดตั้ง `renew-certificate.sh` เป็น deploy hook
 - ตรวจ `certbot renew --dry-run` และ certbot timer
 
 
@@ -108,7 +108,7 @@ docker login ghcr.io -u YOUR_GITHUB_USERNAME
 6. Base Directory: `/`
 7. Docker Compose Location: `/infra/docker/docker-compose.staging.yml`
 8. Save แล้วตรวจ rendered Compose ว่า `api`, `worker`, `web` ใช้ `image:` ไม่มี build บนเครื่อง live
-9. ตั้ง Domains เฉพาะ service web เป็น `https://solar.fowir.com:3000` เลข3000 คือพอร์ตภายใน ผู้ใช้ยังเปิด https://solar.fowir.com
+9. ตั้ง Domains เฉพาะ service web เป็น `https://solar.nateekarn.dev:3000` เลข3000 คือพอร์ตภายใน ผู้ใช้ยังเปิด https://solar.nateekarn.dev
 10. ปิด Auto Deploy จาก Git push โดยตรงเพื่อให้ GitHub Actions เป็นผู้เรียกหลัง checks ผ่าน
 11. จด **Application UUID ของ resource ใหม่นี้** ไม่ใช่ Project UUID ในลิงก์ด้านบน
 
@@ -143,7 +143,7 @@ GitHub repository -> Settings -> Environments -> สร้าง `staging` ไ�
 |---|---|
 | COOLIFY_URL | https://coolify.fowir.com |
 | COOLIFY_APPLICATION_UUID | UUID ของ application จากขั้น5 |
-| STAGING_WEB_URL | https://solar.fowir.com |
+| STAGING_WEB_URL | https://solar.nateekarn.dev |
 
 ตั้ง environment secret `COOLIFY_API_TOKEN` จาก Coolify Keys & Tokens ให้สิทธิ์อ่าน/แก้ environment ของ application และเริ่ม deployment เท่าที่จำเป็น อย่าใช้ Project UUID แทน Application UUID
 
@@ -166,7 +166,7 @@ unset BOOTSTRAP_ADMIN_EMAIL BOOTSTRAP_ADMIN_PASSWORD
 
 Script สร้าง admin และ bucket ที่จำเป็น โดยไม่ seed โรงเรียนหรือ telemetry ปลอม รันซ้ำด้วย email เดิมจะไม่เปลี่ยน password เดิม หากพบ account ที่ role/scope ไม่ตรงจะหยุดให้ตรวจเอง ไม่มีคำสั่งล้างข้อมูล
 
-จากนั้น login ที่ solar.fowir.com สร้าง Pilot school/site/gateway/device ด้วย admin และใช้ serial จริง; แยกบัญชีทดสอบแต่ละ role ตามสิทธิ์ อย่าใช้ db:seed:reset กับ staging
+จากนั้น login ที่ solar.nateekarn.dev สร้าง Pilot school/site/gateway/device ด้วย admin และใช้ serial จริง; แยกบัญชีทดสอบแต่ละ role ตามสิทธิ์ อย่าใช้ db:seed:reset กับ staging
 
 ## 9. ตรวจรับก่อนส่ง connection sheet ให้ Gateway
 

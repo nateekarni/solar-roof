@@ -80,7 +80,7 @@ services:
     environment:
       NODE_ENV: production
       API_PORT: 3001
-      WEB_URL: https://solar.fowir.com
+      WEB_URL: https://solar.nateekarn.dev
       DATABASE_URL: ${DATABASE_URL:?required}
       REDIS_URL: redis://redis:6379
       MQTT_URL: mqtt://mqtt:1883

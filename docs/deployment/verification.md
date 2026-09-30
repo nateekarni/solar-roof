@@ -1,6 +1,6 @@
 # Deployment verification — 2026-09-30
 
-Target: Coolify staging, `solar.fowir.com`, MQTT TLS `mqtt-solar.fowir.com:8883`.
+Current target: Coolify staging, `solar.nateekarn.dev`, MQTT TLS `mqtt-solar.nateekarn.dev:8883`. Local verification below used localhost; see the domain update note below.
 
 This records local evidence. No remote deployment, DNS change, public certificate issuance, GitHub publication, or production credential provisioning has been performed.
 
@@ -56,3 +56,6 @@ Local tested image IDs (not GHCR publication digests):
 
 Local detailed evidence: [runner output](../../test/artifacts/full-run.log), [service logs](../../test/artifacts/compose.log), [desktop screenshot](../../apps/web/test/artifacts/dashboard-desktop.png), [mobile screenshot](../../apps/web/test/artifacts/dashboard-mobile.png). These generated files are ignored by Git; CI uploads its own logs/screenshots.
 
+
+
+Domain update after the local verification above: web staging now targets `solar.nateekarn.dev` and MQTT `mqtt-solar.nateekarn.dev`. The recorded tests used localhost and did not validate either public hostname. Public DNS/TLS and Coolify routing remain unverified.
