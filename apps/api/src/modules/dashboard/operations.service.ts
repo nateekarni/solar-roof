@@ -1,28 +1,29 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { DatabaseService } from "../../database/database.service.js";
+import { operationPageSql, operationPredicate, parseOperationQuery } from "./operation-query.js";
 import { schoolScope, type ScopePrincipal } from "../../common/auth/resource-scope.js";
 
 @Injectable()
 export class OperationsService {
   constructor(@Inject(DatabaseService) private readonly db: DatabaseService) {}
-  async list(resource: string, user?: ScopePrincipal) {
+  private source(resource: string, user?: ScopePrincipal) {
     const scope=schoolScope(user);
-    if(scope?.length===0) return {columns:[],rows:[],idKey:"id"};
+
     const where=scope===null?"TRUE":"s.id=ANY($1::uuid[])";
     const params:unknown[]=scope===null?[]:[scope];
     let sql:string; let columns:string[];
     switch(resource) {
       case "schools":
-        sql=`SELECT s.id,s.name,s.code,s.region,s.status,si.capacity_mwp AS "capacityMwp",
+        sql=`SELECT s.id,s.name,s.code,s.region,s.status,(SELECT coalesce(sum(capacity_mwp),0) FROM sites WHERE school_id=s.id) AS "capacityMwp",
           count(DISTINCT si.id)::int AS "sitesCount",count(DISTINCT g.id)::int AS "gatewaysCount"
           FROM schools s LEFT JOIN sites si ON si.school_id=s.id LEFT JOIN gateways g ON g.site_id=si.id
-          WHERE ${where} GROUP BY s.id,si.capacity_mwp ORDER BY s.name`;
+          WHERE ${where} GROUP BY s.id ORDER BY s.name`;
         columns=["ชื่อโรงเรียน","ภูมิภาค","กำลังติดตั้ง (MWp)","จำนวนไซต์","Gateway","สถานะ"];break;
       case "sites":
         sql=`SELECT si.id,si.name,s.name AS "schoolName",si.capacity_mwp AS "capacityMwp",
           g.id AS "gatewayId",g.name AS gateway,g.protocol,g.last_seen_at AS "lastSeenAt",g.last_seen_at AS "lastUpdated",
           CASE WHEN si.status IN ('inactive','archived') THEN si.status WHEN g.last_seen_at>=now()-interval '2 minutes' THEN 'online' ELSE 'offline' END AS status,
-          energy.kwh AS "productionKwh" FROM sites si JOIN schools s ON s.id=si.school_id LEFT JOIN gateways g ON g.site_id=si.id
+          energy.kwh AS "productionKwh" FROM sites si JOIN schools s ON s.id=si.school_id LEFT JOIN LATERAL (SELECT * FROM gateways WHERE site_id=si.id ORDER BY id LIMIT 1) g ON true
           LEFT JOIN LATERAL (SELECT sum(r.delta) AS kwh FROM (
             SELECT tr.device_id,greatest(max(tr.normalized_value)-min(tr.normalized_value),0) AS delta
             FROM telemetry_raw tr JOIN billing_meters bm ON bm.device_id=tr.device_id AND bm.active
@@ -38,8 +39,8 @@ export class OperationsService {
           p.rejection_reason AS "rejectionReason",d.document_number AS "invoiceNumber",r.document_number AS "receiptNumber"
           FROM billing_cycles b JOIN sites si ON si.id=b.site_id JOIN schools s ON s.id=si.school_id
           LEFT JOIN LATERAL (SELECT * FROM payments WHERE billing_cycle_id=b.id ORDER BY paid_at DESC NULLS LAST,id DESC LIMIT 1) p ON true
-          LEFT JOIN documents d ON d.billing_cycle_id=b.id AND d.document_type='invoice'
-          LEFT JOIN documents r ON r.billing_cycle_id=b.id AND r.document_type='receipt'
+          LEFT JOIN LATERAL (SELECT document_number FROM documents WHERE billing_cycle_id=b.id AND document_type='invoice' ORDER BY issue_date DESC,id DESC LIMIT 1) d ON true
+          LEFT JOIN LATERAL (SELECT document_number FROM documents WHERE billing_cycle_id=b.id AND document_type='receipt' ORDER BY issue_date DESC,id DESC LIMIT 1) r ON true
           WHERE ${where} ORDER BY b.period_end DESC,si.name`;
         columns=["รอบบิล","โรงเรียน","ไซต์","พลังงาน (kWh)","อัตรา (฿/kWh)","ยอดเงิน (฿)","หลักฐานการชำระ","สถานะ"];break;
       case "contracts":
@@ -86,17 +87,51 @@ export class OperationsService {
         columns=["เวลา","การดำเนินการ","ประเภทข้อมูล","รหัสอ้างอิง","ผู้ดำเนินการ","เหตุผล"];break;
       default:throw new NotFoundException("Unknown resource");
     }
-    const result=await this.db.query(sql,params);
-    return {columns,rows:result.rows,idKey:"id"};
+        // The outer query owns ordering and applies a bound to every resource.
+    sql=sql.slice(0,sql.lastIndexOf(' ORDER BY '));
+    return {sql,params,columns,scope};
   }
-  async summary(resource:string,user?:ScopePrincipal) {
-    const {rows}=await this.list(resource,user);
-    const item=(label:string,value:number,unit:string)=>({label,value,unit,note:"จากข้อมูลในระบบ"});
-    const sum=(key:string,selected=rows)=>selected.reduce((total,row)=>total+Number(row[key]??0),0);
-    if(resource==="sites")return [item("ไซต์งานทั้งหมด",rows.length,"ไซต์"),item("ออนไลน์",rows.filter(r=>r.status==="online").length,"ไซต์"),item("กำลังติดตั้งรวม",sum("capacityMwp"),"MWp")];
-    if(resource==="billing")return [item("ใบเรียกเก็บเงิน",rows.length,"ฉบับ"),item("บิลที่จ่ายแล้ว",rows.filter(r=>r.status==="paid").length,"ฉบับ"),item("ยอดเรียกเก็บรวม",sum("amount"),"บาท"),item("ชำระแล้ว",sum("amount",rows.filter(r=>r.status==="paid")),"บาท")];
-    if(resource==="receipts"||resource==="documents")return [item("เอกสารทั้งหมด",rows.length,"ฉบับ"),item("ยอดรวม",sum("amount"),"บาท")];
-    return [item("รายการทั้งหมด",rows.length,"รายการ")];
+  async list(resource:string,user?:ScopePrincipal,raw:Record<string,unknown>={}) {
+    const query=parseOperationQuery(resource,raw);
+    const {sql:source,params,columns,scope}=this.source(resource,user);
+    const pageQuery=operationPageSql(resource,source,params,query,user,scope);
+    if(scope?.length===0) return {columns,rows:[],idKey:'id',page:{limit:query.limit,nextCursor:null,hasMore:false}};
+    const result=await this.db.query(pageQuery.sql,params);
+    const hasMore=result.rows.length>query.limit;
+    const rows=result.rows.slice(0,query.limit);
+    const nextCursor=hasMore?pageQuery.cursor(rows.at(-1)!):null;
+    for(const row of rows) delete row.__operationCursorValue;
+    return {columns,rows,idKey:'id',page:{limit:query.limit,nextCursor,hasMore}};
+  }
+  async summary(resource:string,user?:ScopePrincipal,raw:Record<string,unknown>={}) {
+    const query=parseOperationQuery(resource,raw);
+    // Independent aggregate statement; never calls list or transfers history rows.
+    const {scope}=this.source(resource,user);
+    const params:unknown[]=scope===null?[]:[scope];
+    const where=scope===null?'TRUE':'s.id=ANY($1::uuid[])';
+    const join=' JOIN sites si ON si.id=x.site_id JOIN schools s ON s.id=si.school_id';
+    let source:string;
+    switch(resource) {
+      case 'billing': source=`SELECT x.id,to_char(x.period_end,'YYYY-MM') AS period,s.name AS "schoolName",si.name AS "siteName",x.status,x.amount FROM billing_cycles x${join} WHERE ${where}`;break;
+      case 'documents':case 'receipts': source=`SELECT x.id,x.document_number AS "documentNumber",x.document_type AS type,s.name AS "schoolName",si.name AS "siteName",x.status,x.amount,to_char(x.issue_date,'YYYY-MM-DD') AS "issueDate" FROM documents x${join} WHERE ${where}${resource==='receipts'?" AND x.document_type='receipt'":''}`;break;
+      case 'sites':source=`SELECT si.id,si.name,s.name AS "schoolName",si.capacity_mwp AS "capacityMwp",CASE WHEN si.status IN ('inactive','archived') THEN si.status WHEN g.last_seen_at>=now()-interval '2 minutes' THEN 'online' ELSE 'offline' END AS status FROM sites si JOIN schools s ON s.id=si.school_id LEFT JOIN LATERAL (SELECT last_seen_at FROM gateways WHERE site_id=si.id ORDER BY id LIMIT 1) g ON true WHERE ${where}`;break;
+      case 'schools':source=`SELECT s.id,s.name,s.code,s.region FROM schools s WHERE ${where}`;break;
+      case 'contracts':source=`SELECT x.id,x.id::text AS "contractNumber",s.name AS "schoolName",si.name AS "siteName",x.signer_name AS signers,x.status,to_char(x.start_date,'YYYY-MM-DD') AS "startDate" FROM contracts x${join} WHERE ${where}`;break;
+      case 'alerts':source=`SELECT x.id,x.title,x.detail,x.severity,x.status,x.occurred_at AS "occurredAt" FROM alerts x${join} WHERE ${where}`;break;
+      case 'notifications':params.splice(0,params.length,user?.id);source='SELECT id,title,channel,recipient,status,created_at AS "sentAt" FROM notification_deliveries WHERE user_id=$1';break;
+      case 'reports':params.splice(0,params.length,user?.id);source='SELECT id,title,report_type AS category,status,created_at AS "generatedAt" FROM generated_reports WHERE created_by=$1';break;
+      case 'users':source=`SELECT u.id,u.display_name AS "displayName",u.email,u.role,u.status FROM users u LEFT JOIN schools s ON s.id=u.school_id WHERE ${where}`;break;
+      case 'audit':source=`SELECT a.id,a.action,a.entity_type AS "entityType",a.entity_id AS "entityId",u.display_name AS actor,a.reason,a.correlation_id AS "correlationId",a.occurred_at AS time FROM audit_events a LEFT JOIN users u ON u.id=a.actor_id LEFT JOIN schools s ON s.id=u.school_id WHERE ${where}`;break;
+      default:throw new NotFoundException('Unknown resource');
+    }
+    const filter=operationPredicate(resource,query,params).join(' AND ')||'TRUE';
+    const totals=resource==='billing'?",count(*) FILTER (WHERE q.status='paid')::int AS paid,coalesce(sum(q.amount),0) AS amount,coalesce(sum(q.amount) FILTER (WHERE q.status='paid'),0) AS paid_amount":resource==='documents'||resource==='receipts'?',coalesce(sum(q.amount),0) AS amount':resource==='sites'?",count(*) FILTER (WHERE q.status='online')::int AS online,coalesce(sum(q.\"capacityMwp\"),0) AS capacity":'';
+    const {rows}=await this.db.query(`SELECT count(*)::int AS count${totals} FROM (${source}) q WHERE ${filter}`,params);
+    const r=rows[0]!;
+    const item=(label:string,value:unknown,unit:string)=>({label,value:Number(value),unit,note:'จากข้อมูลในระบบ'});
+    if(resource==='sites')return [item('ไซต์งานทั้งหมด',r.count,'ไซต์'),item('ออนไลน์',r.online,'ไซต์'),item('กำลังติดตั้งรวม',r.capacity,'MWp')];
+    if(resource==='billing')return [item('ใบเรียกเก็บเงิน',r.count,'ฉบับ'),item('บิลที่จ่ายแล้ว',r.paid,'ฉบับ'),item('ยอดเรียกเก็บรวม',r.amount,'บาท'),item('ชำระแล้ว',r.paid_amount,'บาท')];
+    if(resource==='receipts'||resource==='documents')return [item('เอกสารทั้งหมด',r.count,'ฉบับ'),item('ยอดรวม',r.amount,'บาท')];
+    return [item('รายการทั้งหมด',r.count,'รายการ')];
   }
 }
-

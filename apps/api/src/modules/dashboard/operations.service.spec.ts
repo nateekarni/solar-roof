@@ -13,7 +13,7 @@ test("unassigned school user receives no operations data", async () => {
 test("site list binds scope and removes generated gateway values", async () => {
   const db={query:async(sql:string,params:unknown[])=>{
     assert.ok(sql.includes("$1"));
-    assert.deepEqual(params,[["school-a"]]);
+    assert.deepEqual(params,[["school-a"],26]);
     assert.equal(sql.includes("GW-01"),false);
     return {rows:[]};
   }};

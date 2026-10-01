@@ -1,3 +1,5 @@
+export type { OperationQuery, OperationPage } from './operations.js';
+
 export interface ApiEnvelope<T> {
   data: T;
   traceId?: string;

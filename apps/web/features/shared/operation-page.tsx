@@ -3,13 +3,14 @@ import { redirect } from "next/navigation";
 import { createTranslator, type Locale } from "@solar/i18n";
 import { serverFetch, getApiBaseUrl } from "../../lib/server-fetch";
 import { OperationPageHeader } from "./operation-page-header";
-import { OperationTable } from "./operation-table";
+import { OperationQueryTable } from "./operation-query-table";
 import { OperationAutoRefresh } from "./operation-auto-refresh";
 
 type OperationResponse = {
   columns: string[];
   rows: any[];
   idKey?: string | undefined;
+  page: {limit:number;nextCursor:string|null;hasMore:boolean};
 };
 
 type SummaryItem = {
@@ -21,32 +22,12 @@ type SummaryItem = {
 
 type SummaryResponse = SummaryItem[];
 
-function getCacheConfig(resource: string): RequestInit {
-  const revalidateMap: Record<string, number> = {
-    alerts: 0,
-    notifications: 0,
-    billing: 60,
-    schools: 300,
-    sites: 0,
-    contracts: 600,
-    documents: 600,
-    users: 600,
-    reports: 600,
-    audit: 300,
-  };
-  const seconds = revalidateMap[resource];
-  if (seconds === undefined || seconds === 0) {
-    return { cache: "no-store" };
-  }
-  return { next: { revalidate: seconds } };
-}
-
 async function getOperationData(
   resource: string,
 ): Promise<{ data: OperationResponse; summary: SummaryResponse }> {
   const baseUrl = getApiBaseUrl();
 
-  const fetchOptions = getCacheConfig(resource);
+  const fetchOptions: RequestInit = { cache: "no-store" };
 
   const [rowsRes, summaryRes] = await Promise.all([
     serverFetch(`${baseUrl}/v1/operations/${resource}`, fetchOptions),
@@ -110,11 +91,10 @@ export async function OperationPage({
           description={displayDescription}
           action={displayAction}
         />
-        <OperationTable
+        <OperationQueryTable
           resource={resource}
           title={displayTitle}
-          columns={data.columns || []}
-          rows={data.rows || []}
+          initial={{...data,idKey:data.idKey||'id'}}
           summary={summary}
           idKey={data.idKey}
         />

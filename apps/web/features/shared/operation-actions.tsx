@@ -59,11 +59,13 @@ export function OperationActions({
   const handleExport = async () => {
     setExporting(true);
     try {
-      const blob = await apiClient.getBlob(`/v1/operations/${resource}/export`);
+      const query = new URLSearchParams(searchParams.toString());
+      query.delete('cursor');query.delete('action');
+      const blob = await apiClient.getBlob(`/v1/operations/${resource}/export?${query}`);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${resource}-${new Date().toISOString().slice(0, 10)}.csv`;
+        a.download = `${resource}-first-100-${new Date().toISOString().slice(0, 10)}.csv`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -99,7 +101,7 @@ export function OperationActions({
         className="h-9 gap-1.5 text-xs font-medium bg-white text-foreground hover:bg-neutral-50 dark:bg-card dark:text-card-foreground border border-border shadow-xs cursor-pointer"
       >
         <Download className="size-3.5" />
-        <span>{exporting ? t("common.loading") : t("common.exportCsv")}</span>
+          <span>{exporting ? t("common.loading") : locale === 'th' ? 'CSV: สูงสุด 100 รายการแรก' : 'CSV: first 100 matching rows'}</span>
       </Button>
 
       {financialAction && financial.unavailable[financialAction] && <p role="status" className="text-xs text-muted-foreground">{financial.unavailable[financialAction]}</p>}

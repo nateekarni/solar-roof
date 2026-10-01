@@ -88,6 +88,7 @@ interface DataTableProps<TData, TValue> {
   actionsComponent?: React.ReactNode;
   pageSize?: number;
   onRowClick?: (row: TData) => void;
+  serverManaged?: boolean;
 }
 
 export function DataTable<TData, TValue>({
@@ -99,6 +100,7 @@ export function DataTable<TData, TValue>({
   actionsComponent,
   pageSize = 10,
   onRowClick,
+  serverManaged = false,
 }: DataTableProps<TData, TValue>) {
   const locale = useLocale();
   const [sorting, setSorting] = React.useState<SortingState>([]);
@@ -109,6 +111,10 @@ export function DataTable<TData, TValue>({
   const table = useReactTable({
     data,
     columns,
+    manualPagination: serverManaged,
+    manualFiltering: serverManaged,
+    manualSorting: serverManaged,
+    enableSorting: !serverManaged,
     state: {
       sorting,
       columnFilters,
@@ -135,7 +141,7 @@ export function DataTable<TData, TValue>({
       {/* Table Toolbar */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-1 items-center gap-2">
-          <div className="relative w-full max-w-xs">
+          {!serverManaged && <div className="relative w-full max-w-xs">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
             <Input
               placeholder={searchPlaceholder}
@@ -143,7 +149,7 @@ export function DataTable<TData, TValue>({
               onChange={(event) => setGlobalFilter(event.target.value)}
               className="h-9 pl-8 text-xs bg-white dark:bg-card border-border shadow-2xs"
             />
-          </div>
+          </div>}
           {filterComponent}
         </div>
 
@@ -258,7 +264,7 @@ export function DataTable<TData, TValue>({
         </div>
 
         {/* Pagination Bar */}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-4 py-3 bg-card/60">
+        {!serverManaged && <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-4 py-3 bg-card/60">
           <div className="text-xs text-muted-foreground">
             แสดง <span className="font-semibold text-foreground">{table.getRowModel().rows.length}</span> จากทั้งหมด{" "}
             <span className="font-semibold text-foreground">{table.getFilteredRowModel().rows.length}</span> รายการ
@@ -334,7 +340,7 @@ export function DataTable<TData, TValue>({
               </Button>
             </div>
           </div>
-        </div>
+        </div>}
       </div>
     </div>
   );

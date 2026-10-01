@@ -73,6 +73,7 @@ export interface OperationTableProps {
   rows: Record<string, any>[];
   summary: SummaryItem[];
   idKey?: string | undefined;
+  serverManaged?: boolean;
 }
 
 const COLUMN_TRANSLATIONS: Record<string, string> = {
@@ -125,6 +126,7 @@ export function OperationTable({
   rows,
   summary,
   idKey = "id",
+  serverManaged = false,
 }: OperationTableProps) {
   const t = useT();
   const locale = useLocale();
@@ -650,6 +652,7 @@ export function OperationTable({
       {/* Mobile Card View (< 768px) */}
       <div className="block md:hidden">
         <OperationCardList
+          serverManaged={serverManaged}
           resource={resource}
           title={title}
           columns={rawColumns}
@@ -663,6 +666,7 @@ export function OperationTable({
       {/* Desktop Shadcn DataTable (>= 768px) */}
       <div className="hidden md:block">
         <DataTable
+          serverManaged={serverManaged}
           columns={tableColumns}
           data={rows}
           searchPlaceholder={searchPlaceholder}

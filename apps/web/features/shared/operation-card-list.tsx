@@ -54,6 +54,7 @@ export interface OperationCardListProps {
   idKey?: string;
   pageSize?: number;
   onOpenDetail?: (row: Record<string, any>) => void;
+  serverManaged?: boolean;
 }
 
 export function OperationCardList({
@@ -64,6 +65,7 @@ export function OperationCardList({
   idKey = "id",
   pageSize = 10,
   onOpenDetail,
+  serverManaged = false,
 }: OperationCardListProps) {
   const t = useT();
   const locale = useLocale();
@@ -118,7 +120,7 @@ export function OperationCardList({
 
   // Filter rows based on search term
   const filteredRows = React.useMemo(() => {
-    if (!searchTerm.trim()) return rows;
+    if (serverManaged || !searchTerm.trim()) return rows;
     const term = searchTerm.toLowerCase();
     return rows.filter((row) => {
       return Object.entries(row).some(([key, val]) => {
@@ -126,15 +128,16 @@ export function OperationCardList({
         return String(val ?? "").toLowerCase().includes(term);
       });
     });
-  }, [rows, searchTerm, idKey]);
+  }, [rows, searchTerm, idKey, serverManaged]);
 
   // Pagination
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const pagedRows = React.useMemo(() => {
+    if(serverManaged) return rows;
     const start = (currentPage - 1) * pageSize;
     return filteredRows.slice(start, start + pageSize);
-  }, [filteredRows, currentPage, pageSize]);
+  }, [filteredRows, currentPage, pageSize, rows, serverManaged]);
 
   // Column keys
   const keys = React.useMemo(() => {
@@ -152,7 +155,7 @@ export function OperationCardList({
   return (
     <div className="space-y-3">
       {/* Search Input */}
-      <div className="relative">
+      {!serverManaged && <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
         <Input
           placeholder={locale === "th" ? `ค้นหา ${title}...` : `Search ${title}...`}
@@ -163,7 +166,7 @@ export function OperationCardList({
           }}
           className="pl-9 h-10 text-xs bg-card border-border shadow-2xs rounded-lg"
         />
-      </div>
+      </div>}
 
       {/* Cards List */}
       {pagedRows.length === 0 ? (
@@ -595,7 +598,7 @@ export function OperationCardList({
       )}
 
       {/* Mobile Pagination */}
-      {totalPages > 1 && (
+      {!serverManaged && totalPages > 1 && (
         <div className="flex items-center justify-between pt-2 px-1 text-xs">
           <span className="text-muted-foreground font-medium">
             {locale === "th"
