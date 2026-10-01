@@ -51,6 +51,7 @@ services:
       retries: 30
   storage:
     image: ghcr.io/coollabsio/minio@sha256:69b55a1c1c5dc285ce04db96689f5b2102317fc77a50680a1874ca6efd1c87f9
+    ports: ["127.0.0.1:19000:9000"]
     command: ["server", "/data"]
     environment:
       MINIO_ROOT_USER: solar-ci
@@ -88,6 +89,12 @@ services:
     image: solar-worker:ci
     environment:
       NODE_ENV: production
+      REPORT_WORKER_ENABLED: "false"
+      STORAGE_ENDPOINT: http://storage:9000
+      STORAGE_REGION: us-east-1
+      STORAGE_BUCKET: solar-readiness
+      STORAGE_ACCESS_KEY: solar-ci
+      STORAGE_SECRET_KEY: ci-storage-only-password
       DATABASE_URL: postgresql://solar:ci-only-password@postgres:5432/solar_readiness
       MQTT_URL: mqtt://mqtt:1883
       MQTT_USERNAME: ci-test

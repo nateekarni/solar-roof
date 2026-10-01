@@ -31,5 +31,6 @@ export function routeAllowed(role: string, method: string, rawPath: string): boo
   if (/^\/v1\/users(?:\/|$)/.test(path)) return ["owner", "admin"].includes(role);
   if (/^\/v1\/alerts(?:\/|$)/.test(path)) return read || ["owner", "admin", "operator"].includes(role);
   if (/^\/v1\/reports(?:\/|$)/.test(path)) return read || method === "POST";
+  if (/^\/v1\/jobs(?:\/|$)/.test(path)) return read || method === 'POST' && /^\/v1\/jobs\/[^/]+\/(cancel|retry)$/.test(path);
   return read && /^\/v1\/(?:dashboard|operations)(?:\/|$)/.test(path);
 }

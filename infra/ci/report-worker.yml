@@ -1,0 +1,4 @@
+services:
+  worker:
+    environment:
+      REPORT_WORKER_ENABLED: "true"

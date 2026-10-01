@@ -1,0 +1,21 @@
+import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { DatabaseService } from '../../database/database.service.js';
+import { schoolScope } from '../../common/auth/resource-scope.js';
+@Injectable()
+export class JobAccessService {
+ constructor(@Inject(DatabaseService) private readonly db:DatabaseService) {}
+ async current(userId:string,job?:any,query=this.db.query.bind(this.db)) {
+  const user=(await query('SELECT id,role,status,school_id AS "schoolId" FROM users WHERE id=$1',[userId])).rows[0];
+  if(!user || user.status!=='active')throw new ForbiddenException();
+  const scope=schoolScope(user);
+  if(scope?.length===0)throw new ForbiddenException();
+  if(job && (job.created_by!==userId || (job.payload.type==='audit'&&!['owner','admin'].includes(user.role)) || (scope!==null&&(job.scope===null||job.scope.some((id:string)=>!scope.includes(id))))))throw new ForbiddenException();
+  return {user,scope};
+ }
+ async get(userId:string,id:string) {
+  const job=(await this.db.query('SELECT * FROM platform_jobs WHERE id::text=$1',[id])).rows[0];
+  if(!job)throw new NotFoundException('Job not found');
+  await this.current(userId,job);return job;
+ }
+ record(job:any) {return {id:job.id,kind:job.kind,status:job.status,progress:job.progress,rowCount:job.row_count===null?null:Number(job.row_count),snapshotAt:job.snapshot_at?.toISOString()??null,createdBy:job.created_by,attempt:job.attempt,errorCode:job.error_code,objectKey:job.object_key};}
+}

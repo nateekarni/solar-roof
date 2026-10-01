@@ -84,3 +84,4 @@ export interface DashboardSummaryResponse {
 }
 
 export type { FinancialAction, Capabilities } from './capabilities.js';
+export type { JobRecord, JobStatus } from './jobs.js';
