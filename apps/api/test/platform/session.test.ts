@@ -77,7 +77,7 @@ test('sessions enforce expiry and user binding; current account status and role 
 }));
 
 test('malformed cookies reject authentication without 500 or bearer fallback',async()=>fixture(async(_db,_user,login)=>{
-  const tokens=await login();const denied=await me(tokens.accessToken,{Cookie:'access_token=%ZZ',Origin:'http://localhost:3000'});assert.equal(denied.status,401);
+  const tokens=await login();const denied=await me(tokens.accessToken,{Cookie:'access_token=%ZZ',Origin:'http://localhost:13000'});assert.equal(denied.status,401);
   assert.equal(denied.headers.get('X-Auth-Retry-Safe'),'1');
   assert.equal(denied.headers.get('Access-Control-Expose-Headers'),'X-Auth-Retry-Safe');
   assert.equal((await post('/refresh',{refreshToken:tokens.refreshToken},{Cookie:'refresh_token=%ZZ'})).status,401);

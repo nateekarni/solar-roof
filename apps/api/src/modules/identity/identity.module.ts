@@ -7,11 +7,12 @@ import { AuthService } from "./auth.service.js";
 import { InvitationService } from "./invitation.service.js";
 import { JwtAuthGuard } from "./jwt.guard.js";
 import { MeController } from "./me.controller.js";
+import { InvitationController } from "./invitation.controller.js";
 import { UsersController } from "./users.controller.js";
 
 @Module({
   imports: [DatabaseModule],
-  controllers: [AuthController, MeController, UsersController],
+  controllers: [AuthController, MeController, UsersController, InvitationController],
   providers: [
     {
       provide: AuthService,

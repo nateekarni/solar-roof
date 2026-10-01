@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Check, Copy, UserPlus } from "lucide-react";
+import { UserPlus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import * as React from "react";
 import { useForm } from "react-hook-form";
@@ -57,15 +57,17 @@ export function InviteUserDialog({
   const [selectedRole, setSelectedRole] = React.useState<"owner" | "admin" | "school_user">("school_user");
   const [invitedResult, setInvitedResult] = React.useState<{
     email: string;
-    tempPassword?: string;
+    invitationId: string;
+    status: "pending_delivery" | "sent" | "delivery_failed";
     message: string;
   } | null>(null);
-  const [copied, setCopied] = React.useState(false);
+
 
   const {
     register,
     handleSubmit,
     setValue,
+    getValues,
     reset,
     formState: { errors },
   } = useForm<UserFormValues>({
@@ -80,7 +82,7 @@ export function InviteUserDialog({
   React.useEffect(() => {
     if (open) {
       setInvitedResult(null);
-      setCopied(false);
+
       apiClient
         .get<SchoolOption[]>("/v1/schools")
         .then((data) => {
@@ -91,32 +93,29 @@ export function InviteUserDialog({
     }
   }, [open, setValue]);
 
+  const deliveryMessage = (status: "pending_delivery" | "sent" | "delivery_failed") => {
+    if(status==='sent')return locale==='th'?'ส่งอีเมลคำเชิญแล้ว ผู้รับต้องเปิดลิงก์ภายใน 24 ชั่วโมง':'Invitation email sent. The recipient must activate within 24 hours.';
+    if(status==='delivery_failed')return locale==='th'?'ส่งอีเมลไม่สำเร็จ กรุณาส่งคำเชิญอีกครั้ง':'Email delivery failed. Resend the invitation.';
+    return locale==='th'?'บันทึกคำเชิญแล้ว อีเมลยังไม่ได้ส่ง':'Invitation saved. Email has not been sent.';
+  };
+
   const onSubmit = async (values: UserFormValues) => {
     setLoading(true);
     try {
       const res = await apiClient.post<any>("/v1/users/invite", values);
       setInvitedResult({
-        email: res.email,
-        tempPassword: res.tempPassword,
-        message: res.message,
+        email: values.email,
+        invitationId: res.invitationId,
+        status: res.status,
+        message: deliveryMessage(res.status),
       });
-      notify.success(
-        locale === "th" ? "เชิญและสร้างผู้ใช้งานสำเร็จ" : "User invited successfully"
-      );
+      (res.status === "sent" ? notify.success : res.status === "delivery_failed" ? notify.error : notify.info)(deliveryMessage(res.status));
       reset();
       router.refresh();
     } catch (err: any) {
       notify.error(err.message || "เกิดข้อผิดพลาดในการสร้างผู้ใช้");
     } finally {
       setLoading(false);
-    }
-  };
-
-  const copyPassword = () => {
-    if (invitedResult?.tempPassword) {
-      navigator.clipboard.writeText(invitedResult.tempPassword);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
     }
   };
 
@@ -143,42 +142,21 @@ export function InviteUserDialog({
 
         {invitedResult ? (
           <div className="space-y-4 py-3">
-            <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 space-y-2.5">
-              <p className="text-xs font-semibold text-emerald-800 dark:text-emerald-300">
+            <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-2.5">
+              <p role="status" className="text-xs font-semibold">
                 {invitedResult.message}
               </p>
-              {invitedResult.tempPassword && (
-                <div className="rounded-lg bg-background border border-border p-3 space-y-1">
-                  <span className="text-[11px] text-muted-foreground">รหัสผ่านชั่วคราว (Temporary Password):</span>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-mono text-sm font-bold text-foreground">
-                      {invitedResult.tempPassword}
-                    </span>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={copyPassword}
-                      className="h-8 gap-1 text-xs"
-                    >
-                      {copied ? (
-                        <>
-                          <Check className="size-3.5 text-emerald-600" />
-                          <span className="text-emerald-600">คัดลอกแล้ว</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="size-3.5" />
-                          <span>คัดลอก</span>
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                </div>
-              )}
             </div>
 
             <DialogFooter>
+              <Button type="button" variant="outline" disabled={loading} onClick={async()=>{
+                setLoading(true);
+                try {
+                  const result=await apiClient.post<{status:"pending_delivery"|"sent"|"delivery_failed"}>(`/v1/users/invitations/${invitedResult.invitationId}/resend`,{});
+                  setInvitedResult({...invitedResult,status:result.status,message:deliveryMessage(result.status)});
+                } catch(error) {notify.error(error instanceof Error?error.message:'Unable to resend');}
+                finally {setLoading(false);}
+              }}>{loading?(locale==='th'?'กำลังส่ง…':'Sending…'):(locale==='th'?'ส่งคำเชิญอีกครั้ง':'Resend invitation')}</Button>
               <Button
                 type="button"
                 size="sm"
@@ -208,6 +186,15 @@ export function InviteUserDialog({
             </div>
 
             <div className="space-y-1.5">
+              <Button type="button" variant="outline" disabled={loading} onClick={async()=>{
+                setLoading(true);
+                const email=getValues('email').trim();
+                try {
+                  const result=await apiClient.get<{invitationId:string;status:"pending_delivery"|"sent"|"delivery_failed"}>(`/v1/users/invitations?email=${encodeURIComponent(email)}`);
+                  setInvitedResult({...result,email,message:deliveryMessage(result.status)});
+                } catch(error) {notify.error(error instanceof Error?error.message:'Unable to find invitation');}
+                finally {setLoading(false);}
+              }}>{locale==='th'?'ค้นหาคำเชิญเดิม':'Find existing invitation'}</Button>
               <Label htmlFor="u-name" required className="text-xs font-medium">
                 {locale === "th" ? "ชื่อ-นามสกุล" : "Display Name"}
               </Label>
@@ -271,6 +258,7 @@ export function InviteUserDialog({
             )}
 
             <DialogFooter>
+
               <Button
                 type="button"
                 variant="outline"

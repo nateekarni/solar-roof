@@ -33,7 +33,7 @@ test('competing runner and unfinished suites fail without stopping the owning Do
   assert.ok(competing.stderr.includes('locked'));
   assert.ok(competing.stdout.includes('Implemented:'));
   assert.ok(competing.stdout.includes('Not ready:'));
-  const missing=spawnSync(bash,['scripts/ci/platform-check.sh','invitation'],{cwd:root,encoding:'utf8'});
+  const missing=spawnSync(bash,['scripts/ci/platform-check.sh','csrf'],{cwd:root,encoding:'utf8'});
   assert.equal(missing.status,1);
   assert.equal((await fetch(process.env.READINESS_API_URL+'/health')).status,200);
 });

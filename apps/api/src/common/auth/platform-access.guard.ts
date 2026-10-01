@@ -2,6 +2,7 @@ import { ForbiddenException, Inject, Injectable, NotFoundException, type CanActi
 import { Reflector } from "@nestjs/core";
 import { DatabaseService } from "../../database/database.service.js";
 import { IS_PUBLIC_KEY } from "../../modules/identity/public.decorator.js";
+import { canGrantInvitation } from "../../modules/identity/invitation.service.js";
 import { routeAllowed, schoolScope } from "./route-policy.js";
 
 @Injectable()
@@ -24,6 +25,12 @@ export class PlatformAccessGuard implements CanActivate {
         if(!req.body.schoolId && scope.length===1) req.body.schoolId=scope[0];
         if(!scope.includes(req.body.schoolId)) throw new ForbiddenException("Cannot invite outside assigned school");
       }
+    }
+    if (/^\/v1\/users\/invitations\/[^/]+\/resend$/.test(path) && req.method === "POST") {
+      const id=path.split("/")[4];
+      const invitation=(await this.db.query('SELECT role,school_id FROM user_invitations WHERE id::text=$1',[id])).rows[0];
+      if(!invitation)throw new NotFoundException("Invitation not found");
+      if(!canGrantInvitation({...req.user,status:'active'},invitation.role,invitation.school_id))throw new ForbiddenException("Cannot resend outside invitation role or school scope");
     }
     if (scope !== null && req.method === "POST" && path === "/v1/sites" && !req.body?.schoolId) {
       const assigned = await this.db.query("SELECT id FROM schools WHERE id=ANY($1::uuid[]) AND name=$2", [scope, req.body?.schoolName ?? ""]);

@@ -1,6 +1,10 @@
 x-api-env: &api-env
   NODE_ENV: production
   API_PORT: 3001
+  WEB_URL: http://localhost:13000
+  SMTP_HOST: smtp-capture
+  SMTP_PORT: 1025
+  SMTP_FROM: fixture@example.test
   DATABASE_URL: postgresql://solar:ci-only-password@postgres:5432/solar_readiness
   REDIS_URL: redis://redis:6379
   MQTT_URL: mqtt://mqtt:1883
@@ -16,6 +20,11 @@ x-api-env: &api-env
   BOOTSTRAP_ADMIN_EMAIL: bootstrap@example.test
   BOOTSTRAP_ADMIN_PASSWORD: Ci-bootstrap-original-123!
 services:
+  smtp-capture:
+    image: node:24.20.0-bookworm-slim
+    command: [node, /fixture/smtp-capture.mjs]
+    volumes: ['./smtp-capture.mjs:/fixture/smtp-capture.mjs:ro']
+    ports: ['127.0.0.1:18025:8025']
   postgres:
     image: timescale/timescaledb:2.18.2-pg16
     environment:
@@ -96,5 +105,3 @@ services:
     ports: ["127.0.0.1:13000:3000"]
     depends_on:
       api: {condition: service_healthy}
-
-

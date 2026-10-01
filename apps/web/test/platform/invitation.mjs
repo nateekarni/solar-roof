@@ -1,0 +1,60 @@
+import assert from 'node:assert/strict';
+import {randomUUID,randomBytes,scryptSync} from 'node:crypto';
+import {createRequire} from 'node:module';
+import {chromium} from '@playwright/test';
+const {Pool}=createRequire(new URL('../../../api/package.json',import.meta.url))('pg');
+const api=process.env.READINESS_API_URL,web=process.env.READINESS_WEB_URL;
+assert.equal(api,'http://127.0.0.1:13001');assert.equal(web,'http://localhost:13000');
+const connection=process.env.READINESS_DATABASE_URL;
+assert.equal(connection,'postgresql://solar:ci-only-password@127.0.0.1:15432/solar_readiness');
+const db=new Pool({connectionString:connection});
+const owner=randomUUID(),school=randomUUID(),ownerEmail=`browser-owner-${owner}@example.test`,password='Browser-local-password-123!';
+const emails=[];const fixtureIp=`2001:db8:${owner.slice(0,4)}:${owner.slice(4,8)}::bbbb`;
+const salt=randomBytes(16).toString('hex'),hash=`scrypt:${salt}:${scryptSync(password,salt,64).toString('hex')}`;
+const capture='http://127.0.0.1:18025';
+const post=(path,body,token)=>fetch(api+path,{method:'POST',headers:{'Content-Type':'application/json',Origin:web,...(token?{Authorization:`Bearer ${token}`}:{})},body:JSON.stringify(body)});
+const browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH}:{})});
+const errors=[];
+try {
+  await db.query("INSERT INTO schools(id,name,code,region) VALUES($1,'Browser invite school',$2,'fixture')",[school,school]);
+  await db.query("INSERT INTO users(id,email,display_name,role,status,password_hash) VALUES($1,$2,'Browser Owner','owner','active',$3)",[owner,ownerEmail,hash]);
+  const login=await post('/v1/auth/login',{email:ownerEmail,password});assert.equal(login.status,200);const tokens=await login.json();
+  const invite=async()=>{
+    await fetch(capture+'/ok',{method:'POST'});const email=`browser-recipient-${randomUUID()}@example.test`;emails.push(email);
+    const response=await post('/v1/users/invite',{email,displayName:'Browser Recipient',role:'school_user',schoolId:school},tokens.accessToken);assert.equal(response.status,201);const invitation=await response.json();assert.equal(invitation.status,'sent');
+    const message=(await (await fetch(capture)).json())[0].replace(/=\r\n/g,'').replace(/=3D/g,'=');const link=message.match(/http:\/\/localhost:13000\/activate\?token=[\w-]+/)[0];
+    return {...invitation,email,link};
+  };
+  const context=await browser.newContext({timezoneId:'UTC',extraHTTPHeaders:{'X-Forwarded-For':fixtureIp}}),page=await context.newPage();page.on('pageerror',error=>errors.push(error.message));
+  const first=await invite();const response=await page.goto(first.link);assert.equal(response.status(),200,'Public activation page must load');assert.equal(response.headers()['referrer-policy'],'no-referrer');
+  await page.waitForURL(web+'/activate');assert.equal(page.url().includes('token'),false);
+  await page.getByLabel('รหัสผ่าน / Password',{exact:true}).fill(password);await page.getByLabel('ยืนยันรหัสผ่าน / Confirm password').fill(password);
+  await page.getByRole('button',{name:'เปิดใช้งานบัญชี / Activate account',exact:true}).click();await page.getByRole('status').filter({hasText:'Your account is ready'}).waitFor();
+  await page.getByRole('link',{name:'เข้าสู่ระบบ / Sign in'}).click();await page.getByLabel('อีเมล',{exact:true}).fill(first.email);await page.getByLabel('รหัสผ่าน',{exact:true}).fill(password);await page.getByRole('button',{name:'เข้าสู่ระบบ',exact:true}).click();await page.waitForURL(web+'/');
+  assert.equal((await page.request.get(web+'/v1/auth/me')).status(),200);
+  const invalidPage=await browser.newPage({extraHTTPHeaders:{'X-Forwarded-For':fixtureIp}});invalidPage.on('pageerror',error=>errors.push(error.message));
+  const checkUnavailable=async link=>{await invalidPage.goto(link);await invalidPage.waitForURL(web+'/activate');await invalidPage.getByLabel('รหัสผ่าน / Password',{exact:true}).fill(password);await invalidPage.getByLabel('ยืนยันรหัสผ่าน / Confirm password').fill(password);await invalidPage.getByRole('button',{name:'เปิดใช้งานบัญชี / Activate account',exact:true}).click();await invalidPage.getByRole('alert').filter({hasText:'Ask your administrator to resend'}).waitFor();};
+  await checkUnavailable(first.link);
+  const expired=await invite();await db.query("UPDATE user_invitations SET expires_at=now()-interval '1 second' WHERE id=$1",[expired.invitationId]);await checkUnavailable(expired.link);
+  const ownerContext=await browser.newContext({timezoneId:'UTC',extraHTTPHeaders:{'X-Forwarded-For':fixtureIp}});await ownerContext.addCookies([{name:'access_token',value:tokens.accessToken,domain:'localhost',path:'/',httpOnly:true},{name:'refresh_token',value:tokens.refreshToken,domain:'localhost',path:'/',httpOnly:true}]);
+  const ownerPage=await ownerContext.newPage();ownerPage.on('pageerror',error=>errors.push(error.message));
+  await ownerPage.goto(web+'/settings/users');await ownerPage.getByRole('button',{name:'เชิญผู้ใช้',exact:true}).click();
+  const dialog=ownerPage.getByRole('dialog');
+  for(let attempt=0;attempt<10&&!await dialog.isVisible();attempt++){await ownerPage.getByRole('button',{name:'เชิญผู้ใช้',exact:true}).click();await dialog.waitFor({timeout:1000}).catch(()=>{});}
+  assert.deepEqual(errors,[],"No client errors before invite form");
+  const uiEmail=`browser-ui-${randomUUID()}@example.test`;emails.push(uiEmail);
+  await dialog.getByLabel(/^อีเมล/).fill(uiEmail);await dialog.getByLabel(/^ชื่อ-นามสกุล/).fill('UI Recipient');
+  await fetch(capture+'/fail',{method:'POST'});await dialog.getByRole('button',{name:'ยืนยัน',exact:true}).click();
+  await dialog.getByRole('status').filter({hasText:'ส่งอีเมลไม่สำเร็จ'}).waitFor();assert.equal((await dialog.innerText()).includes('Temporary Password'),false);
+  await dialog.getByRole('button',{name:'เสร็จสิ้น',exact:true}).click();await ownerPage.reload();await ownerPage.getByRole('button',{name:'เชิญผู้ใช้',exact:true}).click();
+  await dialog.getByLabel(/^อีเมล/).fill(uiEmail);await dialog.getByRole('button',{name:'ค้นหาคำเชิญเดิม',exact:true}).click();await dialog.getByRole('status').filter({hasText:'ส่งอีเมลไม่สำเร็จ'}).waitFor();
+  await fetch(capture+'/ok',{method:'POST'});await dialog.getByRole('button',{name:'ส่งคำเชิญอีกครั้ง',exact:true}).click();await dialog.getByRole('status').filter({hasText:'ส่งอีเมลคำเชิญแล้ว'}).waitFor();
+  assert.deepEqual(errors,[]);console.log('PASS: browser activation, cleared URL, no-referrer, login, reused/expired errors, failed delivery and resend UI');
+} finally {
+  await browser.close();
+  const recipients=(await db.query('SELECT id FROM users WHERE email=ANY($1::text[])',[emails])).rows.map(row=>row.id);
+  await db.query('DELETE FROM audit_events WHERE actor_id=ANY($1::uuid[])',[[owner,...recipients]]);
+  await db.query('DELETE FROM user_invitations WHERE issuer_id=$1',[owner]);
+  await db.query('DELETE FROM users WHERE email=ANY($1::text[]) OR id=$2',[emails,owner]);
+  await db.query('DELETE FROM schools WHERE id=$1',[school]);await db.end();
+}

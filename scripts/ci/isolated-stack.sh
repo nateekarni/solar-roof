@@ -40,7 +40,7 @@ fi
 # Refuse occupied ports before creating any resources, including non-Docker users.
 node --input-type=module -e '
 import net from "node:net";
-for (const port of [15432,13001,13000,18883]) {
+for (const port of [15432,13001,13000,18883,18025]) {
  const server=net.createServer();
  await new Promise((resolve,reject)=>server.once("error",reject).listen(port,"127.0.0.1",resolve));
  await new Promise(resolve=>server.close(resolve));

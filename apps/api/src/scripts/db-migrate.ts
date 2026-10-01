@@ -25,6 +25,7 @@ try {
     // Financial migration 011 is a proposal pending the user's diff review.
     "infra/migrations/012_reports_and_notifications.sql",
     "infra/migrations/018_auth_sessions.sql",
+    "infra/migrations/019_user_invitations.sql",
   ];
   for (const file of migrationFiles) {
     const sql = await readFile(new URL(`../../../../${file}`, import.meta.url), "utf8");
@@ -47,4 +48,3 @@ try {
   client.release();
   await pool.end();
 }
-

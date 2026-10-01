@@ -3,6 +3,13 @@ import { type NextRequest, NextResponse } from "next/server";
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  if (pathname === "/activate") {
+    const response=NextResponse.next();
+    response.headers.set("Referrer-Policy","no-referrer");
+    response.headers.set("Cache-Control","no-store");
+    return response;
+  }
+
   // Allow API routes, health check, and internal Next.js assets to pass through directly
   if (
     pathname.startsWith("/v1/") ||
