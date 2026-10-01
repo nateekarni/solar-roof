@@ -4,7 +4,7 @@ cd "$(dirname "$0")/../.."
 suite="${1:?Usage: platform-check.sh <suite> [--prebuilt]}"
 [[ $# -le 2 && ( $# -eq 1 || "$2" == --prebuilt ) ]] || { echo 'Invalid arguments' >&2; exit 1; }
 known='harness session invitation csrf financial-safety financial-core operations ingestion rollup reports ui-contracts ui-jobs accessibility archive recovery readiness'
-implemented=(harness session invitation csrf financial-safety operations ingestion rollup reports)
+implemented=(harness session invitation csrf financial-safety operations ingestion rollup reports ui-contracts)
 if [[ "$suite" == all-fast ]]; then
   suites=("${implemented[@]}")
   echo "Implemented: ${implemented[*]}"
@@ -28,7 +28,7 @@ if [[ " ${suites[*]} " == *' reports '* ]]; then compose+=(-f infra/ci/report-wo
 if [[ " ${suites[*]} " == *' rollup '* ]]; then
   compose+=(-f infra/ci/energy-read-model.yml)
 fi
-if [[ " ${suites[*]} " == *' csrf '* || " ${suites[*]} " == *' financial-safety '* || " ${suites[*]} " == *' operations '* ]]; then
+if [[ " ${suites[*]} " == *' csrf '* || " ${suites[*]} " == *' financial-safety '* || " ${suites[*]} " == *' operations '* || " ${suites[*]} " == *' ui-contracts '* ]]; then
   compose+=(-f infra/ci/request-edge.yml)
   export PLATFORM_EDGE_FIXTURE=true
 fi

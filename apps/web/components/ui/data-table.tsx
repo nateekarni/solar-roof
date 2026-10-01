@@ -82,6 +82,7 @@ const DEFAULT_COLUMN_TITLES: Record<string, { th: string; en: string }> = {
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
   data: TData[];
+  getRowId?: (row:TData)=>string;
   searchKey?: string;
   searchPlaceholder?: string;
   filterComponent?: React.ReactNode;
@@ -94,6 +95,7 @@ interface DataTableProps<TData, TValue> {
 export function DataTable<TData, TValue>({
   columns,
   data,
+  getRowId,
   searchKey,
   searchPlaceholder = "ค้นหา...",
   filterComponent,
@@ -110,6 +112,7 @@ export function DataTable<TData, TValue>({
 
   const table = useReactTable({
     data,
+    ...(getRowId ? {getRowId} : {}),
     columns,
     manualPagination: serverManaged,
     manualFiltering: serverManaged,

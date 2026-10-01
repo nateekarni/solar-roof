@@ -40,7 +40,8 @@ function parseToDate(input: Date | string | number): Date | null {
     // Check YYYY-MM-DD or ISO
     const trimmed = input.trim();
     if (!trimmed) return null;
-    const d = new Date(trimmed);
+    const normalized = /^\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?$/.test(trimmed) ? trimmed.replace(" ", "T") + "Z" : trimmed;
+    const d = new Date(normalized);
     if (!isNaN(d.getTime())) return d;
   }
   return null;
@@ -55,12 +56,13 @@ export function formatAppDate(
   input: Date | string | number,
   locale: "th" | "en" = "th",
 ): string {
-  const d = parseToDate(input);
+  const parsed = parseToDate(input);
+  const d = parsed ? new Date(parsed.getTime() + 7 * 60 * 60 * 1000) : null;
   if (!d) return String(input);
 
-  const day = d.getDate();
-  const monthIdx = d.getMonth();
-  const year = locale === "th" ? d.getFullYear() + 543 : d.getFullYear();
+  const day = d.getUTCDate();
+  const monthIdx = d.getUTCMonth();
+  const year = locale === "th" ? d.getUTCFullYear() + 543 : d.getUTCFullYear();
   const monthName = locale === "th" ? THAI_MONTHS[monthIdx] : ENGLISH_MONTHS[monthIdx];
 
   return `${day} ${monthName} ${year}`;
@@ -81,19 +83,21 @@ export function formatAppDateRange(
   locale: "th" | "en" = "th",
   options: { includeYear?: boolean } = { includeYear: true }
 ): string {
-  const d1 = parseToDate(fromInput);
-  const d2 = parseToDate(toInput);
+  const parsed1 = parseToDate(fromInput);
+  const d1 = parsed1 ? new Date(parsed1.getTime()+7*60*60*1000) : null;
+  const parsed2 = parseToDate(toInput);
+  const d2 = parsed2 ? new Date(parsed2.getTime()+7*60*60*1000) : null;
   if (!d1 && !d2) return "";
-  if (!d1) return formatAppDate(d2!, locale);
-  if (!d2) return formatAppDate(d1, locale);
+  if (!d1) return formatAppDate(parsed2!, locale);
+  if (!d2) return formatAppDate(parsed1!, locale);
 
-  const day1 = d1.getDate();
-  const m1 = d1.getMonth();
-  const y1 = d1.getFullYear();
+  const day1 = d1.getUTCDate();
+  const m1 = d1.getUTCMonth();
+  const y1 = d1.getUTCFullYear();
 
-  const day2 = d2.getDate();
-  const m2 = d2.getMonth();
-  const y2 = d2.getFullYear();
+  const day2 = d2.getUTCDate();
+  const m2 = d2.getUTCMonth();
+  const y2 = d2.getUTCFullYear();
 
   const monthName1 = locale === "th" ? THAI_MONTHS[m1] : ENGLISH_MONTHS[m1];
   const monthName2 = locale === "th" ? THAI_MONTHS[m2] : ENGLISH_MONTHS[m2];
@@ -139,24 +143,26 @@ export function formatAppDateTime(
   input: Date | string | number,
   locale: "th" | "en" = "th",
 ): string {
-  const d = parseToDate(input);
+  const parsed = parseToDate(input);
+  const d = parsed ? new Date(parsed.getTime() + 7 * 60 * 60 * 1000) : null;
   if (!d) return String(input);
 
-  const dateStr = formatAppDate(d, locale);
-  const hours = String(d.getHours()).padStart(2, "0");
-  const minutes = String(d.getMinutes()).padStart(2, "0");
+  const dateStr = formatAppDate(parsed!, locale);
+  const hours = String(d.getUTCHours()).padStart(2, "0");
+  const minutes = String(d.getUTCMinutes()).padStart(2, "0");
 
-  return `${dateStr} ${hours}:${minutes}`;
+  return `${dateStr} ${hours}:${minutes} (Asia/Bangkok)`;
 }
 
 /**
  * Formats time as 24-hour "HH:mm" without AM/PM
  */
 export function formatAppTime(input: Date | string | number): string {
-  const d = parseToDate(input);
+  const parsed = parseToDate(input);
+  const d = parsed ? new Date(parsed.getTime() + 7 * 60 * 60 * 1000) : null;
   if (!d) return "";
-  const hours = String(d.getHours()).padStart(2, "0");
-  const minutes = String(d.getMinutes()).padStart(2, "0");
+  const hours = String(d.getUTCHours()).padStart(2, "0");
+  const minutes = String(d.getUTCMinutes()).padStart(2, "0");
   return `${hours}:${minutes}`;
 }
 

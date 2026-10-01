@@ -1,4 +1,4 @@
-import { OperationActions } from "./operation-actions";
+import { OperationActions } from "./operation-page-actions";
 
 export function OperationPageHeader({
   resource,

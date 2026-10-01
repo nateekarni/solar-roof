@@ -85,6 +85,7 @@ async function request(endpoint: string, options: RequestInit = {}): Promise<Res
     }
   }
 
+  if(response.status===403 && !endpoint.endsWith("/auth/capabilities") && typeof window!=="undefined")window.dispatchEvent(new Event("operation-permission-denied"));
   return response;
 }
 
@@ -93,7 +94,7 @@ export const apiClient = {
     const res = await request(endpoint, { ...options, method: "GET" });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ message: res.statusText }));
-      throw new Error(err.message || "Request failed");
+      throw new Error(res.status===403?"สิทธิ์ของคุณเปลี่ยนแล้ว กรุณาเลือกการดำเนินการที่ยังอนุญาต":err.message || "Request failed");
     }
     return res.json();
   },
@@ -114,7 +115,7 @@ export const apiClient = {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({ message: res.statusText }));
-      throw new Error(err.message || "Request failed");
+      throw new Error(res.status===403?"สิทธิ์ของคุณเปลี่ยนแล้ว กรุณาเลือกการดำเนินการที่ยังอนุญาต":err.message || "Request failed");
     }
     return res.json();
   },
@@ -134,7 +135,7 @@ export const apiClient = {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({ message: res.statusText }));
-      throw new Error(err.message || "Request failed");
+      throw new Error(res.status===403?"สิทธิ์ของคุณเปลี่ยนแล้ว กรุณาเลือกการดำเนินการที่ยังอนุญาต":err.message || "Request failed");
     }
     return res.json();
   },
@@ -154,7 +155,7 @@ export const apiClient = {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({ message: res.statusText }));
-      throw new Error(err.message || "Request failed");
+      throw new Error(res.status===403?"สิทธิ์ของคุณเปลี่ยนแล้ว กรุณาเลือกการดำเนินการที่ยังอนุญาต":err.message || "Request failed");
     }
     return res.json();
   },
@@ -163,7 +164,7 @@ export const apiClient = {
     const res = await request(endpoint, { ...options, method: "DELETE" });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ message: res.statusText }));
-      throw new Error(err.message || "Request failed");
+      throw new Error(res.status===403?"สิทธิ์ของคุณเปลี่ยนแล้ว กรุณาเลือกการดำเนินการที่ยังอนุญาต":err.message || "Request failed");
     }
     return res.json();
   },

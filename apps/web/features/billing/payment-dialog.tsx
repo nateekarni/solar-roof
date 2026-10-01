@@ -59,6 +59,7 @@ export function PaymentDialog({
     new Date().toISOString().slice(0, 16)
   );
   const [note, setNote] = React.useState<string>("");
+  const submitting=React.useRef(false);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
   const [successMsg, setSuccessMsg] = React.useState<string | null>(null);
@@ -103,19 +104,20 @@ export function PaymentDialog({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!billingCycle?.id) return;
+    if (!billingCycle?.id || submitting.current) return;
 
     if (!slipPreviewUrl) {
       setErrorMsg("กรุณาแนบไฟล์สลิปหลักฐานการโอนเงิน");
       return;
     }
 
+    submitting.current=true;
     setIsSubmitting(true);
     setErrorMsg(null);
 
     try {
       await apiClient.post(`/v1/billing-cycles/${billingCycle.id}/pay`, {
-        amount: billingCycle.amount,
+        amount: Number(billingCycle.amount),
         paidAt: new Date(paidAt).toISOString(),
         slipUrl: slipPreviewUrl,
         note: note.trim() || undefined,
@@ -129,6 +131,7 @@ export function PaymentDialog({
     } catch (err: any) {
       setErrorMsg(err?.message || "เกิดข้อผิดพลาดในการส่งหลักฐานการชำระเงิน");
     } finally {
+      submitting.current=false;
       setIsSubmitting(false);
     }
   };
@@ -276,7 +279,7 @@ export function PaymentDialog({
             </div>
 
             {errorMsg && (
-              <div className="p-2.5 rounded-lg bg-destructive/10 text-destructive text-xs flex items-center gap-2">
+              <div role="alert" className="p-2.5 rounded-lg bg-destructive/10 text-destructive text-xs flex items-center gap-2">
                 <AlertCircle className="size-4 shrink-0" />
                 <span>{errorMsg}</span>
               </div>

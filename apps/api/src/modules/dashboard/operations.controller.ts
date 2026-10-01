@@ -23,6 +23,9 @@ export class OperationsController {
     @Inject(OperationsService) private readonly operations: OperationsService,
   ) {}
 
+  @Get("documents/:id")
+  document(@Param("id") id:string,@Req() req:any) {return this.operations.document(id,req?.user);}
+
   @Get(":resource/summary")
   summary(@Param("resource") resource: string, @Req() req: any) {
     return this.operations.summary(resource, req?.user, req?.query);

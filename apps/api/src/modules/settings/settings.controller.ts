@@ -1,10 +1,10 @@
-import { Body, Controller, Delete, Get, Param, Patch, Put } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Inject, Param, Patch, Put } from "@nestjs/common";
 import { SettingsService, type SystemSettings } from "./settings.service.js";
 import { Roles } from "../../common/roles.decorator.js";
 
 @Controller("v1/settings")
 export class SettingsController {
-  constructor(private readonly settingsService: SettingsService) {}
+  constructor(@Inject(SettingsService) private readonly settingsService: SettingsService) {}
 
   @Get()
   async getSettings(): Promise<SystemSettings> {

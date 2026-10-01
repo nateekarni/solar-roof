@@ -363,7 +363,8 @@ export class BillingController {
     },
     @Req() req: Request & { user?: { id: string; role: string } }
   ) {
-    const cycleRes = await this.db.query("SELECT * FROM billing_cycles WHERE id = $1", [id]);
+    return this.db.transaction(async client=>{
+    const cycleRes = await client.query("SELECT * FROM billing_cycles WHERE id = $1 FOR UPDATE", [id]);
     const cycle = cycleRes.rows[0];
     if (!cycle) {
       throw new NotFoundException("Billing cycle not found");
@@ -378,7 +379,7 @@ export class BillingController {
     const actorId = req.user?.id || randomUUID();
 
     // Check if payment record already exists
-    const existingPayment = await this.db.query<{ id: string }>(
+    const existingPayment = await client.query<{ id: string }>(
       "SELECT id FROM payments WHERE billing_cycle_id = $1 ORDER BY paid_at DESC NULLS LAST LIMIT 1",
       [id]
     );
@@ -387,7 +388,7 @@ export class BillingController {
     const firstPayment = existingPayment.rows[0];
     if (firstPayment) {
       paymentId = firstPayment.id;
-      await this.db.query(
+      await client.query(
         `UPDATE payments 
          SET amount = $1, status = 'pending_verification', paid_at = $2, slip_url = coalesce($3, slip_url), evidence_key = coalesce($4, evidence_key), note = $5, rejection_reason = NULL
          WHERE id = $6`,
@@ -395,7 +396,7 @@ export class BillingController {
       );
     } else {
       paymentId = randomUUID();
-      await this.db.query(
+      await client.query(
         `INSERT INTO payments (id, billing_cycle_id, amount, status, paid_at, slip_url, evidence_key, note)
          VALUES ($1, $2, $3, 'pending_verification', $4, $5, $6, $7)`,
         [paymentId, id, payAmount, paidAt, slipUrl, evidenceKey, note]
@@ -403,14 +404,13 @@ export class BillingController {
     }
 
     // Update billing cycle status to 'pending_verification'
-    await this.db.query(
+    await client.query(
       "UPDATE billing_cycles SET status = 'pending_verification' WHERE id = $1",
       [id]
     );
 
     // Audit event
-    try {
-      await this.db.query(
+    await client.query(
         `INSERT INTO audit_events (
            id, actor_id, action, entity_type, entity_id, before_json, after_json, reason, correlation_id, occurred_at
          )
@@ -422,7 +422,6 @@ export class BillingController {
           JSON.stringify({ status: "pending_verification", amount: payAmount, paymentId }),
         ]
       );
-    } catch {}
 
     return {
       success: true,
@@ -430,6 +429,7 @@ export class BillingController {
       paymentId,
       status: "pending_verification",
     };
+    });
   }
 
   @Roles("owner", "accountant")

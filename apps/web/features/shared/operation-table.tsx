@@ -1,6 +1,9 @@
 "use client";
 
 import * as React from "react";
+import type {OperationRow} from "@solar/api-contracts";
+import {getOperationActions} from "./operation-actions";
+import {OperationActionList} from "./operation-action-list";
 import type { ColumnDef } from "@tanstack/react-table";
 import {
   ArrowUpDown,
@@ -70,7 +73,7 @@ export interface OperationTableProps {
   resource: string;
   title: string;
   columns: string[];
-  rows: Record<string, any>[];
+  rows: OperationRow[];
   summary: SummaryItem[];
   idKey?: string | undefined;
   serverManaged?: boolean;
@@ -133,6 +136,8 @@ export function OperationTable({
   const router = useRouter();
   const { user } = useAuth();
   const financial = useFinancialCapabilities();
+  const [permissionError,setPermissionError]=React.useState(false);
+  React.useEffect(()=>{const denied=()=>setPermissionError(true);window.addEventListener("operation-permission-denied",denied);return()=>window.removeEventListener("operation-permission-denied",denied);},[]);
   const isSchoolUser = user?.role === "school_user";
   const isOwner = user?.role === "owner";
 
@@ -196,7 +201,7 @@ export function OperationTable({
   ) => {
     setPreviewData({
       type,
-      documentId: type === "invoice" ? row.invoiceId || (resource === "documents" ? row.id : undefined) : type === "receipt" ? row.receiptId || (resource === "receipts" ? row.id : undefined) : undefined,
+      documentId: type === "invoice" ? row.invoiceId || (resource === "documents" ? row.id : undefined) : type === "receipt" ? row.receiptId || (["receipts","documents"].includes(resource) ? row.id : undefined) : undefined,
       siteId: row.siteId,
       billingCycleId: row.billingCycleId,
       documentNumber: row.documentNumber || (type === "receipt" ? row.receiptNumber : row.invoiceNumber),
@@ -258,18 +263,109 @@ export function OperationTable({
     } else if (res === "documents") {
       openDocumentPreview("invoice", item);
     } else if (res === "billing") {
-      const itemId = item[idKey] || item.id;
+      const itemId = String(item[idKey] || item.id);
       openBillingDetail(itemId, item);
     }
   };
 
-  const tableColumns = React.useMemo<ColumnDef<Record<string, any>, any>[]>(() => {
+  const handleAction = (id:string,item:OperationRow) => {
+    if(id==='detail')openBillingDetail(item.id,item);
+    else if(id==='pay'){setSelectedPayCycle(item);setPayDialogOpen(true);}
+    else if(id==='verify'){setSelectedVerifyCycle(item);setVerifyDialogOpen(true);}
+    else if(id==='invoice'||id==='receipt')openDocumentPreview(id,item);
+  };
+  const renderMenuActions=(item:OperationRow)=>{const itemId=String(item[idKey]||item.id);return <>
+                {['billing','documents','receipts'].includes(resource) ? (
+                  <OperationActionList actions={getOperationActions(resource,item,financial)} menu onAction={id=>handleAction(id,item)} />
+                ) : resource === "contracts" ? (<DropdownMenuItem onClick={()=>openDocumentPreview('contract',item)}>{locale==='th'?'ดูเอกสารสัญญา (PPA)':'View Contract (PPA)'}</DropdownMenuItem>
+                ) : resource === "sites" ? (
+                  <>
+                    <DropdownMenuItem
+                      onClick={() => openDocumentPreview("handover", item)}
+                      className="gap-2 cursor-pointer font-medium text-amber-600 dark:text-amber-400"
+                    >
+                      <Award className="size-3.5 text-amber-600 dark:text-amber-400" />
+                      <span>{locale === "th" ? "ดูหนังสือส่งมอบระบบ (Handover)" : "Handover Certificate"}</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        setSelectedTelemetrySite({
+                          id: itemId,
+                          name: String(item.name || item["ชื่อไซต์"] || item["ชื่อไซต์งาน"] || "ไซต์งาน"),
+                        });
+                        setTelemetryDialogOpen(true);
+                      }}
+                      className="gap-2 cursor-pointer font-medium text-emerald-600 dark:text-emerald-400 focus:text-emerald-600"
+                    >
+                      <Radio className="size-3.5 text-emerald-600 dark:text-emerald-400" />
+                      <span>{locale === "th" ? "สัญญาณสด & Raw Registers" : "Live Telemetry & Registers"}</span>
+                    </DropdownMenuItem>
+                    {user?.role === "admin" && (
+                      <>
+                        <DropdownMenuItem
+                          onClick={() => {
+                            setSelectedSiteId(itemId);
+                            setEditSiteOpen(true);
+                          }}
+                          className="gap-2 cursor-pointer font-medium"
+                        >
+                          <Edit className="size-3.5 text-primary" />
+                          <span>{locale === "th" ? "แก้ไขข้อมูลไซต์งาน" : "Edit Site"}</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => {
+                            setSelectedDeleteSite({
+                              id: itemId,
+                              name: String(item.name || item["ชื่อไซต์"] || item["ชื่อไซต์งาน"] || "ไซต์งาน"),
+                            });
+                            setDeleteSiteOpen(true);
+                          }}
+                          className="gap-2 cursor-pointer text-destructive focus:text-destructive font-medium"
+                        >
+                          <Trash2 className="size-3.5 text-destructive" />
+                          <span>{locale === "th" ? "ลบไซต์งาน" : "Delete Site"}</span>
+                        </DropdownMenuItem>
+                      </>
+                    )}
+                  </>
+                ) : resource === "reports" ? (
+                  <>
+                    <DropdownMenuItem
+                      onClick={() => openDocumentPreview("settlement", item)}
+                      className="gap-2 cursor-pointer font-medium text-emerald-600 dark:text-emerald-400"
+                    >
+                      <Zap className="size-3.5 text-emerald-600 dark:text-emerald-400" />
+                      <span>{locale === "th" ? "ดูสรุปรายงานพลังงาน (Settlement)" : "View Settlement Statement"}</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => openResourceDetail(resource, item)}
+                      className="gap-2 cursor-pointer font-medium"
+                    >
+                      <Eye className="size-3.5 text-primary" />
+                      <span>{locale === "th" ? "ดูรายละเอียด" : "View Details"}</span>
+                    </DropdownMenuItem>
+                  </>
+                ) : (
+                  <DropdownMenuItem
+                    onClick={() => openResourceDetail(resource, item)}
+                    className="gap-2 cursor-pointer font-medium"
+                  >
+                    <Eye className="size-3.5 text-primary" />
+                    <span>{locale === "th" ? "ดูรายละเอียด" : "View Details"}</span>
+                  </DropdownMenuItem>
+                )}
+</>;};
+  const renderMobileActions = (item:OperationRow) => ['billing','documents','receipts'].includes(resource)
+    ? <OperationActionList actions={getOperationActions(resource,item,financial)} onAction={id=>handleAction(id,item)} />
+    : <DropdownMenu><DropdownMenuTrigger asChild><Button size="sm" variant="outline">{locale==='th'?'ดูรายละเอียด':'View Details'}</Button></DropdownMenuTrigger><DropdownMenuContent>{renderMenuActions(item)}</DropdownMenuContent></DropdownMenu>;
+
+  const tableColumns = React.useMemo<ColumnDef<OperationRow, any>[]>(() => {
     const firstRow = rows[0];
     if (!firstRow) return [];
 
     const keys = operationKeys(resource,firstRow,idKey);
 
-    const cols: ColumnDef<Record<string, any>, any>[] = keys.map((key, idx) => {
+    const cols: ColumnDef<OperationRow, any>[] = keys.map((key, idx) => {
       const rawTitle = rawColumns[idx] ?? key;
       const headerTitle =
         locale === "en" && COLUMN_TRANSLATIONS[rawTitle]
@@ -280,6 +376,7 @@ export function OperationTable({
         accessorKey: key,
         meta: { title: headerTitle },
         header: ({ column }) => {
+          if(serverManaged)return <span>{headerTitle}</span>;
           return (
             <Button
               variant="ghost"
@@ -391,7 +488,7 @@ export function OperationTable({
       enableHiding: false,
       cell: ({ row }) => {
         const item = row.original;
-        const itemId = item[idKey] || item.id;
+        const itemId = String(item[idKey] || item.id);
 
         return (
           <div className="flex items-center justify-end pr-1">
@@ -407,202 +504,7 @@ export function OperationTable({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56 text-xs bg-card border-border shadow-lg">
-                {resource === "contracts" ? (
-                  <>
-                    <DropdownMenuItem
-                      onClick={() => openDocumentPreview("contract", item)}
-                      className="gap-2 cursor-pointer font-medium"
-                    >
-                      <FileCheck className="size-3.5 text-primary" />
-                      <span>{locale === "th" ? "ดูเอกสารสัญญา (PPA)" : "View Contract (PPA)"}</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => openDocumentPreview("invoice", item)}
-                      className="gap-2 cursor-pointer"
-                    >
-                      <FileText className="size-3.5 text-muted-foreground" />
-                      <span>{locale === "th" ? "ดูใบเรียกเก็บเงิน / ใบแจ้งหนี้" : "View Invoice"}</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => openDocumentPreview("receipt", item)}
-                      className="gap-2 cursor-pointer"
-                    >
-                      <Receipt className="size-3.5 text-muted-foreground" />
-                      <span>{locale === "th" ? "ดูใบเสร็จรับเงิน" : "View Receipt"}</span>
-                    </DropdownMenuItem>
-                  </>
-                ) : resource === "billing" ? (
-                  <>
-                    <DropdownMenuItem
-                      onClick={() => openBillingDetail(itemId)}
-                      className="gap-2 cursor-pointer font-medium"
-                    >
-                      <Eye className="size-3.5 text-primary" />
-                      <span>{locale === "th" ? "ดูรายละเอียดรอบบิล" : "View Billing Details"}</span>
-                    </DropdownMenuItem>
-
-                    {/* School User Pay Option */}
-                    {isSchoolUser && (item.status === "approved" || item.status === "pending_review" || item.status === "rejected" || !item.status) && (
-                      <DropdownMenuItem
-                        onClick={() => {
-                          setSelectedPayCycle(item);
-                          setPayDialogOpen(true);
-                        }}
-                        className="gap-2 cursor-pointer font-semibold text-emerald-600 dark:text-emerald-400"
-                      >
-                        <QrCode className="size-3.5 text-emerald-600" />
-                        <span>{locale === "th" ? "ชำระเงินและแนบสลิป" : "Pay with Slip"}</span>
-                      </DropdownMenuItem>
-                    )}
-
-                    {/* Admin/Owner Verify Option */}
-                    {financial.actions.includes("approve_payment") && (item.status === "pending_verification" || item.paymentStatus === "pending_verification" || item.slipUrl) && (
-                      <DropdownMenuItem
-                        onClick={() => {
-                          setSelectedVerifyCycle(item);
-                          setVerifyDialogOpen(true);
-                        }}
-                        className="gap-2 cursor-pointer font-semibold text-primary"
-                      >
-                        <ShieldCheck className="size-3.5 text-primary" />
-                        <span>{locale === "th" ? "ตรวจสอบสลิปการโอน" : "Verify Payment Slip"}</span>
-                      </DropdownMenuItem>
-                    )}
-
-                    <DropdownMenuItem
-                      onClick={() => openDocumentPreview("invoice", item)}
-                      className="gap-2 cursor-pointer"
-                    >
-                      <FileText className="size-3.5 text-muted-foreground" />
-                      <span>{locale === "th" ? "ดูใบแจ้งหนี้ (Invoice)" : "View Invoice"}</span>
-                    </DropdownMenuItem>
-                    {(() => {
-                      const isReceiptReady =
-                        item.status === "paid" ||
-                        item.paymentStatus === "approved" ||
-                        item.paymentStatus === "paid";
-                      if (isReceiptReady) {
-                        return (
-                          <DropdownMenuItem
-                            onClick={() => openDocumentPreview("receipt", item)}
-                            className="gap-2 cursor-pointer text-emerald-600 dark:text-emerald-400 font-medium"
-                          >
-                            <Receipt className="size-3.5 text-emerald-600 dark:text-emerald-400" />
-                            <span>{locale === "th" ? "ดูใบเสร็จรับเงิน" : "View Receipt"}</span>
-                          </DropdownMenuItem>
-                        );
-                      }
-                      return (
-                        <DropdownMenuItem
-                          disabled
-                          className="gap-2 opacity-50 cursor-not-allowed text-muted-foreground"
-                        >
-                          <Receipt className="size-3.5 text-muted-foreground" />
-                          <span>{locale === "th" ? "ดูใบเสร็จรับเงิน (ออกได้เมื่ออนุมัติแล้ว)" : "View Receipt (Available upon approval)"}</span>
-                        </DropdownMenuItem>
-                      );
-                    })()}
-                  </>
-                ) : resource === "receipts" || resource === "documents" ? (
-                  <>
-                    <DropdownMenuItem
-                      onClick={() => openDocumentPreview("receipt", item)}
-                      className="gap-2 cursor-pointer font-medium"
-                    >
-                      <Receipt className="size-3.5 text-primary" />
-                      <span>{locale === "th" ? "ดูใบเสร็จรับเงิน / ใบกำกับภาษี" : "View Receipt"}</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => openDocumentPreview("invoice", item)}
-                      className="gap-2 cursor-pointer"
-                    >
-                      <FileText className="size-3.5 text-muted-foreground" />
-                      <span>{locale === "th" ? "ดูใบแจ้งหนี้ / ใบเรียกเก็บเงิน" : "View Invoice"}</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => openDocumentPreview("contract", item)}
-                      className="gap-2 cursor-pointer"
-                    >
-                      <FileCheck className="size-3.5 text-muted-foreground" />
-                      <span>{locale === "th" ? "ดูเอกสารสัญญาที่เกี่ยวข้อง" : "View Contract"}</span>
-                    </DropdownMenuItem>
-                  </>
-                ) : resource === "sites" ? (
-                  <>
-                    <DropdownMenuItem
-                      onClick={() => openDocumentPreview("handover", item)}
-                      className="gap-2 cursor-pointer font-medium text-amber-600 dark:text-amber-400"
-                    >
-                      <Award className="size-3.5 text-amber-600 dark:text-amber-400" />
-                      <span>{locale === "th" ? "ดูหนังสือส่งมอบระบบ (Handover)" : "Handover Certificate"}</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => {
-                        setSelectedTelemetrySite({
-                          id: itemId,
-                          name: item.name || item["ชื่อไซต์"] || item["ชื่อไซต์งาน"] || "ไซต์งาน",
-                        });
-                        setTelemetryDialogOpen(true);
-                      }}
-                      className="gap-2 cursor-pointer font-medium text-emerald-600 dark:text-emerald-400 focus:text-emerald-600"
-                    >
-                      <Radio className="size-3.5 text-emerald-600 dark:text-emerald-400" />
-                      <span>{locale === "th" ? "สัญญาณสด & Raw Registers" : "Live Telemetry & Registers"}</span>
-                    </DropdownMenuItem>
-                    {user?.role === "admin" && (
-                      <>
-                        <DropdownMenuItem
-                          onClick={() => {
-                            setSelectedSiteId(itemId);
-                            setEditSiteOpen(true);
-                          }}
-                          className="gap-2 cursor-pointer font-medium"
-                        >
-                          <Edit className="size-3.5 text-primary" />
-                          <span>{locale === "th" ? "แก้ไขข้อมูลไซต์งาน" : "Edit Site"}</span>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => {
-                            setSelectedDeleteSite({
-                              id: itemId,
-                              name: item.name || item["ชื่อไซต์"] || item["ชื่อไซต์งาน"] || "ไซต์งาน",
-                            });
-                            setDeleteSiteOpen(true);
-                          }}
-                          className="gap-2 cursor-pointer text-destructive focus:text-destructive font-medium"
-                        >
-                          <Trash2 className="size-3.5 text-destructive" />
-                          <span>{locale === "th" ? "ลบไซต์งาน" : "Delete Site"}</span>
-                        </DropdownMenuItem>
-                      </>
-                    )}
-                  </>
-                ) : resource === "reports" ? (
-                  <>
-                    <DropdownMenuItem
-                      onClick={() => openDocumentPreview("settlement", item)}
-                      className="gap-2 cursor-pointer font-medium text-emerald-600 dark:text-emerald-400"
-                    >
-                      <Zap className="size-3.5 text-emerald-600 dark:text-emerald-400" />
-                      <span>{locale === "th" ? "ดูสรุปรายงานพลังงาน (Settlement)" : "View Settlement Statement"}</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => openResourceDetail(resource, item)}
-                      className="gap-2 cursor-pointer font-medium"
-                    >
-                      <Eye className="size-3.5 text-primary" />
-                      <span>{locale === "th" ? "ดูรายละเอียด" : "View Details"}</span>
-                    </DropdownMenuItem>
-                  </>
-                ) : (
-                  <DropdownMenuItem
-                    onClick={() => openResourceDetail(resource, item)}
-                    className="gap-2 cursor-pointer font-medium"
-                  >
-                    <Eye className="size-3.5 text-primary" />
-                    <span>{locale === "th" ? "ดูรายละเอียด" : "View Details"}</span>
-                  </DropdownMenuItem>
-                )}
+                {renderMenuActions(item)}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -620,6 +522,7 @@ export function OperationTable({
 
   return (
     <>
+      {permissionError && <p role="alert">สิทธิ์ของคุณเปลี่ยนแล้ว ระบบกำลังตรวจสอบสิทธิ์ล่าสุด กรุณาเลือกการดำเนินการที่ยังอนุญาต</p>}
       {/* Top Summary Stat Cards */}
       {summary && summary.length > 0 && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -660,6 +563,8 @@ export function OperationTable({
           idKey={idKey}
           pageSize={10}
           onOpenDetail={(row) => openResourceDetail(resource, row)}
+          renderActions={renderMobileActions}
+          onOpenSlip={url=>{setSelectedSlipImage(url);setSlipImageModalOpen(true);}}
         />
       </div>
 
@@ -669,16 +574,17 @@ export function OperationTable({
           serverManaged={serverManaged}
           columns={tableColumns}
           data={rows}
+          getRowId={row=>row.id}
           searchPlaceholder={searchPlaceholder}
           pageSize={10}
           onRowClick={(row) => {
-            const itemId = row[idKey] || row.id;
+            const itemId = String(row[idKey] || row.id);
             if (resource === "billing") {
               openBillingDetail(itemId);
             } else if (resource === "sites") {
               setSelectedTelemetrySite({
                 id: itemId,
-                name: row.name || row["ชื่อไซต์"] || row["ชื่อไซต์งาน"] || "ไซต์งาน",
+                name: String(row.name || row["ชื่อไซต์"] || row["ชื่อไซต์งาน"] || "ไซต์งาน"),
               });
               setTelemetryDialogOpen(true);
             } else {

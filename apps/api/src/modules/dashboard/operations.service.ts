@@ -1,3 +1,4 @@
+import type {OperationPage,OperationRow} from "@solar/api-contracts";
 import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { DatabaseService } from "../../database/database.service.js";
 import { operationPageSql, operationPredicate, parseOperationQuery } from "./operation-query.js";
@@ -36,11 +37,11 @@ export class OperationsService {
         sql=`SELECT b.id,b.site_id AS "siteId",to_char(b.period_end,'YYYY-MM') AS period,s.name AS "schoolName",si.name AS "siteName",
           b.consumed_kwh AS "consumedKwh",b.rate,b.amount,b.status,b.quality,b.opening_energy AS "openingEnergy",b.closing_energy AS "closingEnergy",
           p.id AS "paymentId",p.status AS "paymentStatus",p.slip_url AS "slipUrl",p.slip_url AS "หลักฐานการชำระ",p.paid_at AS "paidAt",
-          p.rejection_reason AS "rejectionReason",d.document_number AS "invoiceNumber",r.document_number AS "receiptNumber"
+          p.rejection_reason AS "rejectionReason",d.id AS "invoiceId",r.id AS "receiptId",d.document_number AS "invoiceNumber",r.document_number AS "receiptNumber"
           FROM billing_cycles b JOIN sites si ON si.id=b.site_id JOIN schools s ON s.id=si.school_id
           LEFT JOIN LATERAL (SELECT * FROM payments WHERE billing_cycle_id=b.id ORDER BY paid_at DESC NULLS LAST,id DESC LIMIT 1) p ON true
-          LEFT JOIN LATERAL (SELECT document_number FROM documents WHERE billing_cycle_id=b.id AND document_type='invoice' ORDER BY issue_date DESC,id DESC LIMIT 1) d ON true
-          LEFT JOIN LATERAL (SELECT document_number FROM documents WHERE billing_cycle_id=b.id AND document_type='receipt' ORDER BY issue_date DESC,id DESC LIMIT 1) r ON true
+          LEFT JOIN LATERAL (SELECT id,document_number FROM documents WHERE billing_cycle_id=b.id AND document_type='invoice' ORDER BY issue_date DESC,id DESC LIMIT 1) d ON true
+          LEFT JOIN LATERAL (SELECT id,document_number FROM documents WHERE billing_cycle_id=b.id AND document_type='receipt' ORDER BY issue_date DESC,id DESC LIMIT 1) r ON true
           WHERE ${where} ORDER BY b.period_end DESC,si.name`;
         columns=["รอบบิล","โรงเรียน","ไซต์","พลังงาน (kWh)","อัตรา (฿/kWh)","ยอดเงิน (฿)","หลักฐานการชำระ","สถานะ"];break;
       case "contracts":
@@ -91,17 +92,27 @@ export class OperationsService {
     sql=sql.slice(0,sql.lastIndexOf(' ORDER BY '));
     return {sql,params,columns,scope};
   }
-  async list(resource:string,user?:ScopePrincipal,raw:Record<string,unknown>={}) {
+  async list(resource:string,user?:ScopePrincipal,raw:Record<string,unknown>={}):Promise<OperationPage<OperationRow>> {
     const query=parseOperationQuery(resource,raw);
     const {sql:source,params,columns,scope}=this.source(resource,user);
     const pageQuery=operationPageSql(resource,source,params,query,user,scope);
     if(scope?.length===0) return {columns,rows:[],idKey:'id',page:{limit:query.limit,nextCursor:null,hasMore:false}};
-    const result=await this.db.query(pageQuery.sql,params);
+    const result=await this.db.query<OperationRow>(pageQuery.sql,params);
     const hasMore=result.rows.length>query.limit;
     const rows=result.rows.slice(0,query.limit);
     const nextCursor=hasMore?pageQuery.cursor(rows.at(-1)!):null;
     for(const row of rows) delete row.__operationCursorValue;
     return {columns,rows,idKey:'id',page:{limit:query.limit,nextCursor,hasMore}};
+  }
+  async document(id:string,user?:ScopePrincipal) {
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) throw new NotFoundException('Document not found');
+    const scope=schoolScope(user);
+    const params:unknown[]=[id];
+    if(scope!==null)params.push(scope);
+    const result=await this.db.query(`SELECT d.id,d.site_id AS "siteId",d.billing_cycle_id AS "billingCycleId",d.document_number AS "documentNumber",d.document_type AS "documentType",d.status,to_char(d.issue_date,'YYYY-MM-DD') AS "issueDate",d.amount,d.file_key AS "fileKey" FROM documents d JOIN sites si ON si.id=d.site_id WHERE d.id=$1 ${scope===null?'':'AND si.school_id=ANY($2::uuid[])'}`,params);
+    if(!result.rows[0])throw new NotFoundException('Document not found');
+    // Existing file keys are retained. No authorized persisted snapshot/file-read route exists yet.
+    return {...result.rows[0],previewUnavailableReason:'เอกสารนี้มีข้อมูลที่บันทึกไว้ แต่ยังไม่มีหลักฐานเอกสารต้นฉบับที่ตรวจสอบและเปิดอ่านได้ จึงไม่สามารถแสดงหรือพิมพ์เอกสารได้'};
   }
   async summary(resource:string,user?:ScopePrincipal,raw:Record<string,unknown>={}) {
     const query=parseOperationQuery(resource,raw);

@@ -1,23 +1,32 @@
 'use client';
-
-import {useEffect,useRef} from 'react';
+import {useEffect,useRef,useState} from 'react';
 import {safeReturnTo} from '@/lib/session-navigation';
 
+async function sessionPost(path:string):Promise<Response> {
+ const controller=new AbortController();
+ const timeout=setTimeout(()=>controller.abort(),10000);
+ try {return await fetch(path,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:'{}',signal:controller.signal});}
+ finally {clearTimeout(timeout);}
+}
 export default function SessionRefreshPage() {
-  const started=useRef(false);
-  useEffect(()=>{
-    if(started.current)return;
-    started.current=true;
-    const returnTo=safeReturnTo(new URLSearchParams(window.location.search).get('returnTo'));
-    void (async()=>{
-      try {
-        // Browser supplies the genuine same-origin Origin and receives HttpOnly cookies.
-        const response=await fetch('/v1/auth/refresh',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:'{}'});
-        if(response.ok) {window.location.replace(returnTo);return;}
-      } catch { /* A failed refresh must not send navigation back into a refresh loop. */ }
-      try {await fetch('/v1/auth/logout',{method:'POST',credentials:'same-origin'});}catch {}
-      window.location.replace('/login?sessionExpired=1');
-    })();
-  },[]);
-  return <main><p role="status">กำลังต่ออายุเซสชัน / Restoring your session…</p></main>;
+ const started=useRef(false);
+ const [uncertain,setUncertain]=useState(false);
+ useEffect(()=>{
+  if(started.current)return;
+  started.current=true;
+  const returnTo=safeReturnTo(new URLSearchParams(window.location.search).get('returnTo'));
+  void(async()=>{
+   try {
+    const response=await sessionPost('/v1/auth/refresh');
+    if(response.ok){window.location.replace(returnTo);return;}
+   } catch {
+    // The server may already have rotated the one-use token. Never retry this POST.
+    setUncertain(true);return;
+   }
+   try {await sessionPost('/v1/auth/logout');}
+   catch {setUncertain(true);return;}
+   window.location.replace('/login?sessionExpired=1');
+  })();
+ },[]);
+ return <main>{uncertain?<><p role="alert">ไม่สามารถยืนยันผลการต่ออายุหรือออกจากเซสชันได้ กรุณาเข้าสู่ระบบใหม่เพื่อดำเนินการต่อ</p><a href="/login?sessionExpired=1">เข้าสู่ระบบใหม่</a></>:<p role="status">กำลังต่ออายุเซสชัน / Restoring your session…</p>}</main>;
 }

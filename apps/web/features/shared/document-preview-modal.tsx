@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import type {PersistedDocumentRow} from "@solar/api-contracts";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 import { Button } from "../../components/ui/button";
 import { apiClient } from "../../lib/api-client";
@@ -20,7 +21,7 @@ export interface DocumentPreviewData {
   gridSavingsThb?: number; peakPowerKw?: number; codDate?: string; gatewaySerial?: string;
   meterSerial?: string; inverterModel?: string; inverterSerial?: string; panelModel?: string;
 }
-interface PersistedDocument { id:string; documentNumber:string; documentType:string; status:string; issueDate:string; amount:string; snapshot?: {cycle:any;company:any;customer:any;banks:any[];payment?:any}; }
+interface PersistedDocument { id:string; documentNumber:string; documentType:string; status:string; issueDate:string|null; amount:string; snapshot?: {cycle:any;company:any;customer:any;banks:any[];payment?:any}; }
 interface Period { id:string; documentNumber:string; periodStart:string; periodEnd:string; }
 const emptyCompany={companyName:"",taxId:"",branch:"",address:"",phone:"",email:""};
 const printCss=`@page{size:A4;margin:14mm}body{font-family:Arial,sans-serif;color:#172b39;margin:0;font-size:12px}article{width:100%;max-width:182mm;margin:auto}header{display:flex;justify-content:space-between;border-bottom:3px solid #14718a;padding-bottom:24px}h1{font-size:24px;color:#14718a}h2{font-size:17px}table{width:100%;border-collapse:collapse;margin:24px 0}th,td{padding:12px 8px;border-bottom:1px solid #dce5e9;text-align:left}th{background:#edf4f6}.right{text-align:right}.grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin:24px 0}.muted{color:#607481}.total{font-size:20px;text-align:right;border-top:2px solid #14718a;padding:20px 0}.signatures{display:flex;justify-content:space-between;margin-top:70px}.notice{padding:12px;background:#fff5dc}p{line-height:1.6;margin:4px 0}`;
@@ -49,17 +50,11 @@ export function DocumentPreviewModal({open,onOpenChange,data}:{open:boolean;onOp
  React.useEffect(()=>{
   if(!open||!selectedId) return;
   let active=true;setLoading(true);setError("");setDocument(null);
-  apiClient.get<{rows:Array<PersistedDocument & { siteId?: string; type?: string }>} >('/v1/operations/documents').then(response=>{
+  apiClient.get<PersistedDocumentRow>('/v1/operations/documents/'+encodeURIComponent(selectedId)).then(doc=>{
    if(!active)return;
-   const records=response.rows;
-   const doc=records.find(record=>record.id===selectedId);
-   if(!doc) throw new Error('Document not found or unavailable to this account.');
-   const list=records.filter(record=>record.siteId===doc.siteId && record.type===doc.type && record.snapshot && ['issued','finalized'].includes(record.status)).map(record=>({id:record.id,documentNumber:record.documentNumber,periodStart:String(record.snapshot!.cycle.period_start).slice(0,10),periodEnd:String(record.snapshot!.cycle.period_end).slice(0,10)}));
-   if(!doc.snapshot) throw new Error('This legacy document has no immutable snapshot; preview is unavailable.');
-   setDocument(doc);setPeriods(list);
-   const c=doc.snapshot.company;
-   setCompany({companyName:c.company_name,taxId:c.tax_id,branch:c.branch,address:c.address,phone:c.phone,email:c.email});
-   setBanks(doc.snapshot.banks||[]);
+   setDocument(doc);
+   setPeriods([]);
+   setError(doc.previewUnavailableReason);
   }).catch(e=>{if(active)setError(e.message);}).finally(()=>{if(active)setLoading(false);});
   return()=>{active=false;};
  },[open,selectedId]);

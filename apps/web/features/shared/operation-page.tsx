@@ -1,3 +1,4 @@
+import type {OperationPage as OperationPageData,OperationRow} from "@solar/api-contracts";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createTranslator, type Locale } from "@solar/i18n";
@@ -6,12 +7,7 @@ import { OperationPageHeader } from "./operation-page-header";
 import { OperationQueryTable } from "./operation-query-table";
 import { OperationAutoRefresh } from "./operation-auto-refresh";
 
-type OperationResponse = {
-  columns: string[];
-  rows: any[];
-  idKey?: string | undefined;
-  page: {limit:number;nextCursor:string|null;hasMore:boolean};
-};
+type OperationResponse = OperationPageData<OperationRow>;
 
 type SummaryItem = {
   label: string;
