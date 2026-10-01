@@ -189,6 +189,8 @@ async handleIncomingMessage(topic: string, messageStr: string | Buffer) {
     const client = await this.ingress.pool.connect(); let accepted = false;
     try {
       await client.query('BEGIN');
+      // Migration 020's energy_raw_dirty trigger durably upserts affected Bangkok days
+      // in this INSERT transaction. A dirty-day failure rolls back telemetry and prevents ACK.
       const inserted = await client.query(
         `INSERT INTO telemetry_raw (id, device_id, site_id, source_time, received_time, raw_payload, normalized_value, unit, quality, ingestion_id, semantic_field,
          voltage_v, current_a, active_power_w, apparent_power_va, reactive_power_var, frequency_hz, power_factor, total_energy_kwh, mapping_version_id, mapping_version_ids)
@@ -255,5 +257,3 @@ async handleIncomingMessage(topic: string, messageStr: string | Buffer) {
     };
   }
 }
-
-

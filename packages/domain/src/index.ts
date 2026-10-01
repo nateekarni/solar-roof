@@ -38,3 +38,4 @@ export type { FixedRateVersion, Money } from './billing/rate-calculator.js';
 export { canTransition, assertTransition } from './billing/billing-lifecycle.js';
 export type { BillingStatus } from './billing/billing-lifecycle.js';
 
+export { deriveIncrement } from './energy-increments.js';

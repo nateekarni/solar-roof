@@ -7,7 +7,8 @@
     "build": "tsc -p tsconfig.json",
     "start": "tsx src/main.ts",
     "lint": "tsc --noEmit -p tsconfig.test.json",
-    "test": "tsx --test test/*.test.ts"
+    "test": "tsx --test test/*.test.ts",
+    "energy:backfill": "tsx src/scripts/backfill-energy.ts"
   },
   "dependencies": {
     "@nestjs/common": "12.0.1",
@@ -20,11 +21,13 @@
     "exceljs": "^4.4.0",
     "express": "5.2.1",
     "ioredis": "^6.0.0",
+    "pg": "^8.23.0",
     "pino": "^10.3.1",
     "reflect-metadata": "0.2.2",
     "rxjs": "7.8.2"
   },
   "devDependencies": {
+    "@types/pg": "^8.23.1",
     "@types/express": "5.0.6"
   }
 }

@@ -1,0 +1,7 @@
+services:
+  api:
+    environment:
+      ENERGY_READ_MODEL_ENABLED: "true"
+  worker:
+    environment:
+      ENERGY_SUMMARY_WORKER_ENABLED: "true"

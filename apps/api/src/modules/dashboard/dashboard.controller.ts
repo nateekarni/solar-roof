@@ -17,7 +17,7 @@ export class DashboardController {
   async getProduction(@Req() req: {user:DashboardPrincipal}, @Query() query:DashboardQuery) {
     const {start,end}=this.range(query);
     const result = await this.dashboard.getSummary(req.user,start,end,query.site_id);
-    return result.production.map(row => ({label:row.date,value:row.value,unit:'kWh'}));
+    return result.production.map(row => ({label:row.date,value:row.value,unit:'kWh',quality:row.quality,watermark:row.watermark,reason:row.reason,reasons:row.reasons}));
   }
   @Get('revenue')
   async getRevenue(@Req() req: {user:DashboardPrincipal}, @Query() query:DashboardQuery) {

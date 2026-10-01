@@ -10,6 +10,7 @@ import { WorkerAppModule } from "./app.module.js";
 
 async function bootstrap() {
   const app = await NestFactory.create(WorkerAppModule, { logger: false });
+  app.enableShutdownHooks();
   const port = Number(process.env.WORKER_PORT ?? 3002);
 
   await app.listen(port, "0.0.0.0");

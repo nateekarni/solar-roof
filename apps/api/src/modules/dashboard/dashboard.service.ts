@@ -1,9 +1,11 @@
+import { EnergyReadService } from './energy-read.service.js';
 import { BadRequestException, ForbiddenException, Inject, Injectable } from '@nestjs/common';
 import { schoolScope } from '../../common/auth/resource-scope.js';
 import { DatabaseService } from '../../database/database.service.js';
 
 export interface DashboardPrincipal { id?:string; role?:string; schoolId?:string; assignedSchoolIds?:readonly string[]; assignedSiteIds?:readonly string[] }
 interface SiteRow {id:string;name:string;school_name:string;capacity_mwp:string;latitude:string|null;longitude:string|null;gateway_id:string|null;gateway_name:string|null;last_seen_at:string|null}
+const ENERGY_QUALITY_SEVERITY:Record<string,number>={complete:0,partial:1,missing:2,reset:3,preparing:4};
 // Ingested aggregates are cumulative meter snapshots, not energy increments. Calculate
 // consecutive per-device deltas once, with a bounded previous-day baseline. Never sum snapshots.
 const ENERGY_CTE = `WITH samples AS (
@@ -25,7 +27,7 @@ const ENERGY_CTE = `WITH samples AS (
 
 @Injectable()
 export class DashboardService {
-  constructor(@Inject(DatabaseService) private readonly db:DatabaseService) {}
+  constructor(@Inject(DatabaseService) private readonly db:DatabaseService, @Inject(EnergyReadService) private readonly energyRead:EnergyReadService = new EnergyReadService(db)) {}
 
   private async sites(user:DashboardPrincipal, siteId?:string):Promise<SiteRow[]> {
     if (!user || !['owner','admin','operator','accountant','school_user'].includes(user.role || '')) throw new ForbiddenException('Dashboard access denied');
@@ -45,7 +47,11 @@ export class DashboardService {
   }
 
   private async energy(ids:string[],start:string,end:string) {
-    return this.db.query<{site_id:string;day:string;value:string}>(`${ENERGY_CTE} SELECT site_id,day,sum(value)::text value FROM increments GROUP BY site_id,day ORDER BY day`,[ids,start,end]);
+    if (process.env.ENERGY_READ_MODEL_ENABLED==='true') {
+      const daily=await this.energyRead.daily(ids,start,end);
+      return {rows:daily.map(r=>({site_id:r.siteId,day:r.day,value:r.kwh===null?null:String(r.kwh),quality:r.quality,watermark:r.watermark,refreshedAt:r.refreshedAt,reason:r.reason}))};
+    }
+    return this.db.query<{site_id:string;day:string;value:string|null;quality?:string;watermark?:string|null;refreshedAt?:string|null;reason?:string|null}>(`${ENERGY_CTE} SELECT site_id,day,sum(value)::text value FROM increments GROUP BY site_id,day ORDER BY day`,[ids,start,end]);
   }
 
   private async power(ids:string[]) {
@@ -68,8 +74,13 @@ export class DashboardService {
       this.db.query<{title:string;detail:string;severity:string;status:string;occurred_at:string}>(`SELECT title,detail,severity,status,occurred_at::text FROM alerts WHERE site_id=ANY($1::uuid[])
         AND occurred_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok') AND occurred_at < (($3::date+1)::timestamp AT TIME ZONE 'Asia/Bangkok') ORDER BY occurred_at DESC LIMIT 5`,[ids,start,end]),
     ]);
-    const production=new Map<string,number>(); const revenue=new Map<string,number>(); const perSite=new Map<string,number>();
-    for (const row of energy.rows) {production.set(row.day,(production.get(row.day)||0)+Number(row.value));perSite.set(row.site_id,(perSite.get(row.site_id)||0)+Number(row.value));}
+    const production=new Map<string,number|null>(); const qualities=new Map<string,string>(); const watermarks=new Map<string,string>(); const reasons=new Map<string,Set<string>>(); const unknownSites=new Set<string>(); const revenue=new Map<string,number>(); const perSite=new Map<string,number>();
+    for (const row of energy.rows) {
+      if(row.value===null){production.set(row.day,null);unknownSites.add(row.site_id);} else {if(production.get(row.day)!==null)production.set(row.day,(production.get(row.day)||0)+Number(row.value));perSite.set(row.site_id,(perSite.get(row.site_id)||0)+Number(row.value));}
+      if(row.quality && (!qualities.has(row.day)||(ENERGY_QUALITY_SEVERITY[row.quality]??2)>(ENERGY_QUALITY_SEVERITY[qualities.get(row.day)!]??2)))qualities.set(row.day,row.quality);
+      if(row.watermark && (!watermarks.has(row.day)||row.watermark<watermarks.get(row.day)!))watermarks.set(row.day,row.watermark);
+      if(row.reason){const all=reasons.get(row.day)??new Set<string>();for(const reason of row.reason.split(',').map(r=>r.trim()).filter(Boolean))all.add(reason);reasons.set(row.day,all);}
+    }
     for (const row of billing.rows) revenue.set(row.day,(revenue.get(row.day)||0)+Number(row.amount));
     const total=billing.rows.reduce((sum,r)=>sum+Number(r.amount),0);
     const paid=billing.rows.filter(r=>r.paid).reduce((sum,r)=>sum+Number(r.amount),0);
@@ -78,14 +89,15 @@ export class DashboardService {
       range:{start,end},availableSites:availableSites.map(s=>({id:s.id,name:s.name})),
       stats:{totalSites:sites.length,onlineSites:sites.filter(online).length,installedMwp:sites.reduce((n,s)=>n+Number(s.capacity_mwp),0),
         currentMw:power.rows.length ? power.rows.reduce((n,r)=>n+Number(r.power_kw),0)/1000 : null,
-        periodKwh:energy.rows.length ? [...production.values()].reduce((a,b)=>a+b,0) : null,periodAmount:total,
+        periodKwh:energy.rows.length && ![...production.values()].includes(null) ? [...production.values()].reduce<number>((a,b)=>a+(b??0),0) : null,periodAmount:total,
         billCount:billing.rows.length,paidBillCount:billing.rows.filter(r=>r.paid).length},
-      production:[...production].map(([date,value])=>({date,value,quality:'partial'})),
+      production:[...production].map(([date,value])=>{const allReasons=[...(reasons.get(date)??[])].sort();return {date,value,quality:qualities.get(date)??'partial',watermark:watermarks.get(date)??null,reason:allReasons.length?allReasons.join(','):null,reasons:allReasons};}),
+      energyReadModel:{enabled:process.env.ENERGY_READ_MODEL_ENABLED==='true',status:energy.rows.some(r=>r.quality==='preparing')?'preparing':'ready',watermark:energy.rows.map(r=>r.watermark).filter(Boolean).sort()[0]??null},
       revenue:[...revenue].map(([date,value])=>({date,value})),
-      rankings:sites.filter(s=>perSite.has(s.id)).map(s=>({name:s.name,productionKwh:perSite.get(s.id)!})).sort((a,b)=>b.productionKwh-a.productionKwh).slice(0,5),
+      rankings:sites.filter(s=>perSite.has(s.id)&&!unknownSites.has(s.id)).map(s=>({name:s.name,productionKwh:perSite.get(s.id)!})).sort((a,b)=>b.productionKwh-a.productionKwh).slice(0,5),
       alerts:alerts.rows,collection:{total,paid,pending:total-paid,paidPercent:total ? paid/total*100 : 0},
       sites:sites.map(s=>({id:s.id,name:s.name,schoolName:s.school_name,latitude:s.latitude===null?null:Number(s.latitude),longitude:s.longitude===null?null:Number(s.longitude),
-        status:online(s)?'online':'offline',capacityMwp:Number(s.capacity_mwp),productionKwh:perSite.get(s.id)??null,
+        status:online(s)?'online':'offline',capacityMwp:Number(s.capacity_mwp),productionKwh:unknownSites.has(s.id)?null:perSite.get(s.id)??null,
         gatewayId:s.gateway_id,gatewayName:s.gateway_name,lastUpdated:s.last_seen_at})),
     };
   }
@@ -99,7 +111,8 @@ export class DashboardService {
     const values=new Map<string,number>();
     if (metric==='periodKwh') {
       const result=await this.energy(ids,start,end);
-      for (const row of result.rows) values.set(row.site_id,(values.get(row.site_id)||0)+Number(row.value));
+      const unknown=new Set(result.rows.filter(r=>r.value===null).map(r=>r.site_id));
+      for (const row of result.rows) if(!unknown.has(row.site_id))values.set(row.site_id,(values.get(row.site_id)||0)+Number(row.value));
     } else if (metric==='currentMw') {
       const result=await this.power(ids);
       for (const row of result.rows) values.set(row.site_id,Number(row.power_kw)/1000);

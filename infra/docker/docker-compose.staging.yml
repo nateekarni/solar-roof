@@ -127,6 +127,7 @@ services:
       # Empty trust is safe; enabling the direct edge route requires runtime evidence.
       TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-}
       API_EDGE_ENABLED: ${API_EDGE_ENABLED:-false}
+      ENERGY_READ_MODEL_ENABLED: ${ENERGY_READ_MODEL_ENABLED:-false}
       DATABASE_URL: ${DATABASE_URL:?required}
       REDIS_URL: redis://redis:6379
       MQTT_URL: mqtt://mqtt:1883
@@ -179,6 +180,7 @@ services:
     environment:
       NODE_ENV: production
       WORKER_PORT: 3002
+      ENERGY_SUMMARY_WORKER_ENABLED: ${ENERGY_SUMMARY_WORKER_ENABLED:-false}
       DATABASE_URL: ${DATABASE_URL:?required}
       REDIS_URL: redis://redis:6379
     depends_on:
