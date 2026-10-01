@@ -8,6 +8,7 @@ import {fileURLToPath} from 'node:url';
 import {Pool} from 'pg';
 import os from 'node:os';
 import {assertIsolatedDatabase,createFixture} from './fixtures.js';
+import {AuthService} from '../../src/modules/identity/auth.service.js';
 import {DatabaseService} from '../../src/database/database.service.js';
 import {metricsSnapshot} from '../../src/common/observability/metrics.js';
 
@@ -32,7 +33,7 @@ test('competing runner and unfinished suites fail without stopping the owning Do
   assert.ok(competing.stderr.includes('locked'));
   assert.ok(competing.stdout.includes('Implemented:'));
   assert.ok(competing.stdout.includes('Not ready:'));
-  const missing=spawnSync(bash,['scripts/ci/platform-check.sh','session'],{cwd:root,encoding:'utf8'});
+  const missing=spawnSync(bash,['scripts/ci/platform-check.sh','invitation'],{cwd:root,encoding:'utf8'});
   assert.equal(missing.status,1);
   assert.equal((await fetch(process.env.READINESS_API_URL+'/health')).status,200);
 });
@@ -88,8 +89,11 @@ test('baseline revision upgrade preserves populated users, readings and financia
     await client.query(`CREATE SCHEMA ${schema}`);owned.push(schema);await client.query(`SET search_path TO ${schema},public`);
     await migrate(true);
     const fixture=await createFixture(client);
+    const passwordAuth=new AuthService('fixture-only-access','fixture-only-refresh');
+    const legacyPassword=passwordAuth.hashPassword('Fixture-migration-original-123!');
+    await client.query('UPDATE users SET password_hash=$1,refresh_token_hash=$2 WHERE id=$3',[legacyPassword,'legacy-refresh-hash',fixture.users[0]]);
     const snapshot=async()=>({
-      users:(await client.query('SELECT id,email,role,school_id FROM users ORDER BY id')).rows,
+      users:(await client.query('SELECT id,email,role,school_id,password_hash,refresh_token_hash FROM users ORDER BY id')).rows,
       readings:(await client.query('SELECT id,device_id,site_id,source_time,normalized_value,raw_payload FROM telemetry_raw ORDER BY id')).rows,
       documents:(await client.query('SELECT id,site_id,document_number,amount,status FROM documents ORDER BY id')).rows
     });
@@ -97,6 +101,10 @@ test('baseline revision upgrade preserves populated users, readings and financia
     const before=(await client.query('SELECT (SELECT count(*) FROM users) users,(SELECT count(*) FROM telemetry_raw) readings,(SELECT count(*) FROM documents) documents')).rows;
     await migrate(false);
     assert.deepEqual(await snapshot(),original);
+    const preserved=(await client.query('SELECT password_hash,refresh_token_hash FROM users WHERE id=$1',[fixture.users[0]])).rows[0];
+    assert.equal(passwordAuth.verifyPassword('Fixture-migration-original-123!',preserved.password_hash),true);
+    assert.equal(preserved.refresh_token_hash,'legacy-refresh-hash');
+    assert.equal((await client.query('SELECT count(*) FROM auth_sessions')).rows[0].count,'0');
     assert.deepEqual((await client.query('SELECT (SELECT count(*) FROM users) users,(SELECT count(*) FROM telemetry_raw) readings,(SELECT count(*) FROM documents) documents')).rows,before);
     assert.equal((await client.query('SELECT amount FROM documents WHERE id=$1',[fixture.documentId])).rows[0].amount,'123.45000000');
     assert.equal((await client.query('SELECT count(*) FROM schools')).rows[0].count,'100');

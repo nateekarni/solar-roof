@@ -6,6 +6,7 @@ import { APP_GUARD, NestFactory } from "@nestjs/core";
 import { HealthController } from "./health.controller.js";
 import { HealthService } from "./health.service.js";
 import { JwtAuthGuard } from "../modules/identity/jwt.guard.js";
+import { SessionService } from "../modules/identity/session.service.js";
 import { AuthService } from "../modules/identity/auth.service.js";
 import { DatabaseService } from "../database/database.service.js";
 import { PlatformAccessGuard } from "../common/auth/platform-access.guard.js";
@@ -20,6 +21,7 @@ test("public readiness returns 503 on outage and recovers while liveness remains
       { provide: HealthService, useValue: service },
       { provide: AuthService, useValue: {} },
       { provide: DatabaseService, useValue: {} },
+      { provide: SessionService, useValue: {} },
       { provide: APP_GUARD, useClass: JwtAuthGuard },
       { provide: APP_GUARD, useClass: RolesGuard },
       { provide: APP_GUARD, useClass: PlatformAccessGuard },

@@ -36,16 +36,16 @@ export class AuthService {
   issueTokens(user: AuthUser, sessionId: string): TokenPair {
     const now = Math.floor(Date.now() / 1000);
     const claims = { sub: user.id, email: user.email, role: user.role, schoolId: user.schoolId, sid: sessionId };
-    return { accessToken: sign({ ...claims, iat: now, exp: now + this.accessTtlSeconds, typ: "access" }, this.accessSecret), refreshToken: sign({ ...claims, iat: now, exp: now + this.refreshTtlSeconds, typ: "refresh" }, this.refreshSecret), expiresInSeconds: this.accessTtlSeconds };
+    return { accessToken: sign({ ...claims, iat: now, exp: now + this.accessTtlSeconds, typ: "access" }, this.accessSecret), refreshToken: sign({ ...claims, iat: now, exp: now + this.refreshTtlSeconds, typ: "refresh", nonce: randomBytes(32).toString("base64url") }, this.refreshSecret), expiresInSeconds: this.accessTtlSeconds };
   }
   verifyAccessToken(token: string): AuthUser & { sessionId: string } {
     const payload = verify(token, this.accessSecret);
     if (payload.typ !== "access" || typeof payload.sub !== "string" || typeof payload.email !== "string" || typeof payload.role !== "string" || typeof payload.sid !== "string") throw new Error("Invalid access claims");
     return { id: payload.sub, email: payload.email, role: payload.role as AuthUser["role"], schoolId: typeof payload.schoolId === "string" ? payload.schoolId : undefined, sessionId: payload.sid };
   }
-  verifyRefreshToken(token: string): AuthUser & { sessionId: string } {
+  verifyRefreshToken(token: string): AuthUser & { sessionId: string; expiresAt: Date } {
     const payload = verify(token, this.refreshSecret);
     if (payload.typ !== "refresh" || typeof payload.sub !== "string" || typeof payload.email !== "string" || typeof payload.role !== "string" || typeof payload.sid !== "string") throw new Error("Invalid refresh claims");
-    return { id: payload.sub, email: payload.email, role: payload.role as AuthUser["role"], schoolId: typeof payload.schoolId === "string" ? payload.schoolId : undefined, sessionId: payload.sid };
+    return { id: payload.sub, email: payload.email, role: payload.role as AuthUser["role"], schoolId: typeof payload.schoolId === "string" ? payload.schoolId : undefined, sessionId: payload.sid, expiresAt: new Date(Number(payload.exp) * 1000) };
   }
 }

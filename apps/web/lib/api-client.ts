@@ -56,7 +56,9 @@ async function request(endpoint: string, options: RequestInit = {}): Promise<Res
 
   let response = await fetch(url, config);
 
-  if (response.status === 401) {
+  const method = (options.method ?? "GET").toUpperCase();
+  const canRetry = method === "GET" || method === "HEAD" || response.headers.get("X-Auth-Retry-Safe") === "1";
+  if (response.status === 401 && canRetry) {
     if (!isRefreshing) {
       isRefreshing = true;
       const newToken = await refreshAccessToken();

@@ -15,6 +15,10 @@ const auth=new AuthService('readiness-test-access-secret-000000000000','readines
 const suffix=randomUUID().slice(0,8);
 const users:Record<string,{id:string;token:string}>={};
 let broker:mqtt.MqttClient|undefined;
+async function loginToken(email:string,role:string) {
+  const response=await fetch(base+'/v1/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:'Local-test-only-123!'})});
+  assert.equal(response.status,200);const data=await response.json();assert.equal(data.user.role,role);return data.accessToken as string;
+}
 async function request(role:string,path:string,method='GET',body?:unknown) {
   const res=await fetch(base+path,{method,headers:{Authorization:`Bearer ${users[role]!.token}`,'Content-Type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})});
   const text=await res.text();return {status:res.status,body:text?JSON.parse(text):null};
@@ -23,16 +27,11 @@ try {
   for(const role of ['owner','admin','operator','accountant']) {
     const id=randomUUID(),email=`${role}-${suffix}@example.test`;
     await db.query("INSERT INTO users(id,email,display_name,role,status,password_hash) VALUES($1,$2,$3,$4,'active',$5)",[id,email,role,role,auth.hashPassword('Local-test-only-123!')]);
-    users[role]={id,token:auth.issueTokens({id,email,role:role as 'owner'|'admin'|'operator'|'accountant'},randomUUID()).accessToken};
+    users[role]={id,token:await loginToken(email,role)};
   }
   const unauthenticated=await fetch(base+'/v1/sites');
   assert.equal(unauthenticated.status,401);
   for (const role of ['owner','operator','accountant']) assert.equal((await request(role,'/v1/sites','POST',{})).status,403);
-  for(const role of ['owner','admin','operator','accountant']) {
-    const login=await fetch(base+'/v1/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:role+'-'+suffix+'@example.test',password:'Local-test-only-123!'})});
-    assert.equal(login.status,200);const data=await login.json();assert.equal(data.user.role,role);
-    users[role]!.token=data.accessToken;
-  }
   const bootstrapLogin=await fetch(base+'/v1/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:'bootstrap@example.test',password:'Ci-bootstrap-original-123!'})});
   assert.equal(bootstrapLogin.status,200,'Bootstrap rerun must preserve original password');
   const name=`readiness-${suffix}`;
@@ -42,7 +41,7 @@ try {
   assert.equal((await request('admin','/v1/sites','POST',{name:'Duplicate',schoolId:site.schoolId,gatewayName:`duplicate-${suffix}`,deviceSerial:`duplicate-${suffix}`})).status,400);
   const userId=randomUUID();
   await db.query("INSERT INTO users(id,email,display_name,role,status,school_id,password_hash) VALUES($1,$2,'School user','school_user','active',$3,$4)",[userId,`school-${suffix}@example.test`,site.schoolId,auth.hashPassword('Local-test-only-123!')]);
-  users.school={id:userId,token:auth.issueTokens({id:userId,email:`school-${suffix}@example.test`,role:'school_user',schoolId:site.schoolId},randomUUID()).accessToken};
+  users.school={id:userId,token:await loginToken(`school-${suffix}@example.test`,'school_user')};
   const other=await request('admin','/v1/sites','POST',{name:`Other ${suffix}`,schoolName:`Other school ${suffix}`,gatewayName:`other-${suffix}`,protocol:'mqtt',deviceSerial:`other-meter-${suffix}`});
   assert.equal(other.status,201,JSON.stringify(other.body));
   assert.equal((await request('school',`/v1/sites/${other.body.id}`)).status,403);
@@ -54,8 +53,8 @@ try {
   assert.deepEqual(summary.body.production,[]);
   assert.equal((await request('school',`/v1/sites/${site.id}/live-telemetry`)).body,null);
   const scopeId=randomUUID();
-  await db.query("INSERT INTO users(id,email,display_name,role,status,school_id) VALUES($1,$2,'Scoped admin','admin','active',$3)",[scopeId,`scoped-${suffix}@example.test`,site.schoolId]);
-  users.scoped={id:scopeId,token:auth.issueTokens({id:scopeId,email:`scoped-${suffix}@example.test`,role:'admin',schoolId:site.schoolId},randomUUID()).accessToken};
+  await db.query("INSERT INTO users(id,email,display_name,role,status,school_id,password_hash) VALUES($1,$2,'Scoped admin','admin','active',$3,$4)",[scopeId,`scoped-${suffix}@example.test`,site.schoolId,auth.hashPassword('Local-test-only-123!')]);
+  users.scoped={id:scopeId,token:await loginToken(`scoped-${suffix}@example.test`,'admin')};
   assert.equal((await request('scoped','/v1/sites/','POST',{name:'Escape',schoolName:'Outside',gatewayName:`escape-${suffix}`,deviceSerial:`escape-${suffix}`})).status,403);
   assert.equal((await request('scoped','/v1/contracts','POST',{siteIds:[other.body.id]})).status,403);
   assert.equal((await request('scoped','/v1/users/invite','POST',{email:'bad@example.test',displayName:'No',role:'owner'})).status,403);

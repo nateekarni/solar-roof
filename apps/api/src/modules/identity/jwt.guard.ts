@@ -1,5 +1,6 @@
 import { type CanActivate, type ExecutionContext, Inject, Injectable, UnauthorizedException } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
+import { SessionService } from "./session.service.js";
 import { AuthService } from "./auth.service.js";
 import { IS_PUBLIC_KEY } from "./public.decorator.js";
 import { DatabaseService } from "../../database/database.service.js";
@@ -12,7 +13,7 @@ function extractToken(request: any): string | undefined {
   if (cookieHeader) {
     const match = cookieHeader.split(";").map((c: string) => c.trim()).find((c: string) => c.startsWith("access_token="));
     if (match) {
-      return decodeURIComponent(match.substring("access_token=".length));
+      try { return decodeURIComponent(match.substring("access_token=".length)); } catch { return "invalid-cookie"; }
     }
   }
   const authHeader = request.headers.authorization;
@@ -28,6 +29,7 @@ export class JwtAuthGuard implements CanActivate {
     @Inject(AuthService) private readonly authService: AuthService,
     @Inject(Reflector) private readonly reflector: Reflector
     , @Inject(DatabaseService) private readonly db: DatabaseService
+    , @Inject(SessionService) private readonly sessions: SessionService
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -42,17 +44,20 @@ export class JwtAuthGuard implements CanActivate {
     const request = context.switchToHttp().getRequest();
     const token = extractToken(request);
     if (!token) {
+      context.switchToHttp().getResponse().setHeader("X-Auth-Retry-Safe", "1");
       throw new UnauthorizedException("Missing authentication token");
     }
 
     try {
       const user = this.authService.verifyAccessToken(token);
+      if (!(await this.sessions.isActive(user.sessionId, user.id))) throw new UnauthorizedException("Session is inactive");
       const result = await this.db.query("SELECT id, role, school_id, status FROM users WHERE id=$1", [user.id]);
       const current = result.rows[0];
       if (!current || current.status !== "active") throw new UnauthorizedException("Account is inactive");
       request.user = { ...user, role: current.role, schoolId: current.school_id ?? undefined };
       return true;
     } catch {
+      context.switchToHttp().getResponse().setHeader("X-Auth-Retry-Safe", "1");
       throw new UnauthorizedException("Invalid or expired access token");
     }
   }

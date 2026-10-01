@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { loadEnv } from "@solar/domain";
 import { DatabaseModule } from "../../database/database.module.js";
 import { AuthController } from "./auth.controller.js";
+import { SessionService } from "./session.service.js";
 import { AuthService } from "./auth.service.js";
 import { InvitationService } from "./invitation.service.js";
 import { JwtAuthGuard } from "./jwt.guard.js";
@@ -19,9 +20,10 @@ import { UsersController } from "./users.controller.js";
         return new AuthService(env.JWT_ACCESS_SECRET, env.JWT_REFRESH_SECRET);
       },
     },
+    SessionService,
     InvitationService,
     JwtAuthGuard,
   ],
-  exports: [AuthService, InvitationService, JwtAuthGuard],
+  exports: [SessionService, AuthService, InvitationService, JwtAuthGuard],
 })
 export class IdentityModule {}

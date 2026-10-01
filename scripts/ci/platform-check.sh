@@ -4,11 +4,15 @@ cd "$(dirname "$0")/../.."
 suite="${1:?Usage: platform-check.sh <suite> [--prebuilt]}"
 [[ $# -le 2 && ( $# -eq 1 || "$2" == --prebuilt ) ]] || { echo 'Invalid arguments' >&2; exit 1; }
 known='harness session invitation csrf financial-safety financial-core operations ingestion rollup reports ui-contracts ui-jobs accessibility archive recovery readiness'
-implemented=(harness)
+implemented=(harness session)
 if [[ "$suite" == all-fast ]]; then
   suites=("${implemented[@]}")
   echo "Implemented: ${implemented[*]}"
-  echo "Not ready: ${known/harness /}"
+  not_ready=()
+  for candidate in $known; do
+    [[ " ${implemented[*]} " == *" $candidate "* ]] || not_ready+=("$candidate")
+  done
+  echo "Not ready: ${not_ready[*]}"
 else
   [[ " $known " == *" $suite "* ]] || { echo "Unknown suite: $suite" >&2; exit 1; }
   suites=("$suite")
@@ -36,6 +40,7 @@ stack_created=true
 for item in "${suites[@]}"; do
   case "$item" in ui-jobs|accessibility) ;; *) pnpm --filter @solar/api exec tsx --tsconfig tsconfig.json --test "test/platform/$item.test.ts" ;; esac
   case "$item" in csrf|ui-contracts|ui-jobs|accessibility) pnpm --filter @solar/web exec node "test/platform/$item.mjs" ;; esac
+  if [[ "$item" == session ]]; then pnpm --filter @solar/web exec tsx --test lib/api-client.spec.ts; fi
   if [[ "$item" == accessibility ]]; then pnpm --filter @solar/web exec tsx --test lib/power-format.spec.ts; fi
   if [[ "$item" == recovery ]]; then bash scripts/ci/recovery-drill.sh --profile fixture; fi
 done

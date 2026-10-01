@@ -2,6 +2,7 @@ import { Body, Controller, Get, HttpCode, HttpStatus, Inject, Post, Req, Res, Un
 import { type Request, type Response } from "express";
 import { createHash, randomUUID } from "node:crypto";
 import { DatabaseService } from "../../database/database.service.js";
+import { SessionService } from "./session.service.js";
 import { AuthService } from "./auth.service.js";
 import { Public } from "./public.decorator.js";
 
@@ -11,14 +12,15 @@ function extractCookie(req: Request, name: string): string | undefined {
   if (!cookieHeader) return undefined;
   const match = cookieHeader.split(";").map(c => c.trim()).find(c => c.startsWith(`${name}=`));
   if (!match) return undefined;
-  return decodeURIComponent(match.substring(name.length + 1));
+  try { return decodeURIComponent(match.substring(name.length + 1)); } catch { return "invalid-cookie"; }
 }
 
 @Controller("v1/auth")
 export class AuthController {
   constructor(
     @Inject(AuthService) private readonly authService: AuthService,
-    @Inject(DatabaseService) private readonly db: DatabaseService
+    @Inject(DatabaseService) private readonly db: DatabaseService,
+    @Inject(SessionService) private readonly sessions: SessionService
   ) {}
 
   @Public()
@@ -53,7 +55,7 @@ export class AuthController {
       throw new UnauthorizedException("Invalid email or password");
     }
 
-    const sessionId = randomUUID();
+    const { sid: sessionId } = await this.sessions.create(user.id);
     const tokens = this.authService.issueTokens(
       {
         id: user.id,
@@ -65,10 +67,7 @@ export class AuthController {
     );
 
     const refreshTokenHash = createHash("sha256").update(tokens.refreshToken).digest("hex");
-    await this.db.query("UPDATE users SET refresh_token_hash = $1 WHERE id = $2", [
-      refreshTokenHash,
-      user.id,
-    ]);
+    await this.sessions.initialize(sessionId, user.id, refreshTokenHash, this.authService.verifyRefreshToken(tokens.refreshToken).expiresAt);
 
     const isProd = process.env.NODE_ENV === "production";
     res.cookie("refresh_token", tokens.refreshToken, {
@@ -152,11 +151,11 @@ export class AuthController {
     }
 
     const expectedHash = createHash("sha256").update(refreshToken).digest("hex");
-    if (!user.refresh_token_hash || user.refresh_token_hash !== expectedHash) {
+    if (!(await this.sessions.isActive(decoded.sessionId, decoded.id))) {
       throw new UnauthorizedException("Refresh token revoked or reused");
     }
 
-    const newSessionId = randomUUID();
+    const newSessionId = decoded.sessionId;
     const tokens = this.authService.issueTokens(
       {
         id: user.id,
@@ -168,10 +167,9 @@ export class AuthController {
     );
 
     const newRefreshTokenHash = createHash("sha256").update(tokens.refreshToken).digest("hex");
-    await this.db.query("UPDATE users SET refresh_token_hash = $1 WHERE id = $2", [
-      newRefreshTokenHash,
-      user.id,
-    ]);
+    if (!(await this.sessions.rotate(decoded.sessionId, expectedHash, newRefreshTokenHash))) {
+      throw new UnauthorizedException("Refresh token revoked or reused");
+    }
 
     const isProd = process.env.NODE_ENV === "production";
     res.cookie("refresh_token", tokens.refreshToken, {
@@ -212,20 +210,14 @@ export class AuthController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response
   ) {
+    // Access identifies the verified device even if its refresh cookie is stale.
+    const accessToken = extractCookie(req, "access_token") || (req.headers.authorization?.startsWith("Bearer ") ? req.headers.authorization.slice(7).trim() : undefined);
     const refreshToken = extractCookie(req, "refresh_token");
-    if (refreshToken) {
-      const hash = createHash("sha256").update(refreshToken).digest("hex");
-      const userRes = await this.db.query("SELECT id FROM users WHERE refresh_token_hash = $1", [hash]);
-      const userId = userRes.rows[0]?.id;
-      if (userId) {
-        const auditId = randomUUID();
-        await this.db.query(
-          `INSERT INTO audit_events (id, actor_id, action, entity_type, entity_id, correlation_id, occurred_at)
-           VALUES ($1, $2, 'user.logout', 'user', $3, $4, NOW())`,
-          [auditId, userId, userId, randomUUID()]
-        );
-      }
-      await this.db.query("UPDATE users SET refresh_token_hash = NULL WHERE refresh_token_hash = $1", [hash]);
+    let verified;
+    try { if (accessToken) verified = this.authService.verifyAccessToken(accessToken); } catch {}
+    if (!verified) { try { if (refreshToken) verified = this.authService.verifyRefreshToken(refreshToken); } catch {} }
+    if (verified && await this.sessions.isActive(verified.sessionId, verified.id)) {
+      await this.sessions.revoke(verified.sessionId);
     }
 
     res.clearCookie("refresh_token", { path: "/" });
