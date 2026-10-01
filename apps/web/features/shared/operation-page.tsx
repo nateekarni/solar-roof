@@ -6,6 +6,7 @@ import { serverFetch, getApiBaseUrl } from "../../lib/server-fetch";
 import { OperationPageHeader } from "./operation-page-header";
 import { OperationQueryTable } from "./operation-query-table";
 import { OperationAutoRefresh } from "./operation-auto-refresh";
+import { ReportJobs } from "../reports/job-status";
 
 type OperationResponse = OperationPageData<OperationRow>;
 
@@ -87,6 +88,7 @@ export async function OperationPage({
           description={displayDescription}
           action={displayAction}
         />
+        {resource === 'reports' && <ReportJobs />}
         <OperationQueryTable
           resource={resource}
           title={displayTitle}

@@ -66,7 +66,7 @@ export class OperationsService {
           JOIN sites si ON si.id=a.site_id JOIN schools s ON s.id=si.school_id WHERE ${where} ORDER BY a.occurred_at DESC`;
         columns=["รหัสแจ้งเตือน","หัวข้อ","รายละเอียด","ระดับความรุนแรง","เวลาที่เกิด","สถานะ"];break;
       case "notifications":
-        sql=`SELECT id,title,channel,recipient,created_at AS "sentAt",status FROM notification_deliveries WHERE user_id=$1 ORDER BY created_at DESC`;
+        sql=`SELECT id,title,channel,recipient,created_at AS "sentAt",status,job_id AS "jobId" FROM notification_deliveries WHERE user_id=$1 ORDER BY created_at DESC`;
         params.splice(0,params.length,user?.id);columns=["หัวข้อข้อความ","ช่องทาง","ผู้รับ","เวลาที่ส่ง","สถานะ"];break;
       case "reports":
         sql=`SELECT id,title,report_type AS category,date_from::text||' – '||date_to::text AS scope,upper(format) AS format,status,

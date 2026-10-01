@@ -1,4 +1,7 @@
 export const en = {
+  jobs: {
+    title: "Report jobs", job: "Job", loading: "Loading job", queued: "Queued — waiting for a worker", running: "Running — processing real data", ready: "Ready — report available", failed: "Failed — report unavailable", cancelled: "Cancelled", accepted: "Report request accepted. Track the job on this page.", requestFailed: "Request failed. Your entered values are preserved.", raw: "Raw data", operational: "Operational records", unknownMetadata: "Report range and data kind are unknown", unknown: "Unknown", rows: "Rows", snapshot: "Snapshot (Asia/Bangkok)", failureCode: "Failure code", availableAt: "Eligible to run after", download: "Download", retry: "Retry job", cancel: "Cancel job", refresh: "Refresh status", more: "More jobs", empty: "No report jobs", offline: "You are offline. Reconnect to refresh the server status.", progress: "Server progress", archiveTarget: "Archived detail retrieval targets completion within one hour; this is a target, not a calculated arrival time.", legacy: "This legacy report has no saved scope. Download requires current report permission and access to all schools as the original report creator. Otherwise create a new report.", expired: "The download is unavailable or expired. Refresh permissions and request a new report.", open: "Open job", create: "Generate Report",
+  },
   app: {
     title: "Solar Energy Platform",
     health: "System Health",

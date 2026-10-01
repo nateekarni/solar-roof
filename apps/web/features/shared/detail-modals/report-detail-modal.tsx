@@ -22,7 +22,8 @@ import {
   DialogTitle,
 } from "../../../components/ui/dialog";
 import { notify } from "../../../components/feedback/notifications";
-import { useLocale } from "../../../providers/locale-provider";
+import { useLocale, useT } from "../../../providers/locale-provider";
+import { JobStatus } from "../../reports/job-status";
 import { apiClient } from "../../../lib/api-client";
 
 export interface ReportItemData {
@@ -48,12 +49,15 @@ export function ReportDetailModal({
   report: ReportItemData | null;
 }) {
   const locale = useLocale();
+  const t = useT();
+  const [downloadError, setDownloadError] = React.useState<string|null>(null);
   const [downloading, setDownloading] = React.useState(false);
 
   if (!report) return null;
 
   const handleDownload = async () => {
     setDownloading(true);
+    setDownloadError(null);
     try {
       if(!report.id) throw new Error("ไม่พบรายงาน");
       const element = document.createElement("a");
@@ -70,7 +74,7 @@ export function ReportDetailModal({
           ? `เริ่มดาวน์โหลดรายงาน ${report.title} เรียบร้อยแล้ว`
           : `Download started for ${report.title}`
       );
-    } catch(error) { notify.error(error instanceof Error?error.message:"ดาวน์โหลดไม่สำเร็จ"); }
+    } catch(error) { const code=(error as {code?:string}).code;setDownloadError(t(code==='legacy_scope_unknown'||code==='report_permission_revoked'?'jobs.legacy':'jobs.expired')); }
     finally { setDownloading(false); }
   };
 
@@ -108,6 +112,8 @@ export function ReportDetailModal({
 
         {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto pr-1 space-y-4 text-sm my-2">
+          {report.jobId ? <JobStatus jobId={report.jobId}/> : <p>{t('jobs.legacy')}</p>}
+          {downloadError && <p role="alert">{downloadError}</p>}
           {/* Report Description */}
           <div className="p-3.5 rounded-xl border border-border/70 bg-card/60 space-y-1.5">
             <div className="text-xs font-semibold text-foreground flex items-center gap-1.5">
@@ -173,7 +179,7 @@ export function ReportDetailModal({
             size="sm"
             className="text-xs gap-1.5 cursor-pointer"
             onClick={handleDownload}
-            disabled={downloading}
+            disabled={downloading || Boolean(report.jobId)}
           >
             <Download className="size-3.5" />
             <span>

@@ -47,6 +47,9 @@ export function GenerateReportDialog({
   const t = useT();
   const locale = useLocale();
   const [loading, setLoading] = React.useState(false);
+  const creating = React.useRef(false);
+  const requestIdentity = React.useRef<{values:string;key:string}|null>(null);
+  const [error, setError] = React.useState<string|null>(null);
 
   const now = new Date();
   const defaultFrom = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
@@ -70,20 +73,23 @@ export function GenerateReportDialog({
   });
 
   const onSubmit = async (values: ReportFormValues) => {
+    if (creating.current) return;
+    creating.current = true;
     setLoading(true);
+    setError(null);
+    const serialized = JSON.stringify(values);
+    if(requestIdentity.current?.values !== serialized) requestIdentity.current={values:serialized,key:crypto.randomUUID()};
     try {
-      await apiClient.post("/v1/reports", values);
-      notify.success(
-        locale === "th"
-          ? "สร้างรายงานจากข้อมูลจริงเรียบร้อยแล้ว"
-          : "Report generated successfully"
-      );
-      reset();
+      const {jobId} = await apiClient.post<{jobId:string}>("/v1/reports", values, {headers:{"Idempotency-Key":requestIdentity.current.key}});
+      notify.info(t("jobs.accepted"));
+      requestIdentity.current=null;
       onOpenChange(false);
+      router.push(`/reports?job=${encodeURIComponent(jobId)}`, {scroll:false});
       router.refresh();
     } catch (err: any) {
-      notify.error(err.message || "เกิดข้อผิดพลาดในการสร้างรายงาน");
+      setError(err.message || t("jobs.requestFailed"));
     } finally {
+      creating.current = false;
       setLoading(false);
     }
   };
@@ -103,6 +109,7 @@ export function GenerateReportDialog({
         </DialogHeader>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 pt-3.5">
+          {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
           <div className="space-y-1.5">
             <Label htmlFor="r-type" required className="text-xs font-medium">
               {locale === "th" ? "ประเภทรายงาน" : "Report Type"}

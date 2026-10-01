@@ -94,7 +94,7 @@ export const apiClient = {
     const res = await request(endpoint, { ...options, method: "GET" });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ message: res.statusText }));
-      throw new Error(res.status===403?"สิทธิ์ของคุณเปลี่ยนแล้ว กรุณาเลือกการดำเนินการที่ยังอนุญาต":err.message || "Request failed");
+      throw Object.assign(new Error(res.status===403?"สิทธิ์ของคุณเปลี่ยนแล้ว กรุณาเลือกการดำเนินการที่ยังอนุญาต":err.message || "Request failed"), {status:res.status,code:err.code});
     }
     return res.json();
   },
@@ -172,7 +172,8 @@ export const apiClient = {
   async getBlob(endpoint: string, options?: RequestInit): Promise<Blob> {
     const res = await request(endpoint, { ...options, method: "GET" });
     if (!res.ok) {
-      throw new Error("Failed to download file");
+      const err = await res.json().catch(() => ({}));
+      throw Object.assign(new Error(err.message || "Failed to download file"), {status:res.status,code:err.code});
     }
     return res.blob();
   },

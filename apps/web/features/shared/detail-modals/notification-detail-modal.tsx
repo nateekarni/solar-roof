@@ -24,7 +24,7 @@ import {
   DialogTitle,
 } from "../../../components/ui/dialog";
 import { notify } from "../../../components/feedback/notifications";
-import { useLocale } from "../../../providers/locale-provider";
+import { useLocale, useT } from "../../../providers/locale-provider";
 
 export interface NotificationItemData {
   id?: string;
@@ -48,6 +48,7 @@ export function NotificationDetailModal({
   notification: NotificationItemData | null;
 }) {
   const locale = useLocale();
+  const t = useT();
   const [copied, setCopied] = React.useState(false);
 
   if (!notification) return null;
@@ -96,6 +97,7 @@ export function NotificationDetailModal({
           </div>
         </DialogHeader>
 
+        {notification.jobId && <a className="text-primary underline" href={`/reports?job=${encodeURIComponent(notification.jobId)}`}>{t('jobs.open')}</a>}
         {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto pr-1 space-y-4 text-sm my-2">
           {/* Notification Message Content Box */}

@@ -4,7 +4,7 @@ cd "$(dirname "$0")/../.."
 suite="${1:?Usage: platform-check.sh <suite> [--prebuilt]}"
 [[ $# -le 2 && ( $# -eq 1 || "$2" == --prebuilt ) ]] || { echo 'Invalid arguments' >&2; exit 1; }
 known='harness session invitation csrf financial-safety financial-core operations ingestion rollup reports ui-contracts ui-jobs accessibility archive recovery readiness'
-implemented=(harness session invitation csrf financial-safety operations ingestion rollup reports ui-contracts)
+implemented=(harness session invitation csrf financial-safety operations ingestion rollup reports ui-contracts ui-jobs)
 if [[ "$suite" == all-fast ]]; then
   suites=("${implemented[@]}")
   echo "Implemented: ${implemented[*]}"
@@ -24,11 +24,11 @@ for item in "${suites[@]}"; do
   if [[ "$item" == recovery ]]; then [[ -f scripts/ci/recovery-drill.sh ]] || { echo 'Recovery drill not implemented' >&2; exit 1; }; fi
 done
 source scripts/ci/isolated-stack.sh
-if [[ " ${suites[*]} " == *' reports '* ]]; then compose+=(-f infra/ci/report-worker.yml); fi
+if [[ " ${suites[*]} " == *' reports '* || " ${suites[*]} " == *' ui-jobs '* ]]; then compose+=(-f infra/ci/report-worker.yml); fi
 if [[ " ${suites[*]} " == *' rollup '* ]]; then
   compose+=(-f infra/ci/energy-read-model.yml)
 fi
-if [[ " ${suites[*]} " == *' csrf '* || " ${suites[*]} " == *' financial-safety '* || " ${suites[*]} " == *' operations '* || " ${suites[*]} " == *' ui-contracts '* ]]; then
+if [[ " ${suites[*]} " == *' csrf '* || " ${suites[*]} " == *' financial-safety '* || " ${suites[*]} " == *' operations '* || " ${suites[*]} " == *' ui-contracts '* || " ${suites[*]} " == *' ui-jobs '* ]]; then
   compose+=(-f infra/ci/request-edge.yml)
   export PLATFORM_EDGE_FIXTURE=true
 fi
