@@ -10,7 +10,7 @@ assert.equal(base,'http://127.0.0.1:13001');
 const capture='http://127.0.0.1:18025';
 const password='Local-invitation-password-123!';
 const auth=new AuthService('readiness-test-access-secret-000000000000','readiness-test-refresh-secret-000000000000');
-const post=(path:string,body:unknown,token?:string,ip?:string)=>fetch(base+path,{method:'POST',headers:{'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`} : {}),...(ip?{'X-Forwarded-For':ip}:{})},body:JSON.stringify(body)});
+const post=(path:string,body:unknown,token?:string,ip?:string)=>fetch(base+path,{method:'POST',headers:{'Content-Type':'application/json',Origin:'http://localhost:13000',...(token?{Authorization:`Bearer ${token}`} : {}),...(ip?{'X-Forwarded-For':ip}:{})},body:JSON.stringify(body)});
 
 test('persistent invitation lifecycle uses local SMTP, atomic activation and current policy',async t=>{
   const db=new Pool({connectionString:assertIsolatedDatabase(process.env.READINESS_DATABASE_URL ?? '')});
@@ -96,6 +96,9 @@ test('persistent invitation lifecycle uses local SMTP, atomic activation and cur
       for(const token of tokens){assert.equal(logs.includes(token),false);assert.equal(logs.includes(createHash('sha256').update(token).digest('hex')),false);}
     });
   } finally {
+    // This isolated suite intentionally exhausts the real ingress budget. Leave
+    // the following independent browser suite fresh after all security assertions.
+    await db.query("DELETE FROM invitation_rate_limits WHERE key LIKE 'activation:%'");
     await db.query('DELETE FROM audit_events WHERE actor_id=ANY($1::uuid[])',[ [owner,admin] ]);
     await db.query('DELETE FROM user_invitations WHERE issuer_id=ANY($1::uuid[])',[[owner,admin]]);
     await db.query('DELETE FROM users WHERE email=ANY($1::text[]) OR id=ANY($2::uuid[])',[emails,[owner,admin]]);

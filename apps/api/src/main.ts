@@ -7,6 +7,8 @@ import { NestFactory } from "@nestjs/core";
 import { SwaggerModule, DocumentBuilder } from "@nestjs/swagger";
 import helmet from "helmet";
 import { rateLimit } from "express-rate-limit";
+import type {Request,Response,NextFunction} from 'express';
+import {isAllowedRequestOrigin} from './common/auth/request-origin.guard.js';
 import { AppModule } from "./app.module.js";
 import { AllExceptionsFilter } from "./common/http-exception.filter.js";
 import { RequestTimingInterceptor, requestTimingMiddleware } from "./common/observability/request-timing.interceptor.js";
@@ -35,13 +37,25 @@ async function bootstrap() {
   });
 
   const expressApp = app.getHttpAdapter().getInstance();
-  expressApp.set("trust proxy", 1);
+  // CIDR trust is evaluated from the actual socket outwards, never by hop count.
+  // Empty configuration ignores every caller-supplied forwarding header.
+  const trustedProxyCidrs=(process.env.TRUSTED_PROXY_CIDRS ?? '').split(',').map(value=>value.trim()).filter(Boolean);
+  if(process.env.API_EDGE_ENABLED==='true'&&!trustedProxyCidrs.length)throw new Error('Direct edge routing requires verified TRUSTED_PROXY_CIDRS');
+  if(trustedProxyCidrs.some(value=>!value.includes('/')||/^(0\.0\.0\.0\/0|::\/0)$/.test(value)))throw new Error('TRUSTED_PROXY_CIDRS requires explicit bounded CIDRs');
+  expressApp.set("trust proxy", trustedProxyCidrs.length ? trustedProxyCidrs : false);
+  const webOrigin = process.env.WEB_URL ?? "http://localhost:3000";
+  expressApp.use((request:Request,response:Response,next:NextFunction)=>{
+    if(!isAllowedRequestOrigin(request,webOrigin)) {
+      response.status(403).json({statusCode:403,message:'A matching request Origin is required',error:'Forbidden'});
+      return;
+    }
+    next();
+  });
   expressApp.use("/v1/auth/login", authLimiter);
   expressApp.use("/v1/auth/refresh", authLimiter);
 
   // Enable CORS — required for browser-to-API cross-origin requests
   // WEB_URL must be set in .env for production. Defaults to localhost:3000 for dev.
-  const webOrigin = process.env.WEB_URL ?? "http://localhost:3000";
   app.enableCors({
     origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
       if (!origin) return callback(null, true);

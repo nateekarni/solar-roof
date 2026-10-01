@@ -9,8 +9,8 @@ export class InvitationController {
   @Post('activate')
   @HttpCode(200)
   async activate(@Req() request:Request,@Body() body:{token:string;password:string}) {
-    // Forwarded client identity is untrusted until S3 defines the proxy boundary.
-    await this.invitations.activationAttempt(request.socket.remoteAddress ?? 'unknown',body?.token,body?.password);
+    // Express resolves IP only through the explicitly configured socket/CIDR chain.
+    await this.invitations.activationAttempt(request.ip ?? request.socket.remoteAddress ?? 'unknown',body?.token,body?.password);
     return {success:true};
   }
 }

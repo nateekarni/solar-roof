@@ -4,7 +4,7 @@ cd "$(dirname "$0")/../.."
 suite="${1:?Usage: platform-check.sh <suite> [--prebuilt]}"
 [[ $# -le 2 && ( $# -eq 1 || "$2" == --prebuilt ) ]] || { echo 'Invalid arguments' >&2; exit 1; }
 known='harness session invitation csrf financial-safety financial-core operations ingestion rollup reports ui-contracts ui-jobs accessibility archive recovery readiness'
-implemented=(harness session invitation)
+implemented=(harness session invitation csrf)
 if [[ "$suite" == all-fast ]]; then
   suites=("${implemented[@]}")
   echo "Implemented: ${implemented[*]}"
@@ -24,6 +24,10 @@ for item in "${suites[@]}"; do
   if [[ "$item" == recovery ]]; then [[ -f scripts/ci/recovery-drill.sh ]] || { echo 'Recovery drill not implemented' >&2; exit 1; }; fi
 done
 source scripts/ci/isolated-stack.sh
+if [[ " ${suites[*]} " == *' csrf '* ]]; then
+  compose+=(-f infra/ci/request-edge.yml)
+  export PLATFORM_EDGE_FIXTURE=true
+fi
 revision="$(git rev-parse HEAD)"
 if [[ "${2:-}" == --prebuilt ]]; then
   [[ "${CI:-}" == true && "${GITHUB_SHA:-}" == "$revision" ]] || { echo '--prebuilt requires CI and matching GITHUB_SHA' >&2; exit 1; }
@@ -38,6 +42,12 @@ fi
 stack_created=true
 "${compose[@]}" up -d --wait --wait-timeout 240
 for item in "${suites[@]}"; do
+  # Earlier suites intentionally exhaust process-local authentication budgets.
+  # Give this suite a fresh owned API process; shared DB budgets remain tested.
+  if [[ "$item" == csrf ]]; then
+    "${compose[@]}" restart api
+    node scripts/ci/coolify-deploy.mjs wait "$READINESS_API_URL/ready"
+  fi
   case "$item" in ui-jobs|accessibility) ;; *) pnpm --filter @solar/api exec tsx --tsconfig tsconfig.json --test "test/platform/$item.test.ts" ;; esac
   case "$item" in invitation|csrf|ui-contracts|ui-jobs|accessibility) pnpm --filter @solar/web exec node "test/platform/$item.mjs" ;; esac
   if [[ "$item" == session ]]; then pnpm --filter @solar/web exec tsx --test lib/api-client.spec.ts; fi

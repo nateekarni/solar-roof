@@ -10,6 +10,22 @@
 
 ขั้นตอนนี้เป็นการตั้งครั้งแรก ยังไม่ใช่หลักฐานว่า deploy บนบริษัทแล้ว อ่านผลที่ตรวจจริงใน [verification](../deployment/verification.md)
 
+## Request origin / proxy boundary deployment gate
+
+Keep `API_EDGE_ENABLED=false` and `TRUSTED_PROXY_CIDRS` empty until company runtime evidence is recorded. Empty trust ignores forwarded IP headers; Next's `/v1` fallback strips `Forwarded`, `X-Real-IP` and every `X-Forwarded-*` header and uses a shared transport budget. Next cannot verify a route-handler socket peer. It preserves the actual incoming `Origin` without inventing one from Host or forwarded headers.
+
+The proposed Coolify Traefik route sends only `Host(solar.fowir.com)` and `/v1` or `/v1/…` directly to API port 3001 with priority 100. All browser cookies stay on the same origin. The web route handles other paths; API `/docs`, health and arbitrary Host values are not exposed by this router. Host selects routing only and never selects authorization, invitation links, allowed Origin or client identity. API remains private with no published host port.
+
+Before enabling, inspect the actual proxy/network attachment and record exact proxy socket addresses/CIDRs, generated web router priority, HTTPS entrypoint, certificate resolver and every upstream forwarding hop. `COOLIFY_PROXY_NETWORK`, `COOLIFY_HTTPS_ENTRYPOINT` and `COOLIFY_CERT_RESOLVER` examples must match that evidence. Ensure API is attached to the selected network. Trust only verified proxy addresses, never a whole application network or a hop count. Traefik entrypoints must have `forwardedHeaders.insecure=false`; configure `forwardedHeaders.trustedIPs` only for verified upstream proxies (for example Cloudflare if actually present). An upstream must overwrite/remove caller forwarding headers, or append its verified peer so Express stops at the first untrusted address. A forged leftmost XFF must never select limiter identity. API fails startup if edge enablement is true with empty CIDRs.
+
+After approved configuration, verify actual `https://solar.fowir.com` login/refresh/logout, sibling same-site form POST and cross-site form POST returning 403 with unchanged session DB state, valid-origin mutation, server-side authenticated GET, direct and edge forged-XFF limits, separate real client budgets and MQTT ingestion. Preserve captured runtime configuration and sanitized results in deployment verification. These live checks are an external gate; the isolated socket-proxy fixture proves application behavior only.
+
+Origin policy runs before all controllers including public login/refresh/invitation activation. Unsafe browser requests require exact `WEB_URL`; cookie requests without Origin are denied. Bearer-only nonbrowser requests without Cookie/Origin still pass JWT/session/current-role/scope checks. GET/HEAD/OPTIONS do not mutate data. CORS remains response policy, not mutation authorization.
+
+Expired access navigation redirects to the public `/session/refresh` page. The GET itself does not rotate credentials; that browser page sends the actual same-origin POST and resumes a validated local page/query. Failed refresh ends at login rather than a refresh loop. Server Components never fabricate Origin or rotate tokens during GET. Validate this expired-access browser journey and unchanged DB session hash for GET alone as part of the live gate.
+
+Primary references: [Coolify Traefik overview](https://coolify.io/docs/core/networking/proxy/traefik/overview), [Coolify dynamic configuration](https://coolify.io/docs/core/networking/proxy/traefik/dynamic-config), [Traefik router rules and priorities](https://doc.traefik.io/traefik/routing/routers/), [Traefik entrypoint forwarding trust](https://doc.traefik.io/traefik/reference/install-configuration/entrypoints/).
+
 ## 1. รอ image จาก GitHub
 
 1. เปิด repository → **Settings → Secrets and variables → Actions → Variables**

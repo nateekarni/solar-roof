@@ -1,5 +1,6 @@
-import { cookies } from "next/headers";
+import { cookies,headers as requestHeaders } from "next/headers";
 import { redirect } from "next/navigation";
+import {safeReturnTo} from './session-navigation';
 
 /**
  * Returns the correct API base URL for server-side fetches.
@@ -25,8 +26,8 @@ export function getApiBaseUrl(): string {
  * on the client after login) and attaches it as `Authorization: Bearer <token>`
  * on every outgoing request to the API.
  *
- * If access_token is missing but refresh_token exists, attempts auto-refresh.
- * If response returns HTTP 401, immediately redirects to /login.
+ * GET never rotates credentials. Missing/expired access with a refresh cookie
+ * redirects to a browser page that sends the same-origin refresh POST.
  *
  * Drop-in replacement for native fetch() in Server Components.
  * Do NOT use in Client Components — use apiClient instead.
@@ -36,58 +37,22 @@ export async function serverFetch(
   options: RequestInit = {}
 ): Promise<Response> {
   const cookieStore = await cookies();
-  let token = cookieStore.get("access_token")?.value;
+  const token = cookieStore.get("access_token")?.value;
   const refreshToken = cookieStore.get("refresh_token")?.value;
-  const baseUrl = getApiBaseUrl();
-
-  // If access_token is missing but refresh_token is present, attempt server-side token refresh
-  if (!token && refreshToken) {
-    try {
-      const refreshRes = await fetch(`${baseUrl}/v1/auth/refresh`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refreshToken }),
-      });
-      if (refreshRes.ok) {
-        const refreshData = await refreshRes.json();
-        if (refreshData?.accessToken) {
-          token = refreshData.accessToken;
-        }
-      }
-    } catch {
-      // Ignore refresh error and fall through
-    }
-  }
 
   const headers = new Headers(options.headers);
   if (token) {
     headers.set("Authorization", `Bearer ${token}`);
   }
 
-  let response = await fetch(url, { ...options, headers });
-
-  // If we received 401 and we have a refreshToken, try refreshing once and retrying
-  if (response.status === 401 && refreshToken) {
-    try {
-      const refreshRes = await fetch(`${baseUrl}/v1/auth/refresh`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refreshToken }),
-      });
-      if (refreshRes.ok) {
-        const refreshData = await refreshRes.json();
-        if (refreshData?.accessToken) {
-          headers.set("Authorization", `Bearer ${refreshData.accessToken}`);
-          response = await fetch(url, { ...options, headers });
-        }
-      }
-    } catch {
-      // Fall through
-    }
-  }
+  const response = await fetch(url, { ...options, headers });
 
   // If still 401 (session revoked, expired, or db reset), redirect cleanly to /login
   if (response.status === 401) {
+    if(refreshToken) {
+      const returnTo=safeReturnTo((await requestHeaders()).get('x-solar-return-to'));
+      redirect('/session/refresh?returnTo='+encodeURIComponent(returnTo));
+    }
     redirect("/login");
   }
 

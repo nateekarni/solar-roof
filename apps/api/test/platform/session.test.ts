@@ -24,7 +24,7 @@ async function fixture(work:(db:Pool,user:{id:string;email:string},login:()=>Pro
   const login=async()=>{const response=await post('/login',{email,password});assert.equal(response.status,200);return response.json();};
   try {await work(db,{id,email},login);} finally {await db.query('DELETE FROM audit_events WHERE actor_id=$1',[id]);await db.query('DELETE FROM users WHERE id=$1',[id]);await db.end();}
 }
-function post(path:string,body?:unknown,headers:Record<string,string>={}) {return fetch(base+'/v1/auth'+path,{method:'POST',headers:{'Content-Type':'application/json',...headers},...(body===undefined?{}:{body:JSON.stringify(body)})});}
+function post(path:string,body?:unknown,headers:Record<string,string>={}) {return fetch(base+'/v1/auth'+path,{method:'POST',headers:{'Content-Type':'application/json',Origin:'http://localhost:13000',...headers},...(body===undefined?{}:{body:JSON.stringify(body)})});}
 function me(token:string,headers:Record<string,string>={}) {return fetch(base+'/v1/auth/me',{headers:{Authorization:`Bearer ${token}`,...headers}});}
 
 test('same-second token issuance has a fresh cryptographic refresh nonce',()=>{

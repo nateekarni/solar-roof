@@ -15,6 +15,12 @@ async function proxy(
 
   const headers = new Headers(request.headers);
   headers.delete("host");
+  // NextRequest exposes no verified transport peer. Never relay claimed identity.
+  // The same-origin edge routes /v1 directly to API for verified per-client IP;
+  // this fallback keeps the original Origin and shares the web transport budget.
+  for(const name of [...headers.keys()]) {
+    if(name==='forwarded'||name==='x-real-ip'||name.startsWith('x-forwarded-'))headers.delete(name);
+  }
 
   const fetchOptions: RequestInit = {
     method: request.method,

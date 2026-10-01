@@ -19,6 +19,11 @@ const invalid=()=>new UnauthorizedException('Invitation is invalid or expired');
 export class InvitationService {
   constructor(@Inject(DatabaseService) private readonly db:DatabaseService,@Inject(AuthService) private readonly auth:AuthService) {}
   private async limit(client:PoolClient,key:string,seconds:number):Promise<string> {
+    // Both budgets expire within one hour. Bound each cleanup and avoid contention
+    // with another request's limiter row. Current active windows are never removed.
+    await client.query(`DELETE FROM invitation_rate_limits WHERE key IN (
+      SELECT key FROM invitation_rate_limits WHERE window_started_at<now()-interval '1 hour'
+      ORDER BY window_started_at LIMIT 100 FOR UPDATE SKIP LOCKED)`);
     const result=await client.query(`INSERT INTO invitation_rate_limits(key,attempts) VALUES($1,1)
       ON CONFLICT(key) DO UPDATE SET
        attempts=CASE WHEN invitation_rate_limits.window_started_at<=now()-$2*interval '1 second' THEN 1 ELSE invitation_rate_limits.attempts+1 END,

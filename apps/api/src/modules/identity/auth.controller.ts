@@ -218,6 +218,9 @@ export class AuthController {
     if (!verified) { try { if (refreshToken) verified = this.authService.verifyRefreshToken(refreshToken); } catch {} }
     if (verified && await this.sessions.isActive(verified.sessionId, verified.id)) {
       await this.sessions.revoke(verified.sessionId);
+    } else if (!req.headers.origin && !req.headers.cookie) {
+      // The nonbrowser origin exception still requires a verified active JWT.
+      throw new UnauthorizedException("Invalid or inactive logout token");
     }
 
     res.clearCookie("refresh_token", { path: "/" });

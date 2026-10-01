@@ -1,0 +1,34 @@
+services:
+  api:
+    environment:
+      TRUSTED_PROXY_CIDRS: 172.31.253.10/32
+    networks:
+      default: {}
+      request-edge: {ipv4_address: 172.31.253.20}
+  web:
+    ports: !override ['127.0.0.1:13002:3000']
+  request-edge:
+    image: node:24.20.0-bookworm-slim
+    command: [node, /fixture/request-edge.mjs]
+    volumes: ['./request-edge.mjs:/fixture/request-edge.mjs:ro']
+    ports: ['127.0.0.1:13000:3000']
+    networks:
+      default: {}
+      request-edge: {ipv4_address: 172.31.253.10}
+    depends_on:
+      api: {condition: service_healthy}
+      web: {condition: service_started}
+  edge-client-a:
+    image: node:24.20.0-bookworm-slim
+    command: [node, -e, 'setInterval(()=>{},60000)']
+    networks:
+      request-edge: {ipv4_address: 172.31.253.11}
+  edge-client-b:
+    image: node:24.20.0-bookworm-slim
+    command: [node, -e, 'setInterval(()=>{},60000)']
+    networks:
+      request-edge: {ipv4_address: 172.31.253.12}
+networks:
+  request-edge:
+    ipam:
+      config: [{subnet: 172.31.253.0/24}]

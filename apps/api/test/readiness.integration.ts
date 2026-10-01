@@ -16,7 +16,7 @@ const suffix=randomUUID().slice(0,8);
 const users:Record<string,{id:string;token:string}>={};
 let broker:mqtt.MqttClient|undefined;
 async function loginToken(email:string,role:string) {
-  const response=await fetch(base+'/v1/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:'Local-test-only-123!'})});
+  const response=await fetch(base+'/v1/auth/login',{method:'POST',headers:{'Content-Type':'application/json',Origin:'http://localhost:13000'},body:JSON.stringify({email,password:'Local-test-only-123!'})});
   assert.equal(response.status,200);const data=await response.json();assert.equal(data.user.role,role);return data.accessToken as string;
 }
 async function request(role:string,path:string,method='GET',body?:unknown) {
@@ -32,7 +32,7 @@ try {
   const unauthenticated=await fetch(base+'/v1/sites');
   assert.equal(unauthenticated.status,401);
   for (const role of ['owner','operator','accountant']) assert.equal((await request(role,'/v1/sites','POST',{})).status,403);
-  const bootstrapLogin=await fetch(base+'/v1/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:'bootstrap@example.test',password:'Ci-bootstrap-original-123!'})});
+  const bootstrapLogin=await fetch(base+'/v1/auth/login',{method:'POST',headers:{'Content-Type':'application/json',Origin:'http://localhost:13000'},body:JSON.stringify({email:'bootstrap@example.test',password:'Ci-bootstrap-original-123!'})});
   assert.equal(bootstrapLogin.status,200,'Bootstrap rerun must preserve original password');
   const name=`readiness-${suffix}`;
   const created=await request('admin','/v1/sites','POST',{name,schoolName:`School ${suffix}`,gatewayName:name,protocol:'mqtt',endpoint:`energy/${name}/#`,deviceSerial:`meter-${suffix}`,capacityMwp:0.1,pollingIntervalSeconds:10});

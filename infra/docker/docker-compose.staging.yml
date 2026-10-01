@@ -123,6 +123,9 @@ services:
       NODE_ENV: production
       API_PORT: 3001
       WEB_URL: https://solar.fowir.com
+      # Empty trust is safe; enabling the direct edge route requires runtime evidence.
+      TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-}
+      API_EDGE_ENABLED: ${API_EDGE_ENABLED:-false}
       DATABASE_URL: ${DATABASE_URL:?required}
       REDIS_URL: redis://redis:6379
       MQTT_URL: mqtt://mqtt:1883
@@ -135,6 +138,16 @@ services:
       STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?required}
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?required}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?required}
+    labels:
+      traefik.enable: ${API_EDGE_ENABLED:-false}
+      traefik.docker.network: ${COOLIFY_PROXY_NETWORK:-coolify}
+      traefik.http.routers.solar-api.rule: Host(`solar.fowir.com`) && (Path(`/v1`) || PathPrefix(`/v1/`))
+      traefik.http.routers.solar-api.priority: '100'
+      traefik.http.routers.solar-api.entrypoints: ${COOLIFY_HTTPS_ENTRYPOINT:-https}
+      traefik.http.routers.solar-api.tls: 'true'
+      traefik.http.routers.solar-api.tls.certresolver: ${COOLIFY_CERT_RESOLVER:-letsencrypt}
+      traefik.http.routers.solar-api.service: solar-api
+      traefik.http.services.solar-api.loadbalancer.server.port: '3001'
     depends_on:
       migrate: {condition: service_completed_successfully}
       redis: {condition: service_healthy}

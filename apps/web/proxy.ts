@@ -1,7 +1,9 @@
 import { type NextRequest, NextResponse } from "next/server";
+import {safeReturnTo} from './lib/session-navigation';
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  if(pathname==='/session/refresh')return NextResponse.next();
 
   if (pathname === "/activate") {
     const response=NextResponse.next();
@@ -23,10 +25,9 @@ export async function proxy(request: NextRequest) {
   const refreshToken = request.cookies.get("refresh_token")?.value;
   const isLoginPage = pathname === "/login" || pathname.startsWith("/login/");
 
-  const apiBase =
-    process.env.API_INTERNAL_URL?.trim() ||
-    process.env.NEXT_PUBLIC_API_URL?.trim() ||
-    "http://localhost:3001";
+  // This is only a navigation hint; API verifies token/session/role on every read.
+  let unexpiredAccess=false;
+  try {unexpiredAccess=Number(JSON.parse(Buffer.from(accessToken?.split('.')[0] ?? '', 'base64url').toString()).exp)*1000>Date.now();}catch {}
 
   // 1. If user is trying to access protected routes without any tokens
   if (!accessToken && !refreshToken && !isLoginPage) {
@@ -34,46 +35,23 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  // 2. If user is on protected route, access_token missing, but has refresh_token: attempt validation/refresh
-  if (!accessToken && refreshToken && !isLoginPage) {
-    try {
-      const refreshRes = await fetch(`${apiBase}/v1/auth/refresh`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refreshToken }),
-      });
-      if (refreshRes.ok) {
-        const data = await refreshRes.json();
-        if (data?.accessToken) {
-          const response = NextResponse.next();
-          response.cookies.set("access_token", data.accessToken, {
-            path: "/",
-            httpOnly: true,
-            sameSite: "lax",
-            maxAge: 900,
-          });
-          return response;
-        }
-      } else {
-        // Refresh token revoked or invalid (e.g. after DB seed reset)
-        const loginUrl = new URL("/login", request.url);
-        const response = NextResponse.redirect(loginUrl);
-        response.cookies.delete("access_token");
-        response.cookies.delete("refresh_token");
-        return response;
-      }
-    } catch {
-      // API unreachable or network error, let serverFetch handle redirect
-    }
+  // GET never rotates credentials. A browser page performs a same-origin POST.
+  if(!unexpiredAccess&&refreshToken&&!isLoginPage) {
+    const bridge=request.nextUrl.clone();bridge.pathname='/session/refresh';bridge.search='';
+    bridge.searchParams.set('returnTo',safeReturnTo(pathname+request.nextUrl.search));
+    return NextResponse.redirect(bridge);
   }
 
   // 3. If authenticated user is trying to visit /login -> redirect to /
-  if ((accessToken || refreshToken) && isLoginPage) {
+  if (unexpiredAccess && isLoginPage && request.nextUrl.searchParams.get('sessionExpired')!=='1') {
     const homeUrl = new URL("/", request.url);
     return NextResponse.redirect(homeUrl);
   }
 
-  return NextResponse.next();
+  const headers=new Headers(request.headers);
+  // Overwrite caller headers; Server Components may preserve the requested page.
+  headers.set('x-solar-return-to',safeReturnTo(pathname+request.nextUrl.search));
+  return NextResponse.next({request:{headers}});
 }
 
 export const config = {

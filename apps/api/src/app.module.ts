@@ -16,6 +16,7 @@ import { APP_GUARD } from "@nestjs/core";
 import { JwtAuthGuard } from "./modules/identity/jwt.guard.js";
 import { RolesGuard } from "./common/roles.guard.js";
 import { PlatformAccessGuard } from "./common/auth/platform-access.guard.js";
+import { RequestOriginGuard } from "./common/auth/request-origin.guard.js";
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { PlatformAccessGuard } from "./common/auth/platform-access.guard.js";
     SettingsModule,
   ],
   providers: [
+    { provide: APP_GUARD, useClass: RequestOriginGuard },
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
