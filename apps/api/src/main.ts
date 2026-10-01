@@ -9,11 +9,14 @@ import helmet from "helmet";
 import { rateLimit } from "express-rate-limit";
 import { AppModule } from "./app.module.js";
 import { AllExceptionsFilter } from "./common/http-exception.filter.js";
+import { RequestTimingInterceptor, requestTimingMiddleware } from "./common/observability/request-timing.interceptor.js";
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { logger: ["error", "warn"] });
 
   app.useGlobalFilters(new AllExceptionsFilter());
+  app.useGlobalInterceptors(new RequestTimingInterceptor());
+  app.use(requestTimingMiddleware);
 
   app.use(
     helmet({

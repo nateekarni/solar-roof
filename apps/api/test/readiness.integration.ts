@@ -78,6 +78,18 @@ try {
   assert.equal(acknowledgements[0]!.duplicate,false);
   await broker.publishAsync(`energy/${name}/telemetry`,payload,{qos:1});await waitForAck(2);
   assert.equal(acknowledgements[1]!.duplicate,true);
+  // Malformed data must be rejected without logging its payload or emitting ACKs.
+  await broker.publishAsync(`energy/${name}/telemetry`,'{"test-secret":',{qos:1});
+  const {execFileSync}=await import('node:child_process');
+  let logs='';const rejectedDeadline=Date.now()+5000;
+  while(Date.now()<rejectedDeadline) {
+    logs=execFileSync('docker',['compose','-f','infra/ci/compose.yml','logs','--no-color','api'],{cwd:new URL('../../../',import.meta.url),encoding:'utf8'});
+    if(logs.includes('Telemetry rejected'))break;
+    await new Promise(resolve=>setTimeout(resolve,50));
+  }
+  assert.equal(acknowledgements.length,2);
+  assert.equal(logs.includes('test-secret'),false);
+  assert.ok(logs.includes('Telemetry rejected'));
   const raw=await db.query('SELECT * FROM telemetry_raw WHERE device_id=$1',[device]);
   assert.equal(raw.rows.length,1);assert.equal(Number(raw.rows[0].active_power_w),1200);assert.ok(raw.rows[0].received_time);
   const live=await request('school',`/v1/sites/${site.id}/live-telemetry`);

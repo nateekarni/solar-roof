@@ -3,6 +3,7 @@ import mqtt from "mqtt";
 import { createHash, randomUUID } from "node:crypto";
 import { decodeRegisterBatch, type RegisterFieldMapping } from "@solar/domain";
 import { DatabaseService } from "../../database/database.service.js";
+import { observeDuration, observeValue } from '../../common/observability/metrics.js';
 
 export interface LiveTelemetrySnapshot {
   siteId: string; siteName?: string | undefined; gatewayId?: string | undefined;
@@ -60,7 +61,10 @@ export class MqttIngestionService implements OnModuleInit, OnModuleDestroy {
     this.client.on('close', () => this.clearReadiness());
     this.client.on('disconnect', () => this.clearReadiness());
     this.client.on('offline', () => this.clearReadiness());
-    this.client.on('message', (topic, payload) => { void this.handleIncomingMessage(topic, payload.toString()).catch(error => this.logger.error(`Rejected telemetry on ${topic}: ${error}`)); });
+    this.client.on('message', (topic, payload) => { void this.handleIncomingMessage(topic, payload.toString()).catch(() => {
+      observeValue('ingress_rejected', 1);
+      this.logger.warn('Telemetry rejected');
+    }); });
     this.client.on('error', error => { this.subscriptionsReady = false; this.scheduleRestore(this.connectionGeneration); this.logger.warn(error.message); });
   }
     isConnected(): boolean { return this.client?.connected === true; }
@@ -126,12 +130,13 @@ export class MqttIngestionService implements OnModuleInit, OnModuleDestroy {
     }
   }
 async handleIncomingMessage(topic: string, messageStr: string) {
+    const started = performance.now();
     if (topic.split('/').some(part => ['response', 'config', 'ack'].includes(part.toLowerCase()))) return;
     const data = JSON.parse(messageStr);
     if (!data || typeof data !== 'object' || ['acknowledged', 'ack', 'config'].includes(data.status ?? data.type)) return;
     const deviceHint = data.deviceId ?? data.device ?? data.serialNumber;
     // A gateway can contain many devices, so a device identity is mandatory.
-    if (typeof deviceHint !== 'string' || !deviceHint.trim()) return;
+    if (typeof deviceHint !== 'string' || !deviceHint.trim()) { observeValue('ingress_rejected', 1); return; }
     const result = await this.db.query(
       `SELECT d.id AS "deviceId", d.site_id AS "siteId", g.id AS "gatewayId", g.name AS "gatewayName", g.endpoint
        FROM devices d JOIN gateways g ON g.id = d.gateway_id AND g.site_id = d.site_id
@@ -141,7 +146,7 @@ async handleIncomingMessage(topic: string, messageStr: string) {
       && (!data.gatewayId || data.gatewayId === row.gatewayId)
       && (!data.gateway || data.gateway === row.gatewayName || data.gateway === row.gatewayId)
       && (!data.siteId || data.siteId === row.siteId));
-    if (candidates.length !== 1) return;
+    if (candidates.length !== 1) { observeValue('ingress_rejected', 1); return; }
     const entity = candidates[0]!;
     if (!data.timestamp && !data.sourceTime) throw new Error('Source timestamp is required for replay-safe telemetry');
     const sourceTime = new Date(data.sourceTime ?? data.timestamp); const receivedTime = new Date();
@@ -197,10 +202,13 @@ async handleIncomingMessage(topic: string, messageStr: string) {
       await client.query('COMMIT');
     } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
     // Both a committed insert and a durable duplicate are safe to acknowledge. No ACK is emitted before COMMIT.
+    observeValue(accepted ? 'ingress_accepted' : 'ingress_duplicate', 1);
     this.client?.publish(entity.endpoint.replace(/\/#$/, '') + '/response', JSON.stringify({
       status: 'acknowledged', gateway: entity.gatewayName, deviceId: entity.deviceId, ingestionId: data.ingestionId ?? ingestionId,
       sourceTime: sourceTime.toISOString(), serverReceivedAt: receivedTime.toISOString(), duplicate: !accepted,
-    }), { qos: 1 });
+    }), { qos: 1 }, error => {
+      if (!error) observeDuration('ingress_ack_latency', performance.now() - started, {});
+    });
   }
   async publishHardwareConfig(gatewayName: string, configData: Record<string, unknown>) {
     if (!this.client?.connected) return false;

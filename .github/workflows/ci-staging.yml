@@ -57,6 +57,8 @@ jobs:
         run: bash infra/docker/mosquitto/smoke.sh
       - name: Real integration and browser E2E in disposable stack
         run: bash scripts/ci/integration.sh
+      - name: Isolated platform regression and latency baseline
+        run: bash scripts/ci/platform-check.sh all-fast --prebuilt
       - name: Test evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -64,6 +66,8 @@ jobs:
           name: test-evidence
           path: |
             test/artifacts/compose.log
+            test/artifacts/solar-ci-*.log
+            test/artifacts/platform-baseline.json
             test/artifacts/managed-staging.log
             apps/web/test/artifacts/*.png
           retention-days: 7

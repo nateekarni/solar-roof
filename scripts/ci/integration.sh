@@ -1,14 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
-case "$(uname -s)" in MINGW*|MSYS*) export MSYS_NO_PATHCONV=1 ;; esac
-export COMPOSE_PROJECT_NAME="solar-ci-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
-compose=(docker compose -f infra/ci/compose.yml)
-mkdir -p test/artifacts
-cleanup() {
-  "${compose[@]}" logs --no-color > test/artifacts/compose.log 2>&1 || true
-  "${compose[@]}" down --volumes --remove-orphans || true
-}
-trap cleanup EXIT
+cd "$(dirname "$0")/../.."
+source scripts/ci/isolated-stack.sh
+stack_created=true
 "${compose[@]}" up -d --wait --wait-timeout 240
 # Same migrations and bootstrap image run twice; test confirms password is not reset.
 "${compose[@]}" run --rm migrate

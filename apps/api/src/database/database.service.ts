@@ -1,6 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import type { OnModuleDestroy } from "@nestjs/common";
 import { Pool, type PoolClient, type QueryResultRow } from "pg";
+import { observeDuration, observeValue } from '../common/observability/metrics.js';
 
 @Injectable()
 export class DatabaseService implements OnModuleDestroy {
@@ -17,7 +18,13 @@ export class DatabaseService implements OnModuleDestroy {
       new Logger(DatabaseService.name).warn("PostgreSQL idle connection lost; the pool will reconnect on demand");
     });
   }
-  async query<T extends QueryResultRow = QueryResultRow>(text: string, values: unknown[] = []) { return this.pool.query<T>(text, values); }
+  async query<T extends QueryResultRow = QueryResultRow>(text: string, values: unknown[] = []) {
+    const started = performance.now();
+    const pending = this.pool.query<T>(text, values);
+    observeValue('db_pool_waiting', this.pool.waitingCount);
+    try { return await pending; }
+    finally { observeDuration('query_duration', performance.now() - started, {}); }
+  }
   async transaction<T>(work: (client: PoolClient) => Promise<T>): Promise<T> {
     const client = await this.pool.connect();
     try {
