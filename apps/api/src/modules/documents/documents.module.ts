@@ -1,3 +1,4 @@
+import { FinancialReadinessService } from "../billing/financial-readiness.service.js";
 import { Module } from "@nestjs/common";
 import { DatabaseModule } from "../../database/database.module.js";
 import { DocumentService, NumberSeriesService } from "./document.service.js";
@@ -8,7 +9,7 @@ import { VerificationService } from "./verification.service.js";
 @Module({
   imports: [DatabaseModule],
   controllers: [DocumentsController],
-  providers: [NumberSeriesService, DocumentService, FileStorageService, VerificationService],
+  providers: [FinancialReadinessService, NumberSeriesService, DocumentService, FileStorageService, VerificationService],
   exports: [NumberSeriesService, DocumentService, FileStorageService, VerificationService],
 })
 export class DocumentsModule {}

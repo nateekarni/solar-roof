@@ -1,3 +1,5 @@
+import { FinancialReadinessService } from "../billing/financial-readiness.service.js";
+import { schoolScope } from "../../common/auth/route-policy.js";
 import { Body, Controller, Get, HttpCode, HttpStatus, Inject, Post, Req, Res, UnauthorizedException } from "@nestjs/common";
 import { type Request, type Response } from "express";
 import { createHash, randomUUID } from "node:crypto";
@@ -20,8 +22,15 @@ export class AuthController {
   constructor(
     @Inject(AuthService) private readonly authService: AuthService,
     @Inject(DatabaseService) private readonly db: DatabaseService,
-    @Inject(SessionService) private readonly sessions: SessionService
+    @Inject(SessionService) private readonly sessions: SessionService,
+    @Inject(FinancialReadinessService) private readonly readiness: FinancialReadinessService
   ) {}
+
+  @Get('capabilities')
+  async capabilities(@Req() req: Request & {user?: {role: string; schoolId?: string}}) {
+    const scope=schoolScope(req.user);
+    return this.readiness.capabilities(req.user?.role ?? '',scope === null || scope.length > 0);
+  }
 
   @Public()
   @Post("login")

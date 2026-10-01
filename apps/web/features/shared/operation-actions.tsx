@@ -7,6 +7,7 @@ import { notify } from "../../components/feedback/notifications";
 import { Button } from "../../components/ui/button";
 import { apiClient } from "../../lib/api-client";
 import { useLocale, useT } from "../../providers/locale-provider";
+import { useFinancialCapabilities } from "../../lib/financial-capabilities";
 import { useAuth } from "../../stores/auth-store";
 
 // Import all 9 Dialogs
@@ -31,13 +32,15 @@ export function OperationActions({
   const t = useT();
   const locale = useLocale();
   const { user } = useAuth();
+  const financial = useFinancialCapabilities();
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
   const [exporting, setExporting] = React.useState(false);
   const [dialogOpen, setDialogOpen] = React.useState(false);
 
-  const canCreate = resource !== "sites" || (user?.role === "admin" && !user.schoolId);
+  const financialAction = resource === "billing" ? "calculate" : resource === "contracts" ? "create_contract" : resource === "documents" || resource === "receipts" ? "issue" : undefined;
+  const canCreate = financialAction ? financial.actions.includes(financialAction) : resource !== "sites" || (user?.role === "admin" && !user.schoolId);
 
   React.useEffect(() => {
     const act = searchParams.get("action");
@@ -99,6 +102,7 @@ export function OperationActions({
         <span>{exporting ? t("common.loading") : t("common.exportCsv")}</span>
       </Button>
 
+      {financialAction && financial.unavailable[financialAction] && <p role="status" className="text-xs text-muted-foreground">{financial.unavailable[financialAction]}</p>}
       {canCreate && action && action.trim() !== "" && (
         <Button
           type="button"
@@ -118,10 +122,10 @@ export function OperationActions({
       {resource === "sites" && canCreate && (
         <SiteFormDialog open={dialogOpen} onOpenChange={handleDialogOpenChange} />
       )}
-      {resource === "billing" && (
+      {resource === "billing" && canCreate && (
         <BillingCycleDialog open={dialogOpen} onOpenChange={handleDialogOpenChange} />
       )}
-      {resource === "contracts" && (
+      {resource === "contracts" && canCreate && (
         <ContractFormDialog open={dialogOpen} onOpenChange={handleDialogOpenChange} />
       )}
       {resource === "reports" && (

@@ -20,6 +20,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let message = "Internal server error";
     let error: string | undefined;
+    let code: string | undefined;
 
     if (exception instanceof HttpException) {
       status = exception.getStatus();
@@ -30,6 +31,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
         const r = res as Record<string, unknown>;
         message = (r.message as string) || exception.message;
         error = (r.error as string) || undefined;
+        if (typeof r.code === "string") code = r.code;
       }
     } else if (exception instanceof Error) {
       this.logger.error(`Unhandled error: ${exception.message}`, exception.stack);
@@ -37,6 +39,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     response.status(status).json({
       statusCode: status,
+      ...(code ? { code } : {}),
       message,
       ...(error ? { error } : {}),
       path: request.url,

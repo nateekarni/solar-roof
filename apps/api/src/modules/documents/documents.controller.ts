@@ -2,10 +2,13 @@ import { BadRequestException, Body, Controller, Inject, Post } from "@nestjs/com
 import { randomUUID } from "node:crypto";
 import { DatabaseService } from "../../database/database.service.js";
 
+import { FinancialReadinessService } from "../billing/financial-readiness.service.js";
+import { Roles } from "../../common/roles.decorator.js";
 @Controller("v1/documents")
 export class DocumentsController {
-  constructor(@Inject(DatabaseService) private readonly db: DatabaseService) {}
+  constructor(@Inject(DatabaseService) private readonly db: DatabaseService, @Inject(FinancialReadinessService) private readonly readiness: FinancialReadinessService) {}
 
+  @Roles("owner", "accountant")
   @Post()
   async uploadDocument(@Body() body: {
     siteId?: string;
@@ -14,6 +17,7 @@ export class DocumentsController {
     issueDate?: string;
     fileKey?: string;
   }) {
+    await this.readiness.assertEnabled('issue');
     const siteId = body.siteId;
     const type = (body.type || "invoice").toLowerCase();
     const amount = Number(body.amount ?? 15000);

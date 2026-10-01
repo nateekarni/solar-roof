@@ -80,3 +80,5 @@ export interface DashboardSummaryResponse {
   alerts: DashboardSummaryAlert[];
   collection: DashboardSummaryCollection;
 }
+
+export type { FinancialAction, Capabilities } from './capabilities.js';

@@ -36,6 +36,7 @@ import { TelemetryAgeLabel } from "./telemetry-age-label";
 import { useLocale, useT } from "../../providers/locale-provider";
 import { formatAppDate, formatAppDateTime, isIsoDateLike } from "../../lib/date-format";
 import { renderStatusBadge, STATUS_MAP } from "../../lib/status-badge";
+import { useFinancialCapabilities } from "../../lib/financial-capabilities";
 import { useAuth } from "../../stores/auth-store";
 import { SiteEditDialog } from "../sites/site-edit-dialog";
 import { SiteDeleteDialog } from "../sites/site-delete-dialog";
@@ -69,6 +70,7 @@ export function OperationCardList({
 
   const router = useRouter();
   const { user } = useAuth();
+  const financial = useFinancialCapabilities();
   const isSchoolUser = user?.role === "school_user";
 
   const [searchTerm, setSearchTerm] = React.useState("");
@@ -326,7 +328,7 @@ export function OperationCardList({
                     )}
 
                     {/* Admin/Owner Verify Button */}
-                    {!isSchoolUser && (row.status === "pending_verification" || row.paymentStatus === "pending_verification" || row.slipUrl || row["หลักฐานการชำระ"]) && (
+                    {financial.actions.includes("approve_payment") && (row.status === "pending_verification" || row.paymentStatus === "pending_verification" || row.slipUrl || row["หลักฐานการชำระ"]) && (
                       <Button
                         type="button"
                         size="sm"
@@ -744,6 +746,3 @@ export function OperationCardList({
     </div>
   );
 }
-
-
-

@@ -41,6 +41,7 @@ import { Badge } from "../../components/ui/badge";
 import { Card } from "../../components/ui/card";
 import { apiClient } from "../../lib/api-client";
 import { useLocale } from "../../providers/locale-provider";
+import { useFinancialCapabilities } from "../../lib/financial-capabilities";
 import { useAuth } from "../../stores/auth-store";
 import { notify } from "../../components/feedback/notifications";
 import { formatAppDate, formatAppDateTime } from "../../lib/date-format";
@@ -89,6 +90,7 @@ export function BillingDetailModal({
 }: BillingDetailModalProps) {
   const locale = useLocale();
   const { user } = useAuth();
+  const financial = useFinancialCapabilities();
   const isSchoolUser = user?.role === "school_user";
 
   const [loading, setLoading] = React.useState(false);
@@ -288,7 +290,7 @@ export function BillingDetailModal({
 
             {/* Quick Document Links & Email Dispatch */}
             <div className="flex items-center gap-2 pr-6">
-              <Button
+              {financial.actions.includes("send") && <Button
                 variant="outline"
                 size="sm"
                 onClick={() => setEmailModalOpen(true)}
@@ -296,7 +298,7 @@ export function BillingDetailModal({
               >
                 <Mail className="size-3.5 text-primary" />
                 <span>{locale === "th" ? "ส่งอีเมลใบแจ้งหนี้" : "Email Invoice"}</span>
-              </Button>
+              </Button>}
               {onOpenInvoice && (
                 <Button
                   variant="outline"
@@ -548,7 +550,7 @@ export function BillingDetailModal({
               )}
 
               {/* Admin/Owner Actions: Approve or Reject Inline */}
-              {!isSchoolUser && !isPaid && hasSlip && (
+              {financial.actions.includes("approve_payment") && !isPaid && hasSlip && (
                 <div className="pt-2 space-y-2 border-t border-border/60">
                   <div className="text-[11px] font-semibold text-foreground uppercase tracking-wider">
                     {locale === "th" ? "การตรวจสอบโดยผู้ดูแลระบบ" : "Administrative Verification"}

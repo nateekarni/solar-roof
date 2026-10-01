@@ -1,3 +1,4 @@
+import { FinancialReadinessService } from "../billing/financial-readiness.service.js";
 import { Module } from "@nestjs/common";
 import { loadEnv } from "@solar/domain";
 import { DatabaseModule } from "../../database/database.module.js";
@@ -14,6 +15,7 @@ import { UsersController } from "./users.controller.js";
   imports: [DatabaseModule],
   controllers: [AuthController, MeController, UsersController, InvitationController],
   providers: [
+    FinancialReadinessService,
     {
       provide: AuthService,
       useFactory: () => {

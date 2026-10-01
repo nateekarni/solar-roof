@@ -16,11 +16,13 @@ export function routeAllowed(role: string, method: string, rawPath: string): boo
   if (!["owner", "admin", "operator", "accountant", "school_user"].includes(role)) return false;
   const path = rawPath.split("?")[0]!.replace(/\/$/, "");
   const read = method === "GET" || method === "HEAD";
-  if (/^\/v1\/(?:auth\/me|me(?:\/preferences)?|notifications\/settings)$/.test(path)) return true;
+  if (/^\/v1\/(?:auth\/(?:me|capabilities)|me(?:\/preferences)?|notifications\/settings)$/.test(path)) return true;
   if (/^\/v1\/operations\/(?:users|audit)(?:\/|$)/.test(path)) return read && ["owner", "admin"].includes(role);
   if (/^\/v1\/(?:sites|schools|gateways|devices|meter-presets)(?:\/|$)/.test(path)) return read || role === "admin";
   if (path === "/v1/telemetry/ingest") return false; // MQTT is the only provisioned ingestion transport.
   if (/^\/v1\/billing-cycles\/[^/]+\/pay$/.test(path)) return method === "POST" && ["owner", "admin", "accountant", "school_user"].includes(role);
+  if (path === '/v1/contracts' && !read) return method === 'POST' && ['owner','admin'].includes(role);
+  if (/^\/v1\/billing-cycles\/[^/]+\/(?:generate-invoice|verify-payment|status|adjust|send-email)$/.test(path) || path === '/v1/documents' && !read) return ['owner','accountant'].includes(role);
   if (/^\/v1\/(?:billing-cycles|contracts|documents)(?:\/|$)/.test(path)) return read || ["owner", "admin", "accountant"].includes(role);
   if (/^\/v1\/settings(?:\/|$)/.test(path)) {
     if (read) return role !== "school_user" || /\/settings\/(?:company|bank-accounts)$/.test(path);

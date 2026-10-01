@@ -54,7 +54,7 @@ interface SiteOption {
 interface RateRow {
   startDate: string;
   endDate: string;
-  rate: number;
+  rate: number | "";
 }
 
 export function ContractFormDialog({
@@ -75,7 +75,7 @@ export function ContractFormDialog({
     {
       startDate: new Date().toISOString().slice(0, 10),
       endDate: "",
-      rate: 4.25,
+      rate: "",
     },
   ]);
 
@@ -91,22 +91,16 @@ export function ContractFormDialog({
     defaultValues: {
       siteId: "",
       effectiveDate: new Date().toISOString().slice(0, 10),
-      paymentTerms: "ชำระภายใน 30 วัน",
-      signerName: user?.displayName || "Admin User",
+      paymentTerms: "",
+      signerName: "",
       taxId: "",
       companyName: "",
-      branch: "สำนักงานใหญ่",
+      branch: "",
       taxAddress: "",
       billingEmail: "",
       billingPhone: "",
     },
   });
-
-  React.useEffect(() => {
-    if (user?.displayName) {
-      setValue("signerName", user.displayName);
-    }
-  }, [user, setValue]);
 
   React.useEffect(() => {
     if (open) {
@@ -137,7 +131,7 @@ export function ContractFormDialog({
       {
         startDate: nextStart,
         endDate: "",
-        rate: lastRow?.rate ?? 4.25,
+        rate: "",
       },
     ]);
   };
@@ -168,11 +162,11 @@ export function ContractFormDialog({
         signerName: values.signerName,
         taxId: values.taxId?.trim() || null,
         companyName: values.companyName?.trim() || null,
-        branch: values.branch?.trim() || "สำนักงานใหญ่",
+        branch: values.branch?.trim() || null,
         taxAddress: values.taxAddress?.trim() || null,
         billingEmail: values.billingEmail?.trim() || null,
         billingPhone: values.billingPhone?.trim() || null,
-        ratePerKwh: Number(rateRows[0]?.rate ?? 4.25),
+        ratePerKwh: Number(rateRows[0]?.rate),
         rates: rateRows.map((r) => ({
           startDate: r.startDate,
           endDate: r.endDate.trim() ? r.endDate : null,
@@ -425,7 +419,10 @@ export function ContractFormDialog({
                           type="number"
                           step="0.01"
                           value={row.rate}
-                          onChange={(e) => handleRateRowChange(idx, "rate", Number(e.target.value))}
+                          required
+                          min="0"
+                          aria-label={locale === "th" ? "อัตราค่าไฟที่ตกลง" : "Agreed tariff"}
+                          onChange={(e) => handleRateRowChange(idx, "rate", e.target.value === "" ? "" : Number(e.target.value))}
                           className="h-8 text-xs font-mono font-bold text-primary bg-background"
                         />
                       </td>

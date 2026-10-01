@@ -50,6 +50,9 @@ importers:
       '@prisma/client':
         specifier: ^7.10.0
         version: 7.10.0(prisma@8.0.0-rc.12(@types/node@26.4.0)(@types/react@19.2.18)(@vercel/nft@1.11.0(supports-color@7.2.0))(magicast@0.5.4)(pg@8.23.0)(supports-color@7.2.0)(typanion@3.14.0)(typescript@7.0.2)(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@4.1.11(@opentelemetry/api@1.9.1)(@types/node@26.4.0)(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0)))(ws@8.21.3))(typescript@7.0.2)
+      '@solar/api-contracts':
+        specifier: workspace:*
+        version: link:../../packages/api-contracts
       '@solar/domain':
         specifier: workspace:*
         version: link:../../packages/domain

@@ -16,17 +16,20 @@ import nodemailer from "nodemailer";
 import { DatabaseService } from "../../database/database.service.js";
 import { Roles } from "../../common/roles.decorator.js";
 
+import { FinancialReadinessService } from "./financial-readiness.service.js";
+
 @Controller("v1")
 export class BillingController {
-  constructor(@Inject(DatabaseService) private readonly db: DatabaseService) {}
+  constructor(@Inject(DatabaseService) private readonly db: DatabaseService, @Inject(FinancialReadinessService) private readonly readiness: FinancialReadinessService) {}
 
-  @Roles("owner", "admin")
+  @Roles("owner", "admin", "accountant")
   @Post("billing-cycles")
   async createBillingCycle(@Body() body: {
     siteId?: string;
     periodStart?: string;
     periodEnd?: string;
   }) {
+    await this.readiness.assertEnabled('calculate');
     const siteId = body.siteId;
     const periodStart = body.periodStart;
     const periodEnd = body.periodEnd;
@@ -146,15 +149,19 @@ export class BillingController {
     const rawSiteIds = body.siteIds && body.siteIds.length > 0 ? body.siteIds : body.siteId ? [body.siteId] : [];
     const siteIds = Array.from(new Set(rawSiteIds.filter(Boolean)));
     const effectiveDate = body.effectiveDate || new Date().toISOString().slice(0, 10);
-    const ratePerKwh = Number(body.ratePerKwh ?? 4.25);
-    const paymentTerms = body.paymentTerms || "ชำระภายใน 30 วัน";
-    const signerName = body.signerName || "Solar Platform Owner";
+    const ratePerKwh = Number(body.ratePerKwh);
+    const paymentTerms = body.paymentTerms?.trim();
+    const signerName = body.signerName?.trim();
     const taxId = body.taxId?.trim() || null;
     const companyName = body.companyName?.trim() || null;
-    const branch = body.branch?.trim() || "สำนักงานใหญ่";
+    const branch = body.branch?.trim() || null;
     const taxAddress = body.taxAddress?.trim() || null;
     const billingEmail = body.billingEmail?.trim() || null;
     const billingPhone = body.billingPhone?.trim() || null;
+
+    if (!paymentTerms || !signerName) throw new BadRequestException('Payment terms and authorized signatory must be supplied');
+    const rates = body.rates?.length ? body.rates : [{rate: body.ratePerKwh}];
+    if (rates.some(r => typeof r.rate !== 'number' || !Number.isFinite(r.rate) || r.rate < 0)) throw new BadRequestException('An explicit nonnegative rate is required for every rate period');
 
     if (siteIds.length === 0) {
       throw new BadRequestException("At least one siteId is required");
@@ -193,7 +200,7 @@ export class BillingController {
             const rId = randomUUID();
             const rFrom = r.startDate || effectiveDate;
             const rTo = r.endDate || null;
-            const rRate = Number(r.rate ?? ratePerKwh);
+            const rRate = Number(r.rate);
             await client.query(
               `INSERT INTO rate_versions (id, contract_id, effective_from, effective_to, rate_type, rate, currency)
                VALUES ($1, $2, $3, $4, 'fixed_kwh', $5, 'THB')`,
@@ -222,9 +229,10 @@ export class BillingController {
     }
   }
 
-  @Roles("owner", "admin")
+  @Roles("owner", "accountant")
   @Post("billing-cycles/:id/generate-invoice")
   async generateInvoiceForBillingCycle(@Param("id") id: string) {
+    await this.readiness.assertEnabled('issue');
     // Check if billing cycle exists
     const cycleRes = await this.db.query(
       `SELECT b.id, b.site_id AS "siteId", b.period_end AS "periodEnd", b.amount, b.consumed_kwh AS "consumedKwh"
@@ -342,7 +350,7 @@ export class BillingController {
     return res.rows[0];
   }
 
-  @Roles("school_user", "admin", "owner")
+  @Roles("school_user", "admin", "owner", "accountant")
   @Post("billing-cycles/:id/pay")
   async payBillingCycle(
     @Param("id") id: string,
@@ -361,7 +369,8 @@ export class BillingController {
       throw new NotFoundException("Billing cycle not found");
     }
 
-    const payAmount = body.amount !== undefined ? Number(body.amount) : Number(cycle.amount);
+    if (typeof body.amount !== 'number' || !Number.isFinite(body.amount) || body.amount <= 0) throw new BadRequestException('An explicit positive payment evidence amount is required');
+    const payAmount = body.amount;
     const paidAt = body.paidAt ? new Date(body.paidAt) : new Date();
     const slipUrl = body.slipUrl || null;
     const evidenceKey = body.evidenceKey || null;
@@ -423,7 +432,7 @@ export class BillingController {
     };
   }
 
-  @Roles("admin", "owner")
+  @Roles("owner", "accountant")
   @Patch("billing-cycles/:id/verify-payment")
   async verifyPayment(
     @Param("id") id: string,
@@ -434,6 +443,7 @@ export class BillingController {
     },
     @Req() req: Request & { user?: { id: string } }
   ) {
+    await this.readiness.assertEnabled('approve_payment');
     const { status, rejectionReason, note } = body;
     if (!status || !["approved", "rejected"].includes(status)) {
       throw new BadRequestException("status must be either 'approved' or 'rejected'");
@@ -570,12 +580,13 @@ export class BillingController {
     }
   }
 
-  @Roles("owner", "admin")
+  @Roles("owner", "accountant")
   @Patch("billing-cycles/:id/status")
   async updateBillingCycleStatus(
     @Param("id") id: string,
     @Body() body: { status: string; reason?: string }
   ) {
+    await this.readiness.assertEnabled('issue');
     const { status, reason } = body;
     if (!status || !["pending_review", "approved", "rejected"].includes(status)) {
       throw new BadRequestException("Invalid status. Must be pending_review, approved, or rejected");
@@ -619,12 +630,13 @@ export class BillingController {
     };
   }
 
-  @Roles("owner", "admin")
+  @Roles("owner", "accountant")
   @Patch("billing-cycles/:id/adjust")
   async adjustBillingCycle(
     @Param("id") id: string,
     @Body() body: { consumedKwh?: number; rate?: number; amount?: number; note?: string }
   ) {
+    await this.readiness.assertEnabled('adjust');
     const cycleRes = await this.db.query("SELECT * FROM billing_cycles WHERE id = $1", [id]);
     const before = cycleRes.rows[0];
     if (!before) throw new NotFoundException("Billing cycle not found");
@@ -665,12 +677,13 @@ export class BillingController {
     };
   }
 
-  @Roles("admin", "owner")
+  @Roles("owner", "accountant")
   @Post("billing-cycles/:id/send-email")
   async sendBillingEmail(
     @Param("id") id: string,
     @Body() body: { recipientEmail?: string; note?: string }
   ) {
+    await this.readiness.assertEnabled('send');
     const cycleRes = await this.db.query(
       `SELECT b.*, si.name AS "siteName", s.name AS "schoolName",
               c.billing_email AS "contractEmail", c.company_name AS "clientCompanyName",

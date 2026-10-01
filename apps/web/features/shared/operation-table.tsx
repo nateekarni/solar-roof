@@ -38,6 +38,7 @@ import {
 import { operationKeys } from "./operation-columns";
 import { TelemetryAgeLabel } from "./telemetry-age-label";
 import { useLocale, useT } from "../../providers/locale-provider";
+import { useFinancialCapabilities } from "../../lib/financial-capabilities";
 import { useAuth } from "../../stores/auth-store";
 import { OperationCardList } from "./operation-card-list";
 import { DocumentPreviewModal, type DocumentPreviewData } from "./document-preview-modal";
@@ -129,6 +130,7 @@ export function OperationTable({
   const locale = useLocale();
   const router = useRouter();
   const { user } = useAuth();
+  const financial = useFinancialCapabilities();
   const isSchoolUser = user?.role === "school_user";
   const isOwner = user?.role === "owner";
 
@@ -452,7 +454,7 @@ export function OperationTable({
                     )}
 
                     {/* Admin/Owner Verify Option */}
-                    {!isSchoolUser && (item.status === "pending_verification" || item.paymentStatus === "pending_verification" || item.slipUrl) && (
+                    {financial.actions.includes("approve_payment") && (item.status === "pending_verification" || item.paymentStatus === "pending_verification" || item.slipUrl) && (
                       <DropdownMenuItem
                         onClick={() => {
                           setSelectedVerifyCycle(item);
