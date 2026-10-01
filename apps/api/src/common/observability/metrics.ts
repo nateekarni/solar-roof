@@ -14,7 +14,7 @@ function record(metric: Metric): void {
   if (!previous && samples.size >= 256) return;
   metric.count = (previous?.count ?? 0) + 1;
   if (metric.milliseconds !== undefined) metric.milliseconds += previous?.milliseconds ?? 0;
-  if (metric.value !== undefined && metric.name !== 'db_pool_waiting') metric.value += previous?.value ?? 0;
+  if (metric.value !== undefined && !/(?:_pool_waiting|_pool_connections|ingress_backlog|ingress_running|ingress_queue_bytes)$/.test(metric.name)) metric.value += previous?.value ?? 0;
   samples.set(key, metric);
 }
 export function observeDuration(name: string, milliseconds: number, labels: Record<string, string>): void {

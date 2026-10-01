@@ -162,3 +162,11 @@ UUID และเวลาใน response นี้เป็นตัวอย�
 4. เปิดรับข้อมูล Pilot และตรวจการส่งซ้ำ การหลุด/ต่อใหม่ และความต่อเนื่องของข้อมูลต่อไป
 
 ไม่ต้องรอทดสอบต่อเนื่อง 24 ชั่วโมงเพื่อส่งเอกสารร่างนี้ แต่จะยังไม่แจ้งว่า endpoint พร้อมใช้งานจนกว่าการตรวจสั้นในข้อ 3 จะผ่าน การทดสอบข้อมูลจำลองเบื้องต้นทำโดยทีมระบบก่อนนัดอุปกรณ์จริง
+
+## Q2: ข้อเสนอ resource budgets และ application ACK (ยังไม่ผ่าน firmware pilot gate)
+
+ค่าทดลอง: MQTT payload ไม่เกิน 131072 bytes (128 KiB), JSON nesting depth ไม่เกิน 16; ingestion ทำงานพร้อมกันไม่เกิน 8, รอไม่เกิน 1024 messages และ 16 MiB รวม; ต่อ gateway 50 messages/second และ burst 100. Broker Mosquitto จำกัด message_size_limit=131072; API ตั้งให้ต่ำกว่านี้ได้ แต่เพิ่มเกินเพดานนี้ไม่ได้. Gateway scheduling ใช้ configured subscription endpoint (pilot `energy/<username>/#`, unique gateway credentials/ACL) ไม่ใช้ identity ที่ผู้ส่งระบุโดยไม่ตรวจสอบ. Gateway registry/rate state ไม่เกิน 1024 entries และหมดอายุเมื่อ idle/refilled. Multiple matching subscription filters จะปฏิเสธโดยไม่ ACK.
+
+QoS 1 broker PUBACK ยืนยัน broker ได้รับข้อความเท่านั้น. ความสำเร็จในการบันทึกต้องรอ application response topic `energy/<username>/response` มี `status: acknowledged` หลัง database COMMIT เท่านั้น. Durable duplicate อาจตอบ `duplicate: true` และต้องไม่สร้าง raw row ซ้ำ. Busy/queue full, oversized/deep input, rate limit, database error/outage และ shutdown deadline ไม่ส่ง success application ACK. Gateway ต้องเก็บข้อมูลที่ยังไม่ได้ application ACK และ retry ด้วย `ingestionId` และ `sourceTime` เดิม พร้อม exponential backoff+jitter; ห้ามสร้าง ID/timestamp ใหม่เมื่อ retry. Broker reconnect/restart อาจทำให้ต้อง retry หลัง COMMIT หาก response สูญหาย.
+
+API read pool 12 และ ingestion pool 8 รวมสูงสุด 20 connections ต่อ process; ingress identity/mapping/write ใช้ ingestion pool ทั้งหมด. Connection wait 5000 ms, initial read statement timeout 1500 ms, ingress statement timeout 5000 ms. Shutdown หยุดรับใหม่แล้ว drain ภายใน 10000 ms; งานยังรอจะถูกทิ้งโดยไม่มี ACK เมื่อหมดเวลา และ active work อาจ commit ได้โดยไม่มี ACK จึงต้อง retry ID/time เดิม. ค่าเหล่านี้ต้องผ่าน B2 capacity test และตรวจ payload/depth/rate/retry behavior กับ firmware จริงก่อนเปิด pilot; integration fixtures ไม่ถือเป็นการรับรอง firmware หรือ capacity production.

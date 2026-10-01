@@ -3,9 +3,10 @@ import test from "node:test";
 import { MqttIngestionService } from "./mqtt-ingestion.service.js";
 import type { DatabaseService } from "../../database/database.service.js";
 
-function fixture(options: { unknown?: boolean; fail?: boolean; mappings?: object[] } = {}) {
+function fixture(options: { unknown?: boolean; fail?: boolean; mappings?: object[]; commit?: () => Promise<void> } = {}) {
   const writes: unknown[][] = []; const sent: string[] = []; const seen = new Set<string>();
   const query = async (sql: string, values: unknown[] = []) => {
+    if (sql === 'COMMIT') await options.commit?.();
     if (sql.includes('FROM register_mapping_versions')) return { rows: options.mappings ?? [] };
     if (sql.includes('FROM devices d') || sql.includes('FROM gateways g')) return { rows: options.unknown ? [] : [{ siteId: 'site', gatewayId: 'gw', gatewayName: 'GW-1', deviceId: 'dev', endpoint: 'energy/GW-1/#' }] };
     if (sql.includes('FROM telemetry_raw tr')) {
@@ -21,8 +22,8 @@ function fixture(options: { unknown?: boolean; fail?: boolean; mappings?: object
     return { rows: [], rowCount: 1 };
   };
   const db = { query, pool: { connect: async () => ({ query, release() {} }) } } as unknown as DatabaseService;
-  const service = new MqttIngestionService(db);
-  Object.assign(service, { client: { connected: true, publish(topic: string) { sent.push(topic); } } });
+  const service = new MqttIngestionService(db, db as import("./ingestion-database.service.js").IngestionDatabaseService);
+  Object.assign(service, { client: { connected: true, publish(topic: string) { sent.push(topic); }, end() {} } });
   return { service, writes, sent };
 }
 const payload = (metrics: object, timestamp = '2026-09-30T01:00:00Z') => JSON.stringify({ deviceId: 'dev', gateway: 'GW-1', timestamp, metrics });
@@ -32,6 +33,20 @@ test('response and config publications never enter ingestion', async () => {
   await f.service.handleIncomingMessage('energy/GW-1/response', payload({ activePower: 1200 }));
   await f.service.handleIncomingMessage('energy/GW-1/config', payload({ activePower: 1200 }));
   assert.equal(f.writes.length, 0); assert.equal(f.sent.length, 0);
+});
+
+test('deadline ordering suppresses application ACK for COMMIT completion before the overdue timer callback', async context => {
+  let now = 0; context.mock.method(performance, 'now', () => now);
+  let release!: () => void, committing = false;
+  const blocked = new Promise<void>(resolve => { release = resolve; });
+  const f = fixture({ commit: async () => { committing = true; await blocked; } });
+  const limiter = Reflect.get(f.service, 'limiter') as import('./ingestion-limiter.js').IngestionLimiter;
+  limiter.submit('GW-1', 100, () => f.service.handleIncomingMessage('energy/GW-1/telemetry', payload({ activePower: 1200 })));
+  while (!committing) await new Promise(resolve => setImmediate(resolve));
+  const destroying = f.service.onModuleDestroy();
+  now = 10000; release(); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(f.sent.length, 0, 'an overdue timer cannot permit a late success ACK');
+  await destroying;
 });
 test('unknown devices are rejected without an ACK or volatile readings', async () => {
   const f = fixture({ unknown: true });

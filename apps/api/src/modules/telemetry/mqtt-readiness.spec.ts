@@ -17,7 +17,7 @@ test("subscription failure keeps readiness false and retries without reconnectin
   const db = { query: async () => { queries++; if (!databaseAvailable) throw new Error("temporary DB outage"); return { rows: [] }; } } as unknown as DatabaseService;
   const client = Object.assign(new EventEmitter(), { connected: true, end() {} });
   context.mock.method(mqttRuntime, "connect", () => client as unknown as mqtt.MqttClient);
-  const service = new MqttIngestionService(db);
+  const service = new MqttIngestionService(db, db as import("./ingestion-database.service.js").IngestionDatabaseService);
   try {
     await service.onModuleInit();
     assert.equal(typeof service.isReady, "function");
@@ -47,7 +47,7 @@ test("late subscription completion cannot make a disconnected session ready", as
     end() {},
   });
   context.mock.method(mqttRuntime, "connect", () => client as unknown as mqtt.MqttClient);
-  const service = new MqttIngestionService(db);
+  const service = new MqttIngestionService(db, db as import("./ingestion-database.service.js").IngestionDatabaseService);
   try {
     await service.onModuleInit();
     assert.equal(typeof service.isReady, "function");
@@ -69,7 +69,7 @@ test("shutdown cancels pending restore retry", async context => {
   const db = { query: async () => { queries++; throw new Error("temporary DB outage"); } } as unknown as DatabaseService;
   const client = Object.assign(new EventEmitter(), { connected: true, end() {} });
   context.mock.method(mqttRuntime, "connect", () => client as unknown as mqtt.MqttClient);
-  const service = new MqttIngestionService(db);
+  const service = new MqttIngestionService(db, db as import("./ingestion-database.service.js").IngestionDatabaseService);
   await service.onModuleInit();
   assert.equal(typeof service.isReady, "function");
   client.emit("connect"); await flush();

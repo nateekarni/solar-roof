@@ -40,6 +40,19 @@ sleep 1
 docker exec "$name" mosquitto_pub "${common[@]}" -u pilot-one -P test-gateway-password -t energy/pilot-one/telemetry -m telemetry-ok -q 1
 wait "$subscriber"
 grep -Fxq telemetry-ok "$tmp/received"
+# Exercise the managed broker's exact payload boundary over authenticated TLS.
+docker exec "$name" mosquitto_sub "${common[@]}" -u solar-backend -P test-backend-password -t energy/pilot-one/telemetry -N -C 1 -W 8 >"$tmp/boundary" &
+subscriber=$!
+sleep 1
+docker exec "$name" sh -ec 'python3 -c "import sys; sys.stdout.write(\"x\" * 131072)" | mosquitto_pub -h localhost -p 8883 --cafile /mosquitto/certs/current/fullchain.pem -V mqttv5 -u pilot-one -P test-gateway-password -t energy/pilot-one/telemetry -q 1 -s'
+wait "$subscriber"
+test "$(wc -c < "$tmp/boundary")" -eq 131072
+docker exec "$name" mosquitto_sub "${common[@]}" -u solar-backend -P test-backend-password -t energy/pilot-one/telemetry -N -C 1 -W 3 >"$tmp/oversized" 2>/dev/null &
+subscriber=$!
+sleep 1
+docker exec "$name" sh -ec 'python3 -c "import sys; sys.stdout.write(\"x\" * 131073)" | mosquitto_pub -h localhost -p 8883 --cafile /mosquitto/certs/current/fullchain.pem -V mqttv5 -u pilot-one -P test-gateway-password -t energy/pilot-one/telemetry -q 1 -s' >"$tmp/oversized-publish" 2>&1 || true
+if wait "$subscriber"; then exit 1; fi
+test ! -s "$tmp/oversized"
 if docker exec "$name" mosquitto_pub "${common[@]}" -u pilot-one -P wrong-password -t energy/pilot-one/telemetry -m bad -q 1; then exit 1; fi
 if docker exec "$name" mosquitto_pub "${common[@]}" -t energy/pilot-one/telemetry -m bad -q 1; then exit 1; fi
 docker exec "$name" mosquitto_pub "${common[@]}" -u pilot-one -P test-gateway-password -t energy/pilot-two/telemetry -m bad -q 1 >"$tmp/denied" 2>&1 || true

@@ -4,6 +4,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { decodeRegisterBatch, type RegisterFieldMapping } from "@solar/domain";
 import { DatabaseService } from "../../database/database.service.js";
 import { observeDuration, observeValue } from '../../common/observability/metrics.js';
+import { IngestionDatabaseService } from './ingestion-database.service.js';
+import { budget, IngestionLimiter, parseBoundedPayload } from './ingestion-limiter.js';
 
 export interface LiveTelemetrySnapshot {
   siteId: string; siteName?: string | undefined; gatewayId?: string | undefined;
@@ -49,7 +51,11 @@ export class MqttIngestionService implements OnModuleInit, OnModuleDestroy {
   private connectionGeneration = 0;
   private restoreTimer: ReturnType<typeof setTimeout> | undefined;
   private restoringGeneration: number | undefined;
-  constructor(@Inject(DatabaseService) private readonly db: DatabaseService) {}
+  private readonly limiter = new IngestionLimiter();
+  private stopping = false;
+  private acknowledgmentsEnabled = true;
+  constructor(@Inject(DatabaseService) private readonly db: DatabaseService,
+    @Inject(IngestionDatabaseService) private readonly ingress: IngestionDatabaseService) {}
   async onModuleInit() {
     if (this.client) return;
     this.client = mqtt.connect(process.env.MQTT_URL || 'mqtt://localhost:1883', {
@@ -61,11 +67,13 @@ export class MqttIngestionService implements OnModuleInit, OnModuleDestroy {
     this.client.on('close', () => this.clearReadiness());
     this.client.on('disconnect', () => this.clearReadiness());
     this.client.on('offline', () => this.clearReadiness());
-    this.client.on('message', (topic, payload) => { void this.handleIncomingMessage(topic, payload.toString()).catch(() => {
-      observeValue('ingress_rejected', 1);
-      this.logger.warn('Telemetry rejected');
-    }); });
-    this.client.on('error', error => { this.subscriptionsReady = false; this.scheduleRestore(this.connectionGeneration); this.logger.warn(error.message); });
+    this.client.on('message', (topic, payload) => {
+      if (this.stopping || !this.subscriptionsReady) { observeValue('ingress_rejected', 1); return; }
+      const matching = [...this.subscribedTopics].filter(filter => telemetryTopicMatches(filter, topic));
+      if (matching.length !== 1) { observeValue('ingress_rejected', 1); return; }
+      this.limiter.submit(matching[0]!, payload.length, () => this.handleIncomingMessage(topic, payload));
+    });
+    this.client.on('error', () => { this.subscriptionsReady = false; this.scheduleRestore(this.connectionGeneration); this.logger.warn('MQTT connection failed; retrying'); });
   }
     isConnected(): boolean { return this.client?.connected === true; }
   isReady(): boolean { return this.isConnected() && this.subscriptionsReady; }
@@ -77,7 +85,11 @@ export class MqttIngestionService implements OnModuleInit, OnModuleDestroy {
     this.restoreTimer = undefined;
   }
   async onModuleDestroy() {
+    this.stopping = true;
     this.clearReadiness();
+    const drained = await this.limiter.shutdown(budget('INGEST_SHUTDOWN_TIMEOUT_MS', 10000));
+    this.acknowledgmentsEnabled = false;
+    if (!drained) this.logger.warn('Ingestion shutdown deadline reached; pending work receives no application ACK');
     const client = this.client;
     this.client = null;
     client?.end(true);
@@ -96,7 +108,7 @@ export class MqttIngestionService implements OnModuleInit, OnModuleDestroy {
     try {
       await this.refreshSubscriptions();
       if (generation !== this.connectionGeneration || !this.client?.connected) return;
-      const gateways = await this.db.query("SELECT name, polling_interval_seconds, alert_rules FROM gateways WHERE protocol = 'mqtt'");
+      const gateways = await this.ingress.query("SELECT name, polling_interval_seconds, alert_rules FROM gateways WHERE protocol = 'mqtt' ORDER BY id LIMIT 1024");
       for (const gateway of gateways.rows) {
         if (generation !== this.connectionGeneration || !this.client?.connected) return;
         await this.publishHardwareConfig(gateway.name, { pollingIntervalSeconds: gateway.polling_interval_seconds, alertRules: gateway.alert_rules });
@@ -114,7 +126,8 @@ export class MqttIngestionService implements OnModuleInit, OnModuleDestroy {
     this.subscriptionsReady = false;
     if (!client?.connected) return;
     try {
-      const result = await this.db.query("SELECT endpoint FROM gateways WHERE protocol = 'mqtt'");
+      const result = await this.ingress.query("SELECT endpoint FROM gateways WHERE protocol = 'mqtt' ORDER BY id LIMIT 1025");
+      if (result.rows.length > 1024 || result.rows.some(row => typeof row.endpoint !== 'string' || Buffer.byteLength(row.endpoint) > 1024)) throw new Error('Gateway subscription resource limit');
       if (generation !== this.connectionGeneration || !client.connected) return;
       const topics = new Set<string>(result.rows.map(row => row.endpoint));
       for (const topic of this.subscribedTopics) if (!topics.has(topic)) client.unsubscribe(topic);
@@ -129,15 +142,15 @@ export class MqttIngestionService implements OnModuleInit, OnModuleDestroy {
       throw error;
     }
   }
-async handleIncomingMessage(topic: string, messageStr: string) {
+async handleIncomingMessage(topic: string, messageStr: string | Buffer) {
     const started = performance.now();
     if (topic.split('/').some(part => ['response', 'config', 'ack'].includes(part.toLowerCase()))) return;
-    const data = JSON.parse(messageStr);
+    const data = parseBoundedPayload(messageStr) as Record<string, any>;
     if (!data || typeof data !== 'object' || ['acknowledged', 'ack', 'config'].includes(data.status ?? data.type)) return;
     const deviceHint = data.deviceId ?? data.device ?? data.serialNumber;
     // A gateway can contain many devices, so a device identity is mandatory.
     if (typeof deviceHint !== 'string' || !deviceHint.trim()) { observeValue('ingress_rejected', 1); return; }
-    const result = await this.db.query(
+    const result = await this.ingress.query(
       `SELECT d.id AS "deviceId", d.site_id AS "siteId", g.id AS "gatewayId", g.name AS "gatewayName", g.endpoint
        FROM devices d JOIN gateways g ON g.id = d.gateway_id AND g.site_id = d.site_id
        JOIN sites s ON s.id = d.site_id
@@ -173,7 +186,7 @@ async handleIncomingMessage(topic: string, messageStr: string) {
     };
     if (Object.values(metrics).every(value => value === null) && !Object.keys(decoded).length) throw new Error('No measured fields');
     const quality = isFresh(sourceTime, receivedTime.getTime()) ? 'complete' : 'partial';
-    const client = await this.db.pool.connect(); let accepted = false;
+    const client = await this.ingress.pool.connect(); let accepted = false;
     try {
       await client.query('BEGIN');
       const inserted = await client.query(
@@ -203,7 +216,7 @@ async handleIncomingMessage(topic: string, messageStr: string) {
     } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
     // Both a committed insert and a durable duplicate are safe to acknowledge. No ACK is emitted before COMMIT.
     observeValue(accepted ? 'ingress_accepted' : 'ingress_duplicate', 1);
-    this.client?.publish(entity.endpoint.replace(/\/#$/, '') + '/response', JSON.stringify({
+    if (this.acknowledgmentsEnabled && this.limiter.withinDrainDeadline() && this.client?.connected) this.client.publish(entity.endpoint.replace(/\/#$/, '') + '/response', JSON.stringify({
       status: 'acknowledged', gateway: entity.gatewayName, deviceId: entity.deviceId, ingestionId: data.ingestionId ?? ingestionId,
       sourceTime: sourceTime.toISOString(), serverReceivedAt: receivedTime.toISOString(), duplicate: !accepted,
     }), { qos: 1 }, error => {
@@ -212,14 +225,14 @@ async handleIncomingMessage(topic: string, messageStr: string) {
   }
   async publishHardwareConfig(gatewayName: string, configData: Record<string, unknown>) {
     if (!this.client?.connected) return false;
-    const result = await this.db.query("SELECT endpoint FROM gateways WHERE name = $1 AND protocol = 'mqtt'", [gatewayName]);
+    const result = await this.ingress.query("SELECT endpoint FROM gateways WHERE name = $1 AND protocol = 'mqtt'", [gatewayName]);
     if (result.rows.length !== 1) return false;
     const topic = result.rows[0]!.endpoint.replace(/\/#$/, '') + '/config';
     await new Promise<void>((resolve, reject) => this.client!.publish(topic, JSON.stringify({ ...configData, gateway: gatewayName, timestamp: new Date().toISOString() }), { qos: 1, retain: true }, error => error ? reject(error) : resolve()));
     return true;
   }
   async getDeviceMappings(deviceId: string, sourceTime = new Date()): Promise<Mapping[]> {
-    const result = await this.db.query(
+    const result = await this.ingress.query(
       `SELECT id, semantic_field AS "semanticField", register_address AS "registerAddress", register_count AS "registerCount", word_order AS "wordOrder", byte_order AS "byteOrder", data_type AS "dataType", scale, unit
        FROM register_mapping_versions WHERE device_id = $1 AND effective_from <= $2 AND (effective_to IS NULL OR effective_to > $2) ORDER BY register_address`, [deviceId, sourceTime]);
     return result.rows.map(row => ({ ...row, scale: Number(row.scale) })) as Mapping[];

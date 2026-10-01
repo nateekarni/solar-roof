@@ -4,7 +4,7 @@ cd "$(dirname "$0")/../.."
 suite="${1:?Usage: platform-check.sh <suite> [--prebuilt]}"
 [[ $# -le 2 && ( $# -eq 1 || "$2" == --prebuilt ) ]] || { echo 'Invalid arguments' >&2; exit 1; }
 known='harness session invitation csrf financial-safety financial-core operations ingestion rollup reports ui-contracts ui-jobs accessibility archive recovery readiness'
-implemented=(harness session invitation csrf financial-safety operations)
+implemented=(harness session invitation csrf financial-safety operations ingestion)
 if [[ "$suite" == all-fast ]]; then
   suites=("${implemented[@]}")
   echo "Implemented: ${implemented[*]}"
@@ -42,12 +42,10 @@ fi
 stack_created=true
 "${compose[@]}" up -d --wait --wait-timeout 240
 for item in "${suites[@]}"; do
-  # Earlier suites intentionally exhaust process-local authentication budgets.
-  # Give this suite a fresh owned API process; shared DB budgets remain tested.
-  if [[ "$item" == csrf || "$item" == operations ]]; then
-    "${compose[@]}" restart api
-    node scripts/ci/coolify-deploy.mjs wait "$READINESS_API_URL/ready"
-  fi
+  # Each suite owns its fixtures and process-local authentication budget.
+  # Keep all requests within the suite together, including rate-limit tests.
+  "${compose[@]}" restart api
+  node scripts/ci/coolify-deploy.mjs wait "$READINESS_API_URL/ready"
   case "$item" in ui-jobs|accessibility) ;; *) pnpm --filter @solar/api exec tsx --tsconfig tsconfig.json --test "test/platform/$item.test.ts" ;; esac
   case "$item" in invitation|csrf|financial-safety|operations|ui-contracts|ui-jobs|accessibility) pnpm --filter @solar/web exec node "test/platform/$item.mjs" ;; esac
   if [[ "$item" == session ]]; then pnpm --filter @solar/web exec tsx --test lib/api-client.spec.ts; fi

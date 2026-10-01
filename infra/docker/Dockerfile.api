@@ -17,5 +17,6 @@ ENV NODE_ENV=production
 RUN groupadd --system app && useradd --system --gid app app
 COPY --from=build --chown=app:app /app /app
 USER app
+WORKDIR /app/apps/api
 EXPOSE 3001
-CMD ["pnpm", "--filter", "@solar/api", "start"]
+CMD ["node", "--import", "tsx", "src/main.ts"]

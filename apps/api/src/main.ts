@@ -15,6 +15,7 @@ import { RequestTimingInterceptor, requestTimingMiddleware } from "./common/obse
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { logger: ["error", "warn"] });
+  app.enableShutdownHooks();
 
   app.useGlobalFilters(new AllExceptionsFilter());
   app.useGlobalInterceptors(new RequestTimingInterceptor());
