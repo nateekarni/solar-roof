@@ -2,8 +2,8 @@
 
 ใช้ Coolify ของบริษัทที่มีอยู่แล้ว ไม่ต้องเพิ่ม server, SSH, SCP หรือติดตั้งอะไรบนเครื่องส่วนตัว งาน build/test ทำบน GitHub ส่วน Coolify ดึง image มารัน
 
-- เว็บ: https://solar.nateekarn.dev
-- Gateway ส่ง MQTT ผ่าน TLS: mqtt-solar.nateekarn.dev พอร์ต 8883
+- เว็บ: https://solar.fowir.com
+- Gateway ส่ง MQTT ผ่าน TLS: mqtt-solar.fowir.com พอร์ต 8883
 - GitHub: nateekarni/solar-roof, branch main
 - Coolify project: https://coolify.fowir.com/project/lskcgscsooocwo8o8kwgsgsw
 - Server: live
@@ -33,14 +33,14 @@ Repository เป็น public แต่ GitHub container package ที่ส�
 
 ## 3. ตรวจ DNS และช่องทางเข้า server
 
-Cloudflare → nateekarn.dev → **DNS → Records** ตรวจ:
+Cloudflare → fowir.com → **DNS → Records** ตรวจ:
 
 | Type | Name | Content | Proxy status |
 |---|---|---|---|
 | A | solar | Public IPv4 ของ server live | DNS only / เมฆเทา |
 | A | mqtt-solar | Public IPv4 ของ server live | DNS only / เมฆเทา |
 
-สอง record นี้ผู้ใช้แจ้งว่าตั้งแล้ว ตรวจอีกครั้งว่า IP ตรงกับ live ถ้ามี AAAA ต้องชี้ IPv6 ที่ใช้งานได้จริง
+ให้ผู้ดูแล Cloudflare ของ fowir.com ตั้งหรือตรวจสอง record นี้ให้ชี้ IP ของ live โดยตรง การตั้งค่าเดิมของโดเมนทดสอบไม่ได้ย้ายตามมาอัตโนมัติ ถ้ามี AAAA ต้องชี้ IPv6 ที่ใช้งานได้จริง
 
 ผู้ดูแล server ต้องอนุญาต inbound TCP **80, 443, 8883** ผ่าน firewall ของบริษัท/ผู้ให้บริการ โดย 8883 ต้องไม่ถูกแอปอื่นใช้ เมนู Coolify ไม่สามารถเปลี่ยน firewall ภายนอกแทนได้ หากพอร์ตปิดให้ผู้ดูแลเปิดจากระบบที่บริษัทใช้อยู่ ไม่ต้องเพิ่ม server ใหม่
 
@@ -49,11 +49,11 @@ Cloudflare → nateekarn.dev → **DNS → Records** ตรวจ:
 1. Cloudflare → รูปโปรไฟล์ → **My Profile → API Tokens → Create Token**
 2. เลือก template **Edit zone DNS** หรือ Custom token
 3. Permissions: **Zone → DNS → Edit**
-4. Zone Resources: **Include → Specific zone → nateekarn.dev** เท่านั้น
+4. Zone Resources: **Include → Specific zone → fowir.com** เท่านั้น
 5. Continue to summary → Create Token
 6. เก็บ token ใน password manager เพื่อใส่ Coolify ขั้น7 ไม่ส่งในแชตหรือ GitHub
 
-บริการ certificate ใช้ token นี้สร้าง DNS challenge และขอ/ต่ออายุใบรับรองสาธารณะจาก Let's Encrypt สำหรับ mqtt-solar.nateekarn.dev โดยการ deploy เป็นการใช้บริการและยอมรับ [เงื่อนไข Let's Encrypt](https://letsencrypt.org/repository/) ตามที่ certbot ต้องใช้ ใส่อีเมลติดต่อจริงใน ACME_EMAIL ส่วน certificate HTTPS เว็บ Coolify ดูแลแยกให้
+บริการ certificate ใช้ token นี้สร้าง DNS challenge และขอ/ต่ออายุใบรับรองสาธารณะจาก Let's Encrypt สำหรับ mqtt-solar.fowir.com โดยการ deploy เป็นการใช้บริการและยอมรับ [เงื่อนไข Let's Encrypt](https://letsencrypt.org/repository/) ตามที่ certbot ต้องใช้ ใส่อีเมลติดต่อจริงใน ACME_EMAIL ส่วน certificate HTTPS เว็บ Coolify ดูแลแยกให้
 
 ## 5. เพิ่ม Application ใน Coolify
 
@@ -81,8 +81,8 @@ Cloudflare → nateekarn.dev → **DNS → Records** ตรวจ:
 ## 6. ตั้ง Domain ของเว็บ
 
 1. ในการตั้งค่า service **web** หา **Domains**
-2. ใส่ `https://solar.nateekarn.dev:3000` แล้ว Save
-3. 3000 คือพอร์ตภายใน container เวลาเข้าเว็บใช้ `https://solar.nateekarn.dev` ตามปกติ
+2. ใส่ `https://solar.fowir.com:3000` แล้ว Save
+3. 3000 คือพอร์ตภายใน container เวลาเข้าเว็บใช้ `https://solar.fowir.com` ตามปกติ
 4. service อื่นไม่ต้องใส่ HTTP domain; MQTT ใช้ mapping 8883 ใน Compose อยู่แล้ว
 5. Proxy ของ server live ถ้าสถานะ Running ให้ใช้งานต่อได้ ไม่ต้องแก้ Proxy configuration หรือ restart proxy รวมของบริษัท
 
@@ -137,7 +137,7 @@ Cloudflare → nateekarn.dev → **DNS → Records** ตรวจ:
 5. การออก certificate ครั้งแรกอาจใช้หลายนาที ดู service **certbot → Logs** ต้องมี `Certificate is ready; next check in 12 hours.`
 6. **migrate / storage-init / bootstrap** ทำงานครั้งเดียวแล้วหยุดด้วย exit code0 เป็นปกติ ไม่ต้องกด restart ให้ทำงานตลอด
 7. postgres, redis, storage, certbot, mqtt, api, worker, web ต้อง Running/Healthy
-8. เปิด https://solar.nateekarn.dev/login แล้ว login ด้วย BOOTSTRAP_ADMIN_EMAIL/PASSWORD
+8. เปิด https://solar.fowir.com/login แล้ว login ด้วย BOOTSTRAP_ADMIN_EMAIL/PASSWORD
 
 ใช้ named volumes เก็บ DB, Redis, storage, MQTT และ certificate ต่อเนื่อง อย่าลบ resource หรือ volumes เพื่อแก้ปัญหา ไม่ใช้ seed/reset กับ staging ที่รับข้อมูลจริง
 
@@ -147,7 +147,7 @@ Cloudflare → nateekarn.dev → **DNS → Records** ตรวจ:
 |---|---|
 | pull access denied / unauthorized | ตรวจ package visibility ทั้ง5ตัวและ image digest ใน Coolify |
 | required variable / interpolation error | เติมตัวแปรในขั้น7และ Save |
-| certbot unhealthy | ตรวจ token zone DNS Edit, zone nateekarn.dev, อีเมลจริง, outbound DNS/HTTPS และ Logs; แก้แล้ว redeploy ระบบเก็บ certificate เดิมไว้ |
+| certbot unhealthy | ตรวจ token zone DNS Edit, zone fowir.com, อีเมลจริง, outbound DNS/HTTPS และ Logs; แก้แล้ว redeploy ระบบเก็บ certificate เดิมไว้ |
 | mqtt unhealthy | ดู mqtt Logs, รูปแบบ JSON, รหัสอย่างน้อย16ตัว และ certbot healthy |
 | migrate/bootstrap exit nonzero | อ่าน Logs ของ service นั้น ตรวจ DATABASE_URL/password และ admin env; ห้ามล้าง volume |
 | เว็บ502/503 | ตรวจ api healthy, one-shot exit0 และ Domains ของ web ระบุ :3000 |
@@ -160,7 +160,7 @@ Cloudflare → nateekarn.dev → **DNS → Records** ตรวจ:
 1. ใน Coolify จด **Application UUID** ของ solar-staging จากหน้าทรัพยากร/URL ไม่ใช่ Project UUID lskcgscsooocwo8o8kwgsgsw
 2. Coolify **Keys & Tokens** → สร้าง API token ที่อ่าน/แก้ application env และ deploy ได้ จำกัด team/resource ตามสิทธิ์ที่ระบบรองรับ
 3. GitHub repository → **Settings → Environments → New environment → staging** จำกัด deployment branch เป็น main
-4. Environment variables ของ staging: COOLIFY_URL=`https://coolify.fowir.com`, COOLIFY_APPLICATION_UUID=UUID ข้อ1, STAGING_WEB_URL=`https://solar.nateekarn.dev`
+4. Environment variables ของ staging: COOLIFY_URL=`https://coolify.fowir.com`, COOLIFY_APPLICATION_UUID=UUID ข้อ1, STAGING_WEB_URL=`https://solar.fowir.com`
 5. Environment secret ของ staging: COOLIFY_API_TOKEN=token ข้อ2
 6. กลับ **Settings → Secrets and variables → Actions → Variables** เปลี่ยน repository variable STAGING_DEPLOY_ENABLED เป็น `true`
 7. Actions → CI and staging → Run workflow → main แล้วรอ verify และ deploy-staging สีเขียว
@@ -174,7 +174,7 @@ Cloudflare → nateekarn.dev → **DNS → Records** ตรวจ:
 2. ลงทะเบียน serial มิเตอร์ให้ถูกต้อง
 3. ทดสอบ MQTT จริงหนึ่งข้อความ → ได้ ACK หลังบันทึก → เห็นข้อมูลบนเว็บ รวมการส่งซ้ำและ reconnect ด้วยบัญชีทดสอบเฉพาะ
 4. เติม [connection sheet](../gateway-handoff/gateway-connection-draft-th.md) ด้วยข้อมูลที่ตรวจแล้วก่อนระบุว่าพร้อมเชื่อมต่อ
-5. ส่งให้ผู้จัดการ: host mqtt-solar.nateekarn.dev, port8883, TLSตรวจCA/hostname, username pilot-01, topics และ payload ส่วนรหัสส่งช่องทางแยก
+5. ส่งให้ผู้จัดการ: host mqtt-solar.fowir.com, port8883, TLSตรวจCA/hostname, username pilot-01, topics และ payload ส่วนรหัสส่งช่องทางแยก
 
 เว็บ login และ MQTT login เป็นคนละบัญชี ระบบรอรับ MQTT จาก Gateway ตามเดิม ไม่มี HTTP POST telemetry ในรอบนี้ ดู [release checklist](../gateway-handoff/internal-release-checklist.md)
 

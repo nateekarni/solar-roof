@@ -30,7 +30,7 @@ services:
     environment:
       CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:?Cloudflare DNS token required}
       ACME_EMAIL: ${ACME_EMAIL:?certificate contact email required}
-      MQTT_TLS_DOMAIN: mqtt-solar.nateekarn.dev
+      MQTT_TLS_DOMAIN: mqtt-solar.fowir.com
     volumes:
       - letsencrypt-data:/etc/letsencrypt
       - mqtt-certs:/export
@@ -47,7 +47,7 @@ services:
     environment:
       MQTT_PASSWORD: ${MQTT_PASSWORD:?backend MQTT password required}
       MQTT_GATEWAY_CREDENTIALS: ${MQTT_GATEWAY_CREDENTIALS:?Gateway credentials JSON required}
-      MQTT_TLS_DOMAIN: mqtt-solar.nateekarn.dev
+      MQTT_TLS_DOMAIN: mqtt-solar.fowir.com
     volumes:
       - mqtt-certs:/mosquitto/certs:ro
       - mqtt-data:/mosquitto/data
@@ -122,7 +122,7 @@ services:
     environment:
       NODE_ENV: production
       API_PORT: 3001
-      WEB_URL: https://solar.nateekarn.dev
+      WEB_URL: https://solar.fowir.com
       DATABASE_URL: ${DATABASE_URL:?required}
       REDIS_URL: redis://redis:6379
       MQTT_URL: mqtt://mqtt:1883

@@ -21,7 +21,7 @@ services:
     command:
       - |
         mkdir -p /export/fixture
-        openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=mqtt-solar.nateekarn.dev -addext subjectAltName=DNS:mqtt-solar.nateekarn.dev -keyout /export/fixture/privkey.pem -out /export/fixture/fullchain.pem >/dev/null 2>&1
+        openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=mqtt-solar.fowir.com -addext subjectAltName=DNS:mqtt-solar.fowir.com -keyout /export/fixture/privkey.pem -out /export/fixture/fullchain.pem >/dev/null 2>&1
         chown -R 1883:1883 /export/fixture
         chmod 750 /export/fixture
         chmod 640 /export/fixture/*.pem
@@ -35,7 +35,7 @@ services:
     ports: !reset []
     networks:
       default:
-        aliases: [mqtt-solar.nateekarn.dev]
+        aliases: [mqtt-solar.fowir.com]
 YAML
 override="$tmp/override.yml"
 if command -v cygpath >/dev/null 2>&1; then override=$(cygpath -m "$override"); fi
@@ -50,7 +50,7 @@ trap cleanup EXIT
 "${compose[@]}" config --quiet
 "${compose[@]}" up -d --wait --wait-timeout 240
 "${compose[@]}" run --rm --no-deps bootstrap
-"${compose[@]}" exec -T mqtt mosquitto_pub -h mqtt-solar.nateekarn.dev -p 8883 --cafile /mosquitto/certs/current/fullchain.pem -u pilot-one -P local-test-gateway -t energy/pilot-one/telemetry -m smoke -q 1
+"${compose[@]}" exec -T mqtt mosquitto_pub -h mqtt-solar.fowir.com -p 8883 --cafile /mosquitto/certs/current/fullchain.pem -u pilot-one -P local-test-gateway -t energy/pilot-one/telemetry -m smoke -q 1
 "${compose[@]}" exec -T api node -e "fetch('http://127.0.0.1:3001/ready').then(r=>{if(!r.ok)throw Error('API not ready')})"
 "${compose[@]}" exec -T web node -e "Promise.all(['/login','/health'].map(p=>fetch('http://127.0.0.1:3000'+p).then(r=>{if(!r.ok)throw Error(p+' not ready')})))"
 echo 'PASS: staging Compose named-volume bootstrap, repeat bootstrap, managed TLS broker, API, worker and web readiness'

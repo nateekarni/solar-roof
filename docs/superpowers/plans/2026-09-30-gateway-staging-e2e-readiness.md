@@ -165,3 +165,8 @@ Confirmed: Gateway handoff follows passing ingestion, persistence and display ac
 ## Staging domain update — 2026-09-30
 
 User changed the current web staging hostname to `solar.nateekarn.dev`; `solar.fowir.com` is deferred until its Cloudflare administrator is available. This supersedes the earlier web hostname decisions above. User also confirmed MQTT `mqtt-solar.nateekarn.dev`; update the broker certificate hostname and renewal hook accordingly. DNS provider for nateekarn.dev is not yet verified; Cloudflare DNS-01 instructions are conditional on using Cloudflare for that zone. No DNS or remote Coolify setting has been changed.
+
+
+## Final domain decision — 2026-10-01
+
+User selected `solar.fowir.com` and `mqtt-solar.fowir.com` for this deployment, superseding the temporary domain choice above. Use the Cloudflare `fowir.com` zone token, current staging Compose and runbook. Public DNS, certificate issuance and company Coolify settings still require verification; repository edits do not change them.

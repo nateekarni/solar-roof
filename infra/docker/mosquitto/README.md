@@ -6,11 +6,11 @@ Follow the [Thai UI-only deployment runbook](../../../docs/runbooks/coolify-stag
 
 Gateways publish `energy/NAME/telemetry` and subscribe to `energy/NAME/response` and `energy/NAME/config`. Register endpoint `energy/NAME/#` in the application. ACLs deny other gateways. Update the credential JSON in Coolify and redeploy to add/rotate accounts, preserving other entries.
 
-`Dockerfile.certbot` runs the Cloudflare DNS-01 service. Supply `CLOUDFLARE_API_TOKEN` (Zone/DNS/Edit only for nateekarn.dev), `ACME_EMAIL`, and the fixed MQTT domain from Compose. It persists ACME state in `letsencrypt-data`, validates matching key/hostname/validity and atomically exports a generation via a relative `current` symlink in `mqtt-certs`. Broker mounts exports read-only and reloads its own child process when the certificate changes. No container controls Docker or the shared company proxy.
+`Dockerfile.certbot` runs the Cloudflare DNS-01 service. Supply `CLOUDFLARE_API_TOKEN` (Zone/DNS/Edit only for fowir.com), `ACME_EMAIL`, and the fixed MQTT domain from Compose. It persists ACME state in `letsencrypt-data`, validates matching key/hostname/validity and atomically exports a generation via a relative `current` symlink in `mqtt-certs`. Broker mounts exports read-only and reloads its own child process when the certificate changes. No container controls Docker or the shared company proxy.
 
 Checks run every12 hours, retry after1 hour on failure. A failed renewal makes certificate health unhealthy and retains previous material. Broker can continue using the previous valid certificate; it stops if material becomes invalid. Investigate unhealthy certbot in Coolify promptly. Initial issuance requires working outbound DNS/HTTPS and a valid Cloudflare token. Tests use synthetic certificates/mocked ACME; they do not prove live issuance in the company environment.
 
-Keep mqtt-solar.nateekarn.dev DNS-only and allow inbound8883 through company firewall. Web HTTPS is managed independently by Coolify. Preserve named volumes across deployments. Do not expose database, storage console or private broker port.
+Keep mqtt-solar.fowir.com DNS-only and allow inbound8883 through company firewall. Web HTTPS is managed independently by Coolify. Preserve named volumes across deployments. Do not expose database, storage console or private broker port.
 
 ## Developer checks
 

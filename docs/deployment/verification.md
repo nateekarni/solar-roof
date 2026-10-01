@@ -1,6 +1,6 @@
 # Deployment verification — 2026-09-30
 
-Current target: Coolify staging, `solar.nateekarn.dev`, MQTT TLS `mqtt-solar.nateekarn.dev:8883`. Local verification below used localhost; see the domain update note below.
+Current target: Coolify staging, `solar.fowir.com`, MQTT TLS `mqtt-solar.fowir.com:8883`. Local verification below used localhost; see the domain update note below.
 
 This records local evidence. No remote deployment, DNS change, public certificate issuance, GitHub publication, or production credential provisioning has been performed.
 
@@ -58,7 +58,7 @@ Local detailed evidence: [runner output](../../test/artifacts/full-run.log), [se
 
 
 
-Domain update after the local verification above: web staging now targets `solar.nateekarn.dev` and MQTT `mqtt-solar.nateekarn.dev`. The recorded tests used localhost and did not validate either public hostname. Public DNS/TLS and Coolify routing remain unverified.
+Domain update after the local verification above: web staging now targets `solar.fowir.com` and MQTT `mqtt-solar.fowir.com`. The recorded tests used localhost and did not validate either public hostname. Public DNS/TLS and Coolify routing remain unverified.
 
 ## Coolify UI-only update (30 September 2026)
 
@@ -72,3 +72,7 @@ Domain update after the local verification above: web staging now targets `solar
 Deployment instructions now use GitHub/Cloudflare/Coolify UI. A company backup policy and off-server restore drill remain a prerequisite for continuous real-data collection; named volumes alone are not backups.
 
 Final local full runner after rebuilding the hydration fix: PASS exit0 (`test/artifacts/managed-final-e2e.log`), all five roles, zero browser page errors, real PostgreSQL test without skip, dependency outage recovery and replay durability. Tested web image: `sha256:ff0caa4b91a474b1f07cc510c5fbe0be1e9a877b31a361bd56759cd9f9a2d161`. Independent whole-change review found no remaining P1/P2 blockers. The GitHub run must still succeed before using published image digests.
+
+## Final domain change — 1 October 2026
+
+User selected `solar.fowir.com` and `mqtt-solar.fowir.com`. Updated staging runtime configuration, Cloudflare token example, MQTT certificate smoke fixture, handoff and runbook. Managed staging Compose smoke passed with the new TLS hostname using a synthetic certificate and isolated volumes; deploy-helper tests10/10 passed. These checks do not verify public DNS, actual ACME issuance or live Coolify configuration.
