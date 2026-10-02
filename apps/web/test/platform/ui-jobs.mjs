@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {randomUUID,randomBytes,scryptSync} from 'node:crypto';
 import {createRequire} from 'node:module';
 import {execFileSync} from 'node:child_process';
-import {chromium} from '@playwright/test';
+import {launchFixtureBrowser} from './fixture-browser.mjs';
 const {Pool}=createRequire(new URL('../../../api/package.json',import.meta.url))('pg');
 const api=process.env.READINESS_API_URL,web=process.env.READINESS_WEB_URL;
 assert.equal(api,'http://127.0.0.1:13001');assert.equal(web,'http://localhost:13000');
@@ -13,7 +13,7 @@ const compose=(...args)=>execFileSync('docker',['compose','-f','infra/ci/compose
 const db=new Pool({connectionString:process.env.READINESS_DATABASE_URL});
 const user=randomUUID(),school=randomUUID(),other=randomUUID(),email=`u2-${user}@example.test`,password='U2-fixture-password-123!';
 const salt=randomBytes(16).toString('hex'),hash=`scrypt:${salt}:${scryptSync(password,salt,64).toString('hex')}`;
-const browser=await chromium.launch({headless:true});
+const browser=await launchFixtureBrowser();
 try {
  compose('stop','worker');
  await db.query("INSERT INTO schools(id,name,code,region) SELECT id,'U2 School',id::text,'fixture' FROM unnest($1::uuid[]) id",[[school,other]]);
@@ -75,7 +75,8 @@ try {
  await page.goto(web+'/notifications');await page.getByRole('row').filter({has:page.getByText('งานพร้อมใช้งาน',{exact:true})}).first().click();await page.getByRole('dialog').getByRole('link',{name:'Open job',exact:true}).click();
  assert.equal(new URL(page.url()).searchParams.get('job'),jobId);await page.locator(`[data-job-id="${jobId}"]`).getByRole('status').filter({hasText:/^Ready —/}).waitFor();
  const {S3Client,DeleteObjectCommand}=createRequire(new URL('../../../api/package.json',import.meta.url))('@aws-sdk/client-s3');
- const storage=new S3Client({endpoint:'http://127.0.0.1:19000',region:'us-east-1',forcePathStyle:true,credentials:{accessKeyId:'solar-ci',secretAccessKey:'ci-storage-only-password'}});
+ const storagePort=process.env.PLATFORM_CI_STORAGE_PORT??'19000';assert.ok(['19000','19001'].includes(storagePort));
+ const storage=new S3Client({endpoint:`http://127.0.0.1:${storagePort}`,region:'us-east-1',forcePathStyle:true,credentials:{accessKeyId:'solar-ci',secretAccessKey:'ci-storage-only-password'}});
  const ready=(await db.query('SELECT object_key FROM platform_jobs WHERE id=$1',[jobId])).rows[0];await storage.send(new DeleteObjectCommand({Bucket:'solar-readiness',Key:ready.object_key}));storage.destroy();
  await page.locator(`[data-job-id="${jobId}"]`).getByRole('button',{name:'Download',exact:true}).click();await page.locator(`[data-job-id="${jobId}"]`).getByRole('alert').filter({hasText:'The download is unavailable or expired. Refresh permissions and request a new report.'}).waitFor();
  const legacy=randomUUID();await db.query("INSERT INTO generated_reports(id,created_by,title,report_type,date_from,date_to,format,status,content,content_type) VALUES($1,$2,'U2 legacy scope','energy','2026-01-01','2026-01-02','csv','ready',$3,'text/csv')",[legacy,user,Buffer.from('real legacy bytes')]);

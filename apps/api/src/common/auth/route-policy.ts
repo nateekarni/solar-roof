@@ -16,6 +16,7 @@ export function routeAllowed(role: string, method: string, rawPath: string): boo
   if (!["owner", "admin", "operator", "accountant", "school_user"].includes(role)) return false;
   const path = rawPath.split("?")[0]!.replace(/\/$/, "");
   const read = method === "GET" || method === "HEAD";
+  if(['/v1/platform/readiness','/v1/platform/monitoring'].includes(path))return read&&['owner','admin'].includes(role);
   if (/^\/v1\/(?:auth\/(?:me|capabilities)|me(?:\/preferences)?|notifications\/settings)$/.test(path)) return true;
   if (/^\/v1\/operations\/(?:users|audit)(?:\/|$)/.test(path)) return read && ["owner", "admin"].includes(role);
   if (/^\/v1\/(?:sites|schools|gateways|devices|meter-presets)(?:\/|$)/.test(path)) return read || role === "admin";
@@ -31,6 +32,8 @@ export function routeAllowed(role: string, method: string, rawPath: string): boo
   if (/^\/v1\/users(?:\/|$)/.test(path)) return ["owner", "admin"].includes(role);
   if (/^\/v1\/alerts(?:\/|$)/.test(path)) return read || ["owner", "admin", "operator"].includes(role);
   if (/^\/v1\/reports(?:\/|$)/.test(path)) return read || method === "POST";
+  if(path==='/v1/history/restore')return method==='POST';
+  if(path==='/v1/history/options')return read;
   if (/^\/v1\/jobs(?:\/|$)/.test(path)) return read || method === 'POST' && /^\/v1\/jobs\/[^/]+\/(cancel|retry)$/.test(path);
   return read && /^\/v1\/(?:dashboard|operations)(?:\/|$)/.test(path);
 }

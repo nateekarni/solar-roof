@@ -6,7 +6,7 @@ services:
       default: {}
       request-edge: {ipv4_address: 172.31.253.20}
   web:
-    ports: !override ['127.0.0.1:13002:3000']
+    ports: !override ['127.0.0.1:${PLATFORM_CI_DIRECT_WEB_PORT:-13002}:3000']
   request-edge:
     image: node:24.20.0-bookworm-slim
     command: [node, /fixture/request-edge.mjs]

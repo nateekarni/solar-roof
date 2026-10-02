@@ -4,5 +4,6 @@ export interface JobRecord {
  rowCount:number|null; snapshotAt:string|null; createdBy:string|null; attempt:number;
  errorCode:string|null; objectKey:string|null;
  report:{type:'energy'|'device_health'|'billing'|'payment'|'audit';format:'csv';dateFrom:string;dateTo:string;dataKind:'raw'|'operational'}|null;
+ history?:{siteId:string;from:string;to:string;format:'jsonl.gz'}|null;
  retryPolicy:{canRetry:boolean;canCancel:boolean;attemptLimit:number;retryDelaySeconds:number|null;availableAt:string|null};
 }

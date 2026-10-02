@@ -1,4 +1,6 @@
 import { JobsModule } from './modules/jobs/jobs.module.js';
+import {HistoryModule} from './modules/history/history.module.js';
+import {PlatformObservabilityModule} from './common/observability/platform-observability.module.js';
 import { Module } from "@nestjs/common";
 import { DatabaseModule } from "./database/database.module.js";
 import { HealthModule } from "./health/health.module.js";
@@ -33,6 +35,8 @@ import { RequestOriginGuard } from "./common/auth/request-origin.guard.js";
     PaymentsModule,
     ReportsModule,
     JobsModule,
+    HistoryModule,
+    PlatformObservabilityModule,
     SettingsModule,
   ],
   providers: [

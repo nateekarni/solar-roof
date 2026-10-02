@@ -16,6 +16,7 @@ import { Button } from "../../components/ui/button";
 import { Card } from "../../components/ui/card";
 import { useLocale, useT } from "../../providers/locale-provider";
 import { CustomizeCardsModal } from "./customize-cards-modal";
+import { formatPower } from "../../lib/power-format";
 
 const STORAGE_KEY = "solar_dashboard_card_config";
 
@@ -166,6 +167,7 @@ export function DashboardStatsClient({
         {cardConfig.map((metricKey, idx) => {
           const def = metricDefinitions[metricKey] ?? defaultMetricDef;
           const Icon = def.icon;
+          const power = metricKey === 'currentMw' ? formatPower(stats.currentMw === null ? null : stats.currentMw * 1_000_000, locale) : null;
           return (
             <Card className={`stat-card ${def.tone}`} key={`${metricKey}-${idx}`}>
               {/* Row 1: Icon + Label */}
@@ -178,8 +180,8 @@ export function DashboardStatsClient({
               {/* Row 2: Number + Badge */}
               <div className="stat-value">
                 <strong>
-                  {formatNumber(def.value, def.digits)}
-                  {def.unit && <em>{def.unit}</em>}
+                  {power ? power.value : formatNumber(def.value, def.digits)}
+                  {(power ? power.unit : def.unit) && <em>{power ? power.unit : def.unit}</em>}
                 </strong>
                 <Badge
                   variant="secondary"

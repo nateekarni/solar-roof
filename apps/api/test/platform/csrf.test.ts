@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import {setDefaultResultOrder} from 'node:dns';
+setDefaultResultOrder('ipv4first');
 import test from 'node:test';
 import {randomUUID} from 'node:crypto';
 import {Pool} from 'pg';
@@ -44,7 +46,9 @@ test('HTTP mutations enforce origin before public and authenticated controllers'
   await db.query("UPDATE users SET role='owner' WHERE id=$1",[id]);
   assert.equal((await post(base+'/v1/auth/logout',{}, {Authorization:'Bearer forged'})).status,401);
   assert.equal((await post(base+'/v1/auth/logout',{}, {Authorization:`Bearer ${tokens.accessToken}`})).status,200,'Verified nonbrowser bearer allowed');
-  for(const ingress of [base,web,...(process.env.S3_EDGE==='true'||process.env.PLATFORM_EDGE_FIXTURE==='true'?['http://localhost:13002']:[])]) {
+  const directWebPort=process.env.PLATFORM_CI_DIRECT_WEB_PORT??'13002';
+  assert.ok(['13002','13003'].includes(directWebPort),'Only an approved fixture direct web port is allowed');
+  for(const ingress of [base,web,...(process.env.S3_EDGE==='true'||process.env.PLATFORM_EDGE_FIXTURE==='true'?[`http://127.0.0.1:${directWebPort}`]:[])]) {
    await db.query("DELETE FROM invitation_rate_limits WHERE key LIKE 'activation:%'");
    const statuses=[];
    for(let n=0;n<6;n++) statuses.push((await post(ingress+'/v1/auth/activate',{token:'wrong',password},{Origin:web,'X-Forwarded-For':`203.0.113.${n+1}`,'X-Real-IP':`203.0.113.${n+1}`,Forwarded:`for=203.0.113.${n+1}`})).status);

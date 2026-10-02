@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {Pool} from 'pg';
 import mqtt from 'mqtt';
+import {createHash} from 'node:crypto';
 const database=process.env.READINESS_DATABASE_URL;
 if(!database)throw new Error('Isolated solar_readiness database required');
 const databaseUrl=new URL(database);
@@ -15,6 +16,8 @@ try {
  assert.equal(response.status,200);const {accessToken}=await response.json();
  const live=await fetch(base+'/v1/sites/'+fixture.siteId+'/live-telemetry',{headers:{Authorization:`Bearer ${accessToken}`}});
  assert.equal(live.status,200);assert.equal((await live.json()).metrics.activePower,1200);
+ const job=await fetch(base+`/v1/jobs/${fixture.reportJobId}`,{headers:{Authorization:`Bearer ${accessToken}`}});assert.equal(job.status,200);assert.equal((await job.json()).status,'ready');
+ const download=await fetch(base+`/v1/jobs/${fixture.reportJobId}/download`,{headers:{Authorization:`Bearer ${accessToken}`}});assert.equal(download.status,200);assert.equal(createHash('sha256').update(Buffer.from(await download.arrayBuffer())).digest('hex'),fixture.reportChecksum,'Published report survives API restart with identical bytes');
  await broker.subscribeAsync(`energy/${fixture.siteName}/response`);
  const ack=new Promise<void>((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('No replay ACK after API restart')),10000);broker.on('message',(_topic,message)=>{const data=JSON.parse(message.toString());if(data.ingestionId!==fixture.ingestionId)return;clearTimeout(timer);try{assert.equal(data.duplicate,true);resolve();}catch(e){reject(e);}});});
  await broker.publishAsync(`energy/${fixture.siteName}/telemetry`,fixture.payload,{qos:1});await ack;

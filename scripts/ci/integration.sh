@@ -2,13 +2,14 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 source scripts/ci/isolated-stack.sh
+compose+=(-f infra/ci/report-worker.yml)
 stack_created=true
 "${compose[@]}" up -d --wait --wait-timeout 240
 # Same migrations and bootstrap image run twice; test confirms password is not reset.
 "${compose[@]}" run --rm migrate
 "${compose[@]}" run --rm -e BOOTSTRAP_ADMIN_PASSWORD=Ci-bootstrap-replacement-123! bootstrap
 node scripts/ci/coolify-deploy.mjs wait http://127.0.0.1:13001/ready
-node scripts/ci/coolify-deploy.mjs wait http://localhost:13000/login
+node scripts/ci/coolify-deploy.mjs wait http://127.0.0.1:13000/login
 export READINESS_DATABASE_URL='postgresql://solar:ci-only-password@127.0.0.1:15432/solar_readiness'
 export READINESS_API_URL='http://127.0.0.1:13001'
 export READINESS_WEB_URL='http://localhost:13000'

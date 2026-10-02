@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict';
 import {randomUUID,randomBytes,scryptSync,createHmac} from 'node:crypto';
 import {createRequire} from 'node:module';
-import {chromium} from '@playwright/test';
+import {launchFixtureBrowser} from './fixture-browser.mjs';
 const {Pool}=createRequire(new URL('../../../api/package.json',import.meta.url))('pg');
 const web=process.env.READINESS_WEB_URL;assert.equal(web,'http://localhost:13000');
 assert.equal(process.env.READINESS_DATABASE_URL,'postgresql://solar:ci-only-password@127.0.0.1:15432/solar_readiness');
 const db=new Pool({connectionString:process.env.READINESS_DATABASE_URL});
 const id=randomUUID(),email=`csrf-browser-${id}@example.test`,password='Csrf-browser-password-123!';
 const salt=randomBytes(16).toString('hex'),hash=`scrypt:${salt}:${scryptSync(password,salt,64).toString('hex')}`;
-const browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH}:{})});
+const browser=await launchFixtureBrowser();
 try {
  await db.query("INSERT INTO users(id,email,display_name,role,status,password_hash) VALUES($1,$2,'CSRF Browser','owner','active',$3)",[id,email,hash]);
  const page=await browser.newPage();

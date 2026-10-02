@@ -2,15 +2,23 @@
 # Set app images to immutable ghcr.io/...@sha256:... references from CI.
 services:
   postgres:
-    image: ${POSTGRES_IMAGE:-timescale/timescaledb:2.18.2-pg16}
+    image: ${POSTGRES_IMAGE:?immutable tested postgres-backup image required}
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-solar_platform}
       POSTGRES_USER: ${POSTGRES_USER:-solar}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
-    volumes: [postgres-data:/var/lib/postgresql/data]
+      BACKUP_ENABLED: ${BACKUP_ENABLED:-false}
+      PGBACKREST_REPO1_S3_ENDPOINT: ${PGBACKREST_REPO1_S3_ENDPOINT:-}
+      PGBACKREST_REPO1_S3_BUCKET: ${PGBACKREST_REPO1_S3_BUCKET:-}
+      PGBACKREST_REPO1_S3_REGION: ${PGBACKREST_REPO1_S3_REGION:-}
+      PGBACKREST_REPO1_S3_KEY: ${PGBACKREST_REPO1_S3_KEY:-}
+      PGBACKREST_REPO1_S3_KEY_SECRET: ${PGBACKREST_REPO1_S3_KEY_SECRET:-}
+      PGBACKREST_REPO1_CIPHER_PASS: ${PGBACKREST_REPO1_CIPHER_PASS:-}
+      PGBACKREST_REPO1_PATH: ${PGBACKREST_REPO1_PATH:-/solar}
+    volumes: [postgres-data:/var/lib/postgresql/data, solar-backup-status:/var/lib/solar-backup]
     healthcheck:
-      test: [CMD-SHELL, 'pg_isready -h 127.0.0.1 -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      test: [CMD, /opt/solar-backup/entrypoint.sh, health]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -116,6 +124,19 @@ services:
     depends_on:
       migrate: {condition: service_completed_successfully}
       storage-init: {condition: service_completed_successfully}
+  release-evidence:
+    image: ${API_IMAGE:?immutable API image required}
+    network_mode: none
+    restart: 'no'
+    user: '0:0'
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    working_dir: /app
+    command: [node, scripts/ci/install-release-evidence.mjs]
+    environment:
+      PLATFORM_RELEASE_EVIDENCE_JSON: ${PLATFORM_RELEASE_EVIDENCE_JSON:-}
+    volumes: [solar-release-evidence:/var/lib/solar-release]
   api:
     image: ${API_IMAGE:?immutable API image required}
     restart: unless-stopped
@@ -128,6 +149,19 @@ services:
       TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-}
       API_EDGE_ENABLED: ${API_EDGE_ENABLED:-false}
       ENERGY_READ_MODEL_ENABLED: ${ENERGY_READ_MODEL_ENABLED:-false}
+      HISTORY_RESTORE_ENABLED: ${HISTORY_RESTORE_ENABLED:-false}
+      HISTORY_RESTORE_MAX_DAYS: ${HISTORY_RESTORE_MAX_DAYS:-31}
+      PLATFORM_MONITORING_ENABLED: ${PLATFORM_MONITORING_ENABLED:-false}
+      PLATFORM_BACKUP_STATUS_FILE: /var/lib/solar-backup/status.json
+      PLATFORM_MONITORING_WEBHOOK_URL: ${PLATFORM_MONITORING_WEBHOOK_URL:-}
+      PLATFORM_MONITORING_WEBHOOK_TOKEN: ${PLATFORM_MONITORING_WEBHOOK_TOKEN:-}
+      PLATFORM_MONITORING_RECEIVER_VERIFIED: ${PLATFORM_MONITORING_RECEIVER_VERIFIED:-false}
+      PLATFORM_WAL_LAG_SECONDS: ${PLATFORM_WAL_LAG_SECONDS:-600}
+      PLATFORM_BACKUP_AGE_SECONDS: ${PLATFORM_BACKUP_AGE_SECONDS:-93600}
+      PLATFORM_DISK_PERCENT: ${PLATFORM_DISK_PERCENT:-80}
+      PLATFORM_RELEASE_REVISION: ${PLATFORM_RELEASE_REVISION:-}
+      PLATFORM_IMAGE_DIGESTS_JSON: ${PLATFORM_IMAGE_DIGESTS_JSON:-}
+      PLATFORM_RELEASE_EVIDENCE_FILE: /var/lib/solar-release/evidence.json
       DATABASE_URL: ${DATABASE_URL:?required}
       REDIS_URL: redis://redis:6379
       MQTT_URL: mqtt://mqtt:1883
@@ -152,6 +186,9 @@ services:
       STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?required}
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?required}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?required}
+    volumes:
+      - solar-backup-status:/var/lib/solar-backup:ro
+      - solar-release-evidence:/var/lib/solar-release:ro
     labels:
       traefik.enable: ${API_EDGE_ENABLED:-false}
       traefik.docker.network: ${COOLIFY_PROXY_NETWORK:-coolify}
@@ -163,6 +200,7 @@ services:
       traefik.http.routers.solar-api.service: solar-api
       traefik.http.services.solar-api.loadbalancer.server.port: '3001'
     depends_on:
+      release-evidence: {condition: service_completed_successfully}
       migrate: {condition: service_completed_successfully}
       redis: {condition: service_healthy}
       mqtt: {condition: service_healthy}
@@ -182,7 +220,17 @@ services:
       WORKER_PORT: 3002
       ENERGY_SUMMARY_WORKER_ENABLED: ${ENERGY_SUMMARY_WORKER_ENABLED:-false}
       REPORT_WORKER_ENABLED: ${REPORT_WORKER_ENABLED:-false}
-      STORAGE_ENDPOINT: ${STORAGE_ENDPOINT:-http://storage:9000}
+      HISTORY_RESTORE_WORKER_ENABLED: ${HISTORY_RESTORE_WORKER_ENABLED:-false}
+      TELEMETRY_ARCHIVE_ENABLED: ${TELEMETRY_ARCHIVE_ENABLED:-false}
+      TELEMETRY_ARCHIVE_SCHEDULER_ENABLED: ${TELEMETRY_ARCHIVE_SCHEDULER_ENABLED:-false}
+      RAW_RETENTION_ENABLED: ${RAW_RETENTION_ENABLED:-false}
+      HISTORY_RESTORE_MAX_DAYS: ${HISTORY_RESTORE_MAX_DAYS:-31}
+      HISTORY_RESTORE_MAX_ROWS: ${HISTORY_RESTORE_MAX_ROWS:-1000000}
+      HISTORY_RESTORE_MAX_MANIFESTS: ${HISTORY_RESTORE_MAX_MANIFESTS:-1000}
+      HISTORY_RESTORE_MAX_COMPRESSED_BYTES: ${HISTORY_RESTORE_MAX_COMPRESSED_BYTES:-536870912}
+      HISTORY_RESTORE_MAX_UNCOMPRESSED_BYTES: ${HISTORY_RESTORE_MAX_UNCOMPRESSED_BYTES:-2147483648}
+      HISTORY_RESTORE_TIMEOUT_MS: ${HISTORY_RESTORE_TIMEOUT_MS:-600000}
+      STORAGE_ENDPOINT: http://storage:9000
       STORAGE_REGION: ${STORAGE_REGION:-us-east-1}
       STORAGE_BUCKET: ${STORAGE_BUCKET:-solar-platform}
       STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:-solar}
@@ -216,6 +264,8 @@ services:
       retries: 12
       start_period: 30s
 volumes:
+  solar-backup-status:
+  solar-release-evidence:
   postgres-data:
   redis-data:
   minio-data:

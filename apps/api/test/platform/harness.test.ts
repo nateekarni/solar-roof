@@ -25,6 +25,26 @@ test('rejects production database before connection', () => {
   for(const value of ['postgresql://solar:test-secret@solar.fowir.com:15432/solar_readiness','postgresql://solar:x@127.0.0.1:15432/solar','postgresql://solar:x@127.0.0.1:15432/solar_readiness?host=remote','https://127.0.0.1:15432/solar_readiness']) assert.throws(()=>assertIsolatedDatabase(value));
 });
 
+test('rejects unapproved storage ports before creating fixture resources',()=>{
+  const bash=process.platform==='win32'?'C:/Program Files/Git/bin/bash.exe':'bash';
+  for(const port of ['18080','0','65536','19001; echo unsafe']) {
+    const result=spawnSync(bash,['-c','source scripts/ci/isolated-stack.sh'],{
+      cwd:new URL('../../../../',import.meta.url),encoding:'utf8',
+      env:{...process.env,PLATFORM_CI_STORAGE_PORT:port},
+    });
+    assert.equal(result.status,1);
+    assert.match(result.stderr,/Invalid fixture storage port/);
+  }
+});
+
+test('rejects unapproved direct web ports before creating fixture resources',()=>{
+  const bash=process.platform==='win32'?'C:/Program Files/Git/bin/bash.exe':'bash';
+  for(const port of ['13000','0','65536','13003; echo unsafe']){
+    const result=spawnSync(bash,['-c','source scripts/ci/isolated-stack.sh'],{cwd:new URL('../../../../',import.meta.url),encoding:'utf8',env:{...process.env,PLATFORM_CI_STORAGE_PORT:'19001',PLATFORM_CI_DIRECT_WEB_PORT:port}});
+    assert.equal(result.status,1);assert.match(result.stderr,/Invalid fixture direct web port/);
+  }
+});
+
 test('competing runner and unfinished suites fail without stopping the owning Docker stack', async () => {
   const root=new URL('../../../../',import.meta.url);
   const bash=process.platform==='win32'?'C:/Program Files/Git/bin/bash.exe':'bash';

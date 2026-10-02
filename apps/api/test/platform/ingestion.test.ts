@@ -150,6 +150,8 @@ test('actual API MQTT rejects huge/deep input, commits once before ACK, survives
     await until(async () => { try { await db.query('SELECT 1'); return true; } catch { return false; } }, 30000);
     await db.query('DELETE FROM telemetry_aggregate WHERE device_id=ANY($1::uuid[])', [[device, otherDevice]]);
     await db.query('DELETE FROM telemetry_raw WHERE device_id=ANY($1::uuid[])', [[device, otherDevice]]);
+    await db.query('DELETE FROM telemetry_archive_dirty WHERE site_id=ANY($1::uuid[])', [[site, otherSite]]);
+    await db.query('DELETE FROM telemetry_archive_scan WHERE site_id=ANY($1::uuid[])', [[site, otherSite]]);
     await db.query('DELETE FROM devices WHERE id=ANY($1::uuid[])', [[device, otherDevice]]); await db.query('DELETE FROM gateways WHERE id=ANY($1::uuid[])', [[gateway, otherGateway]]);
     await db.query('DELETE FROM sites WHERE id=ANY($1::uuid[])', [[site, otherSite]]); await db.query('DELETE FROM schools WHERE id=ANY($1::uuid[])', [[school, otherSchool]]); await db.end();
   }

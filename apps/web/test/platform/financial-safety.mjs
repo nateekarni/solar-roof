@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {randomUUID,randomBytes,scryptSync} from 'node:crypto';
 import {createRequire} from 'node:module';
-import {chromium} from '@playwright/test';
+import {launchFixtureBrowser} from './fixture-browser.mjs';
 const {Pool}=createRequire(new URL('../../../api/package.json',import.meta.url))('pg');
 const api=process.env.READINESS_API_URL,web=process.env.READINESS_WEB_URL;
 assert.equal(api,'http://127.0.0.1:13001');assert.equal(web,'http://localhost:13000');
@@ -10,7 +10,7 @@ const db=new Pool({connectionString:process.env.READINESS_DATABASE_URL});
 const user=randomUUID(),email=`financial-browser-${user}@example.test`,password='Financial-browser-password-123!';
 const school=randomUUID(),site=randomUUID(),cycle=randomUUID(),payment=randomUUID();
 const salt=randomBytes(16).toString('hex'),hash=`scrypt:${salt}:${scryptSync(password,salt,64).toString('hex')}`;
-const browser=await chromium.launch({headless:true});
+const browser=await launchFixtureBrowser();
 try {
  await db.query("INSERT INTO schools(id,name,code,region) VALUES($1,'Financial Browser School',$2,'fixture')",[school,school]);
  await db.query("INSERT INTO sites(id,school_id,name,capacity_mwp) VALUES($1,$2,'Financial Browser Site',0.1)",[site,school]);

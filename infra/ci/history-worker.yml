@@ -1,0 +1,11 @@
+services:
+  api:
+    environment:
+      HISTORY_RESTORE_ENABLED: "${HISTORY_CI_API_ENABLED:-false}"
+  worker:
+    environment:
+      HISTORY_RESTORE_WORKER_ENABLED: "${HISTORY_CI_WORKER_ENABLED:-false}"
+      TELEMETRY_ARCHIVE_ENABLED: "false"
+      TELEMETRY_ARCHIVE_SCHEDULER_ENABLED: "false"
+      RAW_RETENTION_ENABLED: "false"
+      REPORT_WORKER_ENABLED: "false"

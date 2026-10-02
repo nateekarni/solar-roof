@@ -28,6 +28,8 @@ try {
     "infra/migrations/019_user_invitations.sql",
     "infra/migrations/020_energy_read_models.sql",
     "infra/migrations/021_platform_jobs.sql",
+    "infra/migrations/022_archive_catalog.sql",
+    "infra/migrations/023_platform_monitoring.sql",
   ];
   for (const file of migrationFiles) {
     const sql = await readFile(new URL(`../../../../${file}`, import.meta.url), "utf8");

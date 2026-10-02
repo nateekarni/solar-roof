@@ -22,10 +22,11 @@ export function useJobStatus(jobId:string):{job:JobRecord|null;error:string|null
    }catch(err){if(!disposed){setError(err instanceof Error?err.message:'Request failed');if((err as {status?:number}).status===403||(err as {status?:number}).status===404){setJob(null);finished=true;}}}
    finally{inFlight=false;}
   };
-  const offline=()=>setError('offline');
+  const offline=()=>setError(previous=>previous??'offline');
+  const online=()=>{setError(previous=>previous==='offline'?null:previous);void fetchJob();};
   void fetchJob();const timer=window.setInterval(()=>void fetchJob(),3000);
-  document.addEventListener('visibilitychange',fetchJob);window.addEventListener('online',fetchJob);window.addEventListener('offline',offline);
-  return()=>{disposed=true;clearInterval(timer);document.removeEventListener('visibilitychange',fetchJob);window.removeEventListener('online',fetchJob);window.removeEventListener('offline',offline);};
+  document.addEventListener('visibilitychange',fetchJob);window.addEventListener('online',online);window.addEventListener('offline',offline);
+  return()=>{disposed=true;clearInterval(timer);document.removeEventListener('visibilitychange',fetchJob);window.removeEventListener('online',online);window.removeEventListener('offline',offline);};
  },[jobId,revision]);
  return {job,error,retry};
 }

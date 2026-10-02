@@ -1,0 +1,34 @@
+name: Dedicated platform capacity
+on:
+  workflow_dispatch:
+jobs:
+  capacity:
+    # The environment must require review; never bind these labels to the pilot.
+    environment: capacity-isolated
+    runs-on: [self-hosted, linux, capacity-isolated]
+    timeout-minutes: 720
+    concurrency: capacity-isolated
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.24.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter './packages/**' --recursive build
+      - run: pnpm --filter @solar/web exec playwright install --with-deps chromium
+      - run: bash scripts/ci/platform-load.sh --profile target --history-days 90
+        env:
+          CAPACITY_DEDICATED: 'true'
+          CAPACITY_APPROVED_HOST: ${{ vars.CAPACITY_APPROVED_HOST }}
+          CAPACITY_APPROVED_DAEMON_ID: ${{ vars.CAPACITY_APPROVED_DAEMON_ID }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: platform-capacity-${{ github.sha }}
+          path: test/artifacts/

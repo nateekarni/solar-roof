@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {randomUUID} from 'node:crypto';
+import {randomUUID,createHash} from 'node:crypto';
 import {writeFile} from 'node:fs/promises';
 import {Pool} from 'pg';
 import mqtt from 'mqtt';
@@ -61,15 +61,20 @@ try {
   assert.equal((await request('owner','/v1/dashboard/summary?start_date=2026-01-01&end_date=2026-04-01')).status,400);
   assert.equal((await request('owner','/v1/dashboard/summary?period=year')).status,400);
   const report=await request('school','/v1/reports','POST',{type:'energy',format:'csv',dateFrom:'2026-09-01',dateTo:'2026-09-30'});
-  assert.equal(report.status,201,JSON.stringify(report.body));
-  const download=await fetch(base+report.body.downloadUrl,{headers:{Authorization:`Bearer ${users.school.token}`}});
+  assert.equal(report.status,202,JSON.stringify(report.body));assert.equal(report.body.status,'queued');assert.match(report.body.jobId,/^[a-f0-9-]{36}$/);
+  let completed:any;const reportDeadline=Date.now()+45000;
+  do{const state=await request('school',`/v1/jobs/${report.body.jobId}`);assert.equal(state.status,200);completed=state.body;if(completed.status==='ready')break;assert.ok(['queued','running'].includes(completed.status),JSON.stringify(completed));await new Promise(resolve=>setTimeout(resolve,100));}while(Date.now()<reportDeadline);
+  assert.equal(completed.status,'ready',JSON.stringify(completed));assert.equal(completed.report.dataKind,'raw');assert.equal(completed.report.format,'csv');assert.equal(completed.rowCount,0,'September fixture contains no telemetry yet');
+  const downloadPath=`/v1/jobs/${report.body.jobId}/download`,download=await fetch(base+downloadPath,{headers:{Authorization:`Bearer ${users.school.token}`}});
   assert.equal(download.status,200);assert.ok(download.headers.get('content-type')?.includes('text/csv'));
-  assert.equal((await fetch(base+report.body.downloadUrl,{headers:{Authorization:`Bearer ${users.owner!.token}`}})).status,404);
+  const bytes=Buffer.from(await download.arrayBuffer()),manifest=(await db.query('SELECT manifest FROM platform_jobs WHERE id=$1',[report.body.jobId])).rows[0].manifest;
+  assert.equal(createHash('sha256').update(bytes).digest('hex'),manifest.checksum);
+  assert.equal((await fetch(base+downloadPath,{headers:{Authorization:`Bearer ${users.owner!.token}`}})).status,403,'Another actor cannot download a school-owned job');
   const device=(await db.query('SELECT id FROM devices WHERE site_id=$1',[site.id])).rows[0].id;
   broker=await mqtt.connectAsync(process.env.READINESS_MQTT_URL || 'mqtt://127.0.0.1:18883');
-  const acknowledgements:Array<{duplicate:boolean}>=[];
+  const acknowledgements:Array<{duplicate:boolean}>=[],responses:unknown[]=[];
   await broker.subscribeAsync(`energy/${name}/response`);
-  broker.on('message',(topic,message)=>{const response=JSON.parse(message.toString());if(topic===`energy/${name}/response`&&response.ingestionId===`test-${suffix}`&&response.deviceId===device)acknowledgements.push(response);});
+  broker.on('message',(topic,message)=>{const response=JSON.parse(message.toString());if(topic===`energy/${name}/response`){responses.push(response);if(response.ingestionId===`test-${suffix}`&&response.deviceId===device)acknowledgements.push(response);}});
   async function waitForAck(count:number){const end=Date.now()+10000;while(acknowledgements.length<count&&Date.now()<end)await new Promise(resolve=>setTimeout(resolve,25));assert.equal(acknowledgements.length,count,'Expected correlated durable ACK');}
   const timestamp=new Date().toISOString();
   const payload=JSON.stringify({deviceId:device,timestamp,ingestionId:`test-${suffix}`,metrics:{activePower:1200,totalEnergy:100,voltage:230}});
@@ -78,23 +83,32 @@ try {
   await broker.publishAsync(`energy/${name}/telemetry`,payload,{qos:1});await waitForAck(2);
   assert.equal(acknowledgements[1]!.duplicate,true);
   // Malformed data must be rejected without logging its payload or emitting ACKs.
-  await broker.publishAsync(`energy/${name}/telemetry`,'{"test-secret":',{qos:1});
   const {execFileSync}=await import('node:child_process');
-  let logs='';const rejectedDeadline=Date.now()+5000;
+  const apiLogs=()=>execFileSync('docker',['compose','-f','infra/ci/compose.yml','logs','--no-color','api'],{cwd:new URL('../../../',import.meta.url),encoding:'utf8'});
+  const failedCount=(text:string)=>Math.max(0,...text.split('\n').flatMap(line=>{
+    const start=line.indexOf('{');if(start<0)return [];
+    try{const event=JSON.parse(line.slice(start));return event.event==='metrics'&&Array.isArray(event.samples)?event.samples.filter((sample:any)=>sample.name==='ingress_failed').map((sample:any)=>Number(sample.value)):[];}catch{return [];}
+  }));
+  const beforeFailure=failedCount(apiLogs()),beforeResponses=responses.length;
+  await broker.publishAsync(`energy/${name}/telemetry`,'{"test-secret":',{qos:1});
+  // Q2 suppresses exception/payload logs. Failed parse is a bounded metrics sample;
+  // the existing metrics writer flushes every 30s, so allow one full flush interval.
+  let logs='';const rejectedDeadline=Date.now()+35000;
   while(Date.now()<rejectedDeadline) {
-    logs=execFileSync('docker',['compose','-f','infra/ci/compose.yml','logs','--no-color','api'],{cwd:new URL('../../../',import.meta.url),encoding:'utf8'});
-    if(logs.includes('Telemetry rejected'))break;
+    logs=apiLogs();
+    if(failedCount(logs)>beforeFailure)break;
     await new Promise(resolve=>setTimeout(resolve,50));
   }
   assert.equal(acknowledgements.length,2);
+  assert.equal(responses.length,beforeResponses,'Malformed JSON emits no application response or ACK');
   assert.equal(logs.includes('test-secret'),false);
-  assert.ok(logs.includes('Telemetry rejected'));
+  assert.ok(failedCount(logs)>beforeFailure,'Structured metrics event records a new ingress_failed sample after malformed JSON');
   const raw=await db.query('SELECT * FROM telemetry_raw WHERE device_id=$1',[device]);
   assert.equal(raw.rows.length,1);assert.equal(Number(raw.rows[0].active_power_w),1200);assert.ok(raw.rows[0].received_time);
   const live=await request('school',`/v1/sites/${site.id}/live-telemetry`);
   assert.equal(live.body.metrics.activePower,1200);assert.equal(live.body.metrics.current,null);
   assert.equal(live.body.status,'online');
   console.log('PASS: real HTTP authorization, school isolation, cardinality, empty dashboard, periods, persisted report and MQTT durability/replay/ACK checks');
-  if(process.env.READINESS_ACCOUNTS_FILE)await writeFile(process.env.READINESS_ACCOUNTS_FILE,JSON.stringify({password:'Local-test-only-123!',accounts:Object.fromEntries(['owner','admin','operator','accountant','school'].map(role=>[role,role+'-'+suffix+'@example.test'])),siteId:site.id,otherSiteId:other.body.id,siteName:name,device,payload,ingestionId:`test-${suffix}`}));
+  if(process.env.READINESS_ACCOUNTS_FILE)await writeFile(process.env.READINESS_ACCOUNTS_FILE,JSON.stringify({password:'Local-test-only-123!',accounts:Object.fromEntries(['owner','admin','operator','accountant','school'].map(role=>[role,role+'-'+suffix+'@example.test'])),siteId:site.id,otherSiteId:other.body.id,siteName:name,device,payload,ingestionId:`test-${suffix}`,reportJobId:report.body.jobId,reportChecksum:manifest.checksum}));
   console.log('Browser accounts written for isolated E2E run');
 } finally {await broker?.endAsync();await db.end();}

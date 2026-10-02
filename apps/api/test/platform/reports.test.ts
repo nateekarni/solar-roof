@@ -101,7 +101,9 @@ test('legacy downloads fail closed after school membership or audit permission c
 import {S3Client,HeadObjectCommand,GetObjectCommand,ListMultipartUploadsCommand} from '@aws-sdk/client-s3';
 import {fork} from 'node:child_process';
 import {once} from 'node:events';
-const storage=()=>new S3Client({endpoint:'http://127.0.0.1:19000',region:'us-east-1',forcePathStyle:true,maxAttempts:1,credentials:{accessKeyId:'solar-ci',secretAccessKey:'ci-storage-only-password'}});
+const storagePort=process.env.PLATFORM_CI_STORAGE_PORT??'19000';
+assert.ok(['19000','19001'].includes(storagePort),'Only an approved loopback fixture storage port is allowed');
+const storage=()=>new S3Client({endpoint:`http://127.0.0.1:${storagePort}`,region:'us-east-1',forcePathStyle:true,maxAttempts:1,credentials:{accessKeyId:'solar-ci',secretAccessKey:'ci-storage-only-password'}});
 
 test('crash after real S3 upload reuses snapshot and artifact; stale generation cannot overwrite winner',async()=>{
  compose('stop','worker');

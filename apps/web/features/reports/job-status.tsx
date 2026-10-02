@@ -6,6 +6,7 @@ import {Button} from "../../components/ui/button";
 import {apiClient} from "../../lib/api-client";
 import {useT,useLocale} from "../../providers/locale-provider";
 import {useJobStatus} from "./use-job-status";
+import {HistorySummary,jobDownloadFilename} from './history-summary';
 
 export function JobStatus({jobId}:{jobId:string}) {
  const {job,error,retry}=useJobStatus(jobId),t=useT(),locale=useLocale();
@@ -16,7 +17,7 @@ export function JobStatus({jobId}:{jobId:string}) {
   try {
    if(kind==='download'){
     const blob=await apiClient.getBlob(`/v1/jobs/${encodeURIComponent(jobId)}/download`);
-    const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=`report-${jobId}.csv`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+    const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=jobDownloadFilename({id:jobId,kind:job?.kind??'report'});link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
    }else{await apiClient.post(`/v1/jobs/${encodeURIComponent(jobId)}/${kind}`);retry();}
   }catch(err){setActionError(kind==='download'?t('jobs.expired'):err instanceof Error?err.message:t('jobs.requestFailed'));}
   finally{lock.current=false;setBusy(false);}
@@ -25,8 +26,7 @@ export function JobStatus({jobId}:{jobId:string}) {
   <a href={`/reports?job=${encodeURIComponent(jobId)}`} className="text-sm font-medium">{t('jobs.job')} {jobId}</a>
   <p role="status" aria-live="polite" aria-atomic="true">{job?t(`jobs.${job.status}`):t('jobs.loading')}</p>
   {job&&<>
-   <p className="text-sm">{job.report?`${job.report.type} · ${job.report.dateFrom} – ${job.report.dateTo} · ${t(`jobs.${job.report.dataKind}`)}`:t('jobs.unknownMetadata')}</p>
-   {(job.kind==='archive'||job.kind==='restore')&&<p>{t('jobs.archiveTarget')}</p>}
+   {job.history?<HistorySummary history={job.history} locale={locale}/>:<p className="text-sm">{job.report?`${job.report.type} · ${job.report.dateFrom} – ${job.report.dateTo} · ${t(`jobs.${job.report.dataKind}`)}`:t('jobs.unknownMetadata')}</p>}
    {job.progress!==null&&<progress max={100} value={job.progress} aria-label={t('jobs.progress')}/>}
    {job.status==='ready'&&<p className="text-sm">{t('jobs.rows')}: {job.rowCount??t('jobs.unknown')} · {t('jobs.snapshot')}: {job.snapshotAt?new Intl.DateTimeFormat(locale,{dateStyle:'medium',timeStyle:'medium',timeZone:'Asia/Bangkok'}).format(new Date(job.snapshotAt)):t('jobs.unknown')}</p>}
    {job.errorCode&&<p className="text-sm">{t('jobs.failureCode')}: {job.errorCode}</p>}

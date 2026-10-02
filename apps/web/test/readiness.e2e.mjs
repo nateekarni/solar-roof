@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import {mkdir,readFile} from 'node:fs/promises';
-import {chromium} from '@playwright/test';
+import {launchFixtureBrowser} from './platform/fixture-browser.mjs';
 
 const base=process.env.READINESS_WEB_URL || 'http://localhost:13000';
 if(!['localhost','127.0.0.1'].includes(new URL(base).hostname))throw new Error('Local readiness testing only');
 const fixture=process.env.READINESS_ACCOUNTS_FILE?JSON.parse(await readFile(process.env.READINESS_ACCOUNTS_FILE,'utf8')):null;
 const ownerEmail=fixture?.accounts.owner||process.env.READINESS_EMAIL;
 if(!ownerEmail)throw new Error('Set READINESS_ACCOUNTS_FILE or READINESS_EMAIL to isolated test accounts');
-const browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH}:{})});
+const browser=await launchFixtureBrowser();
 const page=await browser.newPage({viewport:{width:1440,height:1000}});
 const errors=[];page.on('pageerror',error=>errors.push(error.message));
 try {
@@ -53,6 +53,14 @@ try {
     const live=await rolePage.request.get(base+'/v1/sites/'+fixture.siteId+'/live-telemetry');
     assert.equal(live.status(),200);assert.equal((await live.json()).metrics.activePower,1200);
     await rolePage.getByText(fixture.siteName,{exact:true}).filter({visible:true}).first().waitFor();
+    await rolePage.goto(base+'/reports');await rolePage.getByRole('button',{name:/สร้างรายงาน|Generate Report/}).first().click();
+    await rolePage.locator('#r-type').click();await rolePage.getByRole('option',{name:/รายงานสถานะอุปกรณ์|Device & Gateway/}).click();
+    const accepted=rolePage.waitForResponse(response=>response.request().method()==='POST'&&response.url().endsWith('/v1/reports'));
+    await rolePage.getByRole('dialog').locator('form').evaluate(form=>form.requestSubmit());const response=await accepted;assert.equal(response.status(),202);const queued=await response.json();assert.equal(queued.status,'queued');
+    const card=rolePage.locator(`[data-job-id="${queued.jobId}"]`);await card.getByRole('status').filter({hasText:/^พร้อมใช้งาน —|^Ready —/}).waitFor({timeout:45000});
+    const record=await rolePage.request.get(base+`/v1/jobs/${queued.jobId}`);assert.equal(record.status(),200);const completed=await record.json();assert.equal(completed.report.type,'device_health');assert.equal(completed.rowCount,1);
+    const downloaded=rolePage.waitForEvent('download');await card.getByRole('button',{name:/ดาวน์โหลด|Download/,exact:true}).click();const artifact=await downloaded;assert.equal(artifact.suggestedFilename(),`report-${queued.jobId}.csv`);
+    const csv=await readFile(await artifact.path(),'utf8');assert.ok(csv.includes(fixture.siteName),'Real worker exports the authorized site');assert.ok(csv.includes('meter-'),'Device report contains the fixture meter');assert.equal(csv.includes('Other '),false,'Other school data is absent');
    }
    await context.close();
   }

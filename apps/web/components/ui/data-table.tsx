@@ -223,6 +223,13 @@ export function DataTable<TData, TValue>({
                 table.getRowModel().rows.map((row) => (
                   <TableRow
                     key={row.id}
+                    tabIndex={onRowClick ? 0 : undefined}
+                    onKeyDown={(event) => {
+                      if (onRowClick && event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
+                        event.preventDefault();
+                        onRowClick(row.original);
+                      }
+                    }}
                     data-state={row.getIsSelected() && "selected"}
                     className={cn(
                       "hover:bg-muted/30 transition-colors",

@@ -186,6 +186,8 @@ test('late readings replace both days, duplicates stay idempotent, resets unknow
 
   } finally {
     await db.query('DELETE FROM telemetry_raw WHERE device_id=ANY($1::uuid[])',[devices]);
+    await db.query('DELETE FROM telemetry_archive_dirty WHERE site_id=ANY($1::uuid[])',[sites]);
+    await db.query('DELETE FROM telemetry_archive_scan WHERE site_id=ANY($1::uuid[])',[sites]);
     await db.query('DELETE FROM telemetry_aggregate WHERE device_id=ANY($1::uuid[])',[devices]);
     await db.query('DELETE FROM billing_meters WHERE device_id=ANY($1::uuid[])',[devices]);
     await db.query('DELETE FROM devices WHERE id=ANY($1::uuid[])',[devices]);
@@ -234,6 +236,8 @@ async function withFix1Fixture(count:number,run:(fixture:{db:Pool;sites:string[]
     await run({db,sites,devices,mappings});
   }finally{
     await db.query('DELETE FROM telemetry_raw WHERE device_id=ANY($1::uuid[])',[devices]);
+    await db.query('DELETE FROM telemetry_archive_dirty WHERE site_id=ANY($1::uuid[])',[sites]);
+    await db.query('DELETE FROM telemetry_archive_scan WHERE site_id=ANY($1::uuid[])',[sites]);
     await db.query('DELETE FROM telemetry_aggregate WHERE device_id=ANY($1::uuid[])',[devices]);
     await db.query('DELETE FROM billing_meters WHERE device_id=ANY($1::uuid[])',[devices]);
     await db.query('DELETE FROM register_mapping_versions WHERE device_id=ANY($1::uuid[])',[devices]);

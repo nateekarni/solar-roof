@@ -1,7 +1,8 @@
-import { BadRequestException, ConflictException, ForbiddenException, HttpException, Inject, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, HttpException, Inject, Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { createHash,randomUUID } from 'node:crypto';
 import { DatabaseService } from '../../database/database.service.js';
 import { JobAccessService } from '../jobs/job-access.service.js';
+import {validateRestoreWindow,restoreLimits} from '@solar/domain';
 @Injectable()
 export class ReportJobService {
  constructor(@Inject(DatabaseService) private readonly db:DatabaseService,@Inject(JobAccessService) private readonly access:JobAccessService) {}
@@ -25,15 +26,23 @@ export class ReportJobService {
   });
  }
  async quota(c:any,userId:string) {
-  const counts=(await c.query("SELECT count(*) FILTER(WHERE created_by=$1) mine,count(*) total FROM platform_jobs WHERE kind='report' AND status IN ('queued','running')",[userId])).rows[0];
+  const counts=(await c.query("SELECT count(*) FILTER(WHERE created_by=$1) mine,count(*) total FROM platform_jobs WHERE kind IN ('report','restore') AND status IN ('queued','running')",[userId])).rows[0];
   if(Number(counts.mine)>=1||Number(counts.total)>=1000)throw new HttpException('Report queue quota exceeded',429);
  }
  async retry(userId:string,id:string) {
-  await this.access.get(userId,id);
+  const existing=await this.access.get(userId,id);
+  if(existing.kind==='restore'&&process.env.HISTORY_RESTORE_ENABLED!=='true')throw new ServiceUnavailableException('History restoration is currently unavailable');
   return this.db.transaction(async c=>{
    await c.query('SELECT pg_advisory_xact_lock(73501934)');
    const job=(await c.query('SELECT * FROM platform_jobs WHERE id::text=$1 FOR UPDATE',[id])).rows[0];
    await this.access.current(userId,job,c.query.bind(c));
+   if(!['report','restore'].includes(job.kind))throw new ConflictException('This job cannot retry');
+   if(job.kind==='restore'){
+    if(process.env.HISTORY_RESTORE_ENABLED!=='true')throw new ServiceUnavailableException('History restoration is currently unavailable');
+    try{validateRestoreWindow(job.payload.from,job.payload.to,restoreLimits());}catch{throw new BadRequestException('Invalid history window');}
+    const site=(await c.query('SELECT school_id FROM sites WHERE id=$1',[job.payload.siteId])).rows[0];
+    if(!site||!Array.isArray(job.scope)||job.scope.length!==1||job.scope[0]!==site.school_id)throw new ForbiddenException();
+   }
    if(job.status!=='failed'||job.attempt>=4)throw new ConflictException('Only failed jobs with remaining attempts may retry');
    await this.quota(c,userId);
    await c.query("UPDATE platform_jobs SET status='queued',attempt=attempt+1,error_code=NULL,worker_id=NULL,lease_until=NULL,available_at=now()+make_interval(secs=>$2),updated_at=now() WHERE id=$1",[id,[10,60,300][job.attempt-1]]);

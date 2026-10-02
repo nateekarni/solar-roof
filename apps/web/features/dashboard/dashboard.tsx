@@ -26,6 +26,8 @@ import { RankingChart } from "./ranking-chart";
 import { RevenueChart } from "./revenue-chart";
 import { SiteFilter } from "./site-filter";
 import { SiteMap } from "./site-map";
+import { GatewayStatusSummary } from "./gateway-status-summary";
+import { SummaryStatus } from "./summary-status";
 
 type DashboardData = DashboardSummaryResponse;
 async function getDashboardData(
@@ -102,41 +104,10 @@ export async function Dashboard({
         </div>
       </div>
 
-      {/* Live Power Flow Diagram & System Overview */}
-      <div className="mb-4 w-full min-w-0">
-        <PowerFlowCard siteId={resolvedParams?.site_id} />
-      </div>
-
       {/* Top 6 Stat Cards (Customizable) */}
       <DashboardStatsClient stats={data.stats} totalSites={data.sites?.length} />
+      <SummaryStatus model={data.energyReadModel} locale={locale} />
 
-      {/* 3-Column Main Dashboard Grid */}
-      <section className="dashboard-3col w-full min-w-0 max-w-full">
-        {/* Left Column: All Schools Map */}
-        <SiteMap sites={data.sites || []} />
-
-        {/* Center Column: Production Chart & Revenue Chart */}
-        <div className="chart-stack w-full min-w-0 max-w-full">
-          <ProductionChart
-            initialData={data.production}
-            hasCustomRange={Boolean(
-              resolvedParams?.start_date && resolvedParams?.end_date
-            )}
-            startDate={data.range.start}
-            endDate={data.range.end}
-          />
-          <RevenueChart
-            initialData={data.revenue}
-            hasCustomRange={Boolean(
-              resolvedParams?.start_date && resolvedParams?.end_date
-            )}
-            startDate={data.range.start}
-            endDate={data.range.end}
-          />
-        </div>
-
-        {/* Right Column: Recent Alerts & Collection Status */}
-        <div className="right-stack w-full min-w-0 max-w-full">
           {/* Recent Alerts Card */}
           <Card className="panel flex flex-col flex-1 h-full justify-between">
             <CardHeader className="p-0 pb-2">
@@ -196,10 +167,44 @@ export async function Dashboard({
             </CardContent>
           </Card>
 
+      <GatewayStatusSummary sites={data.sites || []} locale={locale} />
+
+      {/* 3-Column Main Dashboard Grid */}
+      <section className="dashboard-3col w-full min-w-0 max-w-full">
+        {/* Left Column: All Schools Map */}
+        <SiteMap sites={data.sites || []} />
+
+        {/* Center Column: Production Chart & Revenue Chart */}
+        <div className="chart-stack w-full min-w-0 max-w-full">
+          <ProductionChart
+            initialData={data.production}
+            hasCustomRange={Boolean(
+              resolvedParams?.start_date && resolvedParams?.end_date
+            )}
+            startDate={data.range.start}
+            endDate={data.range.end}
+          />
+          <RevenueChart
+            initialData={data.revenue}
+            hasCustomRange={Boolean(
+              resolvedParams?.start_date && resolvedParams?.end_date
+            )}
+            startDate={data.range.start}
+            endDate={data.range.end}
+          />
+        </div>
+
+        {/* Right Column: Recent Alerts & Collection Status */}
+        <div className="right-stack w-full min-w-0 max-w-full">
           {/* Collection Status Card */}
           <CollectionChart collection={data.collection} />
         </div>
       </section>
+
+      {/* Live Power Flow Diagram & System Overview */}
+      <div className="mb-4 w-full min-w-0">
+        <PowerFlowCard siteId={resolvedParams?.site_id} />
+      </div>
 
       {/* Bottom Row: Highest Energy Producing Schools Today */}
       <section className="mt-3 w-full min-w-0 max-w-full">

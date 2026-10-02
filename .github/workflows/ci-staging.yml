@@ -23,6 +23,7 @@ jobs:
       web: ${{ steps.publish.outputs.web }}
       mqtt: ${{ steps.publish.outputs.mqtt }}
       certbot: ${{ steps.publish.outputs.certbot }}
+      postgres-backup: ${{ steps.publish.outputs.postgres-backup }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -39,11 +40,16 @@ jobs:
       - run: pnpm --filter './packages/**' --recursive build
       - run: pnpm lint && pnpm test
       - run: node --test scripts/ci/*.test.mjs
+      - run: python3 scripts/ci/recovery-sampler.test.py
+      - run: pnpm --filter @solar/api exec tsx --test test/performance/capacity-policy.test.ts
       - name: Build immutable candidate images
         run: |
           for app in api worker web mqtt certbot; do
             docker build --label org.opencontainers.image.revision="$GITHUB_SHA" -f "infra/docker/Dockerfile.$app" -t "solar-$app:ci" .
           done
+          docker build --label org.opencontainers.image.revision="$GITHUB_SHA" -f infra/docker/postgres-backup/Dockerfile -t solar-postgres-backup:ci .
+      - name: Validate artifact backup scheduler in the Linux runtime
+        run: docker run --rm --entrypoint bash solar-api:ci -n /app/scripts/ci/recovery-artifacts-scheduler.sh
       - name: Test managed MQTT and certificate lifecycle without external credentials
         run: |
           docker run --rm --entrypoint python3 solar-mqtt:ci -m unittest discover -s /opt/solar-mqtt/tests
@@ -60,7 +66,16 @@ jobs:
         run: bash scripts/ci/integration.sh
       - name: Isolated platform regression and latency baseline
         run: bash scripts/ci/platform-check.sh all-fast --prebuilt
-      - name: Test evidence
+      - name: Verify isolated recovery fixture
+        env:
+          RECOVERY_IMAGE: solar-postgres-backup:ci
+          PLATFORM_CI_STORAGE_PORT: '19001'
+        run: bash scripts/ci/recovery-drill.sh --profile fixture
+      - name: Exercise reduced mixed workload in an isolated stack
+        env:
+          CAPACITY_PREBUILT: 'true'
+        run: bash scripts/ci/platform-load.sh --profile smoke --history-days 90
+      - name: Upload test evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -70,6 +85,9 @@ jobs:
             test/artifacts/solar-ci-*.log
             test/artifacts/platform-baseline.json
             test/artifacts/managed-staging.log
+            test/artifacts/recovery-result.json
+            test/artifacts/platform-capacity.json
+            test/artifacts/platform-capacity-*.json
             apps/web/test/artifacts/*.png
           retention-days: 7
       - name: Publish the tested image IDs
@@ -79,14 +97,16 @@ jobs:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-          for app in api worker web mqtt certbot; do
+          for app in api worker web mqtt certbot postgres-backup; do
             ref="ghcr.io/nateekarni/solar-roof/$app:$GITHUB_SHA"
             docker tag "solar-$app:ci" "$ref"
             docker push "$ref"
             digest=$(docker inspect --format '{{index .RepoDigests 0}}' "$ref")
             [[ "$digest" =~ ^ghcr.io/nateekarni/solar-roof/$app@sha256:[a-f0-9]{64}$ ]]
             echo "$app=$digest" >> "$GITHUB_OUTPUT"
-            printf '%s_IMAGE=%s\n' "${app^^}" "$digest" >> "$GITHUB_STEP_SUMMARY"
+            label="${app^^}"
+            if [[ "$app" == postgres-backup ]]; then label=POSTGRES; fi
+            printf '%s_IMAGE=%s\n' "$label" "$digest" >> "$GITHUB_STEP_SUMMARY"
           done
           docker logout ghcr.io
   deploy-staging:

@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Exercises staging Compose with isolated volumes and a synthetic certificate fixture.
-# Never contacts ACME/Cloudflare. Run after building the five CI images.
+# Never contacts ACME/Cloudflare. Run after building the six CI images.
 set -euo pipefail
 export MSYS_NO_PATHCONV=1
 project="solar-managed-staging-$$"
 tmp=$(mktemp -d)
 export API_IMAGE=solar-api:ci WORKER_IMAGE=solar-worker:ci WEB_IMAGE=solar-web:ci MQTT_IMAGE=solar-mqtt:ci CERTBOT_IMAGE=solar-certbot:ci
+export POSTGRES_IMAGE=solar-postgres-backup:ci
 export POSTGRES_DB=solar_readiness POSTGRES_USER=solar POSTGRES_PASSWORD=local-test-postgres
 export DATABASE_URL=postgresql://solar:local-test-postgres@postgres:5432/solar_readiness
 export MQTT_PASSWORD=local-test-backend MQTT_GATEWAY_CREDENTIALS='{"pilot-one":"local-test-gateway"}'
@@ -44,7 +45,8 @@ cleanup() {
   mkdir -p test/artifacts
   "${compose[@]}" logs --no-color > test/artifacts/managed-staging.log 2>&1 || true
   "${compose[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
-  rm -rf "$tmp"
+  rm -f "$tmp/override.yml"
+  rmdir "$tmp"
 }
 trap cleanup EXIT
 "${compose[@]}" config --quiet

@@ -10,6 +10,20 @@
 
 ขั้นตอนนี้เป็นการตั้งครั้งแรก ยังไม่ใช่หลักฐานว่า deploy บนบริษัทแล้ว อ่านผลที่ตรวจจริงใน [verification](../deployment/verification.md)
 
+## เริ่มอ่านตรงนี้
+
+โค้ดรอบปรับปรุงอยู่บน branch `codex/platform-review-2026-10-01` ต้อง review/รวมเข้า `main` และรอ CI ของ main ผ่านก่อนใช้ขั้นตอนนี้ การ push branch งานไม่ได้เผยแพร่ image สำหรับ staging โดยอัตโนมัติ ดู [ผลทดสอบล่าสุด](../performance/platform-validation-2026-10-02.md) และ [รายการที่ต้องตรวจบนเครื่องจริง](predeploy-status-2026-10-02.md)
+
+| ลำดับ | ผู้ทำและสิ่งที่ต้องเตรียม | ถือว่าผ่านเมื่อ |
+|---|---|---|
+| 1 | ผู้ดูแล GitHub รวมโค้ดและตรวจ CI ตามขั้น 1–2 | ได้ registry digest ครบ 6 ตัวจาก main run เดียวกัน |
+| 2 | ผู้ดูแล DNS/firewall ทำขั้น 3–4 | สอง hostname ชี้เครื่อง live และเปิด 80/443/8883 |
+| 3 | ผู้ดูแล Coolify ทำขั้น 5–9 | เว็บ login ได้และบริการ healthy/one-shot exit 0 |
+| 4 | ผู้ดูแลระบบทำ backup, restore และตรวจสิทธิ์ | มีผลตรวจจริงตามคู่มือที่ลิงก์ด้านล่าง |
+| 5 | ผู้ดูแล Gateway ทำขั้น 11 | รับ→บันทึก→แสดงผล, reconnect/replay ผ่าน และ pilot 24 ชั่วโมง |
+
+เครื่อง 2 CPU / RAM 4 GB ใช้เริ่ม pilot เท่านั้น ผลทดสอบในเครื่องยังไม่รับรองจำนวนผู้ใช้/มิเตอร์เต็มเป้าหมาย อย่ารัน E2E หรือ load test บนฐานข้อมูลจริง ให้ดู CPU, RAM, disk และ queue ระหว่าง pilot แล้วเพิ่มทรัพยากรตามผลวัด
+
 ## Request origin / proxy boundary deployment gate
 
 Keep `API_EDGE_ENABLED=false` and `TRUSTED_PROXY_CIDRS` empty until company runtime evidence is recorded. Empty trust ignores forwarded IP headers; Next's `/v1` fallback strips `Forwarded`, `X-Real-IP` and every `X-Forwarded-*` header and uses a shared transport budget. Next cannot verify a route-handler socket peer. It preserves the actual incoming `Origin` without inventing one from Host or forwarded headers.
@@ -31,8 +45,8 @@ Primary references: [Coolify Traefik overview](https://coolify.io/docs/core/netw
 1. เปิด repository → **Settings → Secrets and variables → Actions → Variables**
 2. สร้าง repository variable `STAGING_DEPLOY_ENABLED` ค่า `false` เพื่อยังไม่ deploy อัตโนมัติ
 3. เปิด **Actions → CI and staging** เลือก run ของ main ล่าสุด รอ job `verify` สีเขียว หากแดง ให้แก้ก่อน
-4. เปิด Summary ของ run นั้น คัดลอกทั้งห้าบรรทัด `API_IMAGE`, `WEB_IMAGE`, `WORKER_IMAGE`, `MQTT_IMAGE`, `CERTBOT_IMAGE` เก็บไว้ แต่ละค่าเป็น `ghcr.io/nateekarni/solar-roof/...@sha256:...`
-5. ใช้ห้าค่าจาก run เดียวกัน ห้ามใช้ `latest` หรือใส่ข้อความตัวอย่าง `REPLACE...`
+4. เปิด Summary ของ run นั้น คัดลอกทั้งหกบรรทัด `API_IMAGE`, `WEB_IMAGE`, `WORKER_IMAGE`, `MQTT_IMAGE`, `CERTBOT_IMAGE`, `POSTGRES_IMAGE` เก็บไว้ แต่ละค่าเป็น `ghcr.io/nateekarni/solar-roof/...@sha256:...`
+5. ใช้หกค่าจาก run เดียวกัน ห้ามใช้ `latest` หรือใส่ข้อความตัวอย่าง `REPLACE...`
 
 ครั้งแรกที่ยังไม่มี run ให้ Actions → CI and staging → Run workflow → Branch main → Run workflow
 
@@ -41,9 +55,9 @@ Primary references: [Coolify Traefik overview](https://coolify.io/docs/core/netw
 Repository เป็น public แต่ GitHub container package ที่สร้างใหม่อาจยัง private วิธีผ่านหน้าเว็บทั้งหมดคือให้เจ้าของ package ตั้ง **public** หลังตรวจว่าเปิดเผยได้ โดย image มีโค้ดของ repository นี้ และไม่มีรหัสจริงจาก Coolify
 
 1. GitHub → โปรไฟล์ **nateekarni** → **Packages**
-2. เปิด package ของ Solar แต่ละตัว: api, web, worker, mqtt, certbot (ชื่ออาจแสดงพร้อม prefix solar-roof/)
+2. เปิด package ของ Solar แต่ละตัว: api, web, worker, mqtt, certbot, postgres-backup (ชื่ออาจแสดงพร้อม prefix solar-roof/)
 3. **Package settings → Danger Zone → Change visibility → Public** อ่านและยืนยันตามหน้า GitHub
-4. ทำให้ครบทั้งห้าตัว
+4. ทำให้ครบทั้งหกตัว
 
 การเปิด public ทำให้คนทั่วไปดาวน์โหลด image ได้ ถ้านโยบายบริษัทต้อง private ให้ใช้ registry ที่บริษัทเตรียมสิทธิ์ดาวน์โหลดให้ server ไว้แล้ว การเชื่อม GitHub repository อย่างเดียวไม่ได้ให้สิทธิ์ดึง private GHCR และไม่ควรใส่ token ลง Compose หรือ Dockerfile
 
@@ -57,6 +71,8 @@ Cloudflare → fowir.com → **DNS → Records** ตรวจ:
 | A | mqtt-solar | Public IPv4 ของ server live | DNS only / เมฆเทา |
 
 ให้ผู้ดูแล Cloudflare ของ fowir.com ตั้งหรือตรวจสอง record นี้ให้ชี้ IP ของ live โดยตรง การตั้งค่าเดิมของโดเมนทดสอบไม่ได้ย้ายตามมาอัตโนมัติ ถ้ามี AAAA ต้องชี้ IPv6 ที่ใช้งานได้จริง
+
+DNS only หมายถึง client ต่อ server โดยตรง ส่วน Proxied ให้ทราฟฟิกเว็บผ่าน Cloudflare ก่อน เริ่มเว็บด้วย DNS only เพื่อแยกตรวจ DNS/TLS/Coolify ได้ง่าย หากจะเปิดเมฆส้มภายหลังต้องตรวจ origin TLS และ proxy trust ใหม่ ส่วน MQTT TCP 8883 ให้คง DNS only เพราะไม่ได้เป็น HTTP ที่ proxy ปกติรองรับ ดู [Cloudflare proxy status](https://developers.cloudflare.com/dns/proxy-status/)
 
 ผู้ดูแล server ต้องอนุญาต inbound TCP **80, 443, 8883** ผ่าน firewall ของบริษัท/ผู้ให้บริการ โดย 8883 ต้องไม่ถูกแอปอื่นใช้ เมนู Coolify ไม่สามารถเปลี่ยน firewall ภายนอกแทนได้ หากพอร์ตปิดให้ผู้ดูแลเปิดจากระบบที่บริษัทใช้อยู่ ไม่ต้องเพิ่ม server ใหม่
 
@@ -89,7 +105,7 @@ Cloudflare → fowir.com → **DNS → Records** ตรวจ:
 | Docker Compose Location | /infra/docker/docker-compose.staging.yml |
 | Branch | main |
 
-9. กด **Save** และโหลด Compose ตามปุ่มที่แสดง ตรวจว่ามี postgres, redis, certbot, mqtt, storage, storage-init, migrate, bootstrap, api, worker, web
+9. กด **Save** และโหลด Compose ตามปุ่มที่แสดง ตรวจว่ามี postgres, redis, certbot, mqtt, storage, storage-init, migrate, bootstrap, release-evidence, api, worker, web
 10. ปิด **Auto Deploy** จาก Git push และ **Preview Deployments** เพื่อให้ CI เป็นผู้สั่งหลังตรวจผ่าน
 
 ใช้ Git-based Application ตามนี้ เพราะระบบ CI เรียก API สำหรับ Application และดึง Compose จาก main โดยตรง
@@ -115,6 +131,7 @@ Cloudflare → fowir.com → **DNS → Records** ตรวจ:
 | WORKER_IMAGE | บรรทัด WORKER_IMAGE จาก run เดียวกัน |
 | MQTT_IMAGE | บรรทัด MQTT_IMAGE จาก run เดียวกัน |
 | CERTBOT_IMAGE | บรรทัด CERTBOT_IMAGE จาก run เดียวกัน |
+| POSTGRES_IMAGE | บรรทัด POSTGRES_IMAGE จาก run เดียวกัน; ตรวจ PostgreSQL 16 และ volume เดิมก่อนเปลี่ยน image |
 | POSTGRES_DB | solar_platform |
 | POSTGRES_USER | solar |
 | POSTGRES_PASSWORD | รหัสฐานข้อมูลที่สุ่มใหม่ |
@@ -144,14 +161,16 @@ Cloudflare → fowir.com → **DNS → Records** ตรวจ:
 
 ไม่ต้องสร้างไฟล์ password, certificate หรือโฟลเดอร์บน server ระบบสร้างให้ใน container/named volumes บัญชี admin ที่มีอยู่แล้วจะไม่ถูกเปลี่ยนรหัสเมื่อ deploy ซ้ำ
 
+ตัวแปรนอกตารางให้ตรวจครบตาม `.env.staging.example` ของ release เดียวกัน โดยเฉพาะ `API_EDGE_ENABLED=false`, `TRUSTED_PROXY_CIDRS` ว่าง และ feature flags เริ่มต้นเป็น false อย่าเปิดทุก flag พร้อมกัน `PLATFORM_RELEASE_EVIDENCE_JSON` ปล่อยว่างได้ขณะติดตั้งครั้งแรก แต่ readiness จะยังไม่รับรองหลักฐาน เปิดรายงานด้วย `REPORT_WORKER_ENABLED` หลังทดสอบ worker/storage และสิทธิ์ตาม [คู่มือ rollout](platform-rollout.md) หากยังปิดอยู่ต้องไม่ถือว่าการทดสอบรายงานครบแล้ว
+
 ## 8. Deploy ครั้งแรก
 
-1. ตรวจว่า image ทั้งห้าจาก CI main ล่าสุดตรงกันและไม่มี deployment อื่นกำลังทำงาน
+1. ตรวจว่า image ทั้งหกจาก CI main ล่าสุดตรงกันและไม่มี deployment อื่นกำลังทำงาน
 2. กด **Deploy** ใน Coolify
 3. เปิด **Deployments → deployment ล่าสุด → Logs**
 4. ระบบดึง image, เริ่มฐานข้อมูล/storage และ certbot, migrate ฐาน, สร้าง admin แล้วเปิด API/worker/web
 5. การออก certificate ครั้งแรกอาจใช้หลายนาที ดู service **certbot → Logs** ต้องมี `Certificate is ready; next check in 12 hours.`
-6. **migrate / storage-init / bootstrap** ทำงานครั้งเดียวแล้วหยุดด้วย exit code0 เป็นปกติ ไม่ต้องกด restart ให้ทำงานตลอด
+6. **migrate / storage-init / bootstrap / release-evidence** ทำงานครั้งเดียวแล้วหยุดด้วย exit code0 เป็นปกติ ไม่ต้องกด restart ให้ทำงานตลอด
 7. postgres, redis, storage, certbot, mqtt, api, worker, web ต้อง Running/Healthy
 8. เปิด https://solar.fowir.com/login แล้ว login ด้วย BOOTSTRAP_ADMIN_EMAIL/PASSWORD
 
@@ -161,7 +180,7 @@ Cloudflare → fowir.com → **DNS → Records** ตรวจ:
 
 | อาการ | ตรวจ/แก้จากหน้าเว็บ |
 |---|---|
-| pull access denied / unauthorized | ตรวจ package visibility ทั้ง5ตัวและ image digest ใน Coolify |
+| pull access denied / unauthorized | ตรวจ package visibility ทั้ง6ตัวและ image digest ใน Coolify |
 | required variable / interpolation error | เติมตัวแปรในขั้น7และ Save |
 | certbot unhealthy | ตรวจ token zone DNS Edit, zone fowir.com, อีเมลจริง, outbound DNS/HTTPS และ Logs; แก้แล้ว redeploy ระบบเก็บ certificate เดิมไว้ |
 | mqtt unhealthy | ดู mqtt Logs, รูปแบบ JSON, รหัสอย่างน้อย16ตัว และ certbot healthy |
@@ -196,11 +215,27 @@ Cloudflare → fowir.com → **DNS → Records** ตรวจ:
 
 ## 12. การเก็บข้อมูลจริงและสำรอง
 
+รุ่นนี้เพิ่ม image `postgres-backup` สำหรับ PostgreSQL 16/TimescaleDB พร้อม pgBackRest โดยค่าเริ่มต้น `BACKUP_ENABLED=false` ตั้งปลายทาง S3 นอกเครื่องและกุญแจเข้ารหัสใน Coolify ก่อนเปิด ใช้ขั้นตอน [สำรองและกู้ระบบ](disaster-recovery.md) และ [ตรวจ release/ย้อนกลับ](platform-rollout.md) ผล fixture ไม่ยืนยันว่า backup ของบริษัททำงานแล้ว CI เผยแพร่ image นี้แต่ไม่เปลี่ยน PostgreSQL ผ่าน auto deploy ให้อัตโนมัติ
+
+งานใหม่ปิดไว้ก่อน: `HISTORY_RESTORE_ENABLED`, `HISTORY_RESTORE_WORKER_ENABLED`, `TELEMETRY_ARCHIVE_ENABLED`, `PLATFORM_MONITORING_ENABLED` และ `RAW_RETENTION_ENABLED` เปิดการเรียกคืนประวัติทั้ง API/worker คู่กันหลังตรวจ coverage และทรัพยากร ส่วนการลบ raw และการเงินยังเปิดไม่ได้จาก flag เพียงอย่างเดียว
+
 Persistent volume ช่วยให้ redeploy ไม่ล้างข้อมูล แต่ไม่ใช่ backup ก่อนรับข้อมูลจริงต่อเนื่องให้ผู้ดูแลบริษัทจัด backup PostgreSQL/TimescaleDB และไฟล์ storage ไปนอก server พร้อมทดลอง restore ไปฐานแยก ระบบนี้ใช้ PostgreSQL ใน Compose จึงอย่าสมมติว่ามีเมนู Scheduled Backups แบบ database resource แยกให้โดยอัตโนมัติ
 
 หากบริษัทมีระบบสำรอง VM/volumes ให้ตกลงความถี่ ระยะเก็บ และทดสอบกู้คืนกับผู้ดูแลก่อนรับข้อมูลจริงต่อเนื่อง; คู่มือนี้ไม่ได้ตั้งงาน backup ของบริษัทให้แล้ว การย้อน image ต้องตรวจ migration compatibility และห้ามล้างข้อมูลจริง ส่วน E2E ใช้ฐาน/broker ทิ้งได้บน GitHub เสมอ
 
-## อ้างอิง
+## 13. ตรวจหลังติดตั้งและดูแลต่อ
+
+1. ทำรายการ [ตรวจหลัง deploy และ rollback](platform-rollout.md) ให้ครบ: login/logout/refresh, ทุก role, การแยกโรงเรียน, รายงาน, MQTT ส่งซ้ำ และ reconnect ใช้ข้อมูลทดสอบที่ระบุชัดเจนและไม่ reset ฐานจริง
+2. ทำ [สำรองและกู้คืน](disaster-recovery.md) ทั้ง PostgreSQL/WAL, ไฟล์ต้นฉบับ และ configuration ไปนอก server เก็บกุญแจถอดรหัสแยกจากเครื่องนี้ ทดสอบ restore ใน resource/volume ใหม่ก่อนรับข้อมูลจริงต่อเนื่อง
+3. ติดตั้งหลักฐาน release ตามหัวข้อใน [rollout](platform-rollout.md) ผ่าน Environment Variables และ Terminal ของ service ใน Coolify ได้ ไม่ต้อง SSH; ตั้งผู้รับแจ้งเตือนและทดสอบรับก่อนเปิด monitoring
+4. จดผู้รับผิดชอบระบบ, DNS, backup และ Gateway พร้อมช่องทางติดต่อ เก็บ release SHA/digests และวันที่ตรวจในบันทึกของทีม เก็บรหัสใน password manager เท่านั้น
+5. ทุกครั้งก่อนอัปเดต: ตรวจ backup ล่าสุด ตกลงช่วงหยุดกับ Gateway เก็บ digest เดิม ตรวจ migration compatibility แล้ว deploy จาก CI main ชุดใหม่ CI เปลี่ยน image แอป 5 ตัว ส่วน `POSTGRES_IMAGE` ให้ผู้ดูแลตรวจ compatibility และเปลี่ยนเอง
+6. ถ้ารุ่นใหม่มีปัญหา ใช้ขั้น rollback ในคู่มือ ไม่ลบ volume และไม่ downgrade PostgreSQL/ย้อน migration โดยเดา หลังย้อนต้องตรวจข้อมูลที่รับระหว่างเหตุขัดข้องด้วย
+7. ตรวจทุกวันช่วง pilot: ข้อมูลล่าสุดและที่ขาด, queue, backup/WAL, storage, disk และ certificate logs ไม่มีระบบลบ raw อัตโนมัติที่อนุมัติแล้ว จึงต้องติดตามพื้นที่และวางแผนขยาย
+
+พร้อมให้ทดสอบ staging กับพร้อมรับข้อมูลจริงต่อเนื่องเป็นคนละเกณฑ์ อย่าประกาศว่ารองรับ 1,000 มิเตอร์/50 ผู้ใช้ หรือกู้คืน 4 ชั่วโมง/15 นาทีจนมีผลทดสอบเครื่องและปลายทางจริงตาม [capacity](../performance/platform-capacity.md)
+
+## แหล่งอ้างอิงเพิ่มเติม
 
 - [Coolify Git-based Docker Compose](https://coolify.io/docs/applications/builds/docker-compose)
 - [Coolify Domains](https://coolify.io/docs/core/networking/domains)

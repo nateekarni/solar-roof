@@ -72,6 +72,7 @@ export interface DashboardCompareItem {
 }
 
 export interface DashboardSummaryResponse {
+  energyReadModel?: {enabled:boolean;status:'preparing'|'ready';watermark:string|null};
   range: {start: string; end: string};
   availableSites: {id: string; name: string}[];
   sites: DashboardSummarySite[];
@@ -85,3 +86,4 @@ export interface DashboardSummaryResponse {
 
 export type { FinancialAction, Capabilities } from './capabilities.js';
 export type { JobRecord, JobStatus } from './jobs.js';
+export type {ArchiveManifest,HistoryRestoreRequest,HistoryRestoreAccepted} from './history.js';

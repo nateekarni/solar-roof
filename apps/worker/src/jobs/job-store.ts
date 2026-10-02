@@ -8,6 +8,7 @@ export class JobStore {
   try {
    await c.query('BEGIN');await c.query('SELECT pg_advisory_xact_lock(73501935)');
    if(kind==='report'&&Number((await c.query("SELECT count(*) FROM platform_jobs WHERE kind='report' AND status='running' AND lease_until>now()")).rows[0].count)>=2){await c.query('COMMIT');return null;}
+   if(kind!=='report'&&Number((await c.query("SELECT count(*) FROM platform_jobs WHERE kind IN ('archive','restore') AND status='running' AND lease_until>now()")).rows[0].count)>=1){await c.query('COMMIT');return null;}
    const row=(await c.query(`SELECT * FROM platform_jobs WHERE kind=$1 AND ((status='queued' AND available_at<=now()) OR (status='running' AND lease_until<=now())) ORDER BY CASE WHEN status='running' THEN 0 ELSE 1 END,created_at,id FOR UPDATE SKIP LOCKED LIMIT 1`,[kind])).rows[0];
    if(!row){await c.query('COMMIT');return null;}
    const claimed=(await c.query("UPDATE platform_jobs SET status='running',worker_id=$2,lease_until=now()+make_interval(secs=>$3),lease_seconds=$3,updated_at=now() WHERE id=$1 RETURNING *",[row.id,workerId,leaseSeconds])).rows[0];

@@ -7,7 +7,12 @@ name="solar-managed-mqtt-$$"
 certs="$name-certs"
 data="$name-data"
 tmp=$(mktemp -d)
-cleanup() { docker rm -f "$name" "$name-empty" "$name-bad" >/dev/null 2>&1 || true; docker volume rm "$certs" "$data" >/dev/null 2>&1 || true; rm -rf "$tmp"; }
+cleanup() {
+  docker rm -f "$name" "$name-empty" "$name-bad" >/dev/null 2>&1 || true
+  docker volume rm "$certs" "$data" >/dev/null 2>&1 || true
+  rm -f "$tmp/received" "$tmp/boundary" "$tmp/oversized" "$tmp/oversized-publish" "$tmp/denied" "$tmp/forbidden" "$tmp/retained"
+  rmdir "$tmp"
+}
 trap cleanup EXIT
 docker volume create "$certs" >/dev/null
 docker volume create "$data" >/dev/null
