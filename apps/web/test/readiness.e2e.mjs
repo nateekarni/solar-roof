@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {mkdir,readFile} from 'node:fs/promises';
 import {launchFixtureBrowser} from './platform/fixture-browser.mjs';
+import {readDownloadedFile} from './platform/download-reading.mjs';
 
 const base=process.env.READINESS_WEB_URL || 'http://localhost:13000';
 if(!['localhost','127.0.0.1'].includes(new URL(base).hostname))throw new Error('Local readiness testing only');
@@ -74,7 +75,7 @@ try {
     const card=rolePage.locator(`[data-job-id="${queued.jobId}"]`);await card.getByRole('status').filter({hasText:/^พร้อมใช้งาน —|^Ready —/}).waitFor({timeout:45000});
     const record=await rolePage.request.get(base+`/v1/jobs/${queued.jobId}`);assert.equal(record.status(),200);const completed=await record.json();assert.equal(completed.report.type,'device_health');assert.equal(completed.rowCount,1);
     const downloaded=rolePage.waitForEvent('download');await card.getByRole('button',{name:/ดาวน์โหลด|Download/,exact:true}).click();const artifact=await downloaded;assert.equal(artifact.suggestedFilename(),`report-${queued.jobId}.csv`);
-    const csv=await readFile(await artifact.path(),'utf8');assert.ok(csv.includes(fixture.siteName),'Real worker exports the authorized site');assert.ok(csv.includes('meter-'),'Device report contains the fixture meter');assert.equal(csv.includes('Other '),false,'Other school data is absent');
+    const csv=(await readDownloadedFile(artifact)).toString('utf8');assert.ok(csv.includes(fixture.siteName),'Real worker exports the authorized site');assert.ok(csv.includes('meter-'),'Device report contains the fixture meter');assert.equal(csv.includes('Other '),false,'Other school data is absent');
    }
    await context.close();
   }

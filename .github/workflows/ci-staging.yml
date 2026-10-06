@@ -66,6 +66,9 @@ jobs:
       - name: Prepare version-matched browser server
         timeout-minutes: 5
         run: node scripts/ci/phase-timing.mjs browser-preparation bash scripts/ci/browser-server.sh start
+      - name: Verify browser download transfer
+        timeout-minutes: 2
+        run: pnpm --filter @solar/web exec node test/platform/browser-download.mjs
       - name: Verify MQTT credentials and ACLs
         run: bash infra/docker/mosquitto/smoke.sh
       - name: Real integration and browser E2E in disposable stack

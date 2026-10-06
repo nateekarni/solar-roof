@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {randomUUID,randomBytes,scryptSync,createHash} from 'node:crypto';
 import {createRequire} from 'node:module';
 import {gzipSync,gunzipSync} from 'node:zlib';
-import {readFile} from 'node:fs/promises';
+import {readDownloadedFile} from './download-reading.mjs';
 import {launchFixtureBrowser} from './fixture-browser.mjs';
 const require=createRequire(new URL('../../../api/package.json',import.meta.url)),{Pool}=require('pg'),{S3Client,PutObjectCommand}=require('@aws-sdk/client-s3');
 const api=process.env.READINESS_API_URL,web=process.env.READINESS_WEB_URL;
@@ -47,7 +47,7 @@ try{
   await chooseDate(page,'history-to','2025-01-02');let posts=0;page.on('request',r=>{if(r.method()==='POST'&&r.url().endsWith('/v1/history/restore'))posts++;});
   const accepted=page.waitForResponse(r=>r.request().method()==='POST'&&r.url().endsWith('/v1/history/restore'));await dialog.locator('form').evaluate(form=>{form.requestSubmit();form.requestSubmit();});const response=await accepted;assert.equal(response.status(),202);const {jobId}=await response.json();assert.equal(posts,1);
   const card=page.locator(`[data-job-id="${jobId}"]`);await card.getByText(/JSONL/).waitFor();await card.getByRole('status').filter({hasText:/^Ready —/}).waitFor({timeout:45000});assert.ok((await card.innerText()).includes('Processing time for this request range has not been verified.'));
-  const downloaded=page.waitForEvent('download');await card.getByRole('button',{name:'Download',exact:true}).click();const download=await downloaded;assert.equal(download.suggestedFilename(),`history-${jobId}.jsonl.gz`);const text=gunzipSync(await readFile(await download.path())).toString();assert.match(text,/12345678901234567890\.123456789/);assert.equal(text.trim().split('\n').length,1);
+  const downloaded=page.waitForEvent('download');await card.getByRole('button',{name:'Download',exact:true}).click();const download=await downloaded;assert.equal(download.suggestedFilename(),`history-${jobId}.jsonl.gz`);const text=gunzipSync(await readDownloadedFile(download)).toString();assert.match(text,/12345678901234567890\.123456789/);assert.equal(text.trim().split('\n').length,1);
   console.log('PASS D1 browser: real form/options, maxDays400 with preserved fields, duplicate-submit guard, worker ready status, verified gzip download');
  }
  await context.close();
