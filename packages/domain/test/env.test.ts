@@ -35,6 +35,14 @@ test("loadEnv rejects missing secrets", () => {
   );
 });
 
+test('web-only and registered-broker-only modes need no default MQTT credentials',()=>{
+ const withoutMqtt={...baseEnv,MQTT_URL:undefined,MQTT_USERNAME:undefined,MQTT_PASSWORD:undefined};
+ assert.equal(loadEnv({...withoutMqtt,MQTT_ENABLED:'false'}).MQTT_ENABLED,false);
+ assert.equal(loadEnv({...withoutMqtt,MQTT_DEFAULT_BROKER_ENABLED:'false'}).MQTT_DEFAULT_BROKER_ENABLED,false);
+ assert.throws(()=>loadEnv(withoutMqtt),/MQTT_URL/);
+ assert.throws(()=>loadEnv({...baseEnv,MQTT_ENABLED:'maybe'}),/MQTT_ENABLED/);
+});
+
 test("buildDependencyHealth does not expose secret values", () => {
   const health = buildDependencyHealth("api", loadEnv(baseEnv));
 

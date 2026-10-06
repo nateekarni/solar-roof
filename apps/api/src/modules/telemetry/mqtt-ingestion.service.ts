@@ -49,6 +49,9 @@ function canonical(value: unknown): string {
 @Injectable()
 export class MqttIngestionService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(MqttIngestionService.name);
+  private readonly enabled = process.env.MQTT_ENABLED !== 'false';
+  private readonly defaultBrokerEnabled = process.env.MQTT_DEFAULT_BROKER_ENABLED !== 'false';
+  private remoteDiscovered = false;
   private remote = new Map<string,{client:mqtt.MqttClient;topics:Set<string>;desired:string[];ready:boolean;settings:string}>();
   private remoteTimer: ReturnType<typeof setInterval> | undefined;
   private refreshRemotePending: Promise<void> | undefined;
@@ -64,10 +67,11 @@ export class MqttIngestionService implements OnModuleInit, OnModuleDestroy {
   constructor(@Inject(DatabaseService) private readonly db: DatabaseService,
     @Inject(IngestionDatabaseService) private readonly ingress: IngestionDatabaseService) {}
   async onModuleInit() {
-    if (this.client) return;
+    if (!this.enabled || this.client || this.remoteTimer) return;
     void this.refreshRemote().catch(()=>this.logger.warn("Remote broker settings refresh failed"));
     this.remoteTimer=setInterval(()=>{void this.refreshRemote().catch(()=>this.logger.warn("Remote broker settings refresh failed"));},5000);
     this.remoteTimer.unref();
+    if (!this.defaultBrokerEnabled) return;
     this.client = mqtt.connect(process.env.MQTT_URL || 'mqtt://localhost:1883', {
       connectTimeout: 5000, reconnectPeriod: 5000,
       ...(process.env.MQTT_USERNAME ? { username: process.env.MQTT_USERNAME } : {}),
@@ -87,6 +91,15 @@ export class MqttIngestionService implements OnModuleInit, OnModuleDestroy {
   }
     isConnected(): boolean { return this.client?.connected === true; }
   isReady(): boolean { return this.isConnected() && this.subscriptionsReady; }
+  getConnectionHealth() {
+    if (!this.enabled) return { status: 'disabled', configuredBrokers: 0, readyBrokers: 0 };
+    const configuredBrokers = (this.defaultBrokerEnabled ? 1 : 0) + this.remote.size;
+    const readyBrokers = this.stopping ? 0 : (this.isReady() ? 1 : 0) + [...this.remote.values()].filter(session => session.client.connected && session.ready).length;
+    const status = !this.remoteDiscovered || this.stopping ? 'not_ready'
+      : configuredBrokers === 0 ? 'not_configured'
+      : readyBrokers === configuredBrokers ? 'ready' : readyBrokers > 0 ? 'degraded' : 'not_ready';
+    return { status, configuredBrokers, readyBrokers };
+  }
   private clearReadiness() {
     this.connectionGeneration++;
     this.subscriptionsReady = false;
@@ -134,6 +147,7 @@ export class MqttIngestionService implements OnModuleInit, OnModuleDestroy {
     }
   }
   private async refreshRemote() {
+    if (!this.enabled || this.stopping) return;
     if(this.refreshRemotePending)return this.refreshRemotePending;
     this.refreshRemotePending=this.syncRemote().finally(()=>{this.refreshRemotePending=undefined;});
     return this.refreshRemotePending;
@@ -174,6 +188,7 @@ export class MqttIngestionService implements OnModuleInit, OnModuleDestroy {
       session.desired=broker.topics;
       if(session.client.connected)await this.subscribeRemote(session,broker.topics);
     }
+    this.remoteDiscovered = true;
   }
   private async subscribeRemote(session:{client:mqtt.MqttClient;topics:Set<string>;desired:string[];ready:boolean},filters:string[]){
     if(session.ready && session.topics.size===new Set(filters).size && filters.every(f=>session.topics.has(f)))return;
@@ -186,6 +201,7 @@ export class MqttIngestionService implements OnModuleInit, OnModuleDestroy {
     session.topics=wanted;session.ready=true;
   }
   async refreshSubscriptions() {
+    if (!this.enabled || this.stopping) return 0;
     await this.refreshRemote().catch(()=>this.logger.warn("Remote broker settings refresh failed"));
     const client = this.client;
     const generation = this.connectionGeneration;

@@ -62,6 +62,7 @@ for item in "${suites[@]}"; do
   # Keep all requests within the suite together, including rate-limit tests.
   "${compose[@]}" restart api
   node scripts/ci/coolify-deploy.mjs wait "$READINESS_API_URL/ready"
+  node scripts/ci/coolify-deploy.mjs wait "$READINESS_API_URL/ready/mqtt"
   case "$item" in ui-jobs|accessibility|history) ;; *) pnpm --filter @solar/api exec tsx --tsconfig tsconfig.json --test "test/platform/$item.test.ts" ;; esac
   case "$item" in invitation|csrf|financial-safety|operations|ui-contracts|ui-jobs|accessibility|history) pnpm --filter @solar/web exec node "test/platform/$item.mjs" ;; esac
   if [[ "$item" == history ]]; then

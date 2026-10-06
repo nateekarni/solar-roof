@@ -1,3 +1,7 @@
+# Deploy เฉพาะเว็บก่อน
+
+หากยังไม่ใช้งาน MQTT ให้ใช้ [ขั้นตอน web-first](coolify-web-first-deployment-th.md) และ `infra/docker/docker-compose.web.yml` ซึ่งไม่ต้องตั้งค่า MQTT credentials หรือ certificate ของ Broker ขั้นตอน full stack ด้านล่างใช้เมื่อจะติดตั้ง Broker ของเราเอง
+
 # คู่มือ Deploy Solar Roof บน Coolify — solar.fowir.com
 
 ปรับปรุง 6 ตุลาคม 2026 จากโค้ดใน workspace และเอกสารผู้ผลิต คู่มือนี้เป็นขั้นตอนดำเนินการ ไม่ใช่หลักฐานว่า deploy, DNS หรือ TLS สำเร็จแล้ว

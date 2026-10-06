@@ -26,7 +26,7 @@ export function buildDependencyHealth(service: string, env: AppEnv): ServiceHeal
   const dependencies: DependencyHealth[] = [
     dependency("database", Boolean(env.DATABASE_URL)),
     dependency("jwt", Boolean(env.JWT_ACCESS_SECRET) && Boolean(env.JWT_REFRESH_SECRET)),
-    dependency("mqtt", Boolean(env.MQTT_URL) && Boolean(env.MQTT_USERNAME) && Boolean(env.MQTT_PASSWORD)),
+    ...(env.MQTT_ENABLED && env.MQTT_DEFAULT_BROKER_ENABLED ? [dependency("mqtt", Boolean(env.MQTT_URL) && Boolean(env.MQTT_USERNAME) && Boolean(env.MQTT_PASSWORD))] : []),
     dependency(
       "storage",
       Boolean(env.STORAGE_ENDPOINT) && Boolean(env.STORAGE_BUCKET) && Boolean(env.STORAGE_ACCESS_KEY) && Boolean(env.STORAGE_SECRET_KEY)

@@ -37,7 +37,7 @@ try {
   artifact.hardware={hostname:hostname(),cpus:cpus().length,memoryBytes:totalmem(),availableDiskBytes,disk,containers:containers.map((c:any)=>({service:c.Config.Labels['com.docker.compose.service'],image:c.Image,memoryLimit:c.HostConfig.Memory,nanoCpus:c.HostConfig.NanoCpus}))};
   const fixture=await seedHistory(db,profile);artifact.rows=fixture.historyRows;artifact.fixture={seedTriggers:fixture.seedTriggers,roleDistribution:fixture.roleDistribution};
   compose('restart','api');
-  for(let i=0;;i++){try{if((await fetch(api+'/ready')).ok)break;}catch{} assert.ok(i<120,'API readiness after seed');await pause(500);}
+  for(let i=0;;i++){try{if((await fetch(api+'/ready')).ok && (await fetch(api+'/ready/mqtt')).ok)break;}catch{} assert.ok(i<120,'API and MQTT readiness after seed');await pause(500);}
   const tokens:string[]=[];
   for(const user of fixture.users) {
     // Respect real per-IP authentication limits; setup is outside measured workload.

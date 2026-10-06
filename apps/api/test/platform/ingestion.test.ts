@@ -55,7 +55,7 @@ test('actual API MQTT rejects huge/deep input, commits once before ACK, survives
   client.on('message', (name, data) => { if ([response, `energy/${otherGateway}/response`].includes(name)) acknowledgments.push(JSON.parse(data.toString())); });
   const publish = (body: string, destination = topic) => new Promise<void>((resolve, reject) => client.publish(destination, body, { qos: 1 }, error => error ? reject(error) : resolve()));
   const payload = (id: string, extra: object = {}) => JSON.stringify({ deviceId: device, gateway, sourceTime: new Date().toISOString(), ingestionId: id, metrics: { activePower: 1200 }, ...extra });
-  const ready = () => until(async () => { try { return (await fetch(base + '/ready')).ok; } catch { return false; } }, 30000);
+  const ready = () => until(async () => { try { return (await fetch(base + '/ready')).ok && (await fetch(base + '/ready/mqtt')).ok; } catch { return false; } }, 30000);
   try {
     await db.query("INSERT INTO schools(id,name,code,region) VALUES($1::uuid,'Q2 school',$1::text,'fixture')", [school]);
     await db.query("INSERT INTO sites(id,school_id,name,capacity_mwp) VALUES($1,$2,'Q2 site',0.1)", [site, school]);

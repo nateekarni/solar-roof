@@ -11,14 +11,17 @@ import { AuthService } from "../modules/identity/auth.service.js";
 import { DatabaseService } from "../database/database.service.js";
 import { PlatformAccessGuard } from "../common/auth/platform-access.guard.js";
 import { RolesGuard } from "../common/roles.guard.js";
+import { MqttIngestionService } from '../modules/telemetry/mqtt-ingestion.service.js';
 
 test("public readiness returns 503 on outage and recovers while liveness remains 200", async () => {
   let connected = true;
-  const service = new HealthService([{ name: "mqtt", check: async () => connected }]);
+  const service = new HealthService([{ name: "database", check: async () => connected }]);
+  let mqttStatus='not_ready';
   @Module({
     controllers: [HealthController],
     providers: [
       { provide: HealthService, useValue: service },
+      { provide: MqttIngestionService, useValue: {getConnectionHealth:()=>({status:mqttStatus,configuredBrokers:1,readyBrokers:mqttStatus==='ready'?1:0})} },
       { provide: AuthService, useValue: {} },
       { provide: DatabaseService, useValue: {} },
       { provide: SessionService, useValue: {} },
@@ -33,6 +36,13 @@ test("public readiness returns 503 on outage and recovers while liveness remains
     await app.listen(0, "127.0.0.1");
     const url = await app.getUrl();
     assert.equal((await fetch(`${url}/ready`)).status, 200);
+    assert.equal((await fetch(`${url}/ready/mqtt`)).status,503,'Broker outage does not block web readiness');
+    mqttStatus='ready';
+    assert.equal((await fetch(`${url}/ready/mqtt`)).status,200);
+    mqttStatus='disabled';
+    const disabled=await fetch(`${url}/ready/mqtt`);
+    assert.equal(disabled.status,200);
+    assert.partialDeepStrictEqual(await disabled.json(), {status:'disabled'},'Disabled is explicit, not claimed connected');
     connected = false;
     const failed = await fetch(`${url}/ready`);
     assert.equal(failed.status, 503);

@@ -58,6 +58,8 @@ jobs:
         run: bash infra/docker/mosquitto/managed-smoke.sh
       - name: Verify staging Compose with synthetic certificates
         run: bash infra/ci/managed-staging-smoke.sh
+      - name: Verify web-first deployment without MQTT
+        run: bash infra/ci/web-first-smoke.sh
       - name: Install browser
         run: pnpm --filter @solar/web exec playwright install --with-deps chromium
       - name: Verify MQTT credentials and ACLs
@@ -85,6 +87,7 @@ jobs:
             test/artifacts/solar-ci-*.log
             test/artifacts/platform-baseline.json
             test/artifacts/managed-staging.log
+            test/artifacts/solar-web-first-*.log
             test/artifacts/recovery-result.json
             test/artifacts/platform-capacity.json
             test/artifacts/platform-capacity-*.json
