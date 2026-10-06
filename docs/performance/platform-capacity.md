@@ -43,6 +43,8 @@ fixture สร้าง billing ย้อนหลัง 24 เดือนต�
 
 ## Gate และข้อจำกัดที่ต้องปิด
 
+เวลาแต่ละ page sample (`ms`) วัดจาก navigation start จนถึง frame แรกที่ข้อมูลสำคัญแสดงใน browser: KPI ของ Dashboard หรือจำนวนรายการพร้อมแถวข้อมูลที่โหลดเสร็จของหน้ารายการ เก็บ `driverElapsedMs` แยกเป็นเวลารวมของ Playwright รวมการตรวจ HTTP, URL และข้อความ error หลังข้อมูลแสดงแล้ว; ค่านี้ไม่ใช้แทนเวลาที่ข้อมูลพร้อมแสดง เกณฑ์ทุก sample ไม่เกิน 2 วินาทีคงเดิม
+
 1. smoke ผ่านได้เฉพาะ functional/latency assertions แต่ `releaseGate=fail` เสมอ เพราะลดขนาด
 2. target ต้องครบข้อมูล ผู้ใช้ workload ไม่มี missing ACK/duplicate/error และอย่างน้อย 400 page samples ทุก sample <=2s
 3. browser-cold/browser-warm เป็น context/page load state เท่านั้น ไม่ใช่ PostgreSQL/OS cold cache. ปัจจุบัน runner ตั้ง `coldAndWarm=false` จึง **target ยัง fail closed แม้ตัวเลขอื่นผ่าน** ต้องเพิ่ม cold DB evidence ที่ตรวจได้ก่อนประกาศ target pass

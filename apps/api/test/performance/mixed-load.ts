@@ -134,5 +134,5 @@ try {
   assert.equal(ackedButMissing,0);assert.equal(unexpectedDuplicateRows,0);assert.equal(evidence.unacked,0);assert.equal(errors,0);
   assert.ok(evidence.pageSamples.every((v:number)=>v<=2000),'Every critical page sample must be <=2000ms');
   if(profile.name==='target')assert.equal(artifact.releaseGate,'pass','Incomplete evidence cannot pass target gate');
-} catch(error) {artifact.error=String(error);artifact.releaseGate='fail';process.exitCode=1;}
+} catch(error) {artifact.error=String(error);artifact.releaseGate='fail';console.error('Mixed workload validation failed:',String(error));process.exitCode=1;}
 finally {if(timer)clearInterval(timer);client?.end(true);await db.end();artifact.finishedAt=new Date().toISOString();await writeFile('test/artifacts/platform-capacity.json',JSON.stringify(artifact,null,2));}
