@@ -17,8 +17,11 @@ x-api-env: &api-env
   STORAGE_BUCKET: solar-readiness
   STORAGE_ACCESS_KEY: solar-ci
   STORAGE_SECRET_KEY: ci-storage-only-password
-  BOOTSTRAP_ADMIN_EMAIL: bootstrap@example.test
-  BOOTSTRAP_ADMIN_PASSWORD: Ci-bootstrap-original-123!
+  USER_CREATE_ENABLED: "true"
+  USER_ROLE: admin
+  USER_NAME: CI administrator
+  USER_EMAIL: bootstrap@example.test
+  USER_PASSWORD: Ci-bootstrap-original-123!
 services:
   smtp-capture:
     image: node:24.20.0-bookworm-slim
@@ -66,10 +69,17 @@ services:
     command: ["pnpm", "--filter", "@solar/api", "db:migrate"]
     depends_on:
       postgres: {condition: service_healthy}
-  bootstrap:
+  storage-init:
     image: solar-api:ci
     environment: *api-env
-    command: ["pnpm", "--filter", "@solar/api", "db:bootstrap"]
+    working_dir: /app/apps/api
+    command: [node, --input-type=module, -e, "import {S3Client,CreateBucketCommand,HeadBucketCommand} from '@aws-sdk/client-s3'; const c=new S3Client({endpoint:process.env.STORAGE_ENDPOINT,region:process.env.STORAGE_REGION,forcePathStyle:true,credentials:{accessKeyId:process.env.STORAGE_ACCESS_KEY,secretAccessKey:process.env.STORAGE_SECRET_KEY}});const Bucket=process.env.STORAGE_BUCKET;try{await c.send(new HeadBucketCommand({Bucket}));}catch(e){if(e.$$metadata?.httpStatusCode!==404)throw e;await c.send(new CreateBucketCommand({Bucket}));}"]
+    depends_on:
+      storage: {condition: service_healthy}
+  fixture-user:
+    image: solar-api:ci
+    environment: *api-env
+    command: ["pnpm", "--filter", "@solar/api", "db:create:user"]
     depends_on:
       migrate: {condition: service_completed_successfully}
       storage: {condition: service_healthy}
@@ -78,7 +88,8 @@ services:
     environment: *api-env
     ports: ["127.0.0.1:13001:3001"]
     depends_on:
-      bootstrap: {condition: service_completed_successfully}
+      fixture-user: {condition: service_completed_successfully}
+      storage-init: {condition: service_completed_successfully}
       mqtt: {condition: service_healthy}
       redis: {condition: service_healthy}
     healthcheck:

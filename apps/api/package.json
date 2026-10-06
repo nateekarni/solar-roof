@@ -16,7 +16,7 @@
     "simulate:mqtt": "tsx src/scripts/simulate-mqtt.ts",
     "test:ingestion": "tsx src/scripts/test-gateway-ingestion.ts",
     "test:payload-gateway": "tsx src/scripts/verify-payload-gateway.ts",
-    "db:bootstrap": "tsx src/scripts/bootstrap-staging.ts"
+    "db:create:user": "tsx src/scripts/create-user.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1121.0",

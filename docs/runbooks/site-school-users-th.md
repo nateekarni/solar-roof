@@ -20,7 +20,10 @@ export SITE_USER_SEED_ENABLED=true
 export SITE_USER_SEED_SITE_ID='UUID-ของไซต์ที่ต้องการ'
 export SITE_USER_SEED_EMAIL='school-pilot@example.invalid'
 export SITE_USER_SEED_NAME='ผู้รับผิดชอบโรงเรียนทดสอบ'
-read -r -s -p 'Password (at least 16 characters): ' SITE_USER_SEED_PASSWORD
+printf 'Password (at least 16 characters): '
+stty -echo
+IFS= read -r SITE_USER_SEED_PASSWORD
+stty echo
 echo
 export SITE_USER_SEED_PASSWORD
 pnpm --filter @solar/api db:seed:school-user

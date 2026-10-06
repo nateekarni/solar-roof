@@ -45,6 +45,32 @@ sleep 1
 docker exec "$name" mosquitto_pub "${common[@]}" -u pilot-one -P test-gateway-password -t energy/pilot-one/telemetry -m telemetry-ok -q 1
 wait "$subscriber"
 grep -Fxq telemetry-ok "$tmp/received"
+# Canonical JSON telemetry and ACK stay scoped to the authenticated Gateway ID.
+canonical=solar/v1/sites/SITE-001/gateways/pilot-one/devices/SPM91-01/telemetry
+docker exec "$name" mosquitto_sub "${common[@]}" -u solar-backend -P test-backend-password -t "$canonical" -C 1 -W 5 >"$tmp/received" &
+subscriber=$!
+sleep 1
+docker exec "$name" mosquitto_pub "${common[@]}" -u pilot-one -P test-gateway-password -t "$canonical" -m canonical-ok -q 1
+wait "$subscriber"
+grep -Fxq canonical-ok "$tmp/received"
+docker exec "$name" mosquitto_sub "${common[@]}" -u pilot-one -P test-gateway-password -t solar/v1/sites/SITE-001/gateways/pilot-one/dataAcept -C 1 -W 5 >"$tmp/received" &
+subscriber=$!
+sleep 1
+docker exec "$name" mosquitto_pub "${common[@]}" -u solar-backend -P test-backend-password -t solar/v1/sites/SITE-001/gateways/pilot-one/dataAcept -m ack-ok -q 1
+wait "$subscriber"
+grep -Fxq ack-ok "$tmp/received"
+docker exec "$name" mosquitto_sub "${common[@]}" -u solar-backend -P test-backend-password -t solar/v1/sites/SITE-001/gateways/pilot-two/devices/SPM91-01/telemetry -C 1 -W 3 >"$tmp/forbidden" 2>/dev/null &
+subscriber=$!
+sleep 1
+docker exec "$name" mosquitto_pub "${common[@]}" -u pilot-one -P test-gateway-password -t solar/v1/sites/SITE-001/gateways/pilot-two/devices/SPM91-01/telemetry -m forbidden -q 1 >/dev/null 2>&1 || true
+wait "$subscriber" || true
+test ! -s "$tmp/forbidden"
+docker exec "$name" mosquitto_sub "${common[@]}" -u pilot-one -P test-gateway-password -t solar/v1/sites/SITE-001/gateways/pilot-two/dataAcept -C 1 -W 3 >"$tmp/forbidden" 2>/dev/null &
+subscriber=$!
+sleep 1
+docker exec "$name" mosquitto_pub "${common[@]}" -u solar-backend -P test-backend-password -t solar/v1/sites/SITE-001/gateways/pilot-two/dataAcept -m forbidden -q 1
+wait "$subscriber" || true
+test ! -s "$tmp/forbidden"
 # Exercise the managed broker's exact payload boundary over authenticated TLS.
 docker exec "$name" mosquitto_sub "${common[@]}" -u solar-backend -P test-backend-password -t energy/pilot-one/telemetry -N -C 1 -W 8 >"$tmp/boundary" &
 subscriber=$!

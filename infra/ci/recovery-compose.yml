@@ -64,7 +64,9 @@ services:
       retries: 15
   migrate:
     image: ${RECOVERY_API_IMAGE:-solar-api:ci}
-  bootstrap:
+  storage-init:
+    image: ${RECOVERY_API_IMAGE:-solar-api:ci}
+  fixture-user:
     image: ${RECOVERY_API_IMAGE:-solar-api:ci}
   worker:
     image: ${RECOVERY_WORKER_IMAGE:-solar-worker:ci}

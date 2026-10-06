@@ -25,7 +25,7 @@ export function parsePilotUsersConfig(input:Record<string,string|undefined>) {
 }
 
 interface SeedDatabase {query(sql:string,values?:unknown[]):Promise<{rows:Array<Record<string,unknown>>}>}
-// Caller owns a transaction and the shared bootstrap advisory lock.
+// Caller owns a transaction and the shared user-provisioning advisory lock.
 export async function seedPilotUsers(db:SeedDatabase,config:ReturnType<typeof parsePilotUsersConfig>) {
  const school=await db.query("SELECT id FROM schools WHERE id=$1 AND status='active' FOR SHARE",[config.schoolId]);
  if(school.rows.length!==1)throw Error('PILOT_SCHOOL_ID must refer to an existing active school');

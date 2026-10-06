@@ -134,25 +134,6 @@ services:
       DATABASE_URL: ${DATABASE_URL:?URL-encoded PostgreSQL connection URL required}
     depends_on:
       postgres: {condition: service_healthy}
-  bootstrap:
-    # Pilot defaults for the existing 2 vCPU / 4 GiB host; verify peak usage.
-    cpus: ${BOOTSTRAP_CPU_LIMIT:-0.25}
-    mem_limit: ${BOOTSTRAP_MEMORY_LIMIT:-128m}
-    image: ${API_IMAGE:?immutable API image required}
-    restart: 'no'
-    command: [pnpm, --filter, '@solar/api', 'db:bootstrap']
-    environment:
-      DATABASE_URL: ${DATABASE_URL:?required}
-      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:?initial administrator email required}
-      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:?initial administrator password required}
-      STORAGE_ENDPOINT: http://storage:9000
-      STORAGE_REGION: ${STORAGE_REGION:-us-east-1}
-      STORAGE_BUCKET: ${STORAGE_BUCKET:-solar-platform}
-      STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:-solar}
-      STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?required}
-    depends_on:
-      migrate: {condition: service_completed_successfully}
-      storage-init: {condition: service_completed_successfully}
   release-evidence:
     # Pilot defaults for the existing 2 vCPU / 4 GiB host; verify peak usage.
     cpus: ${RELEASE_EVIDENCE_CPU_LIMIT:-0.25}
@@ -257,7 +238,6 @@ services:
       migrate: {condition: service_completed_successfully}
       redis: {condition: service_healthy}
       mqtt: {condition: service_healthy}
-      bootstrap: {condition: service_completed_successfully}
       storage-init: {condition: service_completed_successfully}
     healthcheck:
       test: [CMD, node, -e, "fetch('http://127.0.0.1:3001/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]

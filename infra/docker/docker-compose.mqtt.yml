@@ -1,0 +1,50 @@
+# Standalone MQTT resource. No web, database or user provisioning.
+# API in the web resource connects through mqtts://mqtt-solar.fowir.com:8883.
+services:
+  certbot:
+    # Pilot defaults for the existing 2 vCPU / 4 GiB host; verify peak usage.
+    cpus: ${CERTBOT_CPU_LIMIT:-0.25}
+    mem_limit: ${CERTBOT_MEMORY_LIMIT:-128m}
+    mem_reservation: ${CERTBOT_MEMORY_RESERVATION:-32m}
+    image: ${CERTBOT_IMAGE:?immutable certificate service image required}
+    restart: unless-stopped
+    environment:
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:?Cloudflare DNS token required}
+      ACME_EMAIL: ${ACME_EMAIL:?certificate contact email required}
+      MQTT_TLS_DOMAIN: mqtt-solar.fowir.com
+    volumes:
+      - letsencrypt-data:/etc/letsencrypt
+      - mqtt-certs:/export
+    healthcheck:
+      test: [CMD, python3, /opt/solar-certbot/service.py, --healthcheck]
+      interval: 15s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+  mqtt:
+    # Pilot defaults for the existing 2 vCPU / 4 GiB host; verify peak usage.
+    cpus: ${MQTT_CPU_LIMIT:-0.25}
+    mem_limit: ${MQTT_MEMORY_LIMIT:-128m}
+    mem_reservation: ${MQTT_MEMORY_RESERVATION:-32m}
+    image: ${MQTT_IMAGE:?immutable managed MQTT image required}
+    restart: unless-stopped
+    ports: ['8883:8883']
+    environment:
+      MQTT_PASSWORD: ${MQTT_PASSWORD:?backend MQTT password required}
+      MQTT_GATEWAY_CREDENTIALS: ${MQTT_GATEWAY_CREDENTIALS:?Gateway credentials JSON required}
+      MQTT_TLS_DOMAIN: mqtt-solar.fowir.com
+    volumes:
+      - mqtt-certs:/mosquitto/certs:ro
+      - mqtt-data:/mosquitto/data
+    depends_on:
+      certbot: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, python3, /usr/local/bin/mqtt-runtime.py, --healthcheck]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+volumes:
+  mqtt-data:
+  mqtt-certs:
+  letsencrypt-data:

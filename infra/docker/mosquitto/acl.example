@@ -3,8 +3,15 @@ user solar-backend
 topic read energy/+/telemetry
 topic write energy/+/response
 topic write energy/+/config
+topic read solar/v1/sites/+/gateways/+/devices/+/telemetry
+topic write solar/v1/sites/+/gateways/+/dataAcept
 
 # %u is the authenticated unique gateway username. Never share credentials.
 pattern write energy/%u/telemetry
 pattern read energy/%u/response
 pattern read energy/%u/config
+
+# Canonical JSON: authenticated username must equal the unique Gateway ID.
+# %u scopes devices and ACKs to that gateway; no write access to another ID.
+pattern write solar/v1/sites/+/gateways/%u/devices/+/telemetry
+pattern read solar/v1/sites/+/gateways/%u/dataAcept

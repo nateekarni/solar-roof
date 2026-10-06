@@ -13,7 +13,6 @@ export MQTT_PASSWORD=local-test-backend MQTT_GATEWAY_CREDENTIALS='{"pilot-one":"
 export CLOUDFLARE_API_TOKEN=unused-synthetic-fixture ACME_EMAIL=ci@example.invalid
 export MINIO_ROOT_USER=solar MINIO_ROOT_PASSWORD=local-test-storage
 export JWT_ACCESS_SECRET=local-test-access-secret-at-least-32-characters JWT_REFRESH_SECRET=local-test-refresh-secret-at-least-32-characters
-export BOOTSTRAP_ADMIN_EMAIL=managed-ci@example.invalid BOOTSTRAP_ADMIN_PASSWORD=Local-test-only-123!
 cat > "$tmp/override.yml" <<'YAML'
 services:
   certbot:
@@ -51,8 +50,8 @@ cleanup() {
 trap cleanup EXIT
 "${compose[@]}" config --quiet
 "${compose[@]}" up -d --wait --wait-timeout 240
-"${compose[@]}" run --rm --no-deps bootstrap
+"${compose[@]}" exec -T -e USER_CREATE_ENABLED=true -e USER_ROLE=admin -e USER_NAME="Managed CI Admin" -e USER_EMAIL=managed-ci@example.invalid -e USER_PASSWORD=Local-test-only-123! api pnpm --filter @solar/api db:create:user
 "${compose[@]}" exec -T mqtt mosquitto_pub -h mqtt-solar.fowir.com -p 8883 --cafile /mosquitto/certs/current/fullchain.pem -u pilot-one -P local-test-gateway -t energy/pilot-one/telemetry -m smoke -q 1
 "${compose[@]}" exec -T api node -e "fetch('http://127.0.0.1:3001/ready').then(r=>{if(!r.ok)throw Error('API not ready')})"
 "${compose[@]}" exec -T web node -e "Promise.all(['/login','/health'].map(p=>fetch('http://127.0.0.1:3000'+p).then(r=>{if(!r.ok)throw Error(p+' not ready')})))"
-echo 'PASS: staging Compose named-volume bootstrap, repeat bootstrap, managed TLS broker, API, worker and web readiness'
+echo 'PASS: staging Compose named-volume migration, manual user creation, managed TLS broker, API, worker and web readiness'

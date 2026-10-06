@@ -17,3 +17,5 @@ Keep mqtt-solar.fowir.com DNS-only and allow inbound8883 through company firewal
 Build `solar-mqtt:ci` and `solar-certbot:ci` using matching Dockerfiles, run Python unittest discovery at `/opt/solar-mqtt/tests` and `/opt/solar-certbot/tests`, then `bash infra/docker/mosquitto/managed-smoke.sh`. The script uses isolated disposable named volumes and validates TLS, authentication, ACL isolation, certificate rotation and restart persistence. CI also runs the earlier standalone ACL smoke.
 
 `mosquitto.conf`, `smoke.sh`, and `renew-certificate.sh` are retained for the legacy fixture/manual integration; staging Compose uses `managed.conf` and the managed certificate service. Do not install the legacy host hook for this deployment.
+
+Canonical JSON topics are also supported: Gateway username equals its unique external Gateway ID (e.g. GW-001); publish solar/v1/sites/SITE-001/gateways/GW-001/devices/SPM91-01/telemetry and subscribe solar/v1/sites/SITE-001/gateways/GW-001/dataAcept. ACL isolates Gateway IDs; use globally unique Gateway IDs for this broker. For separate Coolify resources see docs/runbooks/coolify-mqtt-deployment-th.md.

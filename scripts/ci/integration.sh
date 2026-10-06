@@ -5,9 +5,9 @@ source scripts/ci/isolated-stack.sh
 compose+=(-f infra/ci/report-worker.yml)
 stack_created=true
 "${compose[@]}" up -d --wait --wait-timeout 240
-# Same migrations and bootstrap image run twice; test confirms password is not reset.
+# Same migrations and manual user command run twice; test confirms password is not reset.
 "${compose[@]}" run --rm migrate
-"${compose[@]}" run --rm -e BOOTSTRAP_ADMIN_PASSWORD=Ci-bootstrap-replacement-123! bootstrap
+"${compose[@]}" run --rm -e USER_PASSWORD=Ci-bootstrap-replacement-123! fixture-user
 node scripts/ci/coolify-deploy.mjs wait http://127.0.0.1:13001/ready
 node scripts/ci/coolify-deploy.mjs wait http://127.0.0.1:13000/login
 export READINESS_DATABASE_URL='postgresql://solar:ci-only-password@127.0.0.1:15432/solar_readiness'
