@@ -86,7 +86,11 @@ try {
   await page.setViewportSize({width:1440,height:844});
   await page.goto(web+'/sites');
   const row=page.locator('tbody tr').filter({hasText:'U3 Site'}).first();
-  await row.focus();await page.keyboard.press('Enter');await page.waitForURL('**/records/sites/*');await page.getByRole('heading',{name:'Site details',exact:true}).waitFor();
+  // SSR rows can be visible before client handlers attach. Establish actual
+  // interactivity through the row menu before checking keyboard navigation.
+  await row.getByRole('button',{name:'Open actions menu',exact:true}).click();
+  await page.getByRole('menu').waitFor();await page.keyboard.press('Escape');await page.getByRole('menu').waitFor({state:'hidden'});
+  await row.press('Enter');await page.waitForURL('**/records/sites/*');await page.getByRole('heading',{name:'Site details',exact:true}).waitFor();
   await page.getByRole('link',{name:'Back to list',exact:true}).focus();await page.keyboard.press('Enter');await page.waitForURL(web+'/sites');
   // U2 carry: terminal jobs clear connectivity notices without restarting polling.
   await db.query("INSERT INTO platform_jobs(id,kind,status,created_by,scope,payload,payload_hash) VALUES($1,'report','cancelled',$2,$3,'{}','fixture')",[job,user,[school]]);
