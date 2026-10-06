@@ -230,6 +230,15 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
       SMTP_FROM: ${SMTP_FROM:-}
+      # One-time, explicit user-only seed. Disable and clear passwords after use.
+      PILOT_USERS_ENABLED: ${PILOT_USERS_ENABLED:-false}
+      PILOT_SCHOOL_ID: ${PILOT_SCHOOL_ID:-}
+      PILOT_ADMIN_EMAIL: ${PILOT_ADMIN_EMAIL:-}
+      PILOT_ADMIN_PASSWORD: ${PILOT_ADMIN_PASSWORD:-}
+      PILOT_OWNER_EMAIL: ${PILOT_OWNER_EMAIL:-}
+      PILOT_OWNER_PASSWORD: ${PILOT_OWNER_PASSWORD:-}
+      PILOT_SCHOOL_EMAIL: ${PILOT_SCHOOL_EMAIL:-}
+      PILOT_SCHOOL_PASSWORD: ${PILOT_SCHOOL_PASSWORD:-}
     volumes:
       - solar-backup-status:/var/lib/solar-backup:ro
       - solar-release-evidence:/var/lib/solar-release:ro

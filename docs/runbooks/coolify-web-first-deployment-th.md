@@ -77,6 +77,44 @@ node -e "Promise.all(['/health','/ready','/ready/mqtt'].map(async p=>{const r=aw
 
 กราฟพลังงานต้องแสดงข้อมูลที่มีจริงและสถานะความสดตามระบบ หากยังไม่มี telemetry ไม่ใช้ตัวเลขจำลองเป็นค่าการผลิตจริง
 
+## 6.1 Seed บัญชีสำหรับทดสอบ 3 role
+
+`db:seed` เดิมเป็น demo seed ที่ล้างตาราง และปฏิเสธ production ให้ใช้ **`db:seed:users`** สำหรับ pilot ซึ่งเพิ่มเฉพาะบัญชี ไม่สร้าง telemetry/เอกสารจำลอง ไม่เปลี่ยน role หรือรหัสผ่านของบัญชีที่มีอยู่
+
+1. หลัง Deploy ให้ล็อกอินด้วย bootstrap admin แล้วสร้างโรงเรียนผ่านหน้า Admin ก่อน
+2. นำ UUID ของโรงเรียนจากรายละเอียด/URL หรือเปิด Terminal ของ service **api** แล้วใช้คำสั่งนี้เพื่อดูรายการ:
+
+```sh
+node --input-type=module -e 'import {Pool} from "pg";const db=new Pool({connectionString:process.env.DATABASE_URL});try{console.table((await db.query("SELECT id,name,code,status FROM schools ORDER BY name")).rows)}finally{await db.end()}'
+```
+
+3. เพิ่ม variables ต่อไปนี้ใน Coolify Resource แล้ว Save/Redeploy เพื่อส่งค่าเข้า container API:
+
+```dotenv
+PILOT_USERS_ENABLED=true
+PILOT_SCHOOL_ID=UUID_ของโรงเรียนที่มีสถานะ_active
+PILOT_ADMIN_EMAIL=Email_เดียวกับ_BOOTSTRAP_ADMIN_EMAIL
+PILOT_ADMIN_PASSWORD=รหัสผ่านเดิมของ_bootstrap_admin
+PILOT_OWNER_EMAIL=owner-pilot@fowir.com
+PILOT_OWNER_PASSWORD=รหัสผ่านสุ่มสำหรับ_Owner_อย่างน้อย_16_ตัวอักษร
+PILOT_SCHOOL_EMAIL=school-pilot@fowir.com
+PILOT_SCHOOL_PASSWORD=รหัสผ่านสุ่มสำหรับ_School_User_อย่างน้อย_16_ตัวอักษร
+```
+
+Email ทั้งสามต้องแตกต่างกัน ใช้ Email ที่คุณต้องการจริง ตัวอย่างด้านบนไม่ใช่บัญชีที่ถูกสร้างไว้แล้ว และไม่ต้องตั้ง SMTP เพื่อ seed ด้วยคำสั่งนี้ หากต้องการ Admin ทดสอบแยกจาก bootstrap ให้ใช้ Email ใหม่และรหัสผ่านใหม่ได้
+
+4. เปิด Terminal ของ service **api** แล้วรัน:
+
+```sh
+pnpm --filter @solar/api db:seed:users
+```
+
+5. ตรวจผล `admin`, `owner`, `school_user` โดย `created` หมายถึงสร้างใหม่ ส่วน `preserved; password unchanged` หมายถึงรักษาบัญชีและรหัสผ่านเดิม การรันซ้ำไม่ใช่คำสั่ง reset password
+6. เปิด `https://solar.fowir.com/login` ทดสอบทั้งสามบัญชี Owner ดูมุมมองบริษัท ส่วน School User ดูเฉพาะโรงเรียนที่ระบุ หากโรงเรียนยังไม่มีไซต์/ข้อมูลการผลิต ให้เพิ่มผ่าน Admin ตอนตั้งค่าเครื่องจริง
+7. หลังสำเร็จให้ตั้ง `PILOT_USERS_ENABLED=false` ล้าง `PILOT_ADMIN_PASSWORD`, `PILOT_OWNER_PASSWORD`, `PILOT_SCHOOL_PASSWORD` จาก Coolify แล้ว Redeploy บัญชีในฐานข้อมูลยังอยู่และล็อกอินด้วยรหัสผ่านเดิมได้
+
+คำสั่งใช้ transaction: หากโรงเรียนไม่ active, Email มี role/โรงเรียนผิด, บัญชีถูกปิด หรือไม่มี password hash จะหยุดและ rollback ทั้งชุด ไม่เปลี่ยนสิทธิ์บัญชีเดิมแบบเงียบ ๆ ระบบจะบันทึก audit ของบัญชีที่สร้างใหม่
+
 ## 7. เปิดใช้งาน External Broker ภายหลัง
 
 1. ขอ URL, port, TLS/CA requirements, username/password, topic และ ACL จากผู้ดูแล gateway ไม่ต้องติดตั้ง Broker บนเครื่องเรา

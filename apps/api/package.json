@@ -10,6 +10,7 @@
     "test": "tsx --tsconfig tsconfig.json --test src/**/*.spec.ts",
     "db:migrate": "tsx src/scripts/db-migrate.ts",
     "db:seed": "tsx src/scripts/seed.ts",
+    "db:seed:users": "tsx src/scripts/seed-pilot-users.ts",
     "db:seed:reset": "tsx src/scripts/seed.ts --reset",
     "simulate:mqtt": "tsx src/scripts/simulate-mqtt.ts",
     "test:ingestion": "tsx src/scripts/test-gateway-ingestion.ts",
