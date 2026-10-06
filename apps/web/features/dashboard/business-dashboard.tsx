@@ -9,7 +9,7 @@ export function BusinessProductionTrend({points,locale='th',charges=false}:{poin
   const maximum=points.reduce((max,point)=>Number.isFinite(point.value)?Math.max(max,point.value):max,1);
   return <section className="min-w-0 rounded-xl border bg-card p-4 sm:p-6" aria-label={title}>
     <h2 className="font-semibold">{title}</h2>
-    {points.length===0?<p className="py-10 text-sm text-muted-foreground">{th?'ยังไม่มีข้อมูลในช่วงเวลาที่เลือก':'No data in this date range'}</p>:<div className="mt-4 max-h-80 space-y-3 overflow-y-auto">
+    {points.length===0?<p className="py-10 text-sm text-muted-foreground">{th?'ยังไม่มีข้อมูลในช่วงเวลาที่เลือก':'No data in this date range'}</p>:<div tabIndex={0} role="region" aria-label={title} className="mt-4 max-h-80 space-y-3 overflow-y-auto rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
       {points.map(point=><div key={point.date} className="grid grid-cols-[7rem_minmax(0,1fr)] items-center gap-3 text-sm">
         <span>{formatAppDate(point.date,locale)}</span><div className="min-w-0"><span className="block break-words">{Number.isFinite(point.value)?point.value.toLocaleString(locale,{maximumFractionDigits:2}):(th?'ยังไม่มีข้อมูล':'Unavailable')} {charges?'THB':'kWh'}</span><div aria-hidden="true" className="mt-1 h-2 rounded bg-muted"><div className="h-2 rounded bg-primary" style={{width:`${Number.isFinite(point.value)?Math.max(0,point.value)/maximum*100:0}%`}}/></div></div>
       </div>)}

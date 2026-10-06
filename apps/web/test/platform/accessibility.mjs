@@ -65,6 +65,14 @@ try {
       if(serious.length)console.error(JSON.stringify(serious.map(({id,nodes})=>({id,nodes:nodes.map(({html,failureSummary})=>({html,failureSummary}))})),null,2));
       checks.push({role,width,violations:result.violations.map(({id,impact,nodes})=>({id,impact,targets:nodes.map(node=>node.target)})),incomplete:result.incomplete.map(({id})=>id)});
       assert.deepEqual(serious.map(item=>({id:item.id,targets:item.nodes.map(node=>node.target)})),[],`${role}/${width} accessibility`);
+      if(role==='owner') {
+        for(const region of await page.locator('[role="region"].overflow-y-auto').all()) {
+          await region.focus();
+          assert.equal(await region.evaluate(element=>element===document.activeElement),true,'Owner trend lists accept keyboard focus');
+          const scrollable=await region.evaluate(element=>element.scrollHeight>element.clientHeight);
+          if(scrollable){await page.keyboard.press('End');await page.waitForTimeout(150);assert.ok(await region.evaluate(element=>element.scrollTop>0),'Keyboard can scroll long trend lists');}
+        }
+      }
       const compare=page.getByRole('button',{name:'Compare sites',exact:true});
       if(['owner','school_user'].includes(role)){assert.equal(await compare.count(),0,'Business home has no technical comparison');}
       else {await compare.focus();await page.keyboard.press('Enter');await page.getByRole('dialog').waitFor();
