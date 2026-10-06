@@ -922,6 +922,7 @@ function gatewayTopic(name: string, requested?: string) {
   if (!name.trim() || /[/+#]/.test(name) || ["response", "config", "ack"].includes(name.toLowerCase())) throw new BadRequestException("Gateway name cannot contain MQTT separators or wildcards");
   const topic=requested?.trim();
   if(topic){
+    if(topic.startsWith('solar/v1/'))throw new BadRequestException('Solar telemetry topics require Data profile mode and matching telemetry Site ID, Gateway ID and Device ID; Register preset mode uses energy/{Gateway name}/#');
     const prefix=topic.startsWith('/')?`/${name}/`:`energy/${name}/`;
     if(!topic.startsWith(prefix)||Buffer.byteLength(topic)>1024||topic.includes('\u0000')||topic.split('/').some((part,index,all)=>(part.includes('#')&&(part!=='#'||index!==all.length-1))||(part.includes('+')&&part!=='+')))throw new BadRequestException('MQTT Topic must belong to this Gateway and use valid wildcards');
     return topic;

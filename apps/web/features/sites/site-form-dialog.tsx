@@ -468,13 +468,14 @@ export function SiteFormDialog({
                   </Label>
                   <Input
                     id="gw-endpoint"
-                    placeholder="energy/GW-020/#"
+                    placeholder={payloadMode ? "solar/v1/sites/SITE-001/gateways/GW-001/devices/+/telemetry" : "energy/GW-020/#"}
                     className="text-sm h-10 font-mono"
                     {...register("endpoint")}
                   />
                   {errors.endpoint && (
                     <p className="text-sm text-destructive">{errors.endpoint.message}</p>
                   )}
+                  <p className="text-sm text-muted-foreground">{payloadMode ? 'โปรไฟล์ข้อมูล: Topic ต้องตรงกับรหัส Site ID และ Gateway ID ด้านบน เลือกอุปกรณ์ด้วย Device ID หรือ +' : 'ชุดรีจิสเตอร์: ใช้ energy/{ชื่อ Gateway}/# หากรับ solar/v1/... ให้เลือกรูปแบบข้อมูลเป็นโปรไฟล์ข้อมูล'}</p>
                   <span className="text-sm text-muted-foreground">
                     {locale === "th"
                       ? `Subscribe: ${formValues.endpoint}`

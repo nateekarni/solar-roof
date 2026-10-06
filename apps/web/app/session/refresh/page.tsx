@@ -1,6 +1,7 @@
 'use client';
 import {useEffect,useRef,useState} from 'react';
 import {safeReturnTo} from '@/lib/session-navigation';
+import {AppLoading} from '@/components/feedback/app-loading';
 
 async function sessionPost(path:string):Promise<Response> {
  const controller=new AbortController();
@@ -28,5 +29,5 @@ export default function SessionRefreshPage() {
    window.location.replace('/login?sessionExpired=1');
   })();
  },[]);
- return <main>{uncertain?<><p role="alert">ไม่สามารถยืนยันผลการต่ออายุหรือออกจากเซสชันได้ กรุณาเข้าสู่ระบบใหม่เพื่อดำเนินการต่อ</p><a href="/login?sessionExpired=1">เข้าสู่ระบบใหม่</a></>:<p role="status">กำลังต่ออายุเซสชัน / Restoring your session…</p>}</main>;
+ return <main className="flex min-h-svh items-center justify-center px-4">{uncertain?<div className="flex max-w-md flex-col items-center gap-4 text-center"><p role="alert">ไม่สามารถยืนยันผลการต่ออายุหรือออกจากเซสชันได้ กรุณาเข้าสู่ระบบใหม่เพื่อดำเนินการต่อ</p><a className="text-primary underline underline-offset-4" href="/login?sessionExpired=1">เข้าสู่ระบบใหม่</a></div>:<AppLoading fullPage={false} message="กำลังต่ออายุเซสชัน / Restoring your session…"/>}</main>;
 }
