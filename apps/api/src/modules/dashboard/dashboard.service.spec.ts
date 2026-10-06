@@ -34,3 +34,6 @@ test('comparison executes one scoped grouped query instead of one summary per si
  const rows=await service.compare({role:'owner'},'periodAmount',[],'2026-01-01','2026-01-31');
  assert.equal(rows.length,2);assert.equal(calls.length,2);
 });
+test('admin dashboard ignores every legacy assignment',async()=>{
+ const {service,calls}=fixture();await service.getPowerFlow({role:'admin',schoolId:id,assignedSchoolIds:[id],assignedSiteIds:[id]});assert.deepEqual(calls[0]!.params,[null,null,null]);
+});

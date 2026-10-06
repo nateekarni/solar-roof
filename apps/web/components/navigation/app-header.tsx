@@ -1,9 +1,12 @@
 "use client";
+import { canVisitPage } from "@solar/domain";
+import { useSessionUser } from "../../providers/session-user-provider";
 
 import {
   AlertTriangle,
   Bell,
   CheckCircle2,
+  CheckCheck,
   ChevronRight,
   Globe,
   Laptop,
@@ -63,7 +66,9 @@ export function AppHeader() {
   const locale = useLocale();
   const setLocale = useSetLocale();
   const { theme, setTheme } = useTheme();
-  const { user, clear, setAuth } = useAuth();
+  const { clear } = useAuth();
+  const user = useSessionUser();
+  const canViewAlerts = canVisitPage(user.role, "/alerts");
 
   const [notificationOpen, setNotificationOpen] = React.useState(false);
   const [profileOpen, setProfileOpen] = React.useState(false);
@@ -75,22 +80,9 @@ export function AppHeader() {
   const [activeAlertCount, setActiveAlertCount] = React.useState(0);
   const [loadingAlerts, setLoadingAlerts] = React.useState(false);
 
-  // Fetch current user if not initialized
-  React.useEffect(() => {
-    if (!user) {
-      apiClient
-        .get<any>("/v1/auth/me")
-        .then((userData) => {
-          if (userData && userData.id) {
-            setAuth(userData);
-          }
-        })
-        .catch(() => {});
-    }
-  }, [user, setAuth]);
-
   // Fetch active alerts count on mount and on open
   const fetchAlerts = React.useCallback(async () => {
+    if (!canViewAlerts) return;
     setLoadingAlerts(true);
     try {
       const [listRes, summaryRes] = await Promise.all([
@@ -109,7 +101,7 @@ export function AppHeader() {
     } finally {
       setLoadingAlerts(false);
     }
-  }, []);
+  }, [canViewAlerts]);
 
   const handleMarkAllAsRead = async () => {
     try {
@@ -170,9 +162,10 @@ export function AppHeader() {
   };
 
   const getPageTitle = (path: string) => {
+    if (path.startsWith("/records/")) return locale === "th" ? "รายละเอียดรายการ" : "Record details";
     switch (path) {
       case "/":
-        return t("dashboard.title");
+        return locale === "th" ? "หน้าแรก" : "Home";
       case "/system":
         return t("navigation.system");
       case "/schools":
@@ -187,6 +180,8 @@ export function AppHeader() {
         return t("navigation.receipts");
       case "/reports":
         return t("navigation.reports");
+      case "/production":
+        return locale === "th" ? "การผลิตไฟฟ้า" : "Production";
       case "/alerts":
         return t("navigation.alerts");
       case "/notifications":
@@ -199,6 +194,10 @@ export function AppHeader() {
         return t("navigation.audit");
       case "/settings":
         return t("navigation.systemSettings");
+      case "/settings/company":
+        return t("navigation.companyAndBanking");
+      case "/settings/system":
+        return t("navigation.systemDefaults");
       case "/settings/meter-presets":
         return t("navigation.meterPresets");
       default:
@@ -263,7 +262,7 @@ export function AppHeader() {
 
       <div className="flex items-center gap-1.5 md:gap-2">
         {/* Notification Popover (Responsive: Full-screen Sheet on Mobile, Popover on Desktop) */}
-        <ResponsivePopover
+        {canViewAlerts && <ResponsivePopover
           open={notificationOpen}
           onOpenChange={setNotificationOpen}
           title={t("notifications.header")}
@@ -276,7 +275,7 @@ export function AppHeader() {
               variant="ghost"
               size="icon"
               aria-label={t("navigation.alerts")}
-              className="relative size-8.5 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer"
+              className="relative size-10 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer"
             >
               <Bell className="size-4" />
               {activeAlertCount > 0 && (
@@ -285,8 +284,8 @@ export function AppHeader() {
             </Button>
           }
         >
-          {/* Notification Header: Row 1 = Title & Close; Row 2 = Mark all read (No divider between) */}
-          <div className="p-3.5 sm:p-3 shrink-0 bg-card border-b border-border space-y-2">
+          {/* Notification header with compact actions */}
+          <div className="p-3.5 sm:p-3 shrink-0 bg-card border-b border-border ">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="text-sm sm:text-xs font-bold sm:font-semibold text-foreground">
@@ -309,32 +308,20 @@ export function AppHeader() {
                 )}
               </div>
 
-              {/* Dedicated Close Button */}
-              <button
+              <div className="flex shrink-0 items-center gap-1">
+              <Button variant="ghost" size="icon" type="button" onClick={handleMarkAllAsRead} disabled={activeAlertCount === 0} className="size-8 text-primary hover:bg-primary/10" aria-label={t("notifications.markAllAsRead")} title={t("notifications.markAllAsRead")}><CheckCheck aria-hidden="true" className="size-4" /></Button>
+              <Button
+                variant="ghost"
+                size="sm"
                 type="button"
                 onClick={() => setNotificationOpen(false)}
-                className="size-8 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
-                aria-label="ปิด"
+                className="h-auto gap-0 px-0 size-10 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
+                aria-label={locale === "th" ? "ปิด" : "Close"}
               >
                 <X className="size-4" />
-              </button>
+              </Button>
             </div>
 
-            {/* Row 2: Mark All as Read button on right */}
-            <div className="flex items-center justify-end">
-              <button
-                type="button"
-                onClick={handleMarkAllAsRead}
-                disabled={activeAlertCount === 0}
-                className={cn(
-                  "text-xs font-semibold px-2.5 py-1 rounded-md transition-colors",
-                  activeAlertCount > 0
-                    ? "text-primary hover:bg-primary/10 hover:underline cursor-pointer"
-                    : "text-muted-foreground opacity-60 cursor-default pointer-events-none"
-                )}
-              >
-                {t("notifications.markAllAsRead") || "อ่านทั้งหมด"}
-              </button>
             </div>
           </div>
 
@@ -391,13 +378,13 @@ export function AppHeader() {
               </>
             )}
           </div>
-        </ResponsivePopover>
+        </ResponsivePopover>}
 
         {/* Profile Popover with Language & Theme Switches (Desktop) */}
         <div className="hidden md:block">
           <Popover open={profileOpen} onOpenChange={setProfileOpen}>
             <PopoverTrigger asChild>
-              <button
+              <Button variant="ghost" size="sm"
                 type="button"
                 className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-muted/50 transition-colors cursor-pointer ring-offset-background focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
                 aria-label={t("profile.userMenu")}
@@ -415,7 +402,7 @@ export function AppHeader() {
                     {roleLabel}
                   </span>
                 </div>
-              </button>
+              </Button>
             </PopoverTrigger>
             <PopoverContent
               align="end"
@@ -483,7 +470,7 @@ export function AppHeader() {
                     <span>{t("profile.language")}</span>
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <button
+                    <Button variant="ghost" size="sm"
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
@@ -493,14 +480,14 @@ export function AppHeader() {
                       aria-label="ไทย"
                       className={`flex items-center justify-center h-7 px-2 rounded-md text-xs transition-all cursor-pointer ${
                         locale === "th"
-                          ? "bg-[#EAB308]/25 text-[#0F172A] dark:text-[#EAB308] ring-1 ring-[#EAB308]/60 font-semibold shadow-2xs"
+                          ? "bg-primary/15 text-foreground ring-1 ring-primary/40 font-semibold shadow-2xs"
                           : "bg-muted/80 border border-border/60 hover:bg-muted text-muted-foreground hover:text-foreground shadow-2xs"
                       }`}
                     >
                       <span className="mr-1">🇹🇭</span>
                       <span className="font-semibold text-[11px]">TH</span>
-                    </button>
-                    <button
+                    </Button>
+                    <Button variant="ghost" size="sm"
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
@@ -510,13 +497,13 @@ export function AppHeader() {
                       aria-label="English"
                       className={`flex items-center justify-center h-7 px-2 rounded-md text-xs transition-all cursor-pointer ${
                         locale === "en"
-                          ? "bg-[#EAB308]/25 text-[#0F172A] dark:text-[#EAB308] ring-1 ring-[#EAB308]/60 font-semibold shadow-2xs"
+                          ? "bg-primary/15 text-foreground ring-1 ring-primary/40 font-semibold shadow-2xs"
                           : "bg-muted/80 border border-border/60 hover:bg-muted text-muted-foreground hover:text-foreground shadow-2xs"
                       }`}
                     >
                       <span className="mr-1">🇬🇧</span>
                       <span className="font-semibold text-[11px]">EN</span>
-                    </button>
+                    </Button>
                   </div>
                 </div>
 
@@ -527,7 +514,7 @@ export function AppHeader() {
                     <span>{t("profile.theme")}</span>
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <button
+                    <Button variant="ghost" size="sm"
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
@@ -537,13 +524,13 @@ export function AppHeader() {
                       aria-label={t("profile.light")}
                       className={`flex items-center justify-center size-7 rounded-md text-xs transition-all cursor-pointer ${
                         theme === "light"
-                          ? "bg-[#EAB308]/25 text-[#0F172A] dark:text-[#EAB308] ring-1 ring-[#EAB308]/60 shadow-2xs"
+                          ? "bg-primary/15 text-foreground ring-1 ring-primary/40 shadow-2xs"
                           : "bg-muted/80 border border-border/60 hover:bg-muted text-muted-foreground hover:text-foreground shadow-2xs"
                       }`}
                     >
                       <Sun className="size-3.5" />
-                    </button>
-                    <button
+                    </Button>
+                    <Button variant="ghost" size="sm"
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
@@ -553,13 +540,13 @@ export function AppHeader() {
                       aria-label={t("profile.dark")}
                       className={`flex items-center justify-center size-7 rounded-md text-xs transition-all cursor-pointer ${
                         theme === "dark"
-                          ? "bg-[#EAB308]/25 text-[#0F172A] dark:text-[#EAB308] ring-1 ring-[#EAB308]/60 shadow-2xs"
+                          ? "bg-primary/15 text-foreground ring-1 ring-primary/40 shadow-2xs"
                           : "bg-muted/80 border border-border/60 hover:bg-muted text-muted-foreground hover:text-foreground shadow-2xs"
                       }`}
                     >
                       <Moon className="size-3.5" />
-                    </button>
-                    <button
+                    </Button>
+                    <Button variant="ghost" size="sm"
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
@@ -569,26 +556,26 @@ export function AppHeader() {
                       aria-label={t("profile.system")}
                       className={`flex items-center justify-center size-7 rounded-md text-xs transition-all cursor-pointer ${
                         theme === "system"
-                          ? "bg-[#EAB308]/25 text-[#0F172A] dark:text-[#EAB308] ring-1 ring-[#EAB308]/60 shadow-2xs"
+                          ? "bg-primary/15 text-foreground ring-1 ring-primary/40 shadow-2xs"
                           : "bg-muted/80 border border-border/60 hover:bg-muted text-muted-foreground hover:text-foreground shadow-2xs"
                       }`}
                     >
                       <Laptop className="size-3.5" />
-                    </button>
+                    </Button>
                   </div>
                 </div>
               </div>
 
               {/* Logout Button */}
               <div className="p-2 pb-2.5">
-                <button
+                <Button variant="ghost" size="sm"
                   type="button"
                   onClick={handleLogout}
                   className="flex w-full items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold text-destructive hover:bg-destructive/10 transition-colors cursor-pointer border border-transparent hover:border-destructive/20"
                 >
                   <LogOut className="size-4" />
                   <span>{t("auth.logout")}</span>
-                </button>
+                </Button>
               </div>
             </PopoverContent>
           </Popover>
@@ -599,7 +586,7 @@ export function AppHeader() {
           variant="ghost"
           size="icon"
           onClick={() => setMobileMenuOpen(true)}
-          className="flex md:hidden size-8.5 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted"
+          className="flex md:hidden size-10 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted"
           aria-label="Open navigation menu"
         >
           <Menu className="size-5" />

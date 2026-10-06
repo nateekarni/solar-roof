@@ -80,8 +80,8 @@ export function BillingCycleDialog({
     resolver: zodResolver(billingSchema),
     defaultValues: {
       siteId: "",
-      periodStart: defaultStart,
-      periodEnd: defaultEnd,
+
+
     },
   });
 
@@ -92,9 +92,7 @@ export function BillingCycleDialog({
         .get<SiteOption[]>("/v1/sites")
         .then((data) => {
           setSites(data);
-          if (data.length > 0 && data[0]) {
-            setValue("siteId", data[0].id);
-          }
+
         })
         .catch(() => {})
         .finally(() => setLoadingSites(false));
@@ -135,7 +133,7 @@ export function BillingCycleDialog({
         </DialogHeader>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 pt-3.5">
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <Label htmlFor="site-select" required className="text-xs font-medium">
               {locale === "th" ? "ไซต์พลังงาน" : "Solar Site"}
             </Label>
@@ -157,7 +155,7 @@ export function BillingCycleDialog({
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="space-y-1.5">
+            <div className="space-y-2">
               <Label htmlFor="start-date" required className="text-xs font-medium">
                 {locale === "th" ? "วันเริ่มต้น" : "Start Date"}
               </Label>
@@ -171,7 +169,7 @@ export function BillingCycleDialog({
               )}
             </div>
 
-            <div className="space-y-1.5">
+            <div className="space-y-2">
               <Label htmlFor="end-date" required className="text-xs font-medium">
                 {locale === "th" ? "วันสิ้นสุด" : "End Date"}
               </Label>

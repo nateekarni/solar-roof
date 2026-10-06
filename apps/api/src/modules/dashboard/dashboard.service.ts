@@ -32,8 +32,9 @@ export class DashboardService {
   private async sites(user:DashboardPrincipal, siteId?:string):Promise<SiteRow[]> {
     if (!user || !['owner','admin','operator','accountant','school_user'].includes(user.role || '')) throw new ForbiddenException('Dashboard access denied');
     const schoolIds = [...new Set([...(user.assignedSchoolIds || []), ...(user.schoolId ? [user.schoolId] : [])])];
-    const schools = schoolIds.length && user.role !== 'owner' ? schoolIds : schoolScope(user);
-    const assignedSites = user.assignedSiteIds?.length ? [...user.assignedSiteIds] : null;
+    const global = user.role === 'owner' || user.role === 'admin';
+    const schools = !global && user.role !== 'school_user' && schoolIds.length ? schoolIds : schoolScope(user);
+    const assignedSites = !global && user.assignedSiteIds?.length ? [...user.assignedSiteIds] : null;
     if (siteId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(siteId)) throw new BadRequestException('Invalid site_id');
     const result = await this.db.query<SiteRow>(`SELECT s.id,s.name,sc.name school_name,s.capacity_mwp,s.latitude,s.longitude,
       g.id gateway_id,g.name gateway_name,g.last_seen_at::text

@@ -760,7 +760,7 @@ th[data-slot="table-head"] {
    React Day Picker / Date Range Picker Styles (Target UI Alignment)
    ========================================================================== */
 .rdp-root {
-  --rdp-cell-size: 36px;
+  --rdp-cell-size: 40px;
   position: relative;
 }
 
@@ -789,14 +789,14 @@ th[data-slot="table-head"] {
   justify-content: space-between !important;
   pointer-events: none !important;
   z-index: 10 !important;
-  height: 32px !important;
+  height: 40px !important;
 }
 
 .rdp-button_previous,
 .rdp-button_next {
   pointer-events: auto !important;
-  width: 32px !important;
-  height: 32px !important;
+  width: 40px !important;
+  height: 40px !important;
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
@@ -826,7 +826,7 @@ th[data-slot="table-head"] {
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
-  height: 32px !important;
+  height: 40px !important;
   margin-bottom: 0.75rem !important;
 }
 
@@ -847,23 +847,23 @@ table.rdp-month_grid {
   margin: 0 auto !important;
 }
 
-/* Header & Week Rows: Strict 36px height, native table layout */
+/* Header & Week Rows: Strict 40px height, native table layout */
 .rdp-weekdays tr,
 tr.rdp-weekdays,
 .rdp-weeks tr,
 tr.rdp-week {
   display: table-row !important;
-  height: 36px !important;
+  height: 40px !important;
 }
 
 /* Weekday header cells (Su, Mo, Tu, We, Th, Fr, Sa) */
 .rdp-weekday,
 th.rdp-weekday {
   display: table-cell !important;
-  width: 36px !important;
-  min-width: 36px !important;
-  max-width: 36px !important;
-  height: 36px !important;
+  width: 40px !important;
+  min-width: 40px !important;
+  max-width: 40px !important;
+  height: 40px !important;
   padding: 0 !important;
   text-align: center !important;
   vertical-align: middle !important;
@@ -879,10 +879,10 @@ th.rdp-weekday {
 .rdp-day,
 td.rdp-day {
   display: table-cell !important;
-  width: 36px !important;
-  min-width: 36px !important;
-  max-width: 36px !important;
-  height: 36px !important;
+  width: 40px !important;
+  min-width: 40px !important;
+  max-width: 40px !important;
+  height: 40px !important;
   padding: 0 !important;
   text-align: center !important;
   vertical-align: middle !important;
@@ -893,8 +893,8 @@ td.rdp-day {
 
 /* Day Button (the interactive date pill) */
 .rdp-day_button {
-  width: 36px !important;
-  height: 36px !important;
+  width: 40px !important;
+  height: 40px !important;
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
@@ -1143,3 +1143,16 @@ td.rdp-range_middle:has(+ td.rdp-hidden) {
     min-height: 72px;
   }
 }
+
+/* Shared modal and table typography. */
+[data-slot="dialog-content"] [data-slot="dialog-title"] { font-size: 1rem; gap: .75rem; }
+[data-slot="dialog-title"] > svg { width: 36px; height: 36px; padding: 9px; border-radius: .5rem; background: color-mix(in oklab, var(--primary) 10%, transparent); color: var(--primary); flex-shrink: 0; }
+[data-slot="dialog-title"] > div:has(> svg) { width: 36px; height: 36px; border-radius: .5rem; background: color-mix(in oklab, var(--primary) 10%, transparent); color: var(--primary); }
+[data-slot="dialog-content"] :is([data-slot="input"], [data-slot="textarea"], [data-slot="select-trigger"], [data-slot="label"], [data-slot="field-label"], [data-slot="button"], [data-slot="dialog-description"]) { font-size: .875rem; }
+[data-slot="dialog-footer"] { gap: .5rem; }
+[data-slot="table"] :is([data-slot="table-head"], [data-slot="table-cell"]) { font-size: .875rem; }
+
+[data-slot="input"] { height: 40px; }
+[data-slot="dialog-footer"] [data-slot="button"] { height: 40px; padding-inline: 20px; }
+[data-slot="select-item"] { font-size: .875rem; }
+[data-slot="button"][data-add-action="true"] { height: 40px; padding-inline: 16px; font-size: .875rem; }

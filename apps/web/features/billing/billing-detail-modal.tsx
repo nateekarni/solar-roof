@@ -42,7 +42,7 @@ import { Card } from "../../components/ui/card";
 import { apiClient } from "../../lib/api-client";
 import { useLocale } from "../../providers/locale-provider";
 import { useFinancialCapabilities } from "../../lib/financial-capabilities";
-import { useAuth } from "../../stores/auth-store";
+import { useSessionUser } from "../../providers/session-user-provider";
 import { notify } from "../../components/feedback/notifications";
 import { formatAppDate, formatAppDateTime } from "../../lib/date-format";
 
@@ -89,7 +89,7 @@ export function BillingDetailModal({
   onOpenReceipt,
 }: BillingDetailModalProps) {
   const locale = useLocale();
-  const { user } = useAuth();
+  const user = useSessionUser();
   const financial = useFinancialCapabilities();
   const isSchoolUser = user?.role === "school_user";
 
@@ -260,7 +260,7 @@ export function BillingDetailModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-4xl lg:max-w-5xl w-full max-h-[92vh] overflow-y-auto p-4 sm:p-6 sm:rounded-2xl border-border bg-card">
         {/* Header */}
-        <DialogHeader className="pb-4 border-b border-border/60">
+        <DialogHeader className="pb-4 order/60">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-3">
               <div className="size-11 rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
@@ -294,7 +294,7 @@ export function BillingDetailModal({
                 variant="outline"
                 size="sm"
                 onClick={() => setEmailModalOpen(true)}
-                className="h-8 text-xs gap-1.5 cursor-pointer text-foreground border-border hover:bg-accent"
+                className="h-10 text-xs gap-1.5 cursor-pointer text-foreground border-border hover:bg-accent"
               >
                 <Mail className="size-3.5 text-primary" />
                 <span>{locale === "th" ? "ส่งอีเมลใบแจ้งหนี้" : "Email Invoice"}</span>
@@ -304,7 +304,7 @@ export function BillingDetailModal({
                   variant="outline"
                   size="sm"
                   onClick={() => onOpenInvoice(data)}
-                  className="h-8 text-xs gap-1.5 cursor-pointer text-primary"
+                  className="h-10 text-xs gap-1.5 cursor-pointer text-primary"
                 >
                   <FileText className="size-3.5" />
                   <span>{locale === "th" ? "ดูใบแจ้งหนี้" : "View Invoice"}</span>
@@ -315,7 +315,7 @@ export function BillingDetailModal({
                   variant="outline"
                   size="sm"
                   onClick={() => onOpenReceipt(data)}
-                  className="h-8 text-xs gap-1.5 cursor-pointer text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                  className="h-10 text-xs gap-1.5 cursor-pointer text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
                 >
                   <FileCheck className="size-3.5" />
                   <span>{locale === "th" ? "ดูใบเสร็จรับเงิน" : "View Receipt"}</span>
@@ -332,7 +332,7 @@ export function BillingDetailModal({
           {/* ============================================================== */}
           <div className="lg:col-span-7 space-y-4 text-xs">
             {/* Energy Consumption Summary Card */}
-            <div className="p-4 rounded-xl border border-border/70 bg-card/60 space-y-3">
+            <div className="space-y-3 border-t pt-4">
               <div className="flex items-center justify-between text-xs font-semibold text-foreground">
                 <span className="flex items-center gap-1.5">
                   <Zap className="size-4 text-amber-500" />
@@ -363,9 +363,9 @@ export function BillingDetailModal({
             </div>
 
             {/* Financial Computation Breakdown */}
-            <div className="p-4 rounded-xl border border-border/70 bg-card/60 space-y-2.5">
+            <div className="space-y-2.5 border-t pt-4">
               <div className="text-xs font-semibold text-foreground uppercase tracking-wider">
-                {locale === "th" ? "รายละเอียดการคำนวณค่าไฟฟ้า (PPA Formula)" : "PPA Tariff Computation"}
+                {locale === "th" ? "รายละเอียดค่าไฟฟ้า" : "Electricity charges"}
               </div>
 
               <div className="divide-y divide-border/40 text-xs">
@@ -386,11 +386,11 @@ export function BillingDetailModal({
 
             {/* Meta Information */}
             <div className="grid grid-cols-2 gap-2 text-xs">
-              <div className="p-2.5 rounded-lg bg-muted/20 border border-border/40 space-y-0.5">
+              <div className="space-y-0.5 border-t pt-4">
                 <span className="text-[10px] text-muted-foreground block">{locale === "th" ? "เลขที่ใบแจ้งหนี้" : "Invoice No."}</span>
                 <span className="font-mono font-medium">{data.invoiceNumber || "-"}</span>
               </div>
-              <div className="p-2.5 rounded-lg bg-muted/20 border border-border/40 space-y-0.5">
+              <div className="space-y-0.5 border-t pt-4">
                 <span className="text-[10px] text-muted-foreground block">{locale === "th" ? "เลขที่ใบเสร็จรับเงิน" : "Receipt No."}</span>
                 <span className="font-mono font-medium">{data.receiptNumber || "—"}</span>
               </div>
@@ -401,7 +401,7 @@ export function BillingDetailModal({
           {/* RIGHT COLUMN: Payment Evidence & Verification Action (5 Cols) */}
           {/* ============================================================== */}
           <div className="lg:col-span-5 space-y-4 text-xs">
-            <div className="p-4 rounded-xl border border-border/70 bg-card/60 space-y-3">
+            <div className="space-y-3 border-t pt-4">
               <div className="flex items-center justify-between font-semibold text-foreground">
                 <span className="flex items-center gap-1.5">
                   <ShieldCheck className="size-4 text-primary" />
@@ -411,7 +411,7 @@ export function BillingDetailModal({
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-6 text-[11px] px-2 text-primary gap-1"
+                    className="h-10 text-[11px] px-2 text-primary gap-1"
                     onClick={() => setSlipZoomOpen(true)}
                   >
                     <Eye className="size-3" />
@@ -438,7 +438,7 @@ export function BillingDetailModal({
                     </div>
                   </div>
 
-                  <div className="p-2.5 rounded-lg bg-muted/30 border border-border/40 text-[11px] space-y-1">
+                  <div className="text-[11px] space-y-1 border-t pt-4">
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">{locale === "th" ? "วันเวลาที่โอน:" : "Paid At:"}</span>
                       <span className="font-medium text-foreground">{data.paidAt ? formatAppDateTime(data.paidAt, locale) : "—"}</span>
@@ -454,7 +454,7 @@ export function BillingDetailModal({
                       variant="ghost"
                       size="sm"
                       onClick={() => fileInputRef.current?.click()}
-                      className="h-6 text-[10px] text-muted-foreground hover:text-foreground gap-1 cursor-pointer"
+                      className="h-10 text-[10px] text-muted-foreground hover:text-foreground gap-1 cursor-pointer"
                     >
                       <UploadCloud className="size-3" />
                       <span>{locale === "th" ? "อัปโหลดสลิปใหม่" : "Re-upload Slip"}</span>
@@ -540,7 +540,7 @@ export function BillingDetailModal({
               )}
 
               {data.rejectionReason && (
-                <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-950 dark:text-rose-200 text-xs space-y-1">
+                <div className="text-rose-950 dark:text-rose-200 text-xs space-y-1 border-t pt-4">
                   <div className="flex items-center gap-1.5 font-semibold text-rose-600 dark:text-rose-400">
                     <XCircle className="size-3.5" />
                     <span>{locale === "th" ? "เหตุผลการปฏิเสธหลักฐาน:" : "Rejection Reason:"}</span>
@@ -563,7 +563,7 @@ export function BillingDetailModal({
                         size="sm"
                         onClick={handleApprovePayment}
                         disabled={isSubmitting}
-                        className="h-9 text-xs font-semibold gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
+                        className="h-10 text-xs font-semibold gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
                       >
                         {isSubmitting ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
                         <span>{locale === "th" ? "อนุมัติการชำระเงิน" : "Approve Slip"}</span>
@@ -575,14 +575,14 @@ export function BillingDetailModal({
                         size="sm"
                         onClick={() => setShowRejectInput(true)}
                         disabled={isSubmitting}
-                        className="h-9 text-xs font-semibold gap-1.5 text-rose-600 border-rose-500/30 hover:bg-rose-500/10 cursor-pointer"
+                        className="h-10 text-xs font-semibold gap-1.5 text-rose-600 border-rose-500/30 hover:bg-rose-500/10 cursor-pointer"
                       >
                         <XCircle className="size-3.5" />
                         <span>{locale === "th" ? "ปฏิเสธสลิป" : "Reject"}</span>
                       </Button>
                     </div>
                   ) : (
-                    <div className="p-3 rounded-lg border border-rose-500/30 bg-rose-500/5 space-y-2">
+                    <div className="space-y-2 border-t pt-4">
                       <Label className="text-[11px] text-foreground font-medium">
                         {locale === "th" ? "ระบุเหตุผลการปฏิเสธสลิป" : "Specify Rejection Reason"}
                       </Label>
@@ -597,7 +597,7 @@ export function BillingDetailModal({
                           variant="ghost"
                           size="sm"
                           onClick={() => setShowRejectInput(false)}
-                          className="h-7 text-xs"
+                          className="h-10 text-xs"
                         >
                           {locale === "th" ? "ยกเลิก" : "Cancel"}
                         </Button>
@@ -605,7 +605,7 @@ export function BillingDetailModal({
                           size="sm"
                           onClick={handleRejectPayment}
                           disabled={isSubmitting || !rejectionReason.trim()}
-                          className="h-7 text-xs bg-rose-600 hover:bg-rose-700 text-white font-semibold"
+                          className="h-10 text-xs bg-rose-600 hover:bg-rose-700 text-white font-semibold"
                         >
                           {isSubmitting ? <Loader2 className="size-3 animate-spin" /> : null}
                           <span>{locale === "th" ? "ยืนยันปฏิเสธ" : "Confirm Reject"}</span>
@@ -623,7 +623,7 @@ export function BillingDetailModal({
         {hasSlip && (
           <Dialog open={slipZoomOpen} onOpenChange={setSlipZoomOpen}>
             <DialogContent className="sm:max-w-2xl w-full p-2 bg-card border-border">
-              <DialogHeader className="p-2 border-b border-border/60">
+              <DialogHeader className="p-2 order/60">
                 <DialogTitle className="text-sm font-semibold">
                   {locale === "th" ? "หลักฐานการโอนเงิน (สลิปธนาคาร)" : "Bank Transfer Slip"}
                 </DialogTitle>
@@ -655,7 +655,7 @@ export function BillingDetailModal({
             </DialogHeader>
 
             <div className="py-3 space-y-3">
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 <Label className="text-xs font-medium">
                   {locale === "th" ? "อีเมลผู้รับ" : "Recipient Email"}
                 </Label>
@@ -664,7 +664,7 @@ export function BillingDetailModal({
                   value={recipientEmail}
                   onChange={(e) => setRecipientEmail(e.target.value)}
                   placeholder="finance@school.ac.th"
-                  className="h-9 text-xs"
+                  className="h-10 text-xs"
                 />
               </div>
             </div>

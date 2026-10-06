@@ -1,0 +1,90 @@
+[
+  {
+    "role": "owner",
+    "width": 360,
+    "page": "home",
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "role": "owner",
+    "width": 390,
+    "page": "home",
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "role": "owner",
+    "width": 768,
+    "page": "home",
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "role": "owner",
+    "width": 1280,
+    "page": "home",
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "role": "owner",
+    "page": "mobile-billing",
+    "menuNavigation": true,
+    "dialogFitsViewport": true
+  },
+  {
+    "role": "owner",
+    "page": "forbidden-users",
+    "status": 200,
+    "url": "http://127.0.0.1:13000/settings/users",
+    "body": "Solar Platform\nผู้ใช้งาน\n404\nThis page could not be found.\nหน้าแรก\nสัญญาและเอกสาร\nบัญชีและบริษัท"
+  },
+  {
+    "role": "school_user",
+    "width": 360,
+    "page": "home",
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "role": "school_user",
+    "width": 390,
+    "page": "home",
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "role": "school_user",
+    "width": 768,
+    "page": "home",
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "role": "school_user",
+    "width": 1280,
+    "page": "home",
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "role": "school_user",
+    "page": "mobile-billing",
+    "menuNavigation": true,
+    "dialogFitsViewport": true
+  },
+  {
+    "role": "school_user",
+    "page": "forbidden-users",
+    "status": 200,
+    "url": "http://127.0.0.1:13000/settings/users",
+    "body": "Solar Platform\nผู้ใช้งาน\n404\nThis page could not be found.\nหน้าแรก\nการผลิตไฟฟ้า\nสัญญาและเอกสาร\nบัญชีของฉัน"
+  },
+  {
+    "role": "school_user",
+    "page": "production",
+    "schoolIdentity": true,
+    "periodNavigation": true
+  }
+]

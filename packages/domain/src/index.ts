@@ -41,3 +41,4 @@ export type { BillingStatus } from './billing/billing-lifecycle.js';
 export { deriveIncrement } from './energy-increments.js';
 export {retentionDecision,validateArchiveWindow,restoreLimits,validateRestoreWindow} from './history-policy.js';
 export type {RetentionProof,RestoreLimits} from './history-policy.js';
+export { canVisitPage, isBusinessRole } from "./access/role-experience.js";

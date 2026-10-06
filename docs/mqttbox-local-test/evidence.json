@@ -1,0 +1,21 @@
+{
+  "verifiedAt": "2026-10-05T15:21:39.937Z",
+  "siteId": "ea6713a5-8652-4b8f-a7fa-afbb46cc5c8d",
+  "checks": [
+    "Four supplied groups persisted and correlated dataAcept received",
+    "Retry changed sentAt: no duplicate raw or measurements",
+    "Conflicting logical identity rejected without accepted ACK",
+    "Realtime and energy coexist; PM import 152430275 Wh = 152430.275 kWh; logger does not override billing meter",
+    "Late raw retained without replacing latest fields",
+    "Unknown future tag retained as unmapped raw without billing role",
+    "Invalid energy unit rejected, no accepted ACK",
+    "Topic/body ownership mismatch rejected",
+    "Import cumulative delta 1000 Wh = 1 kWh; rollover lot 1 accepted",
+    "Poor-quality fields retained; excluded from billing energy projection",
+    "Historical source time stored without becoming current live data"
+  ],
+  "rawCount": 11,
+  "sampleCount": 74,
+  "brokerUrl": "mqtt://localhost:1883",
+  "duplicateAcceptedAt": "2026-10-05T15:21:38.067Z"
+}

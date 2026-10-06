@@ -1,4 +1,6 @@
 "use client";
+import { canVisitPage } from "@solar/domain";
+import { useSessionUser } from "../../../providers/session-user-provider";
 
 import * as React from "react";
 import Link from "next/link";
@@ -16,6 +18,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../../../stores/auth-store";
 import { useLocale } from "../../../providers/locale-provider";
+import { SchoolSettingsView } from "../../../features/settings/school-settings-view";
 import { Avatar, AvatarFallback } from "../../../components/ui/avatar";
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
@@ -26,13 +29,14 @@ import {
   DialogFooter,
   DialogTitle,
 } from "../../../components/ui/dialog";
-import { SchoolSettingsView } from "../../../features/settings/school-settings-view";
-import { SystemSettingsContent } from "../../../features/settings/system-settings-content";
+
+
 
 export default function SettingsPage() {
   const router = useRouter();
   const locale = useLocale();
-  const { user, clear } = useAuth();
+  const { clear } = useAuth();
+  const user = useSessionUser();
   const [logoutDialogOpen, setLogoutDialogOpen] = React.useState(false);
 
   const handleLogout = async () => {
@@ -53,11 +57,11 @@ export default function SettingsPage() {
   const getRoleName = () => {
     switch (user?.role) {
       case "owner":
-        return locale === "th" ? "Platform Owner" : "Platform Owner";
+        return locale === "th" ? "เจ้าของบริษัท" : "Company Owner";
       case "admin":
-        return locale === "th" ? "Platform Admin" : "Platform Admin";
+        return locale === "th" ? "ผู้ดูแลระบบสูงสุด" : "Super Administrator";
       case "school_user":
-        return locale === "th" ? "School Administrator" : "School Administrator";
+        return locale === "th" ? "เจ้าหน้าที่โรงเรียน" : "School Officer";
       default:
         return locale === "th" ? "ผู้ดูแลระบบ" : "Administrator";
     }
@@ -66,8 +70,8 @@ export default function SettingsPage() {
   return (
     <>
       {/* 1. Mobile View: Settings Menu Hub */}
-      <main className="content block md:hidden pb-12">
-        <div className="space-y-4">
+      {user?.role === "school_user" ? <main className="content"><SchoolSettingsView /></main> : <main className="content pb-12">
+        <div className="ops-content w-full space-y-4">
           {/* Header */}
           <div>
             <h1 className="text-xl font-bold tracking-tight text-foreground">
@@ -113,7 +117,7 @@ export default function SettingsPage() {
             <div className="rounded-2xl bg-card border border-border/70 divide-y divide-border/50 shadow-xs overflow-hidden">
               {/* 1. General Settings */}
               <Link
-                href="/settings/general"
+                href="/settings/company"
                 className="flex items-center gap-3 p-3.5 hover:bg-muted/50 transition-colors cursor-pointer"
               >
                 <div className="flex size-9 items-center justify-center rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 shrink-0">
@@ -121,17 +125,18 @@ export default function SettingsPage() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-xs font-semibold text-foreground">
-                    {locale === "th" ? "การตั้งค่าทั่วไป & บัญชีบริษัท" : "General & Company Settings"}
+                    {locale === "th" ? "ข้อมูลบริษัทและบัญชีธนาคาร" : "Company and Bank Accounts"}
                   </div>
                   <p className="text-[11px] text-muted-foreground truncate">
                     {locale === "th"
-                      ? "ข้อมูลบริษัท, บัญชีธนาคารรับเงิน, ภาษา, ธีม"
-                      : "Company profile, bank accounts, theme, language"}
+                      ? "ข้อมูลบริษัทและบัญชีธนาคารรับเงิน"
+                      : "Company profile and payment bank accounts"}
                   </p>
                 </div>
                 <ChevronRight className="size-4 text-muted-foreground shrink-0" />
               </Link>
 
+              <Link href="/settings/general" className="flex items-center gap-3 p-3.5 min-h-11 hover:bg-muted/50"><Sliders className="size-5" /><span className="text-sm">{locale === "th" ? "การแสดงผล" : "Preferences"}</span><ChevronRight className="ml-auto size-4" /></Link>
               {/* 2. Account Settings */}
               <Link
                 href="/settings/account"
@@ -146,8 +151,8 @@ export default function SettingsPage() {
                   </div>
                   <p className="text-[11px] text-muted-foreground truncate">
                     {locale === "th"
-                      ? "รูปโปรไฟล์, ชื่อ-นามสกุล, ข้อมูลติดต่อ"
-                      : "Avatar, name, contact information"}
+                      ? "ชื่อ อีเมล และบทบาทผู้ใช้งาน"
+                      : "Name, email, and account role"}
                   </p>
                 </div>
                 <ChevronRight className="size-4 text-muted-foreground shrink-0" />
@@ -177,7 +182,7 @@ export default function SettingsPage() {
           </div>
 
           {/* Group 2: System & Platform (Only for Non-School Users) */}
-          {user?.role !== "school_user" && (
+          {canVisitPage(user.role, "/settings/system") && (
             <div className="space-y-1.5 pt-2">
               <span className="text-[11px] font-semibold text-muted-foreground tracking-wider uppercase px-1">
                 {locale === "th" ? "ระบบและแพลตฟอร์ม" : "System & Platform"}
@@ -194,7 +199,7 @@ export default function SettingsPage() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="text-xs font-semibold text-foreground">
-                      {locale === "th" ? "ค่าตั้งต้นระบบ & รอบบิล" : "System Defaults"}
+                      {locale === "th" ? "ค่าตั้งต้นระบบและรอบบิล" : "System Defaults"}
                     </div>
                     <p className="text-[11px] text-muted-foreground truncate">
                       {locale === "th"
@@ -215,11 +220,11 @@ export default function SettingsPage() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="text-xs font-semibold text-foreground">
-                      {locale === "th" ? "คอนฟิกมิเตอร์ & Register Presets" : "Meter Presets"}
+                      {locale === "th" ? "ค่าจากมิเตอร์" : "Meter Presets"}
                     </div>
                     <p className="text-[11px] text-muted-foreground truncate">
                       {locale === "th"
-                        ? "จัดการ Preset Address และการแปลงค่าหน่วย Modbus"
+                        ? "จัดการรูปแบบข้อมูลและการจับคู่รีจิสเตอร์"
                         : "Modbus registers, scaling, and presets"}
                     </p>
                   </div>
@@ -236,7 +241,7 @@ export default function SettingsPage() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="text-xs font-semibold text-foreground">
-                      {locale === "th" ? "ประวัติการแก้ไขระบบ (Audit Trail)" : "Audit Trail"}
+                      {locale === "th" ? "ประวัติการทำงาน" : "Audit Trail"}
                     </div>
                     <p className="text-[11px] text-muted-foreground truncate">
                       {locale === "th"
@@ -276,27 +281,14 @@ export default function SettingsPage() {
             <Button
               variant="outline"
               onClick={() => setLogoutDialogOpen(true)}
-              className="w-full h-11 text-xs font-medium text-destructive border-destructive/30 hover:bg-destructive/10 gap-2 rounded-xl cursor-pointer"
+              className="w-full h-10 text-xs font-medium text-destructive border-destructive/30 hover:bg-destructive/10 gap-2 rounded-xl cursor-pointer"
             >
               <LogOut className="size-4" />
-              <span>{locale === "th" ? "ออกจากระบบ (Sign Out)" : "Sign Out"}</span>
+              <span>{locale === "th" ? "ออกจากระบบ" : "Sign Out"}</span>
             </Button>
           </div>
         </div>
-      </main>
-
-      {/* 2. Desktop View */}
-      <div className="hidden md:block">
-        {user?.role === "school_user" ? (
-          <main className="content p-4 md:p-6">
-            <SchoolSettingsView />
-          </main>
-        ) : (
-          <main className="content">
-            <SystemSettingsContent showBackLink={false} />
-          </main>
-        )}
-      </div>
+      </main>}
 
       {/* Mobile Logout Dialog */}
       <Dialog open={logoutDialogOpen} onOpenChange={setLogoutDialogOpen}>
@@ -319,7 +311,7 @@ export default function SettingsPage() {
               variant="outline"
               size="sm"
               onClick={() => setLogoutDialogOpen(false)}
-              className="flex-1 h-9 text-xs"
+              className="flex-1 h-10 text-xs"
             >
               {locale === "th" ? "ยกเลิก" : "Cancel"}
             </Button>
@@ -327,7 +319,7 @@ export default function SettingsPage() {
               variant="destructive"
               size="sm"
               onClick={handleLogout}
-              className="flex-1 h-9 text-xs"
+              className="flex-1 h-10 text-xs"
             >
               {locale === "th" ? "ออกจากระบบ" : "Sign Out"}
             </Button>
@@ -337,4 +329,3 @@ export default function SettingsPage() {
     </>
   );
 }
-

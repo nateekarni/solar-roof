@@ -1,3 +1,5 @@
+import { getSessionUser } from "../../lib/session-user";
+import { SessionUserProvider } from "../../providers/session-user-provider";
 import { cookies } from "next/headers";
 import type { ReactNode } from "react";
 import type { Locale } from "@solar/i18n";
@@ -8,12 +10,13 @@ import { SidebarInset, SidebarProvider } from "../../components/ui/sidebar";
 import { LocaleProvider } from "../../providers/locale-provider";
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
+  const user = await getSessionUser();
   const cookieStore = await cookies();
   const locale = (cookieStore.get("locale")?.value as Locale) || "th";
 
   return (
     <LocaleProvider initialLocale={locale}>
-      <SidebarProvider defaultOpen>
+      <SessionUserProvider user={user}><SidebarProvider defaultOpen>
         <AppSidebar />
         <SidebarInset className="flex flex-col h-svh overflow-hidden">
           <AppHeader />
@@ -22,7 +25,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
           </div>
           <MobileBottomNav />
         </SidebarInset>
-      </SidebarProvider>
+      </SidebarProvider></SessionUserProvider>
     </LocaleProvider>
   );
 }

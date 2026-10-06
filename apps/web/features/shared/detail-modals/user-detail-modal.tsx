@@ -97,7 +97,7 @@ export function UserDetailModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-sm:fixed max-sm:inset-0 max-sm:top-0 max-sm:h-dvh max-sm:max-h-dvh max-sm:w-full max-sm:rounded-none max-sm:p-4 max-sm:flex max-sm:flex-col sm:max-w-xl sm:rounded-2xl sm:p-6 sm:max-h-[85vh] overflow-hidden">
         {/* Header */}
-        <DialogHeader className="shrink-0 pb-3 border-b border-border/60">
+        <DialogHeader className="shrink-0 pb-3 order/60">
           <div className="flex items-center gap-3">
             <div
               className={`size-11 rounded-xl flex items-center justify-center shrink-0 ${
@@ -138,7 +138,7 @@ export function UserDetailModal({
         {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto pr-1 space-y-4 text-sm my-2">
           {/* Role & Permissions Card */}
-          <div className="p-3.5 rounded-xl border border-border/70 bg-card/60 space-y-2">
+          <div className="space-y-2 border-t pt-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 font-medium text-foreground">
                 <Shield className="size-4 text-primary" />
@@ -155,7 +155,7 @@ export function UserDetailModal({
 
           {/* User Details Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-            <div className="p-3 rounded-lg border border-border/50 bg-muted/20 space-y-1">
+            <div className="space-y-1 border-t pt-4">
               <div className="text-xs text-muted-foreground flex items-center gap-1.5">
                 <Mail className="size-3.5" />
                 <span>{locale === "th" ? "อีเมลติดต่อ" : "Email Address"}</span>
@@ -166,7 +166,7 @@ export function UserDetailModal({
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="size-6 text-muted-foreground hover:text-foreground shrink-0"
+                    className="size-10 text-muted-foreground hover:text-foreground shrink-0"
                     onClick={() => copyToClipboard(user.email!, "email")}
                     title={locale === "th" ? "คัดลอกอีเมล" : "Copy Email"}
                   >
@@ -176,7 +176,7 @@ export function UserDetailModal({
               </div>
             </div>
 
-            <div className="p-3 rounded-lg border border-border/50 bg-muted/20 space-y-1">
+            <div className="space-y-1 border-t pt-4">
               <div className="text-xs text-muted-foreground flex items-center gap-1.5">
                 <School className="size-3.5" />
                 <span>{locale === "th" ? "สังกัดโรงเรียน" : "School Assignment"}</span>
@@ -186,7 +186,7 @@ export function UserDetailModal({
               </div>
             </div>
 
-            <div className="p-3 rounded-lg border border-border/50 bg-muted/20 space-y-1">
+            <div className="space-y-1 border-t pt-4">
               <div className="text-xs text-muted-foreground flex items-center gap-1.5">
                 <Clock className="size-3.5" />
                 <span>{locale === "th" ? "เข้าใช้งานล่าสุด" : "Last Active"}</span>
@@ -196,7 +196,7 @@ export function UserDetailModal({
               </div>
             </div>
 
-            <div className="p-3 rounded-lg border border-border/50 bg-muted/20 space-y-1">
+            <div className="space-y-1 border-t pt-4">
               <div className="text-xs text-muted-foreground flex items-center gap-1.5">
                 <KeyRound className="size-3.5" />
                 <span>{locale === "th" ? "วันที่สร้างบัญชี" : "Created At"}</span>
@@ -214,7 +214,7 @@ export function UserDetailModal({
               <Button
                 variant="ghost"
                 size="icon"
-                className="size-6 text-muted-foreground hover:text-foreground shrink-0"
+                className="size-10 text-muted-foreground hover:text-foreground shrink-0"
                 onClick={() => copyToClipboard(user.id!, "userId")}
               >
                 {copiedKey === "userId" ? <Check className="size-3 text-emerald-500" /> : <Copy className="size-3" />}
@@ -226,6 +226,3 @@ export function UserDetailModal({
     </Dialog>
   );
 }
-
-
-

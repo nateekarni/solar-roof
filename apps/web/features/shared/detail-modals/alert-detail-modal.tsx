@@ -78,7 +78,7 @@ export function AlertDetailModal({
         className="max-sm:fixed max-sm:inset-0 max-sm:top-0 max-sm:h-dvh max-sm:max-h-dvh max-sm:w-full max-sm:rounded-none max-sm:p-4 max-sm:flex max-sm:flex-col sm:max-w-xl sm:rounded-2xl sm:p-6 sm:max-h-[85vh] overflow-hidden"
       >
         {/* Header */}
-        <DialogHeader className="shrink-0 pb-3 border-b border-border/60">
+        <DialogHeader className="shrink-0 pb-3 order/60">
           <div className="flex items-center gap-3">
             <div
               className={`size-10 rounded-xl flex items-center justify-center shrink-0 ${
@@ -127,7 +127,7 @@ export function AlertDetailModal({
         {/* Scrollable Body */}
         <div className="flex-1 overflow-y-auto py-4 space-y-4 pr-1 text-xs">
           {/* Key Facts */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 rounded-xl bg-muted/40 border border-border/60">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 border-t pt-4">
             <div className="space-y-1">
               <span className="text-[11px] text-muted-foreground font-medium flex items-center gap-1.5">
                 <Clock className="size-3.5 text-muted-foreground" />
@@ -161,7 +161,7 @@ export function AlertDetailModal({
           </div>
 
           {/* Technical Detail Description */}
-          <div className="space-y-2 p-3.5 rounded-xl border border-border/60 bg-card">
+          <div className="space-y-2 border-t pt-4">
             <span className="text-[11px] text-muted-foreground font-semibold uppercase tracking-wider block">
               {locale === "th" ? "รายละเอียดข้อผิดพลาดทางเทคนิค" : "Technical Diagnostics"}
             </span>

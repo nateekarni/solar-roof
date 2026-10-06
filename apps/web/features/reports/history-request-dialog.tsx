@@ -1,9 +1,11 @@
 "use client";
+import { ChoiceSelect } from '../../components/ui/choice-select';
 import * as React from 'react';
 import {useRouter} from 'next/navigation';
 import {Button} from '../../components/ui/button';
 import {Dialog,DialogContent,DialogHeader,DialogTitle,DialogDescription,DialogFooter} from '../../components/ui/dialog';
 import {Label} from '../../components/ui/label';
+import {DatePicker} from '../../components/ui/date-picker';
 import {apiClient} from '../../lib/api-client';
 import {useLocale} from '../../providers/locale-provider';
 export function HistoryRequestDialog(){
@@ -21,9 +23,9 @@ export function HistoryRequestDialog(){
  };
  return <><Button variant="outline" onClick={()=>setOpen(true)}>{th?'ขอข้อมูลย้อนหลัง':'Request archived detail'}</Button><Dialog open={open} onOpenChange={setOpen}><DialogContent><DialogHeader><DialogTitle>{th?'ขอข้อมูลย้อนหลัง':'Request archived detail'}</DialogTitle><DialogDescription>{th?'กู้ข้อมูลที่เก็บใน archive เป็นไฟล์ JSONL บีบอัด ไม่ใส่กลับในข้อมูลสด วันที่สิ้นสุดไม่รวมในคำขอ ยังไม่ยืนยันเวลาเสร็จ':'Restore archived detail as compressed JSONL. End date is exclusive. Completion time has not been verified.'}</DialogDescription></DialogHeader>
  <form onSubmit={event=>void submit(event)} className="space-y-4">{error&&<p role="alert" className="text-destructive">{error}</p>}{options&&!options.available&&<p role="status">{th?'บริการกู้ข้อมูลย้อนหลังยังไม่พร้อมใช้งาน ข้อมูลที่กรอกยังคงอยู่':'History restoration is currently unavailable. Entered values are preserved.'}</p>}{options?.available&&<p className="text-sm">{th?`เลือกช่วงไม่เกิน ${options.maxDays} วัน หากมากกว่านี้ให้แบ่งคำขอ`:`Select at most ${options.maxDays} days. Split larger requests.`}</p>}
- <div className="space-y-1"><Label htmlFor="history-site">{th?'สถานที่':'Site'}</Label><select id="history-site" value={siteId} onChange={event=>setSite(event.target.value)} required disabled={sitesLoading||loading} className="w-full rounded-md border bg-background p-2"><option value="">{th?'เลือกสถานที่':'Select a site'}</option>{sites.map(site=><option key={site.id} value={site.id}>{site.name}</option>)}</select></div>
- <div className="space-y-1"><Label htmlFor="history-from">{th?'วันที่เริ่มต้น':'From date'}</Label><input id="history-from" type="date" required value={from} onChange={event=>setFrom(event.target.value)} className="w-full rounded-md border bg-background p-2"/></div>
- <div className="space-y-1"><Label htmlFor="history-to">{th?'วันที่สิ้นสุด (ไม่รวม)':'To date (exclusive)'}</Label><input id="history-to" type="date" required value={to} min={from||undefined} onChange={event=>setTo(event.target.value)} className="w-full rounded-md border bg-background p-2"/></div>
+ <div className="space-y-2"><Label htmlFor="history-site">{th?'สถานที่':'Site'}</Label><ChoiceSelect id="history-site" value={siteId} onChange={event=>setSite(event.target.value)} required disabled={sitesLoading||loading} className="w-full rounded-md border bg-white p-2"><option value="">{th?'เลือกสถานที่':'Select a site'}</option>{sites.map(site=><option key={site.id} value={site.id}>{site.name}</option>)}</ChoiceSelect></div>
+ <div className="space-y-2"><Label htmlFor="history-from">{th?'วันที่เริ่มต้น':'From date'}</Label><DatePicker id="history-from" required value={from} onValueChange={setFrom} className="w-full"/></div>
+ <div className="space-y-2"><Label htmlFor="history-to">{th?'วันที่สิ้นสุด (ไม่รวม)':'To date (exclusive)'}</Label><DatePicker id="history-to" required value={to} min={from||undefined} onValueChange={setTo} className="w-full"/></div>
  <DialogFooter><Button type="button" variant="outline" onClick={()=>setOpen(false)}>{th?'ปิด':'Close'}</Button><Button type="submit" disabled={loading||sitesLoading||!options?.available||!siteId||!from||!to}>{loading?(th?'กำลังส่งคำขอ':'Submitting'):(th?'ส่งคำขอ':'Submit request')}</Button></DialogFooter></form>
  </DialogContent></Dialog></>;
 }

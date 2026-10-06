@@ -1,0 +1,213 @@
+{
+  "schemaVersion": "1.1",
+  "description": "MQTT payload examples for Schneider PM2230 Smart Meter and Huawei SmartLogger3000A.",
+  "topics": {
+    "telemetry": "solar/v1/sites/{siteId}/gateways/{gatewayId}/devices/{deviceId}/telemetry",
+    "dataAcept": "solar/v1/sites/{siteId}/gateways/{gatewayId}/dataAcept",
+    "gatewayStatus": "solar/v1/sites/{siteId}/gateways/{gatewayId}/status"
+  },
+  "payloads": {
+    "pm2230Realtime": {
+      "schemaVersion": "1.1",
+      "messageType": "telemetry",
+      "messageId": "GW-001-000001258",
+      "sequence": 1258,
+      "lotNumber": 1258,
+      "siteId": "SITE-001",
+      "gatewayId": "GW-001",
+      "device": {
+        "deviceId": "METER-001",
+        "deviceType": "energy-meter",
+        "manufacturer": "Schneider Electric",
+        "model": "PM2230",
+        "profileId": "schneider-pm2230",
+        "profileVersion": "1.0.0",
+        "protocol": "modbus-tcp"
+      },
+      "pollGroup": "realtime",
+      "timestamps": {
+        "polledAt": "2026-10-05T08:00:00.125+07:00",
+        "sentAt": "2026-10-05T08:00:00.280+07:00"
+      },
+      "data": {
+        "values": {
+          "electrical.voltage.l1_n": 230.41,
+          "electrical.voltage.l2_n": 229.88,
+          "electrical.voltage.l3_n": 230.12,
+          "electrical.voltage.l1_l2": 398.72,
+          "electrical.voltage.l2_l3": 399.05,
+          "electrical.voltage.l3_l1": 398.91,
+          "electrical.current.l1": 42.31,
+          "electrical.current.l2": 40.87,
+          "electrical.current.l3": 41.66,
+          "electrical.frequency": 50.02,
+          "power.active.total": 28240.0,
+          "power.reactive.total": 4350.0,
+          "power.apparent.total": 28580.0,
+          "power.factor.total": 0.988
+        },
+        "units": {
+          "electrical.voltage.l1_n": "V",
+          "electrical.voltage.l2_n": "V",
+          "electrical.voltage.l3_n": "V",
+          "electrical.voltage.l1_l2": "V",
+          "electrical.voltage.l2_l3": "V",
+          "electrical.voltage.l3_l1": "V",
+          "electrical.current.l1": "A",
+          "electrical.current.l2": "A",
+          "electrical.current.l3": "A",
+          "electrical.frequency": "Hz",
+          "power.active.total": "W",
+          "power.reactive.total": "var",
+          "power.apparent.total": "VA",
+          "power.factor.total": "1"
+        }
+      },
+      "quality": {
+        "status": "good",
+        "communication": "online",
+        "pollDurationMs": 52,
+        "queueDelayMs": 155
+      }
+    },
+    "pm2230Energy": {
+      "schemaVersion": "1.1",
+      "messageType": "telemetry",
+      "messageId": "GW-001-000001259",
+      "sequence": 1259,
+      "lotNumber": 1259,
+      "siteId": "SITE-001",
+      "gatewayId": "GW-001",
+      "device": {
+        "deviceId": "METER-001",
+        "deviceType": "energy-meter",
+        "manufacturer": "Schneider Electric",
+        "model": "PM2230",
+        "profileId": "schneider-pm2230",
+        "profileVersion": "1.0.0"
+      },
+      "pollGroup": "energy",
+      "timestamps": {
+        "polledAt": "2026-10-05T08:00:05.125+07:00",
+        "sentAt": "2026-10-05T08:00:05.240+07:00"
+      },
+      "data": {
+        "values": {
+          "energy.active.import.total": 152430275,
+          "energy.active.export.total": 12500,
+          "energy.reactive.import.total": 24580210,
+          "energy.reactive.export.total": 315700
+        },
+        "units": {
+          "energy.active.import.total": "Wh",
+          "energy.active.export.total": "Wh",
+          "energy.reactive.import.total": "varh",
+          "energy.reactive.export.total": "varh"
+        }
+      },
+      "quality": {
+        "status": "good",
+        "communication": "online",
+        "pollDurationMs": 45,
+        "queueDelayMs": 115
+      }
+    },
+    "smartLoggerPlant": {
+      "schemaVersion": "1.1",
+      "messageType": "telemetry",
+      "messageId": "GW-001-000001260",
+      "sequence": 1260,
+      "lotNumber": 1260,
+      "siteId": "SITE-001",
+      "gatewayId": "GW-001",
+      "device": {
+        "deviceId": "SMARTLOGGER-001",
+        "deviceType": "solar-logger",
+        "manufacturer": "Huawei",
+        "model": "SmartLogger3000A",
+        "profileId": "huawei-smartlogger3000a",
+        "profileVersion": "1.0.0",
+        "protocol": "modbus-tcp"
+      },
+      "pollGroup": "plant",
+      "timestamps": {
+        "polledAt": "2026-10-05T08:00:10.125+07:00",
+        "sentAt": "2026-10-05T08:00:10.320+07:00"
+      },
+      "data": {
+        "values": {
+          "solar.active_power": 820400,
+          "solar.reactive_power": 15200,
+          "solar.daily_yield": 4250600,
+          "solar.total_yield": 12560000500
+        },
+        "units": {
+          "solar.active_power": "W",
+          "solar.reactive_power": "var",
+          "solar.daily_yield": "Wh",
+          "solar.total_yield": "Wh"
+        }
+      },
+      "quality": {
+        "status": "good",
+        "communication": "online",
+        "pollDurationMs": 78,
+        "queueDelayMs": 195
+      }
+    },
+    "smartLoggerEnvironment": {
+      "schemaVersion": "1.1",
+      "messageType": "telemetry",
+      "messageId": "GW-001-000001261",
+      "sequence": 1261,
+      "lotNumber": 1261,
+      "siteId": "SITE-001",
+      "gatewayId": "GW-001",
+      "device": {
+        "deviceId": "SMARTLOGGER-001",
+        "deviceType": "solar-logger",
+        "manufacturer": "Huawei",
+        "model": "SmartLogger3000A"
+      },
+      "pollGroup": "environment",
+      "timestamps": {
+        "polledAt": "2026-10-05T08:00:15.125+07:00",
+        "sentAt": "2026-10-05T08:00:15.250+07:00"
+      },
+      "data": {
+        "values": {
+          "environment.irradiance": 825.4,
+          "environment.ambient_temperature": 34.8,
+          "environment.module_temperature": 52.6,
+          "environment.wind_speed": 2.7
+        },
+        "units": {
+          "environment.irradiance": "W/m2",
+          "environment.ambient_temperature": "degC",
+          "environment.module_temperature": "degC",
+          "environment.wind_speed": "m/s"
+        }
+      },
+      "quality": {
+        "status": "good",
+        "communication": "online"
+      }
+    },
+    "dataAcept": {
+      "schemaVersion": "1.1",
+      "messageType": "dataAcept",
+      "siteId": "SITE-001",
+      "gatewayId": "GW-001",
+      "lotNumber": 1258,
+      "messageId": "GW-001-000001258",
+      "status": "accepted",
+      "acceptedAt": "2026-10-05T08:00:00.520+07:00"
+    }
+  },
+  "notes": {
+    "lotNumber": "Unsigned 32-bit running number (uint32). Retry/resend of the same logical message must retain the same lotNumber.",
+    "pm2230": "Values in this file are example telemetry values and canonical field names. Actual Modbus register addresses, scaling, and data types must be defined in the Schneider PM2230 device profile from the verified register map.",
+    "energy": "Canonical energy values are normalized to Wh/varh before publishing to Cloud.",
+    "cloud": "Cloud should add receivedAt when the MQTT consumer receives the message."
+  }
+}

@@ -11,6 +11,6 @@ export function OperationActionList({actions,onAction,menu=false}:{actions:Opera
   const label=locale==='en'?(englishLabels[action.id]??action.label):action.label;
   const reason=action.reason&&locale==='en'?'No issued document is available for this record.':action.reason;
   const content=<><span>{label}</span>{reason&&<span className="text-xs"> · {reason}</span>}</>;
-  return menu?<DropdownMenuItem key={action.id} disabled={!action.enabled} title={reason} onClick={()=>onAction(action.id)}>{content}</DropdownMenuItem>:<Button key={action.id} size="sm" variant="outline" disabled={!action.enabled} title={reason} onClick={()=>onAction(action.id)}>{content}</Button>;
+  return menu?<DropdownMenuItem className="min-h-11 whitespace-normal" key={action.id} disabled={!action.enabled} title={reason} onClick={()=>onAction(action.id)}>{content}</DropdownMenuItem>:<Button className="min-h-11 h-auto whitespace-normal py-2" key={action.id} size="sm" variant="outline" disabled={!action.enabled} title={reason} onClick={()=>onAction(action.id)}>{content}</Button>;
  });
 }

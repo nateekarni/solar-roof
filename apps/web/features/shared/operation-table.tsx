@@ -7,6 +7,8 @@ import {OperationActionList} from "./operation-action-list";
 import type { ColumnDef } from "@tanstack/react-table";
 import {
   ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
   MoreHorizontal,
   Eye,
   FileText,
@@ -21,6 +23,8 @@ import {
   Award,
   Zap,
 } from "lucide-react";
+import { useOperationQuery } from "./use-operation-query";
+import { sorts } from "./operation-sorts";
 import { useRouter } from "next/navigation";
 import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
@@ -38,11 +42,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "../../components/ui/dropdown-menu";
-import { operationKeys } from "./operation-columns";
+import { operationKeys, isTemporalColumn } from "./operation-columns";
 import { TelemetryAgeLabel } from "./telemetry-age-label";
 import { useLocale, useT } from "../../providers/locale-provider";
 import { useFinancialCapabilities } from "../../lib/financial-capabilities";
-import { useAuth } from "../../stores/auth-store";
+import { useSessionUser } from "../../providers/session-user-provider";
+import { ResponsiveDocumentRows } from "./responsive-document-rows";
 import { OperationCardList } from "./operation-card-list";
 import { DocumentPreviewModal, type DocumentPreviewData } from "./document-preview-modal";
 import { BillingDetailModal } from "../billing/billing-detail-modal";
@@ -51,14 +56,6 @@ import { PaymentVerificationDialog } from "../billing/payment-verification-dialo
 import { SiteEditDialog } from "../sites/site-edit-dialog";
 import { SiteDeleteDialog } from "../sites/site-delete-dialog";
 import { SiteTelemetryDialog } from "../sites/site-telemetry-dialog";
-import {
-  AuditDetailModal,
-  AlertDetailModal,
-  UserDetailModal,
-  SchoolDetailModal,
-  NotificationDetailModal,
-  ReportDetailModal,
-} from "./detail-modals";
 import { renderStatusBadge, STATUS_MAP } from "../../lib/status-badge";
 import { formatAppDate, formatAppDateTime, isIsoDateLike } from "../../lib/date-format";
 
@@ -77,6 +74,7 @@ export interface OperationTableProps {
   summary: SummaryItem[];
   idKey?: string | undefined;
   serverManaged?: boolean;
+  toolbar?: React.ReactNode;
 }
 
 const COLUMN_TRANSLATIONS: Record<string, string> = {
@@ -130,11 +128,13 @@ export function OperationTable({
   summary,
   idKey = "id",
   serverManaged = false,
+  toolbar,
 }: OperationTableProps) {
   const t = useT();
   const locale = useLocale();
   const router = useRouter();
-  const { user } = useAuth();
+  const {query, setQuery} = useOperationQuery(["schools","sites","users"].includes(resource) ? "asc" : "desc");
+  const user = useSessionUser();
   const financial = useFinancialCapabilities();
   const [permissionError,setPermissionError]=React.useState(false);
   React.useEffect(()=>{const denied=()=>setPermissionError(true);window.addEventListener("operation-permission-denied",denied);return()=>window.removeEventListener("operation-permission-denied",denied);},[]);
@@ -167,25 +167,6 @@ export function OperationTable({
   const [selectedDeleteSite, setSelectedDeleteSite] = React.useState<{ id: string; name: string } | null>(null);
   const [telemetryDialogOpen, setTelemetryDialogOpen] = React.useState(false);
   const [selectedTelemetrySite, setSelectedTelemetrySite] = React.useState<{ id: string; name: string } | null>(null);
-
-  // Dedicated Detail Modal States for Operations Resources
-  const [auditModalOpen, setAuditModalOpen] = React.useState(false);
-  const [selectedAuditEvent, setSelectedAuditEvent] = React.useState<any | null>(null);
-
-  const [alertModalOpen, setAlertModalOpen] = React.useState(false);
-  const [selectedAlert, setSelectedAlert] = React.useState<any | null>(null);
-
-  const [userModalOpen, setUserModalOpen] = React.useState(false);
-  const [selectedUser, setSelectedUser] = React.useState<any | null>(null);
-
-  const [schoolModalOpen, setSchoolModalOpen] = React.useState(false);
-  const [selectedSchool, setSelectedSchool] = React.useState<any | null>(null);
-
-  const [notificationModalOpen, setNotificationModalOpen] = React.useState(false);
-  const [selectedNotification, setSelectedNotification] = React.useState<any | null>(null);
-
-  const [reportModalOpen, setReportModalOpen] = React.useState(false);
-  const [selectedReport, setSelectedReport] = React.useState<any | null>(null);
 
   const formatNumber = (val: any) => {
     const num = Number(val);
@@ -238,43 +219,17 @@ export function OperationTable({
   };
 
   const openResourceDetail = (res: string, item: Record<string, any>) => {
-    if (res === "audit") {
-      setSelectedAuditEvent(item);
-      setAuditModalOpen(true);
-    } else if (res === "alerts") {
-      setSelectedAlert(item);
-      setAlertModalOpen(true);
-    } else if (res === "users") {
-      setSelectedUser(item);
-      setUserModalOpen(true);
-    } else if (res === "schools") {
-      setSelectedSchool(item);
-      setSchoolModalOpen(true);
-    } else if (res === "notifications") {
-      setSelectedNotification(item);
-      setNotificationModalOpen(true);
-    } else if (res === "reports") {
-      setSelectedReport(item);
-      setReportModalOpen(true);
-    } else if (res === "contracts") {
-      openDocumentPreview("contract", item);
-    } else if (res === "receipts") {
-      openDocumentPreview("receipt", item);
-    } else if (res === "documents") {
-      openDocumentPreview("invoice", item);
-    } else if (res === "billing") {
-      const itemId = String(item[idKey] || item.id);
-      openBillingDetail(itemId, item);
-    }
+    router.push(`/records/${encodeURIComponent(res)}/${encodeURIComponent(String(item[idKey] || item.id))}`);
   };
 
   const handleAction = (id:string,item:OperationRow) => {
-    if(id==='detail')openBillingDetail(item.id,item);
+    if(id==='detail')openResourceDetail(resource,item);
     else if(id==='pay'){setSelectedPayCycle(item);setPayDialogOpen(true);}
     else if(id==='verify'){setSelectedVerifyCycle(item);setVerifyDialogOpen(true);}
     else if(id==='invoice'||id==='receipt')openDocumentPreview(id,item);
   };
   const renderMenuActions=(item:OperationRow)=>{const itemId=String(item[idKey]||item.id);return <>
+                {["sites","contracts","documents","receipts"].includes(resource) && <DropdownMenuItem onClick={() => openResourceDetail(resource,item)}><Eye className="size-4" />{locale==='th'?'ดูรายละเอียด':'View details'}</DropdownMenuItem>}
                 {['billing','documents','receipts'].includes(resource) ? (
                   <OperationActionList actions={getOperationActions(resource,item,financial)} menu onAction={id=>handleAction(id,item)} />
                 ) : resource === "contracts" ? (<DropdownMenuItem onClick={()=>openDocumentPreview('contract',item)}>{locale==='th'?'ดูเอกสารสัญญา (PPA)':'View Contract (PPA)'}</DropdownMenuItem>
@@ -282,10 +237,10 @@ export function OperationTable({
                   <>
                     <DropdownMenuItem
                       onClick={() => openDocumentPreview("handover", item)}
-                      className="gap-2 cursor-pointer font-medium text-amber-600 dark:text-amber-400"
+                      className="gap-2 cursor-pointer font-medium text-foreground"
                     >
-                      <Award className="size-3.5 text-amber-600 dark:text-amber-400" />
-                      <span>{locale === "th" ? "ดูหนังสือส่งมอบระบบ (Handover)" : "Handover Certificate"}</span>
+                      <Award className="size-3.5 text-foreground" />
+                      <span>{locale === "th" ? "ดูหนังสือส่งมอบระบบ" : "Handover Certificate"}</span>
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       onClick={() => {
@@ -295,10 +250,10 @@ export function OperationTable({
                         });
                         setTelemetryDialogOpen(true);
                       }}
-                      className="gap-2 cursor-pointer font-medium text-emerald-600 dark:text-emerald-400 focus:text-emerald-600"
+                      className="gap-2 cursor-pointer font-medium text-foreground"
                     >
-                      <Radio className="size-3.5 text-emerald-600 dark:text-emerald-400" />
-                      <span>{locale === "th" ? "สัญญาณสด & Raw Registers" : "Live Telemetry & Registers"}</span>
+                      <Radio className="size-3.5 text-foreground" />
+                      <span>{locale === "th" ? "ข้อมูลสดและค่ารีจิสเตอร์" : "Live Telemetry & Registers"}</span>
                     </DropdownMenuItem>
                     {user?.role === "admin" && (
                       <>
@@ -309,7 +264,7 @@ export function OperationTable({
                           }}
                           className="gap-2 cursor-pointer font-medium"
                         >
-                          <Edit className="size-3.5 text-primary" />
+                          <Edit className="size-3.5 text-foreground" />
                           <span>{locale === "th" ? "แก้ไขข้อมูลไซต์งาน" : "Edit Site"}</span>
                         </DropdownMenuItem>
                         <DropdownMenuItem
@@ -332,16 +287,16 @@ export function OperationTable({
                   <>
                     <DropdownMenuItem
                       onClick={() => openDocumentPreview("settlement", item)}
-                      className="gap-2 cursor-pointer font-medium text-emerald-600 dark:text-emerald-400"
+                      className="gap-2 cursor-pointer font-medium text-foreground"
                     >
-                      <Zap className="size-3.5 text-emerald-600 dark:text-emerald-400" />
-                      <span>{locale === "th" ? "ดูสรุปรายงานพลังงาน (Settlement)" : "View Settlement Statement"}</span>
+                      <Zap className="size-3.5 text-foreground" />
+                      <span>{locale === "th" ? "ดูสรุปรายงานพลังงาน" : "View Settlement Statement"}</span>
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       onClick={() => openResourceDetail(resource, item)}
                       className="gap-2 cursor-pointer font-medium"
                     >
-                      <Eye className="size-3.5 text-primary" />
+                      <Eye className="size-3.5 text-foreground" />
                       <span>{locale === "th" ? "ดูรายละเอียด" : "View Details"}</span>
                     </DropdownMenuItem>
                   </>
@@ -350,7 +305,7 @@ export function OperationTable({
                     onClick={() => openResourceDetail(resource, item)}
                     className="gap-2 cursor-pointer font-medium"
                   >
-                    <Eye className="size-3.5 text-primary" />
+                    <Eye className="size-3.5 text-foreground" />
                     <span>{locale === "th" ? "ดูรายละเอียด" : "View Details"}</span>
                   </DropdownMenuItem>
                 )}
@@ -360,8 +315,7 @@ export function OperationTable({
     : <DropdownMenu><DropdownMenuTrigger asChild><Button size="sm" variant="outline">{locale==='th'?'ดูรายละเอียด':'View Details'}</Button></DropdownMenuTrigger><DropdownMenuContent>{renderMenuActions(item)}</DropdownMenuContent></DropdownMenu>;
 
   const tableColumns = React.useMemo<ColumnDef<OperationRow, any>[]>(() => {
-    const firstRow = rows[0];
-    if (!firstRow) return [];
+    const firstRow = rows[0] ?? {};
 
     const keys = operationKeys(resource,firstRow,idKey);
 
@@ -376,16 +330,19 @@ export function OperationTable({
         accessorKey: key,
         meta: { title: headerTitle },
         header: ({ column }) => {
-          if(serverManaged)return <span>{headerTitle}</span>;
+          const sortKey = resource === 'receipts' && key === 'receiptNumber' ? 'documentNumber' : resource === 'receipts' && key === 'totalAmount' ? 'amount' : key;
+          const currentSort = query.sort || sorts[resource]?.[0];
+          const currentDirection = query.direction;
+          if(serverManaged && !sorts[resource]?.includes(sortKey)) return <span>{headerTitle}</span>;
           return (
             <Button
               variant="ghost"
               size="sm"
-              className="-ml-3 h-10 py-0 text-xs font-semibold hover:bg-transparent tracking-normal"
-              onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+              className="h-10 px-0 py-0 text-xs font-semibold hover:bg-transparent tracking-normal"
+              onClick={() => serverManaged ? setQuery({sort: sortKey, direction: currentSort === sortKey && currentDirection === "asc" ? "desc" : "asc"}) : column.toggleSorting(column.getIsSorted() === "asc")}
             >
               {headerTitle}
-              <ArrowUpDown className="ml-1.5 size-3 text-muted-foreground" />
+              {serverManaged && currentSort === sortKey ? (currentDirection === "asc" ? <ArrowUp className="ml-1.5 size-3"/> : <ArrowDown className="ml-1.5 size-3"/>) : <ArrowUpDown className="ml-1.5 size-3 text-muted-foreground" />}
             </Button>
           );
         },
@@ -426,7 +383,7 @@ export function OperationTable({
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="h-7 text-xs px-2.5 gap-1.5 text-primary border-primary/30 hover:bg-primary/5 cursor-pointer font-medium"
+                  className="h-10 text-xs px-2.5 gap-1.5 text-primary border-primary/30 hover:bg-primary/5 cursor-pointer font-medium"
                   onClick={(e) => {
                     e.stopPropagation();
                     setSelectedSlipImage(str);
@@ -460,22 +417,18 @@ export function OperationTable({
           }
 
           if (
-            key.toLowerCase().includes("date") ||
-            key.toLowerCase().includes("at") ||
-            key.toLowerCase().includes("time") ||
-            key.toLowerCase().includes("วัน") ||
-            key.toLowerCase().includes("เวลา") ||
+            isTemporalColumn(key) ||
             isIsoDateLike(str)
           ) {
             if (str && str !== "-") {
               const formatted = str.includes(":") || str.includes("T")
                 ? formatAppDateTime(str, locale)
                 : formatAppDate(str, locale);
-              return <span className="text-xs text-foreground font-normal">{formatted}</span>;
+              return <span className="text-sm text-foreground font-normal">{formatted}</span>;
             }
           }
 
-          return <span className="text-xs text-foreground">{str}</span>;
+          return <span className="text-sm text-foreground">{str}</span>;
         },
       };
     });
@@ -483,7 +436,10 @@ export function OperationTable({
     // Append Action column (header empty string / visually hidden label)
     cols.push({
       id: "actions",
-      header: () => <span className="sr-only">Actions</span>,
+      header: "",
+      size: 64,
+      minSize: 64,
+      maxSize: 64,
       enableSorting: false,
       enableHiding: false,
       cell: ({ row }) => {
@@ -497,10 +453,10 @@ export function OperationTable({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="size-8 p-0 text-muted-foreground hover:text-foreground hover:bg-muted/80 rounded-md cursor-pointer"
+                  className="size-10 p-0 text-muted-foreground hover:text-foreground hover:bg-muted/80 rounded-md cursor-pointer"
                 >
                   <MoreHorizontal className="size-4" />
-                  <span className="sr-only">Open menu</span>
+                  <span className="sr-only">{locale === "th" ? "เมนูการดำเนินการ" : "Open actions menu"}</span>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56 text-xs bg-card border-border shadow-lg">
@@ -525,7 +481,7 @@ export function OperationTable({
       {permissionError && <p role="alert">สิทธิ์ของคุณเปลี่ยนแล้ว ระบบกำลังตรวจสอบสิทธิ์ล่าสุด กรุณาเลือกการดำเนินการที่ยังอนุญาต</p>}
       {/* Top Summary Stat Cards */}
       {summary && summary.length > 0 && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className={`grid grid-cols-2 gap-3 ${summary.length === 1 ? 'lg:grid-cols-1' : summary.length === 2 ? 'lg:grid-cols-2' : summary.length === 3 ? 'lg:grid-cols-3' : 'lg:grid-cols-4'}`}>
           {summary.map((stat, i) => (
             <Card className="stat-card" key={i}>
               <div className="stat-header">
@@ -552,24 +508,9 @@ export function OperationTable({
         </div>
       )}
 
-      {/* Mobile Card View (< 768px) */}
-      <div className="block md:hidden">
-        <OperationCardList
-          serverManaged={serverManaged}
-          resource={resource}
-          title={title}
-          columns={rawColumns}
-          rows={rows}
-          idKey={idKey}
-          pageSize={10}
-          onOpenDetail={(row) => openResourceDetail(resource, row)}
-          renderActions={renderMobileActions}
-          onOpenSlip={url=>{setSelectedSlipImage(url);setSlipImageModalOpen(true);}}
-        />
-      </div>
+      {toolbar}
 
-      {/* Desktop Shadcn DataTable (>= 768px) */}
-      <div className="hidden md:block">
+      <ResponsiveDocumentRows role={user.role} resource={resource} mobile={<OperationCardList resource={resource} title={title} columns={rawColumns} rows={rows} idKey={idKey} onOpenDetail={row => openResourceDetail(resource, row)} renderActions={renderMobileActions} onOpenSlip={url => { setSelectedSlipImage(url); setSlipImageModalOpen(true); }} />} desktop={<div className="block min-w-0">
         <DataTable
           serverManaged={serverManaged}
           columns={tableColumns}
@@ -577,22 +518,9 @@ export function OperationTable({
           getRowId={row=>row.id}
           searchPlaceholder={searchPlaceholder}
           pageSize={10}
-          onRowClick={(row) => {
-            const itemId = String(row[idKey] || row.id);
-            if (resource === "billing") {
-              openBillingDetail(itemId);
-            } else if (resource === "sites") {
-              setSelectedTelemetrySite({
-                id: itemId,
-                name: String(row.name || row["ชื่อไซต์"] || row["ชื่อไซต์งาน"] || "ไซต์งาน"),
-              });
-              setTelemetryDialogOpen(true);
-            } else {
-              openResourceDetail(resource, row);
-            }
-          }}
+          onRowClick={(row) => openResourceDetail(resource, row)}
         />
-      </div>
+      </div>} />
 
       {/* Interactive Document Preview Modal */}
       <DocumentPreviewModal
@@ -622,7 +550,7 @@ export function OperationTable({
       {selectedSlipImage && (
         <Dialog open={slipImageModalOpen} onOpenChange={setSlipImageModalOpen}>
           <DialogContent className="sm:max-w-xl w-full p-4 bg-card border-border sm:rounded-2xl">
-            <DialogHeader className="pb-3 border-b border-border/60">
+            <DialogHeader className="pb-3 order/60">
               <DialogTitle className="text-base font-semibold flex items-center gap-2">
                 <ImageIcon className="size-4 text-primary" />
                 <span>{locale === "th" ? "หลักฐานการโอนเงิน (สลิปธนาคาร)" : "Bank Transfer Slip"}</span>
@@ -677,43 +605,6 @@ export function OperationTable({
         onSuccess={() => router.refresh()}
       />
 
-      {/* Dedicated Resource Detail Modals */}
-      <AuditDetailModal
-        open={auditModalOpen}
-        onOpenChange={setAuditModalOpen}
-        event={selectedAuditEvent}
-      />
-
-      <AlertDetailModal
-        open={alertModalOpen}
-        onOpenChange={setAlertModalOpen}
-        alert={selectedAlert}
-        onAcknowledged={() => router.refresh()}
-      />
-
-      <UserDetailModal
-        open={userModalOpen}
-        onOpenChange={setUserModalOpen}
-        user={selectedUser}
-      />
-
-      <SchoolDetailModal
-        open={schoolModalOpen}
-        onOpenChange={setSchoolModalOpen}
-        school={selectedSchool}
-      />
-
-      <NotificationDetailModal
-        open={notificationModalOpen}
-        onOpenChange={setNotificationModalOpen}
-        notification={selectedNotification}
-      />
-
-      <ReportDetailModal
-        open={reportModalOpen}
-        onOpenChange={setReportModalOpen}
-        report={selectedReport}
-      />
     </>
   );
 }

@@ -52,6 +52,9 @@ export function InviteUserDialog({
   const router = useRouter();
   const t = useT();
   const locale = useLocale();
+  const lookupSequence = React.useRef(0);
+  const [checkingInvitation, setCheckingInvitation] = React.useState(false);
+  const [lookupMessage, setLookupMessage] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [schools, setSchools] = React.useState<SchoolOption[]>([]);
   const [selectedRole, setSelectedRole] = React.useState<"owner" | "admin" | "school_user">("school_user");
@@ -75,11 +78,12 @@ export function InviteUserDialog({
     defaultValues: {
       email: "",
       displayName: "",
-      role: "school_user",
+
     },
   });
 
   React.useEffect(() => {
+    lookupSequence.current++; setCheckingInvitation(false); setLookupMessage("");
     if (open) {
       setInvitedResult(null);
 
@@ -87,7 +91,6 @@ export function InviteUserDialog({
         .get<SchoolOption[]>("/v1/schools")
         .then((data) => {
           setSchools(data);
-          if (data[0]) setValue("schoolId", data[0].id);
         })
         .catch(() => {});
     }
@@ -97,6 +100,21 @@ export function InviteUserDialog({
     if(status==='sent')return locale==='th'?'ส่งอีเมลคำเชิญแล้ว ผู้รับต้องเปิดลิงก์ภายใน 24 ชั่วโมง':'Invitation email sent. The recipient must activate within 24 hours.';
     if(status==='delivery_failed')return locale==='th'?'ส่งอีเมลไม่สำเร็จ กรุณาส่งคำเชิญอีกครั้ง':'Email delivery failed. Resend the invitation.';
     return locale==='th'?'บันทึกคำเชิญแล้ว อีเมลยังไม่ได้ส่ง':'Invitation saved. Email has not been sent.';
+  };
+
+  const checkExistingInvitation = async () => {
+    const email=getValues("email").trim();
+    const sequence=++lookupSequence.current;
+    if (!userSchema.shape.email.safeParse(email).success) {setCheckingInvitation(false);setLookupMessage("");return;}
+    setCheckingInvitation(true);setLookupMessage("");
+    try {
+      const result=await apiClient.get<{invitationId:string;status:"pending_delivery"|"sent"|"delivery_failed"}>(`/v1/users/invitations?email=${encodeURIComponent(email)}`);
+      if (sequence!==lookupSequence.current) return;
+      setInvitedResult({...result,email,message:deliveryMessage(result.status)});
+    } catch (error) {
+      if (sequence!==lookupSequence.current) return;
+      setLookupMessage(error instanceof Error && "status" in error && error.status===404 ? (locale==="th"?"ไม่พบคำเชิญเดิม สามารถสร้างคำเชิญใหม่ได้":"No existing invitation. You can create a new invitation.") : (locale==="th"?"ตรวจคำเชิญเดิมไม่สำเร็จ กรุณาออกจากช่องอีเมลเพื่อลองอีกครั้ง":"Unable to check invitations. Leave the email field to retry."));
+    } finally {if(sequence===lookupSequence.current)setCheckingInvitation(false);}
   };
 
   const onSubmit = async (values: UserFormValues) => {
@@ -142,7 +160,7 @@ export function InviteUserDialog({
 
         {invitedResult ? (
           <div className="space-y-4 py-3">
-            <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-2.5">
+            <div className="space-y-2.5 border-t pt-4">
               <p role="status" className="text-xs font-semibold">
                 {invitedResult.message}
               </p>
@@ -169,7 +187,7 @@ export function InviteUserDialog({
           </div>
         ) : (
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 pt-3.5">
-            <div className="space-y-1.5">
+            <div className="space-y-2">
               <Label htmlFor="u-email" required className="text-xs font-medium">
                 {locale === "th" ? "อีเมล (Email)" : "Email Address"}
               </Label>
@@ -178,23 +196,16 @@ export function InviteUserDialog({
                 type="email"
                 placeholder="officer@school.local"
                 className="text-xs h-10"
-                {...register("email")}
+                {...register("email", {onBlur:()=>void checkExistingInvitation(),onChange:()=>{lookupSequence.current++;setCheckingInvitation(false);setLookupMessage("");}})}
               />
+              <p role="status" className="text-sm text-muted-foreground">{checkingInvitation ? (locale==="th"?"กำลังตรวจคำเชิญเดิม…":"Checking existing invitation…") : lookupMessage}</p>
               {errors.email && (
                 <p className="text-[11px] text-destructive">{errors.email.message}</p>
               )}
             </div>
 
-            <div className="space-y-1.5">
-              <Button type="button" variant="outline" disabled={loading} onClick={async()=>{
-                setLoading(true);
-                const email=getValues('email').trim();
-                try {
-                  const result=await apiClient.get<{invitationId:string;status:"pending_delivery"|"sent"|"delivery_failed"}>(`/v1/users/invitations?email=${encodeURIComponent(email)}`);
-                  setInvitedResult({...result,email,message:deliveryMessage(result.status)});
-                } catch(error) {notify.error(error instanceof Error?error.message:'Unable to find invitation');}
-                finally {setLoading(false);}
-              }}>{locale==='th'?'ค้นหาคำเชิญเดิม':'Find existing invitation'}</Button>
+            <div className="space-y-2">
+
               <Label htmlFor="u-name" required className="text-xs font-medium">
                 {locale === "th" ? "ชื่อ-นามสกุล" : "Display Name"}
               </Label>
@@ -209,19 +220,19 @@ export function InviteUserDialog({
               )}
             </div>
 
-            <div className="space-y-1.5">
+            <div className="space-y-2">
               <Label htmlFor="u-role" required className="text-xs font-medium">
                 {locale === "th" ? "บทบาท (Role)" : "Role"}
               </Label>
               <Select
-                defaultValue="school_user"
+
                 onValueChange={(val: "owner" | "admin" | "school_user") => {
                   setSelectedRole(val);
                   setValue("role", val);
                 }}
               >
                 <SelectTrigger id="u-role" className="text-xs h-10 w-full">
-                  <SelectValue />
+                  <SelectValue placeholder="เลือกประเภท" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="school_user" className="text-xs">
@@ -238,7 +249,7 @@ export function InviteUserDialog({
             </div>
 
             {selectedRole === "school_user" && (
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 <Label htmlFor="u-school" required className="text-xs font-medium">
                   {locale === "th" ? "โรงเรียนสังกัด" : "School Access"}
                 </Label>
@@ -268,7 +279,7 @@ export function InviteUserDialog({
               >
                 {t("common.cancel")}
               </Button>
-              <Button type="submit" size="sm" disabled={loading} className="text-xs h-10 px-5 font-semibold">
+              <Button type="submit" size="sm" disabled={loading || checkingInvitation} className="text-xs h-10 px-5 font-semibold">
                 {loading ? t("common.saving") : t("common.confirm")}
               </Button>
             </DialogFooter>

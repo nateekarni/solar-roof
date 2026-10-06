@@ -15,13 +15,13 @@ export class OperationsService {
     let sql:string; let columns:string[];
     switch(resource) {
       case "schools":
-        sql=`SELECT s.id,s.name,s.code,s.region,s.status,(SELECT coalesce(sum(capacity_mwp),0) FROM sites WHERE school_id=s.id) AS "capacityMwp",
+        sql=`SELECT s.id,to_char(s.created_at AT TIME ZONE 'Asia/Bangkok','YYYY-MM-DD') AS "createdAt",s.name,s.code,s.region,s.status,(SELECT coalesce(sum(capacity_mwp),0) FROM sites WHERE school_id=s.id) AS "capacityMwp",
           count(DISTINCT si.id)::int AS "sitesCount",count(DISTINCT g.id)::int AS "gatewaysCount"
           FROM schools s LEFT JOIN sites si ON si.school_id=s.id LEFT JOIN gateways g ON g.site_id=si.id
           WHERE ${where} GROUP BY s.id ORDER BY s.name`;
         columns=["ชื่อโรงเรียน","ภูมิภาค","กำลังติดตั้ง (MWp)","จำนวนไซต์","Gateway","สถานะ"];break;
       case "sites":
-        sql=`SELECT si.id,si.name,s.name AS "schoolName",si.capacity_mwp AS "capacityMwp",
+        sql=`SELECT si.id,to_char(si.created_at AT TIME ZONE 'Asia/Bangkok','YYYY-MM-DD') AS "createdAt",si.name,s.name AS "schoolName",si.capacity_mwp AS "capacityMwp",
           g.id AS "gatewayId",g.name AS gateway,g.protocol,g.last_seen_at AS "lastSeenAt",g.last_seen_at AS "lastUpdated",
           CASE WHEN si.status IN ('inactive','archived') THEN si.status WHEN g.last_seen_at>=now()-interval '2 minutes' THEN 'online' ELSE 'offline' END AS status,
           energy.kwh AS "productionKwh" FROM sites si JOIN schools s ON s.id=si.school_id LEFT JOIN LATERAL (SELECT * FROM gateways WHERE site_id=si.id ORDER BY id LIMIT 1) g ON true
@@ -75,7 +75,7 @@ export class OperationsService {
         params.splice(0,params.length,user?.id);columns=["ชื่อรายงาน","หมวดหมู่","ขอบเขตข้อมูล","รูปแบบ","สถานะ"];break;
       case "users":
         if(!["owner","admin"].includes(user?.role??"")) throw new ForbiddenException();
-        sql=`SELECT u.id,u.display_name AS "displayName",u.email,u.role,s.name AS "schoolName",u.status,u.created_at AS "createdAt",
+        sql=`SELECT u.id,u.display_name AS "displayName",u.email,u.role,s.name AS "schoolName",u.status,to_char(u.created_at AT TIME ZONE 'Asia/Bangkok','YYYY-MM-DD') AS "createdAt",
           (SELECT max(a.occurred_at) FROM audit_events a WHERE a.actor_id=u.id AND a.action='user.login') AS "lastActive"
           FROM users u LEFT JOIN schools s ON s.id=u.school_id WHERE ${where} ORDER BY u.display_name`;
         columns=["ชื่อผู้ใช้งาน","อีเมล","บทบาท","สังกัดโรงเรียน","การใช้งานล่าสุด","สถานะ"];break;
@@ -104,6 +104,14 @@ export class OperationsService {
     for(const row of rows) delete row.__operationCursorValue;
     return {columns,rows,idKey:'id',page:{limit:query.limit,nextCursor,hasMore}};
   }
+  async detail(resource:string,id:string,user?:ScopePrincipal) {
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) throw new NotFoundException('Record not found');
+    const {sql,params,columns}=this.source(resource,user);
+    params.push(id);
+    const result=await this.db.query<OperationRow>(`SELECT q.* FROM (${sql}) q WHERE q.id=$${params.length}::uuid`,params);
+    if(!result.rows[0]) throw new NotFoundException('Record not found');
+    return {columns,row:result.rows[0]};
+  }
   async document(id:string,user?:ScopePrincipal) {
     if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) throw new NotFoundException('Document not found');
     const scope=schoolScope(user);
@@ -125,13 +133,13 @@ export class OperationsService {
     switch(resource) {
       case 'billing': source=`SELECT x.id,to_char(x.period_end,'YYYY-MM') AS period,s.name AS "schoolName",si.name AS "siteName",x.status,x.amount FROM billing_cycles x${join} WHERE ${where}`;break;
       case 'documents':case 'receipts': source=`SELECT x.id,x.document_number AS "documentNumber",x.document_type AS type,s.name AS "schoolName",si.name AS "siteName",x.status,x.amount,to_char(x.issue_date,'YYYY-MM-DD') AS "issueDate" FROM documents x${join} WHERE ${where}${resource==='receipts'?" AND x.document_type='receipt'":''}`;break;
-      case 'sites':source=`SELECT si.id,si.name,s.name AS "schoolName",si.capacity_mwp AS "capacityMwp",CASE WHEN si.status IN ('inactive','archived') THEN si.status WHEN g.last_seen_at>=now()-interval '2 minutes' THEN 'online' ELSE 'offline' END AS status FROM sites si JOIN schools s ON s.id=si.school_id LEFT JOIN LATERAL (SELECT last_seen_at FROM gateways WHERE site_id=si.id ORDER BY id LIMIT 1) g ON true WHERE ${where}`;break;
-      case 'schools':source=`SELECT s.id,s.name,s.code,s.region FROM schools s WHERE ${where}`;break;
+      case 'sites':source=`SELECT si.id,to_char(si.created_at AT TIME ZONE 'Asia/Bangkok','YYYY-MM-DD') AS "createdAt",si.name,s.name AS "schoolName",si.capacity_mwp AS "capacityMwp",CASE WHEN si.status IN ('inactive','archived') THEN si.status WHEN g.last_seen_at>=now()-interval '2 minutes' THEN 'online' ELSE 'offline' END AS status FROM sites si JOIN schools s ON s.id=si.school_id LEFT JOIN LATERAL (SELECT last_seen_at FROM gateways WHERE site_id=si.id ORDER BY id LIMIT 1) g ON true WHERE ${where}`;break;
+      case 'schools':source=`SELECT s.id,to_char(s.created_at AT TIME ZONE 'Asia/Bangkok','YYYY-MM-DD') AS "createdAt",s.name,s.code,s.region FROM schools s WHERE ${where}`;break;
       case 'contracts':source=`SELECT x.id,x.id::text AS "contractNumber",s.name AS "schoolName",si.name AS "siteName",x.signer_name AS signers,x.status,to_char(x.start_date,'YYYY-MM-DD') AS "startDate" FROM contracts x${join} WHERE ${where}`;break;
       case 'alerts':source=`SELECT x.id,x.title,x.detail,x.severity,x.status,x.occurred_at AS "occurredAt" FROM alerts x${join} WHERE ${where}`;break;
       case 'notifications':params.splice(0,params.length,user?.id);source='SELECT id,title,channel,recipient,status,created_at AS "sentAt" FROM notification_deliveries WHERE user_id=$1';break;
       case 'reports':params.splice(0,params.length,user?.id);source='SELECT id,title,report_type AS category,status,created_at AS "generatedAt" FROM generated_reports WHERE created_by=$1';break;
-      case 'users':source=`SELECT u.id,u.display_name AS "displayName",u.email,u.role,u.status FROM users u LEFT JOIN schools s ON s.id=u.school_id WHERE ${where}`;break;
+      case 'users':source=`SELECT u.id,to_char(u.created_at AT TIME ZONE 'Asia/Bangkok','YYYY-MM-DD') AS "createdAt",u.display_name AS "displayName",u.email,u.role,u.status FROM users u LEFT JOIN schools s ON s.id=u.school_id WHERE ${where}`;break;
       case 'audit':source=`SELECT a.id,a.action,a.entity_type AS "entityType",a.entity_id AS "entityId",u.display_name AS actor,a.reason,a.correlation_id AS "correlationId",a.occurred_at AS time FROM audit_events a LEFT JOIN users u ON u.id=a.actor_id LEFT JOIN schools s ON s.id=u.school_id WHERE ${where}`;break;
       default:throw new NotFoundException('Unknown resource');
     }

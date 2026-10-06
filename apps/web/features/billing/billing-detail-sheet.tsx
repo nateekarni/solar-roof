@@ -1,4 +1,5 @@
 "use client";
+import { AppLoading } from "../../components/feedback/app-loading";
 
 import * as React from "react";
 import {
@@ -219,7 +220,7 @@ export function BillingDetailSheet({
       <Sheet open={open} onOpenChange={onOpenChange}>
         <SheetContent className="w-full sm:max-w-xl flex flex-col p-0 bg-card border-l border-border">
           {/* Header */}
-          <SheetHeader className="p-5 border-b border-border/60 bg-muted/20">
+          <SheetHeader className="p-5 order/60 bg-muted/20">
             <div className="flex items-center justify-between gap-3 pr-6">
               <div>
                 <SheetTitle className="text-base font-bold text-foreground">
@@ -236,13 +237,11 @@ export function BillingDetailSheet({
           {/* Body */}
           <div className="flex-1 overflow-y-auto p-5 space-y-5 text-xs">
             {loading ? (
-              <div className="flex h-40 items-center justify-center text-muted-foreground">
-                {locale === "th" ? "กำลังโหลดข้อมูล..." : "Loading details..."}
-              </div>
+              <AppLoading fullPage={false} />
             ) : data ? (
               <>
                 {/* School & Site Info Card */}
-                <div className="rounded-xl border border-border/80 bg-muted/30 p-4 space-y-3">
+                <div className="space-y-3 border-t pt-4">
                   <div className="flex items-center gap-2 font-semibold text-foreground text-xs">
                     <Building className="size-4 text-primary" />
                     <span>{locale === "th" ? "ข้อมูลสถานที่ติดตั้ง" : "Site Information"}</span>
@@ -260,7 +259,7 @@ export function BillingDetailSheet({
                 </div>
 
                 {/* Billing Period Card */}
-                <div className="rounded-xl border border-border/80 bg-muted/30 p-4 space-y-3">
+                <div className="space-y-3 border-t pt-4">
                   <div className="flex items-center gap-2 font-semibold text-foreground text-xs">
                     <Calendar className="size-4 text-primary" />
                     <span>{locale === "th" ? "รอบเวลาและกำหนดการ" : "Period & Timestamps"}</span>
@@ -288,7 +287,7 @@ export function BillingDetailSheet({
                 </div>
 
                 {/* Meter & Energy Readings */}
-                <div className="rounded-xl border border-border/80 bg-muted/30 p-4 space-y-3">
+                <div className="space-y-3 border-t pt-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2 font-semibold text-foreground text-xs">
                       <Zap className="size-4 text-[#EAB308]" />
@@ -298,7 +297,7 @@ export function BillingDetailSheet({
                       variant="outline"
                       size="sm"
                       onClick={() => setAdjustModalOpen(true)}
-                      className="h-7 text-[11px] gap-1 px-2 border-border cursor-pointer hover:bg-accent"
+                      className="h-10 text-[11px] gap-1 px-2 border-border cursor-pointer hover:bg-accent"
                     >
                       <Pencil className="size-3" />
                       <span>{locale === "th" ? "ปรับแก้ข้อมูล" : "Adjust"}</span>
@@ -306,13 +305,13 @@ export function BillingDetailSheet({
                   </div>
 
                   <div className="grid grid-cols-3 gap-2 pt-2 border-t border-border/40 text-center">
-                    <div className="p-2.5 rounded-lg bg-background border border-border/60">
+                    <div className="flex items-center justify-between gap-2 border-t pt-3">
                       <span className="text-[11px] text-muted-foreground block">{locale === "th" ? "มิเตอร์เริ่มต้น" : "Opening"}</span>
                       <strong className="font-mono text-xs text-foreground mt-0.5 block">
                         {formatNumber(data.openingEnergy)}
                       </strong>
                     </div>
-                    <div className="p-2.5 rounded-lg bg-background border border-border/60">
+                    <div className="flex items-center justify-between gap-2 border-t pt-3">
                       <span className="text-[11px] text-muted-foreground block">{locale === "th" ? "มิเตอร์สิ้นสุด" : "Closing"}</span>
                       <strong className="font-mono text-xs text-foreground mt-0.5 block">
                         {formatNumber(data.closingEnergy)}
@@ -342,7 +341,7 @@ export function BillingDetailSheet({
                 </div>
 
                 {/* Documents & Invoicing Card */}
-                <div className="rounded-xl border border-border/80 bg-muted/30 p-4 space-y-3">
+                <div className="space-y-3 border-t pt-4">
                   <div className="flex items-center gap-2 font-semibold text-foreground text-xs">
                     <Receipt className="size-4 text-primary" />
                     <span>{locale === "th" ? "เอกสารที่เกี่ยวข้อง" : "Associated Documents"}</span>
@@ -359,7 +358,7 @@ export function BillingDetailSheet({
                         variant="outline"
                         size="sm"
                         onClick={() => onOpenInvoice?.(data)}
-                        className="h-7 text-[11px] gap-1 px-2 border-border cursor-pointer hover:bg-accent"
+                        className="h-10 text-[11px] gap-1 px-2 border-border cursor-pointer hover:bg-accent"
                       >
                         <FileText className="size-3" />
                         <span>{locale === "th" ? "เปิดดูใบแจ้งหนี้" : "View Invoice"}</span>
@@ -377,7 +376,7 @@ export function BillingDetailSheet({
               variant="outline"
               size="sm"
               onClick={() => onOpenChange(false)}
-              className="h-8 text-xs cursor-pointer"
+              className="h-10 text-xs cursor-pointer"
             >
               {locale === "th" ? "ปิด" : "Close"}
             </Button>
@@ -389,7 +388,7 @@ export function BillingDetailSheet({
                   size="sm"
                   disabled={actionLoading}
                   onClick={() => handleUpdateStatus("pending_review")}
-                  className="h-8 gap-1.5 text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer"
+                  className="h-10 gap-1.5 text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer"
                 >
                   <Send className="size-3.5" />
                   <span>{locale === "th" ? "ส่งตรวจสอบ" : "Submit for Review"}</span>
@@ -404,7 +403,7 @@ export function BillingDetailSheet({
                     size="sm"
                     disabled={actionLoading}
                     onClick={() => setRejectModalOpen(true)}
-                    className="h-8 gap-1.5 text-xs text-destructive border-destructive/30 hover:bg-destructive/10 cursor-pointer"
+                    className="h-10 gap-1.5 text-xs text-destructive border-destructive/30 hover:bg-destructive/10 cursor-pointer"
                   >
                     <XCircle className="size-3.5" />
                     <span>{locale === "th" ? "ปฏิเสธ / ส่งกลับ" : "Reject"}</span>
@@ -413,7 +412,7 @@ export function BillingDetailSheet({
                     size="sm"
                     disabled={actionLoading}
                     onClick={() => handleUpdateStatus("approved")}
-                    className="h-8 gap-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
+                    className="h-10 gap-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
                   >
                     <CheckCircle className="size-3.5" />
                     <span>{locale === "th" ? "อนุมัติรอบบิล" : "Approve Cycle"}</span>
@@ -457,7 +456,7 @@ export function BillingDetailSheet({
               variant="ghost"
               size="sm"
               onClick={() => setRejectModalOpen(false)}
-              className="h-8 text-xs cursor-pointer"
+              className="h-10 text-xs cursor-pointer"
             >
               {locale === "th" ? "ยกเลิก" : "Cancel"}
             </Button>
@@ -466,7 +465,7 @@ export function BillingDetailSheet({
               size="sm"
               disabled={actionLoading || !rejectReason.trim()}
               onClick={() => handleUpdateStatus("rejected", rejectReason)}
-              className="h-8 text-xs font-semibold cursor-pointer"
+              className="h-10 text-xs font-semibold cursor-pointer"
             >
               {actionLoading ? "กำลังดำเนินการ..." : (locale === "th" ? "ยืนยันการปฏิเสธ" : "Confirm Reject")}
             </Button>
@@ -489,7 +488,7 @@ export function BillingDetailSheet({
           </DialogHeader>
 
           <div className="space-y-3 py-2 text-xs">
-            <div className="space-y-1">
+            <div className="space-y-2">
               <Label htmlFor="adjust-kwh" className="text-xs">
                 {locale === "th" ? "พลังงานไฟฟ้าสุทธิ (kWh)" : "Consumed Energy (kWh)"}
               </Label>
@@ -499,11 +498,11 @@ export function BillingDetailSheet({
                 step="0.01"
                 value={adjustKwh}
                 onChange={(e) => setAdjustKwh(Number(e.target.value))}
-                className="h-9 text-xs"
+                className="h-10 text-xs"
               />
             </div>
 
-            <div className="space-y-1">
+            <div className="space-y-2">
               <Label htmlFor="adjust-rate" className="text-xs">
                 {locale === "th" ? "อัตราค่าไฟ (บาท / kWh)" : "Tariff Rate (THB / kWh)"}
               </Label>
@@ -513,18 +512,18 @@ export function BillingDetailSheet({
                 step="0.01"
                 value={adjustRate}
                 onChange={(e) => setAdjustRate(Number(e.target.value))}
-                className="h-9 text-xs"
+                className="h-10 text-xs"
               />
             </div>
 
-            <div className="p-3 rounded-lg bg-muted/40 border border-border/60 flex justify-between items-center">
+            <div className="flex items-center justify-between gap-2 border-t pt-3">
               <span className="font-semibold text-muted-foreground">{locale === "th" ? "ยอดรวมที่คำนวณใหม่:" : "Recalculated Total:"}</span>
               <strong className="font-mono text-sm text-[#EAB308] dark:text-[#FACC15]">
                 ฿{formatNumber(adjustKwh * adjustRate)}
               </strong>
             </div>
 
-            <div className="space-y-1">
+            <div className="space-y-2">
               <Label htmlFor="adjust-note" className="text-xs">
                 {locale === "th" ? "เหตุผลในการปรับปรุงยอด" : "Adjustment Reason / Note"}
               </Label>
@@ -543,7 +542,7 @@ export function BillingDetailSheet({
               variant="ghost"
               size="sm"
               onClick={() => setAdjustModalOpen(false)}
-              className="h-8 text-xs cursor-pointer"
+              className="h-10 text-xs cursor-pointer"
             >
               {locale === "th" ? "ยกเลิก" : "Cancel"}
             </Button>
@@ -551,7 +550,7 @@ export function BillingDetailSheet({
               size="sm"
               disabled={actionLoading || adjustKwh <= 0}
               onClick={handleSaveAdjustment}
-              className="h-8 text-xs font-semibold bg-[#EAB308] text-[#0F172A] hover:bg-[#EAB308]/90 cursor-pointer"
+              className="h-10 text-xs font-semibold bg-[#EAB308] text-[#0F172A] hover:bg-[#EAB308]/90 cursor-pointer"
             >
               {actionLoading ? "กำลังบันทึก..." : (locale === "th" ? "บันทึกการปรับปรุง" : "Save Adjustment")}
             </Button>

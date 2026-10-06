@@ -84,7 +84,7 @@ export function ReportDetailModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-sm:fixed max-sm:inset-0 max-sm:top-0 max-sm:h-dvh max-sm:max-h-dvh max-sm:w-full max-sm:rounded-none max-sm:p-4 max-sm:flex max-sm:flex-col sm:max-w-xl sm:rounded-2xl sm:p-6 sm:max-h-[85vh] overflow-hidden">
         {/* Header */}
-        <DialogHeader className="shrink-0 pb-3 border-b border-border/60">
+        <DialogHeader className="shrink-0 pb-3 order/60">
           <div className="flex items-center gap-3">
             <div className="size-11 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
               {isSpreadsheet ? (
@@ -115,7 +115,7 @@ export function ReportDetailModal({
           {report.jobId ? <JobStatus jobId={report.jobId}/> : <p>{t('jobs.legacy')}</p>}
           {downloadError && <p role="alert">{downloadError}</p>}
           {/* Report Description */}
-          <div className="p-3.5 rounded-xl border border-border/70 bg-card/60 space-y-1.5">
+          <div className="space-y-1.5 border-t pt-4">
             <div className="text-xs font-semibold text-foreground flex items-center gap-1.5">
               <FileCheck className="size-3.5 text-primary" />
               <span>{locale === "th" ? "คำอธิบายขอบเขตรายงาน" : "Report Description"}</span>
@@ -130,7 +130,7 @@ export function ReportDetailModal({
 
           {/* Details Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-            <div className="p-3 rounded-lg border border-border/50 bg-muted/20 space-y-1">
+            <div className="space-y-1 border-t pt-4">
               <div className="text-xs text-muted-foreground flex items-center gap-1.5">
                 <Layers className="size-3.5 text-primary" />
                 <span>{locale === "th" ? "หมวดหมู่ข้อมูล" : "Category"}</span>
@@ -140,7 +140,7 @@ export function ReportDetailModal({
               </div>
             </div>
 
-            <div className="p-3 rounded-lg border border-border/50 bg-muted/20 space-y-1">
+            <div className="space-y-1 border-t pt-4">
               <div className="text-xs text-muted-foreground flex items-center gap-1.5">
                 <Filter className="size-3.5 text-primary" />
                 <span>{locale === "th" ? "รูปแบบไฟล์" : "Export Format"}</span>
@@ -150,7 +150,7 @@ export function ReportDetailModal({
               </div>
             </div>
 
-            <div className="p-3 rounded-lg border border-border/50 bg-muted/20 space-y-1">
+            <div className="space-y-1 border-t pt-4">
               <div className="text-xs text-muted-foreground flex items-center gap-1.5">
                 <Calendar className="size-3.5 text-primary" />
                 <span>{locale === "th" ? "ประมวลผลล่าสุด" : "Generated Date"}</span>
@@ -160,7 +160,7 @@ export function ReportDetailModal({
               </div>
             </div>
 
-            <div className="p-3 rounded-lg border border-border/50 bg-muted/20 space-y-1">
+            <div className="space-y-1 border-t pt-4">
               <div className="text-xs text-muted-foreground flex items-center gap-1.5">
                 <HardDrive className="size-3.5 text-primary" />
                 <span>{locale === "th" ? "ขนาดไฟล์โดยประมาณ" : "Estimated File Size"}</span>
@@ -197,4 +197,3 @@ export function ReportDetailModal({
     </Dialog>
   );
 }
-

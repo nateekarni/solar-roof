@@ -54,6 +54,7 @@ interface ContractInfo {
   rate: number;
   signers: string;
   status: string;
+  schoolName?: string;
 }
 
 export function SchoolSettingsView() {
@@ -62,6 +63,9 @@ export function SchoolSettingsView() {
   const { theme, setTheme } = useTheme();
   const locale = useLocale();
   const setLocale = useSetLocale();
+  const [editingPreferences,setEditingPreferences] = React.useState(false);
+  const [mounted,setMounted] = React.useState(false);
+  React.useEffect(() => setMounted(true),[]);
 
   const [contract, setContract] = React.useState<ContractInfo | null>(null);
   const [loadingContract, setLoadingContract] = React.useState(true);
@@ -142,12 +146,11 @@ export function SchoolSettingsView() {
     .toUpperCase();
 
   return (
-    <div className="space-y-4 max-w-2xl mx-auto pb-10">
+    <div className="space-y-4 w-full pb-10">
       {/* 1. Profile Card */}
       <Card className="border-border/80 shadow-xs bg-card">
-        <CardHeader className="pb-3 border-b border-border/40">
+        <CardHeader className="pb-3 order/40">
           <CardTitle className="text-base font-bold flex items-center gap-2">
-            <User className="size-4.5 text-primary" />
             ข้อมูลผู้ใช้งานและโรงเรียน
           </CardTitle>
         </CardHeader>
@@ -161,13 +164,13 @@ export function SchoolSettingsView() {
             <div className="flex flex-col sm:flex-row sm:items-center gap-1.5">
               <h3 className="text-base font-bold text-foreground">{user?.displayName || "ผู้ดูแลโรงเรียน"}</h3>
               <Badge variant="outline" className="w-fit mx-auto sm:mx-0 text-[10px] bg-primary/10 text-primary border-primary/20">
-                School Administrator
+                {locale === "th" ? "เจ้าหน้าที่โรงเรียน" : "School Officer"}
               </Badge>
             </div>
             <p className="text-xs text-muted-foreground">{user?.email || "—"}</p>
             <div className="flex items-center justify-center sm:justify-start gap-1.5 text-xs text-foreground font-medium pt-1">
               <School className="size-3.5 text-muted-foreground" />
-              <span>โรงเรียนบ้านคลองแสน (SCH-001)</span>
+              <span>{contract?.schoolName || "ยังไม่มีข้อมูลโรงเรียน"}</span>
             </div>
           </div>
         </CardContent>
@@ -175,9 +178,8 @@ export function SchoolSettingsView() {
 
       {/* 2. Contract Information Card */}
       <Card className="border-border/80 shadow-xs bg-card">
-        <CardHeader className="pb-3 border-b border-border/40">
+        <CardHeader className="pb-3 order/40">
           <CardTitle className="text-base font-bold flex items-center gap-2">
-            <FileText className="size-4.5 text-amber-500" />
             ข้อมูลสัญญาซื้อขายไฟฟ้า (PPA Agreement)
           </CardTitle>
           <CardDescription className="text-xs">
@@ -186,44 +188,44 @@ export function SchoolSettingsView() {
         </CardHeader>
         <CardContent className="pt-4 space-y-3">
           <div className="grid grid-cols-2 gap-3 text-xs">
-            <div className="p-3 rounded-xl bg-muted/40 border border-border/50">
+            <div className="space-y-2">
               <span className="text-[11px] text-muted-foreground block">เลขที่สัญญา</span>
               <span className="font-bold text-foreground">{contract?.contractNumber || "—"}</span>
             </div>
-            <div className="p-3 rounded-xl bg-muted/40 border border-border/50">
+            <div className="space-y-2">
               <span className="text-[11px] text-muted-foreground block">อัตราค่าไฟฟ้า PPA</span>
               <span className="font-bold text-emerald-600 dark:text-emerald-400">
                 {contract?.rate ?? "—"} บาท/kWh
               </span>
             </div>
-            <div className="p-3 rounded-xl bg-muted/40 border border-border/50">
+            <div className="space-y-2">
               <span className="text-[11px] text-muted-foreground block">วันเริ่มต้นสัญญา</span>
               <span className="font-medium text-foreground">{contract?.startDate || "—"}</span>
             </div>
-            <div className="p-3 rounded-xl bg-muted/40 border border-border/50">
+            <div className="space-y-2">
               <span className="text-[11px] text-muted-foreground block">สถานะสัญญา</span>
               <span className="font-medium text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
                 <span className="size-1.5 rounded-full bg-emerald-500" />
-                มีผลบังคับใช้
+                {contract?.status || "ยังไม่มีสัญญา"}
               </span>
             </div>
           </div>
           <div className="text-[11px] text-muted-foreground pt-1 flex items-center justify-between">
             <span>คู่สัญญา: {contract?.signers || "—"}</span>
-            <span className="text-primary hover:underline cursor-pointer font-medium">ดูสำเนาสัญญา PDF</span>
+            {contract && <Button variant="link" size="sm" onClick={() => router.push(`/records/contracts/${contract.id}`)}>ดูรายละเอียดสัญญา</Button>}
           </div>
         </CardContent>
       </Card>
 
       {/* 3. Preferences Card */}
       <Card className="border-border/80 shadow-xs bg-card">
-        <CardHeader className="pb-3 border-b border-border/40">
+        <CardHeader className="pb-3 order/40">
           <CardTitle className="text-base font-bold flex items-center gap-2">
-            <Palette className="size-4.5 text-primary" />
             การตั้งค่าทั่วไป (Preferences)
           </CardTitle>
         </CardHeader>
         <CardContent className="pt-4 space-y-4">
+          {!editingPreferences ? <div className="space-y-4"><dl className="space-y-4"><div><dt className="text-sm text-muted-foreground">ภาษา</dt><dd>{locale === 'th' ? 'ภาษาไทย' : 'English'}</dd></div><div><dt className="text-sm text-muted-foreground">ธีม</dt><dd>{mounted ? theme === 'dark' ? 'มืด' : theme === 'light' ? 'สว่าง' : 'ตามระบบ' : '—'}</dd></div></dl><Button variant="outline" onClick={() => setEditingPreferences(true)}>แก้ไขการแสดงผล</Button></div> : <>
           {/* Language */}
           <div className="flex items-center justify-between">
             <div className="space-y-0.5">
@@ -234,7 +236,7 @@ export function SchoolSettingsView() {
               <p className="text-[11px] text-muted-foreground">เลือกภาษาที่แสดงในระบบ</p>
             </div>
             <Select value={locale} onValueChange={(val) => setLocale(val as "th" | "en")}>
-              <SelectTrigger className="w-32 h-8 text-xs">
+              <SelectTrigger className="w-32 h-10 text-xs">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -257,7 +259,7 @@ export function SchoolSettingsView() {
               <Button
                 variant={theme === "light" ? "secondary" : "ghost"}
                 size="icon"
-                className="size-7 rounded-md"
+                className="size-10 rounded-md"
                 onClick={() => setTheme("light")}
               >
                 <Sun className="size-3.5" />
@@ -265,7 +267,7 @@ export function SchoolSettingsView() {
               <Button
                 variant={theme === "dark" ? "secondary" : "ghost"}
                 size="icon"
-                className="size-7 rounded-md"
+                className="size-10 rounded-md"
                 onClick={() => setTheme("dark")}
               >
                 <Moon className="size-3.5" />
@@ -273,21 +275,21 @@ export function SchoolSettingsView() {
               <Button
                 variant={theme === "system" ? "secondary" : "ghost"}
                 size="icon"
-                className="size-7 rounded-md"
+                className="size-10 rounded-md"
                 onClick={() => setTheme("system")}
               >
                 <Laptop className="size-3.5" />
               </Button>
             </div>
-          </div>
+          </div><Button variant="outline" onClick={() => setEditingPreferences(false)}>เสร็จสิ้น</Button></>}
+
         </CardContent>
       </Card>
 
       {/* 4. Security & Password Card */}
       <Card className="border-border/80 shadow-xs bg-card">
-        <CardHeader className="pb-3 border-b border-border/40">
+        <CardHeader className="pb-3 order/40">
           <CardTitle className="text-base font-bold flex items-center gap-2">
-            <ShieldCheck className="size-4.5 text-primary" />
             ความปลอดภัย (Security)
           </CardTitle>
         </CardHeader>
@@ -302,7 +304,7 @@ export function SchoolSettingsView() {
           <Button
             variant="outline"
             size="sm"
-            className="h-8 text-xs font-medium"
+            className="h-10 text-xs font-medium"
             onClick={() => setPasswordDialogOpen(true)}
           >
             เปลี่ยนรหัสผ่าน
@@ -339,33 +341,33 @@ export function SchoolSettingsView() {
             </div>
           ) : (
             <form onSubmit={handlePasswordChange} className="space-y-3 pt-2">
-              <div className="space-y-1">
+              <div className="space-y-2">
                 <Label className="text-xs">รหัสผ่านปัจจุบัน</Label>
                 <Input
                   type="password"
                   value={currentPassword}
                   onChange={(e) => setCurrentPassword(e.target.value)}
-                  className="h-9 text-xs"
+                  className="h-10 text-xs"
                   required
                 />
               </div>
-              <div className="space-y-1">
+              <div className="space-y-2">
                 <Label className="text-xs">รหัสผ่านใหม่</Label>
                 <Input
                   type="password"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  className="h-9 text-xs"
+                  className="h-10 text-xs"
                   required
                 />
               </div>
-              <div className="space-y-1">
+              <div className="space-y-2">
                 <Label className="text-xs">ยืนยันรหัสผ่านใหม่</Label>
                 <Input
                   type="password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="h-9 text-xs"
+                  className="h-10 text-xs"
                   required
                 />
               </div>
@@ -381,7 +383,7 @@ export function SchoolSettingsView() {
                   size="sm"
                   onClick={() => setPasswordDialogOpen(false)}
                   disabled={isChangingPassword}
-                  className="h-8 text-xs"
+                  className="h-10 text-xs"
                 >
                   ยกเลิก
                 </Button>
@@ -389,7 +391,7 @@ export function SchoolSettingsView() {
                   type="submit"
                   size="sm"
                   disabled={isChangingPassword}
-                  className="h-8 text-xs"
+                  className="h-10 text-xs"
                 >
                   บันทึกรหัสผ่านใหม่
                 </Button>
@@ -416,7 +418,7 @@ export function SchoolSettingsView() {
               variant="outline"
               size="sm"
               onClick={() => setLogoutDialogOpen(false)}
-              className="flex-1 h-9 text-xs"
+              className="flex-1 h-10 text-xs"
             >
               ยกเลิก
             </Button>
@@ -424,7 +426,7 @@ export function SchoolSettingsView() {
               variant="destructive"
               size="sm"
               onClick={handleLogout}
-              className="flex-1 h-9 text-xs"
+              className="flex-1 h-10 text-xs"
             >
               ออกจากระบบ
             </Button>
@@ -434,4 +436,3 @@ export function SchoolSettingsView() {
     </div>
   );
 }
-

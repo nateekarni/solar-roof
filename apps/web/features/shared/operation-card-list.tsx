@@ -4,7 +4,7 @@ import type {OperationRow} from '@solar/api-contracts';
 import {FileQuestion,Image as ImageIcon} from 'lucide-react';
 import {Button} from '../../components/ui/button';
 import {Card} from '../../components/ui/card';
-import {operationKeys} from './operation-columns';
+import {operationKeys,isTemporalColumn} from './operation-columns';
 import {TelemetryAgeLabel} from './telemetry-age-label';
 import {renderStatusBadge,STATUS_MAP} from '../../lib/status-badge';
 import {formatAppDate,formatAppDateTime,isIsoDateLike} from '../../lib/date-format';
@@ -18,7 +18,7 @@ export function OperationCardList({resource,columns:rawColumns,rows,idKey='id',o
  const keys=rows[0]?operationKeys(resource,rows[0],idKey):[];
  const titleKey=keys[0]||'title',statusKey=keys.find(k=>k.includes('status')||k.includes('severity'));
  const secondaryKeys=keys.filter(k=>k!==titleKey&&k!==statusKey);
- const formatNumber=(value:unknown)=>Number.isFinite(Number(value))?new Intl.NumberFormat(locale==='th'?'th-TH':'en-US',{maximumFractionDigits:2}).format(Number(value)):String(value??'—');
+ const formatNumber=(value:unknown)=>value===null||value===undefined||value===""?"—":Number.isFinite(Number(value))?new Intl.NumberFormat(locale==='th'?'th-TH':'en-US',{maximumFractionDigits:2}).format(Number(value)):String(value??'—');
  const isStatusValue=(value:unknown)=>Boolean(STATUS_MAP[String(value??'').trim().toLowerCase()]||STATUS_MAP[String(value??'').trim()]);
  const getStatusBadge=(value:string)=>renderStatusBadge(value,locale);
  return <div className="space-y-3">
@@ -77,7 +77,7 @@ export function OperationCardList({resource,columns:rawColumns,rows,idKey='id',o
                 {/* Card Body: Secondary Details */}
                 {secondaryKeys.length > 0 && (
                   <div className="grid grid-cols-2 gap-2 pt-2 border-t border-border/50 text-xs">
-                    {(resource === "sites" ? secondaryKeys.filter(k=>k!=="lastSeenAt") : secondaryKeys.slice(0,4)).map((key, kIdx) => {
+                    {(resource === "sites" ? secondaryKeys.filter(k=>k!=="lastSeenAt") : (["billing","contracts","documents","receipts"].includes(resource) ? secondaryKeys : secondaryKeys.slice(0,4))).map((key, kIdx) => {
                       const colHeader = rawColumns[keys.indexOf(key)] ?? key;
                       const val = row[key];
                       const str = String(val ?? "-");
@@ -108,7 +108,7 @@ export function OperationCardList({resource,columns:rawColumns,rows,idKey='id',o
                               type="button"
                               variant="outline"
                               size="sm"
-                              className="h-6 text-[11px] px-2 gap-1 text-primary border-primary/30 hover:bg-primary/5 cursor-pointer font-medium"
+                              className="min-h-11 h-auto text-[11px] px-2 gap-1 text-primary border-primary/30 hover:bg-primary/5 cursor-pointer font-medium"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 onOpenSlip?.(str);
@@ -135,7 +135,7 @@ export function OperationCardList({resource,columns:rawColumns,rows,idKey='id',o
                                 `฿${formatNumber(val)}`
                               ) : isEnergy ? (
                                 formatNumber(val)
-                              ) : (key.toLowerCase().includes("date") || key.toLowerCase().includes("at") || key.toLowerCase().includes("time") || isIsoDateLike(str)) && str && str !== "-" ? (
+                              ) : (isTemporalColumn(key) || isIsoDateLike(str)) && str && str !== "-" ? (
                                 str.includes(":") || str.includes("T") ? formatAppDateTime(str, locale) : formatAppDate(str, locale)
                               ) : (
                                 str

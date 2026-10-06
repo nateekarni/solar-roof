@@ -1,4 +1,14 @@
 "use client";
+import { BrokerSelect } from "./broker-select";
+import { siteControlsClassName, siteFormClassName, siteTabsListClassName, siteTabsTriggerClassName } from "./site-form-layout";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "../../components/ui/tabs";
+
+import { AddButton } from "../../components/ui/add-button";
+import { AppLoading } from "../../components/feedback/app-loading";
+import { optionalNumber } from "./site-form-values";
+import type { PayloadConfig } from "./payload-contracts";
+import { PayloadConnectionCard } from "./payload-connection-card";
+import { ChoiceSelect } from '../../components/ui/choice-select';
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
@@ -49,9 +59,7 @@ const editSiteSchema = z.object({
   gatewayName: z.string().min(2, "กรุณาระบุชื่อหรือรหัส Gateway"),
   protocol: z.literal("mqtt"),
   deviceId: z.string().optional(),
-  pollingIntervalSeconds: z.number().int().min(1).max(86400),
-  voltageMin: z.number(), voltageMax: z.number(), currentMax: z.number(),
-  alertSeverity: z.enum(["info", "warning", "critical"]),
+  mqttBrokerId: z.string().optional(),
   endpoint: z.string().min(3, "กรุณาระบุ Endpoint หรือ MQTT Topic"),
   deviceModel: z.string().optional(),
   deviceSerial: z.string().min(2, "กรุณาระบุรหัสซีเรียลของมิเตอร์"),
@@ -77,6 +85,8 @@ export function SiteEditDialog({
   const { user } = useAuth();
   const t = useT();
   const locale = useLocale();
+  const [payloadConfig, setPayloadConfig] = React.useState<PayloadConfig | null>(null);
+  const refreshPayload = React.useCallback(() => { if(siteId) apiClient.get<PayloadConfig | null>(`/v1/sites/${siteId}/payload-config`).then(config => setPayloadConfig(config?.externalSiteId && config.externalGatewayId ? config : null)).catch(() => setPayloadConfig(null)); }, [siteId]);
   const [meterPresets, setMeterPresets] = React.useState<Array<{ id: string; model: string; registers: unknown[] }>>([]);
   const [devices, setDevices] = React.useState<Array<{ id: string; name: string; model: string; serialNumber: string }>>([]);
   const [newDevice, setNewDevice] = React.useState({ name: "", model: "", serialNumber: "", slaveId: 2, meterPresetId: "" });
@@ -99,16 +109,12 @@ export function SiteEditDialog({
     resolver: zodResolver(editSiteSchema),
     defaultValues: {
       name: "",
-      pollingIntervalSeconds: 10, voltageMin: 200, voltageMax: 250, currentMax: 100, alertSeverity: "warning",
       schoolName: "",
-      capacityMwp: 0.5,
-      latitude: 13.7563,
-      longitude: 100.5018,
       status: "online",
       gatewayName: "",
       protocol: "mqtt",
       endpoint: "",
-      deviceModel: "PM5350",
+      deviceModel: "",
       deviceSerial: "",
     },
   });
@@ -118,6 +124,7 @@ export function SiteEditDialog({
   React.useEffect(() => {
     if (open && siteId) {
       setFetching(true);
+      setPayloadConfig(null); refreshPayload();
       apiClient.get<typeof meterPresets>("/v1/meter-presets").then(setMeterPresets).catch(() => setMeterPresets([]));
       apiClient.get<typeof devices>(`/v1/sites/${siteId}/devices`).then(setDevices).catch(() => setDevices([]));
       setPingStatus("idle");
@@ -130,18 +137,16 @@ export function SiteEditDialog({
             reset({
               name: siteData.name || "",
               deviceId: siteData.deviceId,
-              pollingIntervalSeconds: Number(siteData.pollingIntervalSeconds ?? 10),
-              voltageMin: Number(siteData.alertRules?.voltageMin ?? 200), voltageMax: Number(siteData.alertRules?.voltageMax ?? 250), currentMax: Number(siteData.alertRules?.currentMax ?? 100),
-              alertSeverity: siteData.alertRules?.voltageSeverity ?? "warning",
               schoolName: siteData.schoolName || "",
-              capacityMwp: Number(siteData.capacityMwp || 0.5),
-              latitude: Number(siteData.latitude || 13.7563),
-              longitude: Number(siteData.longitude || 100.5018),
+              capacityMwp: Number(siteData.capacityMwp),
+              latitude: siteData.latitude == null ? undefined : Number(siteData.latitude),
+              longitude: siteData.longitude == null ? undefined : Number(siteData.longitude),
               status: siteData.status || "online",
               gatewayName: siteData.gatewayName || "",
               protocol: siteData.protocol || "mqtt",
               endpoint: siteData.endpoint || "",
-              deviceModel: siteData.deviceModel || "PM5350",
+              mqttBrokerId: siteData.mqttBrokerId || "",
+              deviceModel: siteData.deviceModel || "",
               deviceSerial: siteData.deviceSerial || "",
             });
           }
@@ -154,7 +159,7 @@ export function SiteEditDialog({
           setFetching(false);
         });
     }
-  }, [open, siteId, reset, onOpenChange]);
+  }, [open, siteId, reset, onOpenChange, refreshPayload]);
 
   const handleTestPing = async () => {
     setPingStatus("testing");
@@ -166,11 +171,13 @@ export function SiteEditDialog({
         status: "online" | "offline";
         protocol: string;
         endpoint: string;
+        mqttBrokerId?: string | undefined;
         latencyMs: number | null;
         message: string;
       }>("/v1/sites/test-connection", {
         protocol: formValues.protocol,
         endpoint: formValues.endpoint,
+        mqttBrokerId: formValues.mqttBrokerId,
       });
 
       setPingStatus(res.status);
@@ -188,7 +195,7 @@ export function SiteEditDialog({
     setLoading(true);
     try {
       const result = await apiClient.patch<{ configDelivery: string }>(`/v1/sites/${siteId}`, { ...values,
-        alertRules: { voltageMin: values.voltageMin, voltageMax: values.voltageMax, currentMax: values.currentMax, voltageSeverity: values.alertSeverity, currentSeverity: values.alertSeverity },
+
       });
       if (result.configDelivery === "pending") notify.error("บันทึกแล้ว แต่ MQTT config ยังส่งไม่สำเร็จ กรุณาลองอีกครั้ง");
       notify.success(
@@ -219,7 +226,7 @@ export function SiteEditDialog({
   if (user?.role !== "admin") return null;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl sm:rounded-2xl sm:p-6 max-h-[90vh] overflow-y-auto">
+      <DialogContent className="flex max-h-[90svh] flex-col gap-4 overflow-hidden sm:w-[80vw] sm:max-w-none sm:rounded-2xl sm:p-6 sm:overflow-hidden">
         <DialogHeader className="pb-1">
           <div className="flex items-center gap-2.5">
             <div className="grid size-9 place-items-center rounded-lg bg-primary/10 text-primary">
@@ -229,7 +236,7 @@ export function SiteEditDialog({
               <DialogTitle className="text-base font-semibold">
                 {locale === "th" ? "แก้ไขข้อมูลไซต์งานและ Gateway" : "Edit Solar Site & Gateway"}
               </DialogTitle>
-              <DialogDescription className="text-xs">
+              <DialogDescription className="text-sm">
                 {locale === "th"
                   ? "ปรับปรุงข้อมูลจุดติดตั้งโซลาร์เซลล์ การตั้งค่าเกตเวย์ และมิเตอร์ประจำไซต์"
                   : "Update solar site installation info, gateway parameters, and metering devices"}
@@ -239,26 +246,26 @@ export function SiteEditDialog({
         </DialogHeader>
 
         {fetching ? (
-          <div className="py-12 flex flex-col items-center justify-center gap-2 text-xs text-muted-foreground">
-            <Activity className="size-5 animate-spin text-primary" />
-            <span>กำลังโหลดข้อมูลไซต์งาน...</span>
-          </div>
+          <AppLoading fullPage={false} />
         ) : (
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 pt-2">
+          <Tabs defaultValue="settings" className={`min-h-0 gap-4 overflow-hidden ${siteControlsClassName}`}>
+            {payloadConfig && <TabsList className={siteTabsListClassName}><TabsTrigger value="settings" className={siteTabsTriggerClassName}>{locale === "th" ? "ข้อมูลไซต์และ Gateway" : "Site & Gateway"}</TabsTrigger><TabsTrigger value="payload" className={siteTabsTriggerClassName}>{locale === "th" ? "การรับข้อมูลและอุปกรณ์" : "Data & devices"}</TabsTrigger></TabsList>}
+            <TabsContent value="settings" className="min-h-0 overflow-y-auto px-1">
+          <form onSubmit={handleSubmit(onSubmit)} className={siteFormClassName}>
             {/* Section 1: Site Info */}
             <div className="space-y-3">
-              <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+              <div className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
                 <Cpu className="size-4 text-primary" />
                 <span>{locale === "th" ? "ข้อมูลทั่วไปของไซต์งาน" : "General Site Info"}</span>
               </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="edit-site-name" required className="text-xs font-medium">
+              <div className="space-y-2">
+                <Label htmlFor="edit-site-name" required className="text-sm font-medium">
                   {locale === "th" ? "ชื่อไซต์งาน" : "Site Name"}
                 </Label>
                 <Input
                   id="edit-site-name"
-                  className="text-xs h-10"
+                  className="text-sm h-10"
                   {...register("name")}
                 />
                 {errors.name && (
@@ -267,68 +274,68 @@ export function SiteEditDialog({
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="edit-school-select" required className="text-xs font-medium">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-school-select" required className="text-sm font-medium">
                     {locale === "th" ? "โรงเรียนต้นสังกัด" : "Associated School"}
                   </Label>
                   <Input id="edit-school-select" {...register("schoolName")} />
                 </div>
 
-                <div className="space-y-1.5">
-                  <Label htmlFor="edit-capacity" required className="text-xs font-medium">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-capacity" required className="text-sm font-medium">
                     {locale === "th" ? "กำลังติดตั้ง (MWp)" : "Capacity (MWp)"}
                   </Label>
                   <Input
                     id="edit-capacity"
                     type="number"
                     step="0.01"
-                    className="text-xs h-10"
+                    className="text-sm h-10"
                     {...register("capacityMwp", { valueAsNumber: true })}
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-3 gap-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="edit-lat" className="text-xs font-medium">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-lat" className="text-sm font-medium">
                     {locale === "th" ? "ละติจูด" : "Latitude"}
                   </Label>
                   <Input
                     id="edit-lat"
                     type="number"
                     step="0.0001"
-                    className="text-xs h-10"
-                    {...register("latitude", { valueAsNumber: true })}
+                    className="text-sm h-10"
+                    {...register("latitude", { setValueAs: optionalNumber })}
                   />
                 </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="edit-lng" className="text-xs font-medium">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-lng" className="text-sm font-medium">
                     {locale === "th" ? "ลองจิจูด" : "Longitude"}
                   </Label>
                   <Input
                     id="edit-lng"
                     type="number"
                     step="0.0001"
-                    className="text-xs h-10"
-                    {...register("longitude", { valueAsNumber: true })}
+                    className="text-sm h-10"
+                    {...register("longitude", { setValueAs: optionalNumber })}
                   />
                 </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="edit-status" className="text-xs font-medium">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-status" className="text-sm font-medium">
                     {locale === "th" ? "สถานะการทำงาน" : "Status"}
                   </Label>
                   <Select
                     value={formValues.status || "online"}
                     onValueChange={(val) => setValue("status", val)}
                   >
-                    <SelectTrigger id="edit-status" className="text-xs h-10 w-full">
+                    <SelectTrigger id="edit-status" className="text-sm h-10 w-full">
                       <SelectValue placeholder="สถานะ" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="online" className="text-xs">ออนไลน์ (Online)</SelectItem>
-                      <SelectItem value="offline" className="text-xs">ออฟไลน์ (Offline)</SelectItem>
-                      <SelectItem value="degraded" className="text-xs">ผิดปกติ (Degraded)</SelectItem>
-                      <SelectItem value="archived" className="text-xs">ระงับใช้งาน (Archived)</SelectItem>
+                      <SelectItem value="online" className="text-sm">ออนไลน์ (Online)</SelectItem>
+                      <SelectItem value="offline" className="text-sm">ออฟไลน์ (Offline)</SelectItem>
+                      <SelectItem value="degraded" className="text-sm">ผิดปกติ (Degraded)</SelectItem>
+                      <SelectItem value="archived" className="text-sm">ระงับใช้งาน (Archived)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -336,77 +343,71 @@ export function SiteEditDialog({
             </div>
 
             {/* Section 2: Gateway & Meter Config */}
-            <div className="rounded-xl border border-border/80 bg-muted/20 p-3 space-y-3">
-              <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
-                <Radio className="size-4 text-primary" />
-                <span>{locale === "th" ? "การตั้งค่า Gateway & มิเตอร์หลัก" : "Gateway & Meter Setup"}</span>
-              </div>
-
+            <section className="space-y-4 border-t pt-5"><h3 className="flex items-center gap-2 text-sm font-semibold"><Radio className="size-4 text-primary"/>{locale === "th" ? "การตั้งค่า Gateway และมิเตอร์หลัก" : "Gateway & billing meter"}</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="edit-gw-name" required className="text-xs font-medium">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-gw-name" required className="text-sm font-medium">
                     {locale === "th" ? "ชื่อ/รหัส Gateway" : "Gateway Name"}
                   </Label>
                   <Input
                     id="edit-gw-name"
-                    className="text-xs h-10 font-mono bg-background"
-                    {...register("gatewayName", { onChange: (event) => setValue("endpoint", `energy/${event.target.value}/#`) })}
+                    className="text-sm h-10 font-mono bg-white"
+                    {...register("gatewayName", { onChange: (event) => { if (!formValues.endpoint || formValues.endpoint === `energy/${formValues.gatewayName}/#`) setValue("endpoint", `energy/${event.target.value}/#`); } })}
                   />
                 </div>
 
-                <div className="space-y-1.5">
-                  <Label htmlFor="edit-gw-proto" required className="text-xs font-medium">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-gw-proto" required className="text-sm font-medium">
                     {locale === "th" ? "โปรโตคอล" : "Protocol"}
                   </Label>
                   <Select
                     value={formValues.protocol}
                     onValueChange={(val) => setValue("protocol", val as "mqtt")}
                   >
-                    <SelectTrigger id="edit-gw-proto" className="text-xs h-10 w-full bg-background">
+                    <SelectTrigger id="edit-gw-proto" className="text-sm h-10 w-full bg-white">
                       <SelectValue placeholder="โปรโตคอล" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="mqtt" className="text-xs">MQTT</SelectItem>
+                      <SelectItem value="mqtt" className="text-sm">MQTT</SelectItem>
 
                     </SelectContent>
                   </Select>
                 </div>
               </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="edit-gw-endpoint" required className="text-xs font-medium">
+              <div className="space-y-2">
+                <Label htmlFor="edit-gw-endpoint" required className="text-sm font-medium">
                   {locale === "th" ? "Endpoint / MQTT Topic" : "Telemetry Endpoint"}
                 </Label>
                 <Input
-                  readOnly
                   id="edit-gw-endpoint"
-                  className="text-xs h-10 font-mono bg-background"
+                  className="text-sm h-10 font-mono bg-white"
                   {...register("endpoint")}
                 />
               </div>
 
-              <div><Label htmlFor="edit-device">Meter Device</Label><select id="edit-device" value={formValues.deviceId ?? ""} className="h-10 w-full rounded-md border bg-background" onChange={event => {
+              <div className="space-y-2"><Label htmlFor="edit-device">Meter Device</Label><ChoiceSelect id="edit-device" value={formValues.deviceId ?? ""} className="h-10 w-full rounded-md border bg-white" onChange={event => {
                 const device = devices.find(item => item.id === event.target.value);
                 if (device) { setValue("deviceId", device.id); setValue("deviceModel", device.model); setValue("deviceSerial", device.serialNumber); }
-              }}>{devices.map(device => <option key={device.id} value={device.id}>{device.name} · {device.serialNumber}</option>)}</select></div>
+              }}>{devices.map(device => <option key={device.id} value={device.id}>{device.name} · {device.serialNumber}</option>)}</ChoiceSelect></div>
               <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="edit-dev-model" className="text-xs font-medium">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-dev-model" className="text-sm font-medium">
                     {locale === "th" ? "รุ่นมิเตอร์" : "Meter Model"}
                   </Label>
                   <Input
                     id="edit-dev-model"
-                    className="text-xs h-10 bg-background"
+                    className="text-sm h-10 bg-white"
                     {...register("deviceModel")}
                   />
                 </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="edit-dev-serial" required className="text-xs font-medium">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-dev-serial" required className="text-sm font-medium">
                     {locale === "th" ? "รหัสซีเรียลมิเตอร์" : "Meter Serial Number"}
                   </Label>
                   <Input
                     id="edit-dev-serial"
-                    className="text-xs h-10 font-mono bg-background"
+                    className="text-sm h-10 font-mono bg-white"
                     {...register("deviceSerial")}
                   />
                   {errors.deviceSerial && (
@@ -414,17 +415,9 @@ export function SiteEditDialog({
                   )}
                 </div>
               </div>
-            </div>
+            </section>
 
-            <div className="grid grid-cols-2 gap-3 rounded-lg border p-3">
-              <div><Label htmlFor="edit-interval">Gateway Push Interval (seconds)</Label><Input id="edit-interval" type="number" {...register("pollingIntervalSeconds", { valueAsNumber: true })} /></div>
-              <div><Label htmlFor="edit-severity">Alert Severity</Label><select id="edit-severity" className="h-10 w-full rounded-md border bg-background" {...register("alertSeverity")}><option value="info">Info</option><option value="warning">Warning</option><option value="critical">Critical</option></select></div>
-              <div><Label htmlFor="edit-vmin">Min Voltage (V)</Label><Input id="edit-vmin" type="number" {...register("voltageMin", { valueAsNumber: true })} /></div>
-              <div><Label htmlFor="edit-vmax">Max Voltage (V)</Label><Input id="edit-vmax" type="number" {...register("voltageMax", { valueAsNumber: true })} /></div>
-              <div><Label htmlFor="edit-imax">Max Current (A)</Label><Input id="edit-imax" type="number" {...register("currentMax", { valueAsNumber: true })} /></div>
-              <p className="text-xs text-muted-foreground">บันทึกและส่งค่าไปยัง Hardware Gateway ตามชื่อที่ระบุ</p>
-            </div>
-            <div className="space-y-2 rounded-lg border p-3">
+            {!payloadConfig && <div className="space-y-2 border-t pt-4">
               <h3 className="text-sm font-semibold">เพิ่มมิเตอร์ใน Gateway นี้</h3>
               <div className="grid grid-cols-2 gap-2">
                 <Input aria-label="New meter name" placeholder="Meter Name" value={newDevice.name} onChange={event => setNewDevice({ ...newDevice, name: event.target.value })} />
@@ -433,19 +426,21 @@ export function SiteEditDialog({
                 <Input aria-label="New meter slave ID" type="number" min={1} max={247} value={newDevice.slaveId} onChange={event => setNewDevice({ ...newDevice, slaveId: Number(event.target.value) })} />
               </div>
               <Label htmlFor="new-meter-preset">Meter Preset</Label>
-              <select id="new-meter-preset" className="h-10 w-full rounded-md border bg-background" value={newDevice.meterPresetId} onChange={event => { const preset = meterPresets.find(item => item.id === event.target.value); setNewDevice({ ...newDevice, meterPresetId: event.target.value, model: preset?.model ?? newDevice.model }); }}>
+              <ChoiceSelect id="new-meter-preset" className="h-10 w-full rounded-md border bg-white" value={newDevice.meterPresetId} onChange={event => { const preset = meterPresets.find(item => item.id === event.target.value); setNewDevice({ ...newDevice, meterPresetId: event.target.value, model: preset?.model ?? newDevice.model }); }}>
                 <option value="">เลือก Register Preset</option>{meterPresets.map(preset => <option key={preset.id} value={preset.id}>{preset.model}</option>)}
-              </select>
-              {newDevice.meterPresetId && <pre className="max-h-40 overflow-auto rounded bg-muted p-2 text-xs">{JSON.stringify(meterPresets.find(preset => preset.id === newDevice.meterPresetId)?.registers, null, 2)}</pre>}
-              <Button type="button" variant="outline" disabled={addingDevice || !newDevice.meterPresetId} onClick={() => void addDevice()}>เพิ่มมิเตอร์</Button>
-              <p className="text-xs text-muted-foreground">มิเตอร์เพิ่มเติมไม่เปลี่ยนมิเตอร์ที่ใช้คำนวณบิล</p>
+              </ChoiceSelect>
+              {newDevice.meterPresetId && <pre className="max-h-40 overflow-auto rounded bg-muted p-2 text-sm">{JSON.stringify(meterPresets.find(preset => preset.id === newDevice.meterPresetId)?.registers, null, 2)}</pre>}
+              <AddButton type="button" variant="outline" disabled={addingDevice || !newDevice.meterPresetId} onClick={() => void addDevice()}>เพิ่มมิเตอร์</AddButton>
+              <p className="text-sm text-muted-foreground">มิเตอร์เพิ่มเติมไม่เปลี่ยนมิเตอร์ที่ใช้คำนวณบิล</p>
             </div>
+            }
+            <BrokerSelect value={formValues.mqttBrokerId||""} onChange={id=>{setValue("mqttBrokerId",id);setPingStatus("idle");}}/>
             {/* Section 3: Connection Test */}
             <div className="rounded-xl border border-border p-3 bg-muted/30 flex flex-col gap-2">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Wifi className="size-4 text-primary" />
-                  <span className="text-xs font-semibold text-foreground">
+                  <span className="text-sm font-semibold text-foreground">
                     {locale === "th" ? "ทดสอบสัญญาณการเชื่อมต่อจริง" : "Connection Test"}
                   </span>
                 </div>
@@ -455,7 +450,7 @@ export function SiteEditDialog({
                   size="sm"
                   disabled={pingStatus === "testing"}
                   onClick={handleTestPing}
-                  className="h-7 text-xs px-2.5 bg-background cursor-pointer"
+                  className="h-10 text-sm px-2.5 bg-card cursor-pointer"
                 >
                   {pingStatus === "testing" ? (
                     <span className="flex items-center gap-1">
@@ -469,37 +464,37 @@ export function SiteEditDialog({
               </div>
 
               {pingStatus === "online" ? (
-                <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-2 text-xs">
+                <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-2 text-sm">
                   <CheckCircle2 className="size-4 shrink-0" />
                   <span className="font-medium">
-                    {locale === "th" ? "เชื่อมต่อสำเร็จ พร้อมรับข้อมูล Telemetry" : "Online: Gateway connected"}
+                    {locale === "th" ? "เชื่อมต่อ Broker สำเร็จ · ยังไม่ได้ยืนยันการรับข้อมูล" : "Broker connected · Data receipt not yet verified"}
                   </span>
                   {pingLatency !== null && (
-                    <span className="text-[10px] bg-emerald-500/20 px-1.5 py-0.5 rounded font-mono ml-auto">
+                    <span className="text-sm bg-emerald-500/20 px-1.5 py-0.5 rounded font-mono ml-auto">
                       {pingLatency}ms
                     </span>
                   )}
                 </div>
               ) : pingStatus === "offline" ? (
-                <div className="flex flex-col gap-1 text-destructive bg-destructive/10 border border-destructive/20 rounded-lg p-2 text-xs">
+                <div className="flex flex-col gap-1 text-destructive bg-destructive/10 border border-destructive/20 rounded-lg p-2 text-sm">
                   <div className="flex items-center gap-2 font-medium">
                     <XCircle className="size-4 shrink-0" />
                     <span>{locale === "th" ? "เชื่อมต่อไม่สำเร็จ (Offline)" : "Offline"}</span>
                   </div>
                   {pingMessage && (
-                    <p className="text-[10px] text-muted-foreground break-all">{pingMessage}</p>
+                    <p className="text-sm text-muted-foreground break-all">{pingMessage}</p>
                   )}
                 </div>
               ) : null}
             </div>
 
-            <DialogFooter>
+            <DialogFooter className="sticky bottom-0 z-10 mx-0 mb-0 rounded-lg bg-card border-t sm:mx-0 sm:mb-0">
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
                 onClick={() => onOpenChange(false)}
-                className="text-xs h-10 px-4 cursor-pointer"
+                className="text-sm h-10 px-4 cursor-pointer"
               >
                 {t("common.cancel")}
               </Button>
@@ -507,12 +502,15 @@ export function SiteEditDialog({
                 type="submit"
                 size="sm"
                 disabled={loading}
-                className="text-xs h-10 px-5 font-semibold cursor-pointer bg-primary text-primary-foreground hover:bg-primary/90"
+                className="text-sm h-10 px-5 font-semibold cursor-pointer bg-primary text-primary-foreground hover:bg-primary/90"
               >
                 {loading ? t("common.saving") : locale === "th" ? "บันทึกการแก้ไข" : "Save Changes"}
               </Button>
             </DialogFooter>
           </form>
+            </TabsContent>
+            {payloadConfig && <TabsContent value="payload" className="min-h-0 overflow-y-auto p-1"><PayloadConnectionCard config={payloadConfig} onRefresh={refreshPayload} editable/></TabsContent>}
+          </Tabs>
         )}
       </DialogContent>
     </Dialog>

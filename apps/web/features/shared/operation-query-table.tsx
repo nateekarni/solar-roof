@@ -1,18 +1,23 @@
 'use client';
+import { ChoiceSelect } from '../../components/ui/choice-select';
 
 import * as React from 'react';
 import { useSearchParams } from 'next/navigation';
 import type { OperationPage,OperationRow,OperationQuery } from '@solar/api-contracts';
 import {useOperationQuery} from "./use-operation-query";
 import { apiClient } from '../../lib/api-client';
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import { Label } from '../../components/ui/label';
 import { Button } from '../../components/ui/button';
-import { Input } from '../../components/ui/input';
+import { DatePicker } from "../../components/ui/date-picker";
+import { SearchInput } from '../../components/ui/search-input';
 import { OperationTable, type OperationTableProps } from './operation-table';
+import { useLocale } from '../../providers/locale-provider';
 
-const sorts:Record<string,string[]>={schools:['name','code','status'],sites:['name','status','capacityMwp'],billing:['period','amount','status'],contracts:['startDate','status'],documents:['issueDate','documentNumber','amount','status'],receipts:['issueDate','documentNumber','amount','status'],alerts:['occurredAt','severity','status'],notifications:['sentAt','status'],reports:['generatedAt','title','status'],users:['displayName','email','role','status'],audit:['time','action']};
 const queryKeys=['search','sort','direction','from','to','limit','cursor'];
 
 export function OperationQueryTable({ initial, ...props }: Omit<OperationTableProps,'rows'|'columns'> & {initial:OperationPage<OperationRow>}) {
+  const th=useLocale()==='th';
   const searchParams=useSearchParams();
   const {setQuery}=useOperationQuery();
   const query=React.useMemo(()=>{const q=new URLSearchParams();for(const key of queryKeys){const value=searchParams.get(key);if(value!==null)q.set(key,value);}return q.toString();},[searchParams]);
@@ -21,6 +26,8 @@ export function OperationQueryTable({ initial, ...props }: Omit<OperationTablePr
   const [loading,setLoading]=React.useState(false),[error,setError]=React.useState('');
   const history=React.useRef<string[]>([]);
   const revision=React.useRef(0);
+  const filterKey = React.useMemo(() => { const params = new URLSearchParams(query); params.delete("cursor"); return params.toString(); }, [query]);
+  React.useEffect(() => { history.current = []; }, [filterKey]);
   const update=React.useCallback((changes:Partial<OperationQuery>,reset=true)=>{
     if(reset)history.current=[];
     setQuery(changes);
@@ -47,23 +54,41 @@ export function OperationQueryTable({ initial, ...props }: Omit<OperationTablePr
       .finally(()=>{if(current===revision.current&&!controller.signal.aborted)setLoading(false);});
     return()=>controller.abort();
   },[props.resource,query,initial]);
-  return <div className="space-y-3" aria-busy={loading}>
-    <div className="flex flex-wrap items-center gap-2">
-      <Input type="search" aria-label="Operations search" placeholder="ค้นหา / Search" value={search} onChange={e=>setSearch(e.target.value)} className="max-w-xs" />
-      <label>Sort <select aria-label="Operation sort" value={searchParams.get('sort')??sorts[props.resource]?.[0]} onChange={e=>update({sort:e.target.value})}>{sorts[props.resource]?.map(key=><option key={key} value={key}>{key}</option>)}</select></label>
-      <label>Order <select aria-label="Operation direction" value={searchParams.get('direction')??(['schools','sites','users'].includes(props.resource)?'asc':'desc')} onChange={e=>update({direction:e.target.value==='asc'?'asc':'desc'})}><option value="asc">Ascending</option><option value="desc">Descending</option></select></label>
-      <label>Rows <select aria-label="Operation page size" value={searchParams.get('limit')??'25'} onChange={e=>update({limit:Number(e.target.value)})}>{[25,50,100].map(size=><option key={size}>{size}</option>)}</select></label>
-      {!['schools','sites','users'].includes(props.resource)&&<><Input type="date" aria-label="Operation from date" value={searchParams.get('from')??''} onChange={e=>update({from:e.target.value})} className="w-auto"/><Input type="date" aria-label="Operation to date" value={searchParams.get('to')??''} onChange={e=>update({to:e.target.value})} className="w-auto"/></>}
-    </div>
+  const goToLastPage = async () => {
+    const current = revision.current;
+    setLoading(true); setError('');
+    const params = new URLSearchParams(query); params.delete('cursor');
+    const cursors: string[] = []; let cursor = '';
+    try {
+      while (true) {
+        if (cursor) params.set('cursor', cursor);
+        const page = await apiClient.get<OperationPage<OperationRow>>(`/v1/operations/${props.resource}?${params}`, {cache:'no-store'});
+        if (revision.current !== current) return;
+        if (!page.page.hasMore || !page.page.nextCursor) break;
+        if (cursors.includes(page.page.nextCursor) || page.page.nextCursor === cursor) throw new Error(th?'ไม่สามารถโหลดหน้าสุดท้ายได้':'Unable to load last page');
+        cursors.push(cursor); cursor = page.page.nextCursor;
+      }
+      history.current = cursors;
+      update({cursor}, false);
+    } catch (e) { if (revision.current === current) setError(e instanceof Error ? e.message : 'Unable to load last page'); }
+    finally { if (revision.current === current) setLoading(false); }
+  };
+  const toolbar = <div className="flex flex-wrap items-end justify-between gap-3">
+    <div className="w-full max-w-xs space-y-2"><Label htmlFor={`${props.resource}-search`}>{th?'ค้นหา':'Search'}</Label><SearchInput id={`${props.resource}-search`} placeholder={th?'ค้นหา…':'Search…'} value={search} onChange={e=>setSearch(e.target.value)} /></div>
+    {!['schools','sites','users'].includes(props.resource)&&<div className="ml-auto flex flex-wrap items-end gap-2"><div className="space-y-2"><Label htmlFor={`${props.resource}-from`}>{th?'วันที่เริ่มต้น':'From date'}</Label><DatePicker id={`${props.resource}-from`} value={searchParams.get('from')??''} onValueChange={value=>update({from:value})} max={searchParams.get('to')||undefined}/></div><div className="space-y-2"><Label htmlFor={`${props.resource}-to`}>{th?'วันที่สิ้นสุด':'To date'}</Label><DatePicker id={`${props.resource}-to`} value={searchParams.get('to')??''} onValueChange={value=>update({to:value})} min={searchParams.get('from')||undefined}/></div></div>}
+  </div>;
+return <div className="space-y-3" aria-busy={loading}>
     {error&&<p role="alert">{error}</p>}
-    <div className="flex items-center justify-between gap-2">
-      <p role="status">{loading?'Loading…':`${data.rows.length} rows on this page`}</p>
-      <div className="flex gap-2">
-        <Button aria-label="First operation page" variant="outline" disabled={loading||!searchParams.has('cursor')} onClick={()=>update({cursor:''})}>First</Button>
-        <Button aria-label="Previous operation page" variant="outline" disabled={loading||history.current.length===0} onClick={()=>update({cursor:history.current.pop()??''},false)}>Previous</Button>
-        <Button aria-label="Next operation page" variant="outline" disabled={loading||!data.page.hasMore} onClick={()=>{history.current.push(searchParams.get('cursor')??'');update({cursor:data.page.nextCursor??''},false);}}>Next</Button>
-      </div>
+    <OperationTable {...props} columns={data.columns} rows={error?[]:data.rows} summary={summary} toolbar={toolbar} serverManaged />
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3">
+      <p role="status" className="text-sm text-muted-foreground">{loading?(th?'กำลังโหลด…':'Loading…'):(th?`${data.rows.length} รายการในหน้านี้`:`${data.rows.length} rows on this page`)}</p>
+      <div className="flex flex-wrap items-center gap-3"><span className="text-xs text-muted-foreground">{th?'ต่อหน้า':'Rows per page'}</span><ChoiceSelect aria-label={th?'จำนวนต่อหน้า':'Rows per page'} className="h-10 w-16" value={searchParams.get('limit')??'25'} onChange={e=>update({limit:Number(e.target.value)})}>{[10,25,50,100].map(size=><option key={size} value={size}>{size}</option>)}</ChoiceSelect><span className="text-xs text-muted-foreground">{th?'หน้า':'Page'} {searchParams.has('cursor')?history.current.length+1:1}</span><div className="flex gap-1">
+        <Button aria-label="First operation page" variant="outline" size="icon" className="size-10" disabled={loading||!searchParams.has('cursor')} onClick={()=>update({cursor:''})}><ChevronsLeft className="size-3.5"/></Button>
+        <Button aria-label="Previous operation page" variant="outline" size="icon" className="size-10" disabled={loading||history.current.length===0} onClick={()=>update({cursor:history.current.pop()??''},false)}><ChevronLeft className="size-3.5"/></Button>
+        <Button aria-label="Next operation page" variant="outline" size="icon" className="size-10" disabled={loading||!data.page.hasMore} onClick={()=>{history.current.push(searchParams.get('cursor')??'');update({cursor:data.page.nextCursor??''},false);}}><ChevronRight className="size-3.5"/></Button>
+        <Button aria-label="Last operation page" variant="outline" size="icon" className="size-10" disabled={loading||!data.page.hasMore} onClick={()=>void goToLastPage()}><ChevronsRight className="size-3.5"/></Button>
+      </div></div>
     </div>
-    <OperationTable {...props} columns={data.columns} rows={error?[]:data.rows} summary={summary} serverManaged />
+
   </div>;
 }

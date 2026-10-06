@@ -13,3 +13,5 @@ const fields:Record<string,string[]>={
  audit:['time','action','entityType','entityId','actor','reason'],
 };
 export function operationKeys(resource:string,row:Record<string,unknown>,idKey='id'):string[]{return fields[resource] || Object.keys(row).filter(key=>key!==idKey);}
+
+export function isTemporalColumn(key: string): boolean { return key.toLowerCase().includes("date") || /(?:At|_at)$/.test(key) || key.toLowerCase().includes("time") || key.includes("วัน") || key.includes("เวลา"); }

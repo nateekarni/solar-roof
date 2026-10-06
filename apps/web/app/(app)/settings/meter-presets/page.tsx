@@ -1,18 +1,23 @@
 "use client";
+
+import { AddButton } from "../../../../components/ui/add-button";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "../../../../components/ui/tabs";
+import { PayloadProfileSettings } from "../../../../features/shared/payload-profile-settings";
 import * as React from "react";
 import Link from "next/link";
 import {
   Activity,
   ChevronLeft,
   Cpu,
-  Plus,
   Trash2,
   CheckCircle2,
   Search,
   Sliders,
   Sparkles,
   Layers,
+  Pencil,
 } from "lucide-react";
+import {Table,TableHeader,TableHead,TableBody,TableRow,TableCell} from "../../../../components/ui/table";
 import { Button } from "../../../../components/ui/button";
 import {
   Card,
@@ -40,223 +45,12 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "../../../../components/ui/dialog";
+import { AppLoading } from "../../../../components/feedback/app-loading";
 import { notify } from "../../../../components/feedback/notifications";
 import { apiClient } from "../../../../lib/api-client";
-import { useT } from "../../../../providers/locale-provider";
+import { useT, useLocale } from "../../../../providers/locale-provider";
 
-export interface RegisterField {
-  semanticField: string;
-  nameTh: string;
-  registerAddress: string;
-  dataType: string;
-  byteOrder: string;
-  scale: number;
-  unit: string;
-}
-
-export interface MeterPresetItem {
-  id: string;
-  brand: string;
-  model: string;
-  deviceType: "meter" | "smart_logger" | "smart_locker";
-  description: string;
-  registers: RegisterField[];
-}
-
-const DEFAULT_PRESETS: MeterPresetItem[] = [
-  {
-    id: "preset-1",
-    brand: "Huawei",
-    model: "SUN2000-SmartLogger",
-    deviceType: "smart_logger",
-    description: "Huawei SmartLogger 3000A / Smart Inverter Data Collector",
-    registers: [
-      {
-        semanticField: "voltage",
-        nameTh: "แรงดันไฟฟ้า (Phase A-B)",
-        registerAddress: "32069",
-        dataType: "uint16",
-        byteOrder: "AB",
-        scale: 0.1,
-        unit: "V",
-      },
-      {
-        semanticField: "current",
-        nameTh: "กระแสไฟฟ้า (Phase A)",
-        registerAddress: "32072",
-        dataType: "int32",
-        byteOrder: "ABCD",
-        scale: 0.01,
-        unit: "A",
-      },
-      {
-        semanticField: "active_power",
-        nameTh: "กำลังไฟฟ้าจริง (Active Power)",
-        registerAddress: "32080",
-        dataType: "int32",
-        byteOrder: "ABCD",
-        scale: 0.001,
-        unit: "kW",
-      },
-      {
-        semanticField: "total_energy",
-        nameTh: "พลังงานไฟฟ้ารวมสะสม (Total Energy)",
-        registerAddress: "32106",
-        dataType: "uint32",
-        byteOrder: "ABCD",
-        scale: 0.01,
-        unit: "kWh",
-      },
-      {
-        semanticField: "wind_speed",
-        nameTh: "ความเร็วลม / กระแสแรงลม",
-        registerAddress: "40032",
-        dataType: "float32",
-        byteOrder: "ABCD",
-        scale: 1.0,
-        unit: "m/s",
-      },
-    ],
-  },
-  {
-    id: "preset-2",
-    brand: "Acrel",
-    model: "ADW200-MultiCircuit",
-    deviceType: "meter",
-    description: "Acrel ADW200 Multi-channel IoT Power Meter",
-    registers: [
-      {
-        semanticField: "voltage",
-        nameTh: "แรงดัน (Voltage Line-Neutral)",
-        registerAddress: "0001H",
-        dataType: "uint16",
-        byteOrder: "AB",
-        scale: 0.1,
-        unit: "V",
-      },
-      {
-        semanticField: "current",
-        nameTh: "กระแส (Current)",
-        registerAddress: "0007H",
-        dataType: "uint16",
-        byteOrder: "AB",
-        scale: 0.01,
-        unit: "A",
-      },
-      {
-        semanticField: "active_power",
-        nameTh: "กำลังไฟฟ้า (Active Power)",
-        registerAddress: "0013H",
-        dataType: "int32",
-        byteOrder: "ABCD",
-        scale: 0.001,
-        unit: "kW",
-      },
-      {
-        semanticField: "total_energy",
-        nameTh: "พลังงานรวม (Total Active Energy)",
-        registerAddress: "0030H",
-        dataType: "uint32",
-        byteOrder: "ABCD",
-        scale: 0.01,
-        unit: "kWh",
-      },
-    ],
-  },
-  {
-    id: "preset-3",
-    brand: "Eastron",
-    model: "SDM630-Modbus-V2",
-    deviceType: "meter",
-    description: "Eastron SDM630 Three Phase Multifunction Energy Meter",
-    registers: [
-      {
-        semanticField: "voltage",
-        nameTh: "แรงดันไฟฟ้า (Line to Neutral Volts)",
-        registerAddress: "30001",
-        dataType: "float32",
-        byteOrder: "ABCD",
-        scale: 1.0,
-        unit: "V",
-      },
-      {
-        semanticField: "current",
-        nameTh: "กระแสไฟฟ้า (Current Amps)",
-        registerAddress: "30007",
-        dataType: "float32",
-        byteOrder: "ABCD",
-        scale: 1.0,
-        unit: "A",
-      },
-      {
-        semanticField: "active_power",
-        nameTh: "กำลังไฟฟ้า (Total System Power)",
-        registerAddress: "30053",
-        dataType: "float32",
-        byteOrder: "ABCD",
-        scale: 0.001,
-        unit: "kW",
-      },
-      {
-        semanticField: "total_energy",
-        nameTh: "พลังงานไฟฟ้ารวม (Total Imported Energy)",
-        registerAddress: "30343",
-        dataType: "float32",
-        byteOrder: "ABCD",
-        scale: 1.0,
-        unit: "kWh",
-      },
-    ],
-  },
-];
-
-export default function MeterPresetsPage() {
-  const t = useT();
-  const [presets, setPresets] = React.useState<MeterPresetItem[]>([]);
-  const [loading, setLoading] = React.useState(true);
-  const [apiError, setApiError] = React.useState(false);
-
-  React.useEffect(() => {
-    setLoading(true);
-    apiClient
-      .get<any[]>("/v1/meter-presets")
-      .then((data) => {
-        if (Array.isArray(data) && data.length > 0) {
-          const parsed = data.map((d) => ({
-            id: d.id,
-            brand: d.brand,
-            model: d.model,
-            deviceType: d.deviceType || "meter",
-            description: `${d.brand} ${d.model}`,
-            registers:
-              typeof d.registers === "string"
-                ? JSON.parse(d.registers)
-                : d.registers || [],
-          }));
-          setPresets(parsed);
-          setApiError(false);
-        } else {
-          setPresets(DEFAULT_PRESETS);
-          setApiError(false);
-        }
-      })
-      .catch(() => {
-        setPresets(DEFAULT_PRESETS);
-        setApiError(true);
-      })
-      .finally(() => setLoading(false));
-  }, []);
-
-  const [searchTerm, setSearchTerm] = React.useState("");
-  const [typeFilter, setTypeFilter] = React.useState<string>("all");
-  const [isDialogOpen, setIsDialogOpen] = React.useState(false);
-
-  // New Preset Form State
-  const [brand, setBrand] = React.useState("");
-  const [model, setModel] = React.useState("");
-  const [deviceType, setDeviceType] = React.useState<"meter" | "smart_logger" | "smart_locker">("meter");
-  const [description, setDescription] = React.useState("");
-  const [registers, setRegisters] = React.useState<RegisterField[]>([
+const createDefaultRegisters = (): RegisterField[] => [
     {
       semanticField: "voltage",
       nameTh: "แรงดันไฟฟ้า",
@@ -293,7 +87,77 @@ export default function MeterPresetsPage() {
       scale: 0.01,
       unit: "kWh",
     },
-  ]);
+  ];
+
+export interface RegisterField {
+  semanticField: string;
+  nameTh: string;
+  registerAddress: string;
+  dataType: string;
+  byteOrder: string;
+  scale: number;
+  unit: string;
+}
+
+export interface MeterPresetItem {
+  id: string;
+  brand: string;
+  model: string;
+  deviceType: "meter" | "smart_logger" | "smart_locker";
+  description: string;
+  registers: RegisterField[];
+}
+
+export default function MeterPresetsPage() {
+  const t = useT();
+  const locale = useLocale();
+  const text = (th: string, en: string) => locale === "th" ? th : en;
+  const [presets, setPresets] = React.useState<MeterPresetItem[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [apiError, setApiError] = React.useState(false);
+
+  React.useEffect(() => {
+    setLoading(true);
+    apiClient
+      .get<any[]>("/v1/meter-presets")
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          const parsed = data.map((d) => ({
+            id: d.id,
+            brand: d.brand,
+            model: d.model,
+            deviceType: d.deviceType || "meter",
+            description: `${d.brand} ${d.model}`,
+            registers:
+              typeof d.registers === "string"
+                ? JSON.parse(d.registers)
+                : d.registers || [],
+          }));
+          setPresets(parsed);
+          setApiError(false);
+        } else {
+          setPresets([]);
+          setApiError(false);
+        }
+      })
+      .catch(() => {
+        setPresets([]);
+        setApiError(true);
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  const [searchTerm, setSearchTerm] = React.useState("");
+  const [typeFilter, setTypeFilter] = React.useState<string>("all");
+  const [editingPresetId, setEditingPresetId] = React.useState<string | null>(null);
+  const [isDialogOpen, setIsDialogOpen] = React.useState(false);
+
+  // New Preset Form State
+  const [brand, setBrand] = React.useState("");
+  const [model, setModel] = React.useState("");
+  const [deviceType, setDeviceType] = React.useState<"meter" | "smart_logger" | "smart_locker">("meter");
+  const [description, setDescription] = React.useState("");
+  const [registers, setRegisters] = React.useState<RegisterField[]>(createDefaultRegisters());
 
   const handleAddPreset = async () => {
     if (!brand.trim() || !model.trim()) {
@@ -302,12 +166,13 @@ export default function MeterPresetsPage() {
     }
 
     try {
-      const saved = await apiClient.post<any>("/v1/meter-presets", {
+      const payload = {
         brand: brand.trim(),
         model: model.trim(),
         deviceType,
         registers,
-      });
+      };
+      const saved = editingPresetId ? await apiClient.put<any>(`/v1/meter-presets/${editingPresetId}`, payload) : await apiClient.post<any>("/v1/meter-presets", payload);
 
       const newPreset: MeterPresetItem = {
         id: saved.id,
@@ -378,6 +243,8 @@ export default function MeterPresetsPage() {
     return matchesSearch && matchesType;
   });
 
+  if (loading) return <main className="content"><AppLoading message={text("กำลังโหลดชุดรีจิสเตอร์…", "Loading register presets…")} /></main>;
+
   return (
     <main className="content">
       <div className="ops-content space-y-6">
@@ -388,73 +255,76 @@ export default function MeterPresetsPage() {
             className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors mb-1"
           >
             <ChevronLeft className="size-4" />
-            <span>การตั้งค่า</span>
+            <span>{text("การตั้งค่า", "Settings")}</span>
           </Link>
         </div>
 
-        {/* Header */}
-        <div className="page-heading flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+
+        <Tabs defaultValue="profiles" className="w-full gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-4">        <header><h1 className="flex items-center gap-2.5 text-xl font-bold tracking-tight md:text-2xl">{t("navigation.meterPresets")}</h1><p className="mt-1 text-sm text-muted-foreground">{text("จัดการโปรไฟล์ข้อมูลและชุดรีจิสเตอร์สำหรับอุปกรณ์", "Manage payload profiles and register mappings for devices.")}</p></header><TabsList className="ml-auto h-10 p-0 group-data-horizontal/tabs:h-10 bg-primary/10" aria-label={text("ประเภทการตั้งค่ามิเตอร์", "Meter configuration type")}><TabsTrigger className="h-10 px-4 data-active:bg-primary data-active:text-primary-foreground" value="profiles">{text("โปรไฟล์ข้อมูล", "Payload profiles")}</TabsTrigger><TabsTrigger className="h-10 px-4 data-active:bg-primary data-active:text-primary-foreground" value="registers">{text("ชุดรีจิสเตอร์", "Register presets")}</TabsTrigger></TabsList></div>
+          <TabsContent value="profiles"><PayloadProfileSettings /></TabsContent>
+          <TabsContent value="registers">
+        <section aria-labelledby="register-presets-heading" className="flex flex-col gap-4">
+        {/* Register presets */}
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div>
-            <span className="eyebrow">SYSTEM CONFIGURATION</span>
-            <h1 className="text-xl font-bold tracking-tight text-foreground md:text-2xl flex items-center gap-2.5">
-              <Sliders className="size-6 text-primary" />
-              {t("navigation.meterPresets")}
-            </h1>
+
+            <h2 id="register-presets-heading" className="text-lg font-semibold">{text("ชุดรีจิสเตอร์", "Register presets")}</h2>
             <p className="text-xs text-muted-foreground mt-0.5">
-              จัดการ Preset สำหรับ Register Mapping ของมิเตอร์และอุปกรณ์ IoT เพื่อนำไป Auto-fill ตอนเพิ่มอุปกรณ์
+              {text("ชุดรีจิสเตอร์ตามยี่ห้อและรุ่น สำหรับเติมค่าตอนเพิ่มอุปกรณ์", "Brand and model register mappings used to fill defaults when adding a device.")}
             </p>
           </div>
 
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
-              <Button size="sm" className="font-semibold shadow-xs flex items-center gap-1.5 cursor-pointer">
-                <Plus className="size-4" />
-                เพิ่ม Preset ใหม่
-              </Button>
+              <AddButton onClick={() => {setEditingPresetId(null); setBrand(""); setModel(""); setDescription(""); setDeviceType("meter"); setRegisters(createDefaultRegisters());}} size="sm" className="font-semibold shadow-xs flex items-center gap-1.5 cursor-pointer">
+
+                {text("เพิ่มชุดรีจิสเตอร์", "Add register preset")}
+              </AddButton>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-4xl w-full max-h-[88vh] overflow-y-auto sm:rounded-2xl sm:p-6">
+            <DialogContent className="w-[calc(100vw-2rem)] max-w-none sm:w-[80vw] sm:max-w-[80vw] max-h-[90vh] overflow-y-auto sm:rounded-2xl sm:p-6">
               <DialogHeader>
                 <DialogTitle className="text-base font-semibold flex items-center gap-2">
                   <div className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
                     <Cpu className="size-4" />
                   </div>
-                  เพิ่ม Preset รุ่นและยี่ห้อมิเตอร์
+                  {editingPresetId ? text("แก้ไขชุดรีจิสเตอร์", "Edit register preset") : text("เพิ่มชุดรีจิสเตอร์", "Add register preset")}
                 </DialogTitle>
                 <DialogDescription className="text-xs text-muted-foreground">
-                  กำหนด Address และ Register Mapping มาตรฐานสำหรับใช้อ้างอิงตอนเพิ่มอุปกรณ์
+                  {text("กำหนดที่อยู่รีจิสเตอร์มาตรฐานสำหรับใช้อ้างอิงตอนเพิ่มอุปกรณ์", "Define standard register addresses and mappings for new devices.")}
                 </DialogDescription>
               </DialogHeader>
 
               <div className="space-y-4 py-2">
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">ยี่ห้อ (Brand)</Label>
+                  <div className="space-y-2">
+                    <Label className="text-xs">{text("ยี่ห้อ (Brand)", "Brand")}</Label>
                     <Input
                       placeholder="เช่น Huawei, Acrel, Eastron"
                       value={brand}
                       onChange={(e) => setBrand(e.target.value)}
-                      className="h-9 text-xs"
+                      className="h-10 text-xs"
                     />
                   </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">รุ่น (Model)</Label>
+                  <div className="space-y-2">
+                    <Label className="text-xs">{text("รุ่น (Model)", "Model")}</Label>
                     <Input
                       placeholder="เช่น SUN2000, ADW200, SDM630"
                       value={model}
                       onChange={(e) => setModel(e.target.value)}
-                      className="h-9 text-xs"
+                      className="h-10 text-xs"
                     />
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">ประเภทอุปกรณ์ (Device Type)</Label>
+                  <div className="space-y-2">
+                    <Label className="text-xs">{text("ประเภทอุปกรณ์ (Device Type)", "Device type")}</Label>
                     <Select
                       value={deviceType}
                       onValueChange={(val: any) => setDeviceType(val)}
                     >
-                      <SelectTrigger className="h-9 text-xs">
+                      <SelectTrigger className="h-10 text-xs">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -464,13 +334,13 @@ export default function MeterPresetsPage() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">คำอธิบาย</Label>
+                  <div className="space-y-2">
+                    <Label className="text-xs">{text("คำอธิบาย", "Description")}</Label>
                     <Input
                       placeholder="รายละเอียดเพิ่มเติมของรุ่นนี้"
                       value={description}
                       onChange={(e) => setDescription(e.target.value)}
-                      className="h-9 text-xs"
+                      className="h-10 text-xs"
                     />
                   </div>
                 </div>
@@ -480,37 +350,37 @@ export default function MeterPresetsPage() {
                   <div className="flex items-center justify-between">
                     <Label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
                       <Layers className="size-3.5 text-primary" />
-                      รายการ Register ที่แมป (Mapping Fields)
+                      {text("รายการ Register ที่แมป (Mapping Fields)", "Register mapping fields")}
                     </Label>
-                    <Button
+                    <AddButton
                       type="button"
                       variant="outline"
-                      size="sm"
+
                       onClick={handleAddRegisterRow}
-                      className="h-7 text-xs px-2"
+                      className=" px-2"
                     >
-                      <Plus className="size-3 mr-1" />
-                      เพิ่ม Register
-                    </Button>
+
+                      {text("เพิ่ม Register", "Add register")}
+                    </AddButton>
                   </div>
 
                   <div className="rounded-lg border border-border overflow-hidden">
-                    <table className="w-full text-left text-[11px]">
-                      <thead className="bg-muted/70 text-muted-foreground border-b border-border">
-                        <tr>
-                          <th className="p-2">ตัวแปร (Field)</th>
-                          <th className="p-2">ชื่อเรียก</th>
-                          <th className="p-2">Register Address</th>
-                          <th className="p-2">Data Type</th>
-                          <th className="p-2">Scale</th>
-                          <th className="p-2">Unit</th>
-                          <th className="p-2 w-8"></th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border">
+                    <Table className="w-full text-left text-[11px]">
+                      <TableHeader className="bg-muted/70 text-muted-foreground border-b border-border">
+                        <TableRow>
+                          <TableHead className="p-2">{text("ตัวแปร (Field)", "Field")}</TableHead>
+                          <TableHead className="p-2">{text("ชื่อเรียก", "Display name")}</TableHead>
+                          <TableHead className="p-2">Register Address</TableHead>
+                          <TableHead className="p-2">Data Type</TableHead>
+                          <TableHead className="p-2">Scale</TableHead>
+                          <TableHead className="p-2">Unit</TableHead>
+                          <TableHead className="p-2 w-8"></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody className="divide-y divide-border">
                         {registers.map((reg, idx) => (
-                          <tr key={idx} className="hover:bg-muted/30">
-                            <td className="p-1.5">
+                          <TableRow key={idx} className="hover:bg-muted/30">
+                            <TableCell className="p-1.5">
                               <Select
                                 value={reg.semanticField}
                                 onValueChange={(val) => {
@@ -530,7 +400,7 @@ export default function MeterPresetsPage() {
                                   }
                                 }}
                               >
-                                <SelectTrigger className="h-8 text-xs w-44">
+                                <SelectTrigger className="h-10 text-xs w-44">
                                   <SelectValue placeholder="เลือกตัวแปร" />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -542,33 +412,33 @@ export default function MeterPresetsPage() {
                                   <SelectItem value="custom" className="text-xs">กำหนดเอง (custom)</SelectItem>
                                 </SelectContent>
                               </Select>
-                            </td>
-                            <td className="p-1.5">
+                            </TableCell>
+                            <TableCell className="p-1.5">
                               <Input
                                 value={reg.nameTh}
                                 onChange={(e) =>
                                   handleUpdateRegister(idx, "nameTh", e.target.value)
                                 }
-                                className="h-8 text-xs w-32"
+                                className="h-10 text-xs w-32"
                               />
-                            </td>
-                            <td className="p-1.5">
+                            </TableCell>
+                            <TableCell className="p-1.5">
                               <Input
                                 value={reg.registerAddress}
                                 onChange={(e) =>
                                   handleUpdateRegister(idx, "registerAddress", e.target.value)
                                 }
-                                className="h-8 text-xs w-24 font-mono"
+                                className="h-10 text-xs w-24 font-mono"
                               />
-                            </td>
-                            <td className="p-1.5">
+                            </TableCell>
+                            <TableCell className="p-1.5">
                               <Select
                                 value={reg.dataType}
                                 onValueChange={(val) =>
                                   handleUpdateRegister(idx, "dataType", val)
                                 }
                               >
-                                <SelectTrigger className="h-8 text-xs w-28">
+                                <SelectTrigger className="h-10 text-xs w-28">
                                   <SelectValue placeholder="Data Type" />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -579,8 +449,8 @@ export default function MeterPresetsPage() {
                                   <SelectItem value="float32" className="text-xs">FLOAT32</SelectItem>
                                 </SelectContent>
                               </Select>
-                            </td>
-                            <td className="p-1.5">
+                            </TableCell>
+                            <TableCell className="p-1.5">
                               <Input
                                 type="number"
                                 step="0.001"
@@ -588,33 +458,36 @@ export default function MeterPresetsPage() {
                                 onChange={(e) =>
                                   handleUpdateRegister(idx, "scale", Number(e.target.value))
                                 }
-                                className="h-7 text-[11px] w-16"
+                                className="h-10 text-[11px] w-16"
                               />
-                            </td>
-                            <td className="p-1.5">
+                            </TableCell>
+                            <TableCell className="p-1.5">
                               <Input
                                 value={reg.unit}
                                 onChange={(e) =>
                                   handleUpdateRegister(idx, "unit", e.target.value)
                                 }
-                                className="h-7 text-[11px] w-14"
+                                className="h-10 text-[11px] w-14"
                               />
-                            </td>
-                            <td className="p-1.5 text-center">
+                            </TableCell>
+                            <TableCell className="p-1.5 text-center">
                               {registers.length > 1 && (
-                                <button
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
                                   type="button"
+                                  aria-label={text("ลบแถวรีจิสเตอร์", "Delete register row")}
                                   onClick={() => handleRemoveRegisterRow(idx)}
-                                  className="text-destructive hover:opacity-80 p-1"
+                                  className="h-auto gap-0 px-0 text-destructive hover:opacity-80 p-1"
                                 >
                                   <Trash2 className="size-3.5" />
-                                </button>
+                                </Button>
                               )}
-                            </td>
-                          </tr>
+                            </TableCell>
+                          </TableRow>
                         ))}
-                      </tbody>
-                    </table>
+                      </TableBody>
+                    </Table>
                   </div>
                 </div>
               </div>
@@ -625,10 +498,10 @@ export default function MeterPresetsPage() {
                   size="sm"
                   onClick={() => setIsDialogOpen(false)}
                 >
-                  ยกเลิก
+                  {text("ยกเลิก", "Cancel")}
                 </Button>
                 <Button size="sm" onClick={handleAddPreset}>
-                  บันทึก Preset
+                  {text("บันทึก Preset", "Save preset")}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -636,23 +509,23 @@ export default function MeterPresetsPage() {
         </div>
 
         {/* Filters */}
-        <div className="flex flex-col sm:flex-row items-center gap-3">
-          <div className="relative flex-1 w-full">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="w-full max-w-xs space-y-2"><Label htmlFor="register-search">{text("ค้นหาชุดรีจิสเตอร์", "Search register presets")}</Label><div className="relative">
+            <Search className="pointer-events-none absolute left-[calc(0.75rem+1px)] top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
             <Input
-              placeholder="ค้นหาตามชื่อยี่ห้อ, รุ่น, หรือคำอธิบาย..."
+              id="register-search" placeholder={text("ค้นหายี่ห้อ รุ่น หรือคำอธิบาย", "Search brand, model, or description")}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-9 h-9 text-xs"
+              className="pl-10 h-10"
             />
           </div>
-          <div className="flex items-center gap-2 w-full sm:w-auto">
+          </div><div className="w-full space-y-2 sm:w-auto"><Label htmlFor="register-type">{text("ประเภทอุปกรณ์", "Device type")}</Label>
             <Select value={typeFilter} onValueChange={setTypeFilter}>
-              <SelectTrigger className="h-9 text-xs w-full sm:w-44">
-                <SelectValue placeholder="ทุกประเภทอุปกรณ์" />
+              <SelectTrigger id="register-type" className="h-10 w-full sm:w-52">
+                <SelectValue placeholder={text("ทุกประเภทอุปกรณ์", "All device types")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">ทุกประเภทอุปกรณ์</SelectItem>
+                <SelectItem value="all">{text("ทุกประเภทอุปกรณ์", "All device types")}</SelectItem>
                 <SelectItem value="meter">Power Meter</SelectItem>
                 <SelectItem value="smart_logger">Smart Logger</SelectItem>
                 <SelectItem value="smart_locker">Smart Locker</SelectItem>
@@ -664,20 +537,14 @@ export default function MeterPresetsPage() {
         {/* API Error Fallback Notice */}
         {apiError && (
           <div className="flex items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-400">
-            <span>⚠️ ไม่สามารถเชื่อมต่อ API ได้ — แสดงข้อมูลตัวอย่างเริ่มต้น (DEFAULT_PRESETS)</span>
+            <span>{text("ไม่สามารถโหลด Preset มิเตอร์ได้ กรุณาลองใหม่", "Could not load register presets. Please try again.")}</span>
           </div>
         )}
 
         {/* Preset Cards Grid */}
-        {loading ? (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="panel h-48 animate-pulse bg-muted/60 rounded-xl" />
-            ))}
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="p-8 text-center text-xs text-muted-foreground border border-dashed rounded-xl">
-            ไม่พบ Preset ที่ตรงกับเงื่อนไขการค้นหา
+        {filtered.length === 0 ? (
+          <div className="p-8 text-center text-xs text-muted-foreground border rounded-xl">
+            {text("ไม่พบ Preset ที่ตรงกับเงื่อนไขการค้นหา", "No register presets match your search.")}
           </div>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -707,14 +574,17 @@ export default function MeterPresetsPage() {
                         </CardTitle>
                       </div>
 
-                      <button
+                      <div className="flex gap-1"><Button variant="ghost" size="icon-sm" aria-label={text("แก้ไขชุดรีจิสเตอร์", "Edit register preset")} onClick={() => {setEditingPresetId(item.id); setBrand(item.brand); setModel(item.model); setDescription(item.description); setDeviceType(item.deviceType); setRegisters(item.registers.map(r=>({...r}))); setIsDialogOpen(true);}}><Pencil className="size-3.5"/></Button><Button
+  variant="ghost"
+  size="sm"
                         type="button"
                         onClick={() => handleDeletePreset(item.id)}
-                        className="text-muted-foreground hover:text-destructive transition-colors p-1 cursor-pointer"
-                        title="ลบ Preset"
+                        className="h-auto gap-0 px-0 text-muted-foreground hover:text-destructive transition-colors p-1 cursor-pointer"
+                        aria-label={text("ลบชุดรีจิสเตอร์", "Delete register preset")}
+                        title={text("ลบชุดรีจิสเตอร์", "Delete register preset")}
                       >
                         <Trash2 className="size-3.5" />
-                      </button>
+                      </Button></div>
                     </div>
                     <CardDescription className="text-xs text-muted-foreground line-clamp-2 mt-1">
                       {item.description}
@@ -724,19 +594,19 @@ export default function MeterPresetsPage() {
                   <CardContent className="p-0 pt-2 border-t border-border/60">
                     <div className="space-y-1.5">
                       <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-                        Register Mapping ({item.registers.length} รายการ):
+                        {text("รีจิสเตอร์", "Register mappings")} ({item.registers.length})
                       </span>
                       <div className="space-y-1">
                         {item.registers.map((r, i) => (
                           <div
                             key={i}
-                            className="flex items-center justify-between text-[11px] p-1.5 rounded-md bg-muted/40 font-mono"
+                            className="flex flex-col gap-1 text-sm p-2 rounded-md bg-muted/40 font-mono"
                           >
-                            <span className="font-sans font-medium text-foreground truncate max-w-[130px]">
-                              {r.nameTh || r.semanticField}
+                            <span className="font-sans font-medium text-foreground break-words">
+                              {locale === "th" ? (r.nameTh || r.semanticField).replace(/ \([^)]*\)$/, "") : (r.nameTh?.match(/\(([^)]*)\)$/)?.[1] || r.semanticField)}
                             </span>
                             <span className="text-muted-foreground shrink-0">
-                              addr: <strong className="text-primary">{r.registerAddress}</strong> ({r.unit || "-"})
+                              {text("ที่อยู่:", "Address:")} <strong className="text-primary">{r.registerAddress}</strong> ({r.unit || "-"})
                             </span>
                           </div>
                         ))}
@@ -748,14 +618,17 @@ export default function MeterPresetsPage() {
                 <div className="pt-3 mt-3 border-t border-border flex items-center justify-between text-[10.5px] text-muted-foreground">
                   <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
                     <CheckCircle2 className="size-3" />
-                    พร้อมใช้งาน Auto-fill
+                    {text("พร้อมเติมค่าอัตโนมัติ", "Ready to fill defaults")}
                   </span>
-                  <span className="font-mono text-[9px]">{item.id}</span>
+
                 </div>
               </Card>
             ))}
           </div>
         )}
+        </section>
+          </TabsContent>
+        </Tabs>
       </div>
     </main>
   );

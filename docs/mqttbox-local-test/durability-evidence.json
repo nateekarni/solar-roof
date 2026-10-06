@@ -1,0 +1,18 @@
+{
+  "verifiedAt": "2026-10-05T14:22:37.203Z",
+  "siteId": "71bbf99b-728b-4db1-9b70-d3dc79f1c8be",
+  "deviceId": "9eb71397-db4e-491a-9497-aa73897b1f9d",
+  "messageId": "durability-70160af0-2b76-465d-8f32-056627040a7a",
+  "ackCount": 16,
+  "stored": {
+    "messages": 1,
+    "samples": 4,
+    "raw": 1
+  },
+  "checks": [
+    "Real PostgreSQL rollback: no message/sample/raw survives injected failure",
+    "16 simultaneous TCP/WebSocket publishes: one durable message and four canonical samples",
+    "Both 1883 MQTT TCP and 8083/mqtt MQTT WebSocket deliver dataAcept",
+    "Database rejects changes to immutable profile revisions"
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "schemaVersion": "1.1",
+  "messageType": "telemetry",
+  "messageId": "d001c833-pm2230Energy-0",
+  "sequence": 1259,
+  "lotNumber": 1259,
+  "siteId": "SITE-SETUP-VERIFY",
+  "gatewayId": "GW-SETUP-VERIFY",
+  "device": {
+    "deviceId": "METER-SETUP-VERIFY",
+    "deviceType": "energy-meter",
+    "manufacturer": "Schneider Electric",
+    "model": "PM2230",
+    "profileId": "schneider-pm2230",
+    "profileVersion": "1.0.0"
+  },
+  "pollGroup": "energy",
+  "timestamps": {
+    "polledAt": "2026-10-05T15:21:17.912Z",
+    "sentAt": "2026-10-05T15:21:38.063Z"
+  },
+  "data": {
+    "values": {
+      "energy.active.import.total": 152430275,
+      "energy.active.export.total": 12500,
+      "energy.reactive.import.total": 24580210,
+      "energy.reactive.export.total": 315700
+    },
+    "units": {
+      "energy.active.import.total": "Wh",
+      "energy.active.export.total": "Wh",
+      "energy.reactive.import.total": "varh",
+      "energy.reactive.export.total": "varh"
+    }
+  },
+  "quality": {
+    "status": "good",
+    "communication": "online",
+    "pollDurationMs": 45,
+    "queueDelayMs": 115
+  }
+}

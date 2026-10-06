@@ -1,0 +1,38 @@
+{
+  "schemaVersion": "1.1",
+  "messageType": "telemetry",
+  "messageId": "d001c833-smartLoggerEnvironment-0",
+  "sequence": 1261,
+  "lotNumber": 1261,
+  "siteId": "SITE-SETUP-VERIFY",
+  "gatewayId": "GW-SETUP-VERIFY",
+  "device": {
+    "deviceId": "LOGGER-TEST-d001c833",
+    "deviceType": "solar-logger",
+    "manufacturer": "Huawei",
+    "model": "SmartLogger3000A"
+  },
+  "pollGroup": "environment",
+  "timestamps": {
+    "polledAt": "2026-10-05T15:21:17.912Z",
+    "sentAt": "2026-10-05T15:21:38.281Z"
+  },
+  "data": {
+    "values": {
+      "environment.irradiance": 825.4,
+      "environment.ambient_temperature": 34.8,
+      "environment.module_temperature": 52.6,
+      "environment.wind_speed": 2.7
+    },
+    "units": {
+      "environment.irradiance": "W/m2",
+      "environment.ambient_temperature": "degC",
+      "environment.module_temperature": "degC",
+      "environment.wind_speed": "m/s"
+    }
+  },
+  "quality": {
+    "status": "good",
+    "communication": "online"
+  }
+}

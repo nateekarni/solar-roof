@@ -71,7 +71,7 @@ export function NotificationDetailModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-sm:fixed max-sm:inset-0 max-sm:top-0 max-sm:h-dvh max-sm:max-h-dvh max-sm:w-full max-sm:rounded-none max-sm:p-4 max-sm:flex max-sm:flex-col sm:max-w-xl sm:rounded-2xl sm:p-6 sm:max-h-[85vh] overflow-hidden">
         {/* Header */}
-        <DialogHeader className="shrink-0 pb-3 border-b border-border/60">
+        <DialogHeader className="shrink-0 pb-3 order/60">
           <div className="flex items-center gap-3">
             <div className="size-11 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
               <Bell className="size-6" />
@@ -101,7 +101,7 @@ export function NotificationDetailModal({
         {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto pr-1 space-y-4 text-sm my-2">
           {/* Notification Message Content Box */}
-          <div className="p-4 rounded-xl border border-border/70 bg-card/60 space-y-2">
+          <div className="space-y-2 border-t pt-4">
             <div className="flex items-center justify-between text-xs font-semibold text-foreground">
               <span className="flex items-center gap-1.5">
                 <MessageSquare className="size-3.5 text-primary" />
@@ -110,7 +110,7 @@ export function NotificationDetailModal({
               <Button
                 variant="ghost"
                 size="icon"
-                className="size-6 text-muted-foreground hover:text-foreground"
+                className="size-10 text-muted-foreground hover:text-foreground"
                 onClick={() => copyToClipboard(notification.detail || notification.title || "")}
                 title={locale === "th" ? "คัดลอกข้อความ" : "Copy Content"}
               >
@@ -124,7 +124,7 @@ export function NotificationDetailModal({
 
           {/* Delivery Details Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-            <div className="p-3 rounded-lg border border-border/50 bg-muted/20 space-y-1">
+            <div className="space-y-1 border-t pt-4">
               <div className="text-xs text-muted-foreground flex items-center gap-1.5">
                 <Send className="size-3.5 text-primary" />
                 <span>{locale === "th" ? "ช่องทางการส่ง" : "Delivery Channel"}</span>
@@ -135,7 +135,7 @@ export function NotificationDetailModal({
               </div>
             </div>
 
-            <div className="p-3 rounded-lg border border-border/50 bg-muted/20 space-y-1">
+            <div className="space-y-1 border-t pt-4">
               <div className="text-xs text-muted-foreground flex items-center gap-1.5">
                 <UserCheck className="size-3.5 text-primary" />
                 <span>{locale === "th" ? "กลุ่มผู้รับ" : "Recipients"}</span>
@@ -145,7 +145,7 @@ export function NotificationDetailModal({
               </div>
             </div>
 
-            <div className="p-3 rounded-lg border border-border/50 bg-muted/20 space-y-1">
+            <div className="space-y-1 border-t pt-4">
               <div className="text-xs text-muted-foreground flex items-center gap-1.5">
                 <Clock className="size-3.5 text-primary" />
                 <span>{locale === "th" ? "เวลาที่ส่งออก" : "Sent Timestamp"}</span>
@@ -155,7 +155,7 @@ export function NotificationDetailModal({
               </div>
             </div>
 
-            <div className="p-3 rounded-lg border border-border/50 bg-muted/20 space-y-1">
+            <div className="space-y-1 border-t pt-4">
               <div className="text-xs text-muted-foreground flex items-center gap-1.5">
                 <CheckCircle2 className="size-3.5 text-emerald-500" />
                 <span>{locale === "th" ? "สถานะการนำส่ง" : "Delivery Status"}</span>
@@ -171,5 +171,3 @@ export function NotificationDetailModal({
     </Dialog>
   );
 }
-
-

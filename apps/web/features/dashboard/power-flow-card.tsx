@@ -1,7 +1,9 @@
 "use client";
+import { AppLoading } from "../../components/feedback/app-loading";
 import { useEffect,useState } from 'react';
 import { apiClient } from '../../lib/api-client';
 import { Card } from '../../components/ui/card';
+import { Button } from '../../components/ui/button';
 import { telemetryAge } from '../../lib/telemetry-age';
 import { formatPower } from '../../lib/power-format';
 import { useLocale } from '../../providers/locale-provider';
@@ -25,10 +27,12 @@ export function PowerFlowCard({siteId}:{siteId?:string|undefined}={}) {
     return()=>{active=false;clearInterval(id);document.removeEventListener('visibilitychange',load);window.removeEventListener('online',load);};
   },[siteId,expanded]);
   return <Card className="panel p-4">
-    <h2 className="font-semibold">{th?'สถานะระบบ / Gateway':'System / Gateway status'}</h2>
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <h2 className="text-sm font-semibold">{th?'กำลังไฟฟ้าจากมิเตอร์':'Metered active power'}</h2>
+      <Button type="button" variant="outline" size="sm" aria-expanded={expanded} onClick={()=>setExpanded(value=>!value)}>{expanded?(th?'ซ่อนรายละเอียด':'Hide details'):(th?'แสดงรายละเอียด':'Show details')}</Button>
+    </div>
     <p className="mt-1 text-xs text-muted-foreground">{th?'อัปเดตทุก 10 วินาที • ข้อมูลสดภายใน 2 นาที':'Refreshes every 10 seconds • Fresh within 2 minutes'}</p>
-    <button type="button" aria-expanded={expanded} onClick={()=>setExpanded(value=>!value)} className="my-2 underline">{expanded?(th?'ซ่อนรายละเอียด':'Hide details'):(th?'แสดงรายละเอียดกำลังไฟฟ้า':'Show power details')}</button>
-    {expanded&&(error?<p role="alert" className="py-5 text-destructive">{th?'ไม่สามารถโหลดข้อมูลระบบ':'Unable to load system data'}</p>:data===null?<p className="py-5">{th?'กำลังโหลด…':'Loading…'}</p>:data.length===0?<p className="py-5 text-muted-foreground">{th?'ยังไม่มีไซต์':'No sites available'}</p>:<div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">{data.map(site=>{
+    {expanded&&(error?<p role="alert" className="py-5 text-destructive">{th?'ไม่สามารถโหลดข้อมูลระบบ':'Unable to load system data'}</p>:data===null?<AppLoading fullPage={false} />:data.length===0?<p className="py-5 text-muted-foreground">{th?'ยังไม่มีไซต์':'No sites available'}</p>:<div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">{data.map(site=>{
       const age=site.timestamp?Math.max(0,Math.floor((now-Date.parse(site.timestamp))/1000)):null;
       const fresh=telemetryAge(site.timestamp,locale,now).fresh;
       const power=formatPower(site.solarKw===null?null:site.solarKw*1000,locale);

@@ -1,0 +1,24 @@
+{
+  "siteId": "ea6713a5-8652-4b8f-a7fa-afbb46cc5c8d",
+  "externalSiteId": "SITE-SETUP-VERIFY",
+  "externalGatewayId": "GW-SETUP-VERIFY",
+  "ackTopic": "solar/v1/sites/SITE-SETUP-VERIFY/gateways/GW-SETUP-VERIFY/dataAcept",
+  "devices": [
+    {
+      "id": "fcdf1728-44e3-4dcc-a91d-196b8774b102",
+      "externalDeviceId": "LOGGER-TEST-d001c833",
+      "profileRevisionId": "00000000-0000-4000-8000-000000000002",
+      "profileId": "huawei-smartlogger3000a",
+      "profileVersion": "1.0.0",
+      "telemetryTopic": "solar/v1/sites/SITE-SETUP-VERIFY/gateways/GW-SETUP-VERIFY/devices/LOGGER-TEST-d001c833/telemetry"
+    },
+    {
+      "id": "aadbda5b-8f45-4b75-9b92-9d643b7af2c3",
+      "externalDeviceId": "METER-SETUP-VERIFY",
+      "profileRevisionId": "00000000-0000-4000-8000-000000000001",
+      "profileId": "schneider-pm2230",
+      "profileVersion": "1.0.0",
+      "telemetryTopic": "solar/v1/sites/SITE-SETUP-VERIFY/gateways/GW-SETUP-VERIFY/devices/METER-SETUP-VERIFY/telemetry"
+    }
+  ]
+}

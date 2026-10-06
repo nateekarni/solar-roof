@@ -20,7 +20,7 @@ export class PlatformAccessGuard implements CanActivate {
     if (path === "/v1/users/invite" && req.method === "POST") {
       const invitedRole=req.body?.role ?? "school_user";
       if(!["owner","admin","operator","accountant","school_user"].includes(invitedRole)) throw new ForbiddenException("Invalid invited role");
-      if(req.user.role !== "owner" && invitedRole !== "school_user") throw new ForbiddenException("Only owner can grant platform roles");
+      if(!canGrantInvitation({...req.user,status:"active"},invitedRole,req.body.schoolId ?? null)) throw new ForbiddenException("Cannot grant invitation role or school scope");
       if(scope!==null) {
         if(!req.body.schoolId && scope.length===1) req.body.schoolId=scope[0];
         if(!scope.includes(req.body.schoolId)) throw new ForbiddenException("Cannot invite outside assigned school");
@@ -51,7 +51,7 @@ export class PlatformAccessGuard implements CanActivate {
       documents: "SELECT s.school_id FROM documents d JOIN sites s ON s.id=d.site_id WHERE d.id::text=$1",
       alerts: "SELECT s.school_id FROM alerts a JOIN sites s ON s.id=a.site_id WHERE a.id::text=$1",
     };
-    if (kind && id && queries[kind] && !["test-connection", "acknowledge-all"].includes(id)) resources.push({sql:queries[kind]!,id});
+    if (kind && id && queries[kind] && !["test-connection", "acknowledge-all", "payload-preview"].includes(id)) resources.push({sql:queries[kind]!,id});
     for (const [field, resource] of [["siteId", "sites"], ["schoolId", "schools"], ["deviceId", "devices"]]) {
       const value = req.body?.[field!];
       if (typeof value === "string" && value) resources.push({sql:queries[resource!]!,id:value});

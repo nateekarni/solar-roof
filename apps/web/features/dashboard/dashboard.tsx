@@ -28,6 +28,8 @@ import { SiteFilter } from "./site-filter";
 import { SiteMap } from "./site-map";
 import { GatewayStatusSummary } from "./gateway-status-summary";
 import { SummaryStatus } from "./summary-status";
+import { BusinessDashboard } from "./business-dashboard";
+import { requirePageAccess } from "../../lib/session-user";
 
 type DashboardData = DashboardSummaryResponse;
 async function getDashboardData(
@@ -72,6 +74,7 @@ export async function Dashboard({
       }>
     | undefined;
 } = {}) {
+  const user = await requirePageAccess("/");
   const cookieStore = await cookies();
   const locale = (cookieStore.get("locale")?.value as Locale) || "th";
   const t = createTranslator(locale);
@@ -85,10 +88,13 @@ export async function Dashboard({
     resolvedParams?.site_id,
   );
 
+  if (user.role === "owner" || user.role === "school_user") {
+    return <BusinessDashboard data={data} role={user.role} locale={locale} periodControl={<PeriodPicker />} />;
+  }
   const alerts = data.alerts || [];
 
   return (
-    <div className="content dashboard-content w-full min-w-0 max-w-full overflow-x-hidden">
+    <div className="content dashboard-content w-full min-w-0 max-w-full overflow-x-hidden space-y-4">
       <DashboardAutoRefresh />
       {/* Dashboard Top Header */}
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2 w-full min-w-0">
@@ -108,6 +114,7 @@ export async function Dashboard({
       <DashboardStatsClient stats={data.stats} totalSites={data.sites?.length} />
       <SummaryStatus model={data.energyReadModel} locale={locale} />
 
+      <section className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-2">
           {/* Recent Alerts Card */}
           <Card className="panel flex flex-col flex-1 h-full justify-between">
             <CardHeader className="p-0 pb-2">
@@ -168,6 +175,7 @@ export async function Dashboard({
           </Card>
 
       <GatewayStatusSummary sites={data.sites || []} locale={locale} />
+      </section>
 
       {/* 3-Column Main Dashboard Grid */}
       <section className="dashboard-3col w-full min-w-0 max-w-full">

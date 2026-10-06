@@ -5,17 +5,17 @@ import type { ScopePrincipal } from '../../common/auth/resource-scope.js';
 
 // Identifiers only come from this server-owned vocabulary, never request text.
 export const operationQueries: Record<string, { sorts: string[]; search: string[]; date?: string; direction: 'asc' | 'desc' }> = {
-  schools: { sorts: ['name', 'code', 'status'], search: ['name', 'code', 'region'], direction: 'asc' },
-  sites: { sorts: ['name', 'status', 'capacityMwp'], search: ['name', 'schoolName'], direction: 'asc' },
-  billing: { sorts: ['period', 'amount', 'status'], search: ['period', 'schoolName', 'siteName', 'status'], date: 'period', direction: 'desc' },
-  contracts: { sorts: ['startDate', 'status'], search: ['contractNumber', 'schoolName', 'siteName', 'signers', 'status'], date: 'startDate', direction: 'desc' },
-  documents: { sorts: ['issueDate', 'documentNumber', 'amount', 'status'], search: ['documentNumber', 'type', 'schoolName', 'siteName', 'status'], date: 'issueDate', direction: 'desc' },
-  receipts: { sorts: ['issueDate', 'documentNumber', 'amount', 'status'], search: ['documentNumber', 'type', 'schoolName', 'siteName', 'status'], date: 'issueDate', direction: 'desc' },
-  alerts: { sorts: ['occurredAt', 'severity', 'status'], search: ['title', 'detail', 'severity', 'status'], date: 'occurredAt', direction: 'desc' },
-  notifications: { sorts: ['sentAt', 'status'], search: ['title', 'channel', 'recipient', 'status'], date: 'sentAt', direction: 'desc' },
-  reports: { sorts: ['generatedAt', 'title', 'status'], search: ['title', 'category', 'status'], date: 'generatedAt', direction: 'desc' },
-  users: { sorts: ['displayName', 'email', 'role', 'status'], search: ['displayName', 'email', 'role', 'status'], direction: 'asc' },
-  audit: { sorts: ['time', 'action'], search: ['action', 'entityType', 'entityId', 'actor', 'reason', 'correlationId'], date: 'time', direction: 'desc' },
+  schools: { sorts: ["name", "code", "region", "capacityMwp", "sitesCount", "gatewaysCount", "status"], search: ['name', 'code', 'region'], date: 'createdAt', direction: 'asc' },
+  sites: { sorts: ["name", "schoolName", "capacityMwp", "gateway", "protocol", "productionKwh", "lastUpdated", "status"], search: ['name', 'schoolName'], date: 'createdAt', direction: 'asc' },
+  billing: { sorts: ["period", "schoolName", "siteName", "consumedKwh", "rate", "amount", "status"], search: ['period', 'schoolName', 'siteName', 'status'], date: 'period', direction: 'desc' },
+  contracts: { sorts: ["startDate", "contractNumber", "schoolName", "version", "rate", "signers", "status"], search: ['contractNumber', 'schoolName', 'siteName', 'signers', 'status'], date: 'startDate', direction: 'desc' },
+  documents: { sorts: ["issueDate", "documentNumber", "type", "schoolName", "amount", "status"], search: ['documentNumber', 'type', 'schoolName', 'siteName', 'status'], date: 'issueDate', direction: 'desc' },
+  receipts: { sorts: ["issueDate", "documentNumber", "taxInvoiceNumber", "schoolName", "amount", "status"], search: ['documentNumber', 'type', 'schoolName', 'siteName', 'status'], date: 'issueDate', direction: 'desc' },
+  alerts: { sorts: ["occurredAt", "alertId", "title", "detail", "severity", "status"], search: ['title', 'detail', 'severity', 'status'], date: 'occurredAt', direction: 'desc' },
+  notifications: { sorts: ["sentAt", "title", "channel", "recipient", "status"], search: ['title', 'channel', 'recipient', 'status'], date: 'sentAt', direction: 'desc' },
+  reports: { sorts: ["generatedAt", "title", "category", "scope", "format", "status"], search: ['title', 'category', 'status'], date: 'generatedAt', direction: 'desc' },
+  users: { sorts: ["displayName", "email", "role", "schoolName", "lastActive", "status"], search: ['displayName', 'email', 'role', 'status'], date: 'createdAt', direction: 'asc' },
+  audit: { sorts: ["time", "action", "entityType", "entityId", "actor", "reason"], search: ['action', 'entityType', 'entityId', 'actor', 'reason', 'correlationId'], date: 'time', direction: 'desc' },
 };
 
 export function parseOperationQuery(resource: string, raw: Record<string, unknown> = {}): OperationQuery {
@@ -54,8 +54,9 @@ export function operationPredicate(resource: string, query: OperationQuery, para
     const term = query.search.replace(/[\\%_]/g, '\\$&');
     clauses.push(`concat_ws(' ',${config.search.map(key => `q."${key}"::text`).join(',')}) ILIKE ${bind('%' + term + '%')} ESCAPE '\\'`);
   }
-  if (query.from) clauses.push(`q."${config.date}"::text >= ${bind(resource === 'billing' ? query.from.slice(0, 7) : query.from)}`);
-  if (query.to) clauses.push(`q."${config.date}"::text < ${bind(resource === 'billing' ? new Date(Date.UTC(Number(query.to.slice(0, 4)), Number(query.to.slice(5, 7)), 1)).toISOString().slice(0, 7) : new Date(Date.parse(query.to) + 86400000).toISOString().slice(0, 10))}`);
+  const dateExpression = ["occurredAt", "sentAt", "generatedAt", "time"].includes(config.date ?? "") ? `(q."${config.date}" AT TIME ZONE 'Asia/Bangkok')::date::text` : `q."${config.date}"::text`;
+  if (query.from) clauses.push(`${dateExpression} >= ${bind(resource === 'billing' ? query.from.slice(0, 7) : query.from)}`);
+  if (query.to) clauses.push(`${dateExpression} < ${bind(resource === 'billing' ? new Date(Date.UTC(Number(query.to.slice(0, 4)), Number(query.to.slice(5, 7)), 1)).toISOString().slice(0, 7) : new Date(Date.parse(query.to) + 86400000).toISOString().slice(0, 10))}`);
   return clauses;
 }
 
@@ -73,9 +74,9 @@ export function operationPageSql(resource: string, source: string, params: unkno
     }else{
       const value=cursor.value as string;
       if (query.sort === 'period' && !/^\d{4}-(0[1-9]|1[0-2])$/.test(value)) throw new BadRequestException('Invalid period cursor');
-      if (['amount','capacityMwp'].includes(query.sort) && (!/^-?\d+(\.\d+)?$/.test(value) || !Number.isFinite(Number(value)))) throw new BadRequestException('Invalid numeric cursor');
+      if (['amount','capacityMwp','sitesCount','gatewaysCount','productionKwh','consumedKwh','rate','version'].includes(query.sort) && (!/^-?\d+(\.\d+)?$/.test(value) || !Number.isFinite(Number(value)))) throw new BadRequestException('Invalid numeric cursor');
       if (['startDate','issueDate'].includes(query.sort) && (!/^\d{4}-\d{2}-\d{2}$/.test(value)||!Number.isFinite(Date.parse(value))||new Date(value).toISOString().slice(0,10)!==value)) throw new BadRequestException('Invalid date cursor');
-      if (['occurredAt','sentAt','generatedAt','time'].includes(query.sort) && (!/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}(?::\d{2})?)$/.test(value)||!Number.isFinite(Date.parse(value)))) throw new BadRequestException('Invalid timestamp cursor');
+      if (['occurredAt','sentAt','generatedAt','time','lastUpdated','lastActive'].includes(query.sort) && (!/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}(?::\d{2})?)$/.test(value)||!Number.isFinite(Date.parse(value)))) throw new BadRequestException('Invalid timestamp cursor');
       params.push(value, cursor.id);
       clauses.push(`((q."${query.sort}",q.id) ${compare} ($${params.length - 1},$${params.length}::uuid) OR q."${query.sort}" IS NULL)`);
     }

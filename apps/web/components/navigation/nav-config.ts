@@ -1,7 +1,7 @@
+import { canVisitPage } from "@solar/domain";
 import type { LucideIcon } from "lucide-react";
 import {
   AlertTriangle,
-  GraduationCap,
   LayoutDashboard,
   MapPin,
   ScrollText,
@@ -18,7 +18,7 @@ export interface NavItem {
   key: string;
   labelKey: string;
   icon: LucideIcon;
-  href?: string;
+  href?: string | undefined;
   subItems?: NavSubItem[];
 }
 
@@ -28,6 +28,9 @@ export const NAV_ITEMS: NavItem[] = [
     labelKey: "navigation.dashboard",
     icon: LayoutDashboard,
     href: "/",
+  },
+  {
+    key: "production", labelKey: "navigation.production", icon: Zap, href: "/production",
   },
   {
     key: "sites",
@@ -58,7 +61,10 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Settings2,
     href: "/settings",
     subItems: [
-      { href: "/settings/general", labelKey: "navigation.companyAndBanking" },
+      { href: "/settings/account", labelKey: "settings.account" },
+      { href: "/settings/general", labelKey: "settings.general" },
+      { href: "/settings/security", labelKey: "settings.security" },
+      { href: "/settings/company", labelKey: "navigation.companyAndBanking" },
       { href: "/settings/system", labelKey: "navigation.systemDefaults" },
       { href: "/settings/meter-presets", labelKey: "navigation.meterPresets" },
       { href: "/settings/audit", labelKey: "navigation.audit" },
@@ -66,3 +72,22 @@ export const NAV_ITEMS: NavItem[] = [
     ],
   },
 ];
+
+export function getNavItems(role: string): NavItem[] {
+ return NAV_ITEMS.flatMap(item => {
+ const subItems = item.subItems?.filter(sub => canVisitPage(role, sub.href));
+ const href = item.href && canVisitPage(role, item.href) ? item.href : undefined;
+ if (!href && !subItems?.length) return [];
+ return [{ ...item, labelKey: item.key === "settings" && role === "owner" ? "navigation.ownerSettings" : item.key === "settings" && role === "school_user" ? "navigation.personalSettings" : item.labelKey, href, ...(subItems ? { subItems } : {}) }];
+ });
+}
+export function getBottomNavItems(role: string): NavItem[] {
+ const keys = role === "school_user" ? ["dashboard","production","contractsAndDocs","settings"] : role === "owner" ? ["dashboard","contractsAndDocs","settings"] : ["dashboard","sites","alerts","settings"];
+ return getNavItems(role).filter(item => keys.includes(item.key)).map(item => ({...item, href:item.href || item.subItems?.find(sub => sub.href === "/billing")?.href || item.subItems?.[0]?.href}));
+}
+
+export function navLabel(item: {labelKey: string; href?: string | undefined; key?: string}, locale: string, t: (key: string) => string): string {
+ const labels: Record<string, [string,string]> = { "navigation.ownerSettings":["บัญชีและบริษัท","Account and company"], "navigation.personalSettings":["บัญชีของฉัน","My account"], dashboard:["หน้าแรก","Home"], production:["การผลิตไฟฟ้า","Production"], "/settings/account":["บัญชีผู้ใช้","Account"], "/settings/general":["การแสดงผล","Preferences"], "/settings/security":["ความปลอดภัย","Security"] };
+ const label=labels[item.labelKey] || labels[item.key || item.href || ""];
+ return label ? label[locale === "en" ? 1 : 0] : t(item.labelKey);
+}

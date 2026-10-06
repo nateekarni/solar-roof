@@ -7,13 +7,17 @@ const admin: AccessActor = { id: "a", role: "admin", assignedSchoolIds: ["school
 const user: AccessActor = { id: "u", role: "school_user", schoolId: "school-a" };
 
 test("owner can access every resource", () => assert.equal(canAccess(owner, "manage", { schoolId: "school-z" }), true));
-test("admin is limited to assigned schools", () => {
+test("admin has global resource access", () => {
   assert.equal(canAccess(admin, "manage", { schoolId: "school-a" }), true);
-  assert.equal(canAccess(admin, "manage", { schoolId: "school-z" }), false);
+  assert.equal(canAccess(admin, "manage", { schoolId: "school-z" }), true);
 });
 test("school user can read and upload evidence only in own school", () => {
   assert.equal(canAccess(user, "read", { schoolId: "school-a" }), true);
   assert.equal(canAccess(user, "upload_evidence", { schoolId: "school-a" }), true);
   assert.equal(canAccess(user, "finalize", { schoolId: "school-a" }), false);
   assert.equal(canAccess(user, "read", { schoolId: "school-z" }), false);
+});
+test('unknown resource roles cannot gain access through a matching school',()=>{
+ const actor={id:'x',role:'unknown',schoolId:'school-a'} as unknown as AccessActor;
+ assert.equal(canAccess(actor,'read',{schoolId:'school-a'}),false);
 });

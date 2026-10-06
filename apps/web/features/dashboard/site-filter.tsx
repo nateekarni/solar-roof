@@ -1,11 +1,39 @@
-"use client";
-import { useRouter,useSearchParams } from 'next/navigation';
+'use client';
+import { useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Check, ChevronsUpDown } from 'lucide-react';
 import { useLocale } from '../../providers/locale-provider';
-export function SiteFilter({sites}:{sites:{id:string;name:string}[]}) {
-  const router=useRouter();const params=useSearchParams();const locale=useLocale();
-  return <label className="flex items-center gap-2 text-sm">{locale==='th'?'ไซต์':'Site'}
-    <select aria-label={locale==='th'?'เลือกไซต์':'Select site'} className="max-w-48 rounded-md border bg-background p-2" value={params.get('site_id')||''} onChange={event=>{const next=new URLSearchParams(params.toString());if(event.target.value)next.set('site_id',event.target.value);else next.delete('site_id');router.push(`/?${next}`);}}>
-      <option value="">{locale==='th'?'ทุกไซต์':'All sites'}</option>{sites.map(site=><option value={site.id} key={site.id}>{site.name}</option>)}
-    </select>
-  </label>;
+import { Button } from '../../components/ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from '../../components/ui/popover';
+import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from '../../components/ui/command';
+
+export function SiteFilter({ sites }: { sites: { id: string; name: string }[] }) {
+  const router = useRouter();
+  const params = useSearchParams();
+  const th = useLocale() === 'th';
+  const [open, setOpen] = useState(false);
+  const selected = params.get('site_id') || '';
+  const options = [{ id: '', name: th ? 'ทุกไซต์' : 'All sites' }, ...sites];
+  function choose(id: string) {
+    const next = new URLSearchParams(params.toString());
+    if (id) next.set('site_id', id); else next.delete('site_id');
+    router.push(`/?${next}`);
+    setOpen(false);
+  }
+  return <div className="flex items-center gap-2 text-sm">
+    <span>{th ? 'ไซต์' : 'Site'}</span>
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild><Button variant="outline" role="combobox" aria-expanded={open} aria-label={th ? 'เลือกไซต์' : 'Select site'} className="w-48 justify-between">
+        <span className="truncate">{options.find(site => site.id === selected)?.name ?? (th ? 'เลือกไซต์' : 'Select site')}</span><ChevronsUpDown />
+      </Button></PopoverTrigger>
+      <PopoverContent className="w-64 p-0" align="end">
+        <Command><CommandInput placeholder={th ? 'ค้นหาไซต์…' : 'Search sites…'} /><CommandList>
+          <CommandEmpty>{th ? 'ไม่พบไซต์' : 'No sites found'}</CommandEmpty>
+          {options.map(site => <CommandItem key={site.id} value={`${site.name} ${site.id}`} onSelect={() => choose(site.id)}>
+            <Check className={selected === site.id ? 'opacity-100' : 'opacity-0'} />{site.name}
+          </CommandItem>)}
+        </CommandList></Command>
+      </PopoverContent>
+    </Popover>
+  </div>;
 }

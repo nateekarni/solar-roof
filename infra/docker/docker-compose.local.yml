@@ -27,7 +27,7 @@ services:
       retries: 12
   mqtt:
     image: emqx/emqx:5.8.5
-    ports: ["${MQTT_PORT:-1883}:1883", "${MQTT_DASHBOARD_PORT:-18083}:18083"]
+    ports: ["${MQTT_PORT:-1883}:1883", "${MQTT_WS_PORT:-8083}:8083", "${MQTT_DASHBOARD_PORT:-18083}:18083"]
     healthcheck:
       test: ["CMD-SHELL", "emqx ctl status >/dev/null"]
       interval: 15s

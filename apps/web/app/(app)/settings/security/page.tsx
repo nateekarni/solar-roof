@@ -28,6 +28,7 @@ import { Badge } from "../../../../components/ui/badge";
 export default function SecuritySettingsPage() {
   const t = useT();
   const locale = useLocale();
+  const [editingPassword, setEditingPassword] = React.useState(false);
 
   // Change password states
   const [currentPassword, setCurrentPassword] = React.useState("");
@@ -90,7 +91,7 @@ export default function SecuritySettingsPage() {
 
   return (
     <main className="content">
-      <div className="ops-content max-w-3xl space-y-5">
+      <div className="ops-content w-full space-y-5">
         {/* Navigation Back Link (Mobile Only) */}
         <div className="block md:hidden">
           <Link
@@ -103,7 +104,6 @@ export default function SecuritySettingsPage() {
         </div>
         <div>
           <h1 className="text-xl font-bold tracking-tight text-foreground md:text-2xl flex items-center gap-2.5">
-            <ShieldCheck className="size-6 text-primary" />
             <span>{locale === "th" ? "ความปลอดภัยและรหัสผ่าน" : "Security & Password"}</span>
           </h1>
           <p className="text-xs text-muted-foreground mt-0.5">
@@ -115,9 +115,8 @@ export default function SecuritySettingsPage() {
 
         {/* 1. Change Password Card */}
         <Card className="panel">
-          <CardHeader className="p-0 pb-3 border-b border-border/40">
+          <CardHeader className="p-0 pb-3 order/40">
             <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              <KeyRound className="size-4 text-primary" />
               <span>{locale === "th" ? "เปลี่ยนรหัสผ่าน (Change Password)" : "Change Password"}</span>
             </CardTitle>
             <CardDescription className="text-xs">
@@ -139,9 +138,9 @@ export default function SecuritySettingsPage() {
                     : "You can now use your new password on next login."}
                 </p>
               </div>
-            ) : (
+            ) : !editingPassword ? <div className="space-y-4"><dl><dt className="text-sm text-muted-foreground">{locale === "th" ? "รหัสผ่าน" : "Password"}</dt><dd className="mt-1">••••••••</dd></dl><Button variant="outline" onClick={() => setEditingPassword(true)}>{locale === "th" ? "เปลี่ยนรหัสผ่าน" : "Change password"}</Button></div> : (
               <form onSubmit={handlePasswordSubmit} className="space-y-3.5">
-                <div className="space-y-1.5">
+                <div className="space-y-2">
                   <Label htmlFor="current-pw" className="text-xs font-medium">
                     {locale === "th" ? "รหัสผ่านปัจจุบัน" : "Current Password"}
                   </Label>
@@ -150,13 +149,13 @@ export default function SecuritySettingsPage() {
                     type="password"
                     value={currentPassword}
                     onChange={(e) => setCurrentPassword(e.target.value)}
-                    className="h-9 text-xs"
+                    className="h-10 text-xs"
                     required
                   />
                 </div>
 
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="space-y-1.5">
+                  <div className="space-y-2">
                     <Label htmlFor="new-pw" className="text-xs font-medium">
                       {locale === "th" ? "รหัสผ่านใหม่" : "New Password"}
                     </Label>
@@ -165,12 +164,12 @@ export default function SecuritySettingsPage() {
                       type="password"
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
-                      className="h-9 text-xs"
+                      className="h-10 text-xs"
                       required
                     />
                   </div>
 
-                  <div className="space-y-1.5">
+                  <div className="space-y-2">
                     <Label htmlFor="confirm-pw" className="text-xs font-medium">
                       {locale === "th" ? "ยืนยันรหัสผ่านใหม่" : "Confirm New Password"}
                     </Label>
@@ -179,7 +178,7 @@ export default function SecuritySettingsPage() {
                       type="password"
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
-                      className="h-9 text-xs"
+                      className="h-10 text-xs"
                       required
                     />
                   </div>
@@ -192,12 +191,13 @@ export default function SecuritySettingsPage() {
                   </div>
                 )}
 
-                <div className="pt-3 border-t border-border/40 flex justify-end">
+                <div className="pt-3 border-t border-border/40 flex justify-end gap-2">
+                  <Button type="button" variant="outline" disabled={isChangingPassword} onClick={() => { setEditingPassword(false); setCurrentPassword(""); setNewPassword(""); setConfirmPassword(""); }}>{locale === "th" ? "ยกเลิก" : "Cancel"}</Button>
                   <Button
                     type="submit"
                     disabled={isChangingPassword}
                     size="sm"
-                    className="h-9 text-xs font-semibold bg-[#EAB308] text-[#0F172A] hover:bg-[#EAB308]/90 gap-1.5 cursor-pointer shadow-xs"
+                    className="h-10 text-xs font-semibold bg-[#EAB308] text-[#0F172A] hover:bg-[#EAB308]/90 gap-1.5 cursor-pointer shadow-xs"
                   >
                     <Lock className="size-3.5" />
                     <span>
@@ -219,6 +219,3 @@ export default function SecuritySettingsPage() {
     </main>
   );
 }
-
-
-

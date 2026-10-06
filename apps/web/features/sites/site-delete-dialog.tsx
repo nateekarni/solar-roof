@@ -98,7 +98,7 @@ export function SiteDeleteDialog({
               </p>
             </div>
           ) : (
-            <div className="rounded-xl border border-border bg-muted/20 p-3 text-muted-foreground text-xs leading-relaxed space-y-1.5">
+            <div className="text-muted-foreground text-xs leading-relaxed space-y-1.5 border-t pt-4">
               <p>
                 การลบไซต์งานจะทำการลบข้อมูลเกตเวย์, อุปกรณ์มิเตอร์ และประวัติการอ่านค่าที่เกี่ยวข้องของไซต์นี้ทั้งหมด
               </p>

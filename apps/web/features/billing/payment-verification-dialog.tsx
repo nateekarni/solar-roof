@@ -121,7 +121,7 @@ export function PaymentVerificationDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg max-h-[92vh] overflow-y-auto p-5 sm:p-6 rounded-2xl">
-        <DialogHeader className="pb-3 border-b border-border/50">
+        <DialogHeader className="pb-3 order/50">
           <div className="flex items-center gap-2">
             <div className="size-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
               <ShieldCheck className="size-4.5" />
@@ -148,7 +148,7 @@ export function PaymentVerificationDialog({
         ) : (
           <div className="space-y-4 pt-1">
             {/* Details Summary */}
-            <div className="grid grid-cols-2 gap-2 p-3.5 rounded-xl bg-muted/40 border border-border/60 text-xs">
+            <div className="grid grid-cols-2 gap-2 text-xs border-t pt-4">
               <div>
                 <span className="text-muted-foreground block text-[11px]">ยอดเงินที่ต้องชำระ</span>
                 <span className="font-bold text-sm text-foreground">
@@ -170,7 +170,7 @@ export function PaymentVerificationDialog({
             </div>
 
             {/* Slip Preview Box */}
-            <div className="space-y-1.5">
+            <div className="space-y-2">
               <Label className="text-xs font-semibold">ภาพหลักฐานสลิปการโอน</Label>
               <div className="border border-border/80 rounded-xl overflow-hidden bg-neutral-900/5 dark:bg-neutral-900/40 p-2 flex flex-col items-center justify-center min-h-[220px]">
                 {billingCycle?.slipUrl ? (
@@ -210,7 +210,7 @@ export function PaymentVerificationDialog({
                   placeholder="เช่น ยอดเงินไม่ตรงกับใบแจ้งหนี้, สลิปซ้ำ หรือภาพไม่ชัดเจน"
                   value={rejectionReason}
                   onChange={(e) => setRejectionReason(e.target.value)}
-                  className="text-xs bg-background"
+                  className="text-xs bg-white"
                   autoFocus
                 />
               </div>
@@ -229,7 +229,7 @@ export function PaymentVerificationDialog({
                 variant="outline"
                 onClick={() => onOpenChange(false)}
                 disabled={isSubmitting}
-                className="w-full sm:w-auto h-9 text-xs"
+                className="w-full sm:w-auto h-10 text-xs"
               >
                 ปิด
               </Button>
@@ -241,7 +241,7 @@ export function PaymentVerificationDialog({
                     variant="ghost"
                     size="sm"
                     onClick={() => setShowRejectInput(false)}
-                    className="h-9 text-xs"
+                    className="h-10 text-xs"
                   >
                     ย้อนกลับ
                   </Button>
@@ -250,7 +250,7 @@ export function PaymentVerificationDialog({
                     variant="destructive"
                     onClick={handleReject}
                     disabled={isSubmitting}
-                    className="h-9 text-xs gap-1.5 flex-1 sm:flex-initial"
+                    className="h-10 text-xs gap-1.5 flex-1 sm:flex-initial"
                   >
                     {isSubmitting && <Loader2 className="size-3.5 animate-spin" />}
                     ยืนยันปฏิเสธ
@@ -263,7 +263,7 @@ export function PaymentVerificationDialog({
                     variant="outline"
                     onClick={() => setShowRejectInput(true)}
                     disabled={isSubmitting}
-                    className="h-9 text-xs border-destructive/40 text-destructive hover:bg-destructive/10 gap-1"
+                    className="h-10 text-xs border-destructive/40 text-destructive hover:bg-destructive/10 gap-1"
                   >
                     <FileX className="size-3.5" />
                     ปฏิเสธสลิป
@@ -273,7 +273,7 @@ export function PaymentVerificationDialog({
                     type="button"
                     onClick={handleApprove}
                     disabled={isSubmitting}
-                    className="h-9 text-xs bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 flex-1 sm:flex-initial"
+                    className="h-10 text-xs bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 flex-1 sm:flex-initial"
                   >
                     {isSubmitting && <Loader2 className="size-3.5 animate-spin" />}
                     <FileCheck className="size-3.5" />

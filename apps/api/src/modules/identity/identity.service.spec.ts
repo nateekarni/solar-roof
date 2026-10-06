@@ -8,8 +8,8 @@ test("access token round trips scoped claims", () => { const tokens = auth.issue
 test("invitation policy requires current issuer authority and school scope", () => {
   const admin={role:'admin',status:'active',schoolId:'school-a'};
   assert.equal(canGrantInvitation(admin,'school_user','school-a'),true);
-  assert.equal(canGrantInvitation(admin,'school_user','school-b'),false);
-  assert.equal(canGrantInvitation(admin,'owner',null),false);
+  assert.equal(canGrantInvitation(admin,'school_user','school-b'),true);
+  assert.equal(canGrantInvitation(admin,'owner',null),true);
   assert.equal(canGrantInvitation({...admin,status:'disabled'},'school_user','school-a'),false);
-  assert.equal(canGrantInvitation({role:'owner',status:'active'},'owner',null),true);
+  assert.equal(canGrantInvitation({role:'owner',status:'active'},'owner',null),false);
 });

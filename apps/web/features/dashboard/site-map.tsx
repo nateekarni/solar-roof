@@ -4,6 +4,7 @@ import { X } from "lucide-react";
 import type { StyleSpecification } from "maplibre-gl";
 import React from "react";
 import Map, { Marker, NavigationControl, Popup } from "react-map-gl/maplibre";
+import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
 import {
   Card,
@@ -11,6 +12,7 @@ import {
   CardHeader,
   CardTitle,
 } from "../../components/ui/card";
+import { useLocale } from "../../providers/locale-provider";
 
 type Site = {
   id: string;
@@ -36,27 +38,18 @@ const style: StyleSpecification = {
   layers: [{ id: "osm", type: "raster", source: "osm" }],
 } as const;
 
-const formatNumber = (value: number | null) =>
-  value === null ? "ไม่มีข้อมูล" :
-  new Intl.NumberFormat("th-TH", { maximumFractionDigits: 2 }).format(value);
-
 export function SiteMap({ sites }: { sites: Site[] }) {
+  const locale = useLocale();
+  const th = locale === "th";
+  const formatNumber = (value: number | null) => value === null
+    ? (th ? "ไม่มีข้อมูล" : "No data")
+    : new Intl.NumberFormat(th ? "th-TH" : "en-US", { maximumFractionDigits: 2 }).format(value);
   const validSites = (sites || []).filter(
     (site) => site.latitude !== null && site.longitude !== null,
   );
 
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const selected = validSites.find((site) => site.id === selectedId) ?? null;
-
-  const totalProductionKwh = validSites.reduce(
-    (sum, s) => sum + (s.productionKwh || 0),
-    0,
-  );
-  const totalCapacityMwp = validSites.reduce(
-    (sum, s) => sum + (s.capacityMwp || 0),
-    0,
-  );
-  const schoolCount = new Set(validSites.map((s) => s.schoolName)).size;
 
   const counts = {
     online: validSites.filter((s) => s.status === "online").length,
@@ -71,10 +64,10 @@ export function SiteMap({ sites }: { sites: Site[] }) {
       <CardHeader className="p-0 pb-2.5">
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm font-semibold text-foreground">
-            แผนที่ไซต์
+            {th ? "แผนที่ไซต์" : "Site map"}
           </CardTitle>
           <Badge variant="secondary" className="text-xs font-normal">
-            {validSites.length} ไซต์
+            {validSites.length} {th ? "ไซต์บนแผนที่" : "mapped sites"}
           </Badge>
         </div>
       </CardHeader>
@@ -102,14 +95,16 @@ export function SiteMap({ sites }: { sites: Site[] }) {
                   longitude={site.longitude!}
                   anchor="center"
                 >
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     type="button"
-                    className={`map-marker ${markerStatus} ${
+                    className={`size-4 gap-0 p-0 map-marker ${markerStatus} ${
                       selectedId === site.id
                         ? "selected ring-2 ring-primary ring-offset-2"
                         : ""
                     }`}
-                    aria-label={`เลือก ${site.name}`}
+                    aria-label={`${th ? "เลือก" : "Select"} ${site.name}`}
                     onClick={() => setSelectedId(site.id)}
                   />
                 </Marker>
@@ -146,10 +141,10 @@ export function SiteMap({ sites }: { sites: Site[] }) {
                       }`}
                     />
                     {selected.status === "online"
-                      ? "ออนไลน์"
+                      ? (th ? "ออนไลน์" : "Online")
                       : selected.status === "offline"
-                        ? "ออฟไลน์"
-                        : "แจ้งเตือน"}
+                        ? (th ? "ออฟไลน์" : "Offline")
+                        : (th ? "แจ้งเตือน" : "Warning")}
                   </span>
                   <strong className="text-foreground">{selected.name}</strong>
                   <span className="text-muted-foreground">
@@ -167,13 +162,13 @@ export function SiteMap({ sites }: { sites: Site[] }) {
           {/* Status Legend Overlay in Bottom-Left */}
           <div className="absolute bottom-3 left-3 z-10 rounded-lg border border-border/70 bg-card/95 p-3 shadow-md backdrop-blur-sm">
             <p className="text-[11px] font-bold text-foreground mb-1.5">
-              สถานะไซต์
+              {th ? "สถานะไซต์ที่มีพิกัด" : "Status of mapped sites"}
             </p>
             <div className="space-y-1 text-[11px]">
               <div className="flex items-center justify-between gap-3">
                 <span className="flex items-center gap-1.5 text-muted-foreground">
                   <span className="size-2 rounded-full bg-success" />
-                  ออนไลน์
+                  {th ? "ออนไลน์" : "Online"}
                 </span>
                 <strong className="text-foreground font-semibold">
                   {counts.online}
@@ -182,7 +177,7 @@ export function SiteMap({ sites }: { sites: Site[] }) {
               <div className="flex items-center justify-between gap-3">
                 <span className="flex items-center gap-1.5 text-muted-foreground">
                   <span className="size-2 rounded-full bg-warning" />
-                  แจ้งเตือน
+                  {th ? "แจ้งเตือน" : "Warning"}
                 </span>
                 <strong className="text-foreground font-semibold">
                   {counts.warning}
@@ -191,7 +186,7 @@ export function SiteMap({ sites }: { sites: Site[] }) {
               <div className="flex items-center justify-between gap-3">
                 <span className="flex items-center gap-1.5 text-muted-foreground">
                   <span className="size-2 rounded-full bg-destructive" />
-                  ออฟไลน์
+                  {th ? "ออฟไลน์" : "Offline"}
                 </span>
                 <strong className="text-foreground font-semibold">
                   {counts.offline}
@@ -205,43 +200,41 @@ export function SiteMap({ sites }: { sites: Site[] }) {
         <div className="site-info-bar border-t-0 pt-2.5 px-0 bg-transparent">
           <div className="site-info-left">
             <strong className="site-name">
-              {selected ? selected.name : "ภาพรวมทุกไซต์พลังงาน"}
+              {selected ? selected.name : th ? "ภาพรวมไซต์บนแผนที่" : "Mapped sites overview"}
             </strong>
             <span className="site-sub">
               {selected
                 ? selected.schoolName
-                : `${validSites.length} ไซต์`}
+                : `${validSites.length} ${th ? "ไซต์ที่มีพิกัด • เลือกไซต์เพื่อดูรายละเอียด" : "sites with coordinates • Select a site for details"}`}
             </span>
           </div>
-          <div className="site-metrics">
+          {selected && <div className="site-metrics">
             <div className="metric">
               <b>
-                {formatNumber(
-                  selected ? selected.productionKwh : validSites.some(s=>s.productionKwh!==null) ? totalProductionKwh : null,
-                )}
+                {formatNumber(selected.productionKwh)}
               </b>
-              <span>kWh {selected ? "ช่วงเวลาที่เลือก" : "ช่วงเวลาที่เลือก"}</span>
+              <span>kWh {th ? "ช่วงเวลาที่เลือก" : "Selected period"}</span>
             </div>
             <div className="metric">
               <b>
-                {formatNumber(
-                  selected ? selected.capacityMwp : totalCapacityMwp,
-                )}
+                {formatNumber(selected.capacityMwp)}
               </b>
-              <span>MWp {selected ? "กำลังติดตั้ง" : "ติดตั้งรวม"}</span>
+              <span>MWp {th ? "กำลังติดตั้ง" : "Installed capacity"}</span>
             </div>
             {selected && (
-              <button
+              <Button
+                variant="ghost"
+                size="sm"
                 type="button"
                 onClick={() => setSelectedId(null)}
-                className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted cursor-pointer"
-                aria-label="ปิดและกลับสู่ภาพรวม"
-                title="ปิดและกลับสู่ภาพรวม"
+                className="h-auto gap-0 px-0 text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted cursor-pointer"
+                aria-label={th ? "ปิดและกลับสู่ภาพรวม" : "Close and return to overview"}
+                title={th ? "ปิดและกลับสู่ภาพรวม" : "Close and return to overview"}
               >
                 <X className="size-4" />
-              </button>
+              </Button>
             )}
-          </div>
+          </div>}
         </div>
       </CardContent>
     </Card>

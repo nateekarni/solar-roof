@@ -62,7 +62,7 @@ export function AuditDetailModal({
         className="max-sm:fixed max-sm:inset-0 max-sm:top-0 max-sm:h-dvh max-sm:max-h-dvh max-sm:w-full max-sm:rounded-none max-sm:p-4 max-sm:flex max-sm:flex-col sm:max-w-2xl sm:rounded-2xl sm:p-6 sm:max-h-[85vh] overflow-hidden"
       >
         {/* Header */}
-        <DialogHeader className="shrink-0 pb-3 border-b border-border/60">
+        <DialogHeader className="shrink-0 pb-3 order/60">
           <div className="flex items-center gap-3">
             <div className="size-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
               <History className="size-5" />
@@ -88,7 +88,7 @@ export function AuditDetailModal({
         {/* Scrollable Body */}
         <div className="flex-1 overflow-y-auto py-4 space-y-4 pr-1 text-xs">
           {/* Key Facts 2-Column Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 rounded-xl bg-muted/40 border border-border/60">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 border-t pt-4">
             <div className="space-y-1">
               <span className="text-[11px] text-muted-foreground font-medium flex items-center gap-1.5">
                 <Clock className="size-3.5 text-muted-foreground" />
@@ -140,7 +140,7 @@ export function AuditDetailModal({
           </div>
 
           {/* Reference IDs with Copy Action */}
-          <div className="space-y-2 p-3.5 rounded-xl border border-border/60 bg-card">
+          <div className="space-y-2 border-t pt-4">
             <div className="flex items-center justify-between gap-2">
               <div className="min-w-0">
                 <span className="text-[11px] text-muted-foreground font-medium block">
@@ -156,7 +156,7 @@ export function AuditDetailModal({
                   variant="ghost"
                   size="icon-sm"
                   onClick={() => copyToClipboard(event.entityId!, "Entity ID")}
-                  className="size-7 shrink-0 text-muted-foreground hover:text-foreground"
+                  className="size-10 shrink-0 text-muted-foreground hover:text-foreground"
                   title="Copy Entity ID"
                 >
                   <Copy className="size-3.5" />
@@ -179,7 +179,7 @@ export function AuditDetailModal({
                   variant="ghost"
                   size="icon-sm"
                   onClick={() => copyToClipboard(event.correlationId!, "Correlation ID")}
-                  className="size-7 shrink-0 text-muted-foreground hover:text-foreground"
+                  className="size-10 shrink-0 text-muted-foreground hover:text-foreground"
                   title="Copy Correlation ID"
                 >
                   <Copy className="size-3.5" />
@@ -241,5 +241,3 @@ export function AuditDetailModal({
     </Dialog>
   );
 }
-
-

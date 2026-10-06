@@ -65,7 +65,7 @@ export function SchoolFormDialog({
     resolver: zodResolver(schoolSchema),
     defaultValues: {
       name: "",
-      region: "ภาคกลาง",
+
     },
   });
 
@@ -103,7 +103,7 @@ export function SchoolFormDialog({
         </DialogHeader>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 pt-3.5">
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <Label htmlFor="school-name" required className="text-xs font-medium">
               {locale === "th" ? "ชื่อโรงเรียน" : "School Name"}
             </Label>
@@ -118,12 +118,12 @@ export function SchoolFormDialog({
             )}
           </div>
 
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <Label htmlFor="school-region" required className="text-xs font-medium">
               {locale === "th" ? "ภูมิภาค" : "Region"}
             </Label>
             <Select
-              defaultValue="ภาคกลาง"
+
               onValueChange={(val) => setValue("region", val)}
             >
               <SelectTrigger id="school-region" className="text-xs h-10 w-full">

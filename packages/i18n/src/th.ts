@@ -160,8 +160,8 @@ export const th = {
     auditHistory: "ประวัติการทำงาน",
     systemSettings: "ตั้งค่าระบบ",
     role: "บทบาท",
-    owner: "ผู้ดูแลระบบสูงสุด",
-    admin: "ผู้ดูแลระบบ",
+    owner: "เจ้าของบริษัท",
+    admin: "ผู้ดูแลระบบสูงสุด",
     schoolUser: "เจ้าหน้าที่โรงเรียน",
   },
   settings: {

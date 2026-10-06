@@ -92,7 +92,7 @@ export function NotificationSettingsDialog({
           </div>
 
           {criticalEmail && (
-            <div className="space-y-1.5 pl-1">
+            <div className="space-y-2 pl-1">
               <Label htmlFor="s-email" className="text-xs font-medium">
                 {locale === "th" ? "อีเมลสำหรับรับการแจ้งเตือน" : "Notification Recipient Email"}
               </Label>

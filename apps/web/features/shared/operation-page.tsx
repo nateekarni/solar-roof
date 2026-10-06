@@ -7,6 +7,8 @@ import { OperationPageHeader } from "./operation-page-header";
 import { OperationQueryTable } from "./operation-query-table";
 import { OperationAutoRefresh } from "./operation-auto-refresh";
 import { ReportJobs } from "../reports/job-status";
+import { getSessionUser } from "../../lib/session-user";
+import { FinancialDocumentIntro } from "./financial-document-intro";
 import {HistoryRequestDialog} from '../reports/history-request-dialog';
 
 type OperationResponse = OperationPageData<OperationRow>;
@@ -61,6 +63,8 @@ export async function OperationPage({
   description?: string;
   action?: string | undefined;
 }) {
+  const user = await getSessionUser();
+  const businessFinancial = ["owner","school_user"].includes(user.role) && ["billing","contracts","receipts"].includes(resource);
   const cookieStore = await cookies();
   const locale = (cookieStore.get("locale")?.value as Locale) || "th";
   const t = createTranslator(locale);
@@ -79,16 +83,17 @@ export async function OperationPage({
   const isRealtime = resource === "alerts" || resource === "notifications" || resource === "sites";
 
   return (
-    <div className="content">
+    <div className="content min-w-0 max-w-full">
       {isRealtime && <OperationAutoRefresh intervalMs={10_000} />}
-      <div className="ops-content space-y-4">
+      <div className={businessFinancial ? "ops-content min-w-0 space-y-4 [&_button]:min-h-11 [&_input]:min-h-11" : "ops-content space-y-4"}>
         <OperationPageHeader
           resource={resource}
           eyebrow={displayEyebrow}
           title={displayTitle}
-          description={displayDescription}
+          description={businessFinancial ? "" : displayDescription}
           action={displayAction}
         />
+        <FinancialDocumentIntro resource={resource} role={user.role} locale={locale} />
         {resource === 'reports' && <><HistoryRequestDialog/><ReportJobs /></>}
         <OperationQueryTable
           resource={resource}

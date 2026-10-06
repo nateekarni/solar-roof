@@ -23,8 +23,6 @@ export class OperationsController {
     @Inject(OperationsService) private readonly operations: OperationsService,
   ) {}
 
-  @Get("documents/:id")
-  document(@Param("id") id:string,@Req() req:any) {return this.operations.document(id,req?.user);}
 
   @Get(":resource/summary")
   summary(@Param("resource") resource: string, @Req() req: any) {
@@ -35,14 +33,31 @@ export class OperationsController {
   async exportCsv(@Param("resource") resource: string, @Res() res: Response, @Req() req: any) {
     const {cursor: _cursor, ...filters} = req?.query ?? {};
     const data = await this.operations.list(resource, req?.user, {...filters, limit:'100'});
+    let page = data.page;
+    const seen = new Set<string>();
+    while (page.hasMore && page.nextCursor) {
+      if (seen.has(page.nextCursor)) throw new Error('Export cursor did not advance');
+      seen.add(page.nextCursor);
+      const batch = await this.operations.list(resource, req?.user, {...filters, limit:'100', cursor:page.nextCursor});
+      data.rows.push(...batch.rows);
+      page = batch.page;
+    }
     const csv = toCsv(data.columns, data.rows, data.idKey || "id");
-    const filename = `${resource}-first-100-${new Date().toISOString().slice(0, 10)}.csv`;
-    
+    const filename = `${resource}-${filters.from ?? 'all'}-${filters.to ?? 'all'}.csv`;
+
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
-    res.setHeader('X-Export-Scope', 'first-100-matching-rows');
-    res.setHeader('X-Export-Truncated', String(data.page.hasMore));
+    res.setHeader('X-Export-Scope', 'all-matching-rows');
+    res.setHeader('X-Export-Truncated', 'false');
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     res.send("\uFEFF" + csv);
+  }
+
+  @Get("documents/:id")
+  document(@Param("id") id:string,@Req() req:any) {return this.operations.document(id,req?.user);}
+
+  @Get(":resource/records/:id")
+  detail(@Param("resource") resource:string,@Param("id") id:string,@Req() req:any) {
+    return this.operations.detail(resource,id,req?.user);
   }
 
   @Get(":resource")

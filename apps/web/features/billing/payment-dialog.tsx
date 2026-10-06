@@ -27,6 +27,7 @@ import {
 } from "../../components/ui/dialog";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
+import { DatePicker } from "../../components/ui/date-picker";
 import { Label } from "../../components/ui/label";
 import { Badge } from "../../components/ui/badge";
 import { apiClient } from "../../lib/api-client";
@@ -143,7 +144,7 @@ export function PaymentDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md max-h-[92vh] overflow-y-auto p-5 sm:p-6 rounded-2xl">
-        <DialogHeader className="pb-3 border-b border-border/50">
+        <DialogHeader className="pb-3 order/50">
           <div className="flex items-center gap-2">
             <div className="size-8 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
               <QrCode className="size-4.5" />
@@ -170,7 +171,7 @@ export function PaymentDialog({
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4 pt-1">
             {/* Amount Summary Card */}
-            <div className="p-3.5 rounded-xl bg-muted/40 border border-border/60 space-y-2">
+            <div className="space-y-2 border-t pt-4">
               <div className="flex justify-between items-center text-xs text-muted-foreground">
                 <span>พลังงานที่ใช้ ({energyKwh.toLocaleString()} kWh @ ฿{rate?.toFixed(2) ?? "—"})</span>
                 <span className="font-medium text-foreground">฿{amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
@@ -201,11 +202,11 @@ export function PaymentDialog({
 
             {/* Slip Upload & Transfer Information */}
             <div className="space-y-3 pt-1">
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 <Label htmlFor="slip-upload" className="text-xs font-semibold">
                   แนบสลิปหลักฐานการโอน <span className="text-destructive">*</span>
                 </Label>
-                
+
                 <div className="relative border-2 border-dashed border-border/80 hover:border-primary/60 rounded-xl p-3 text-center transition-colors cursor-pointer bg-muted/20">
                   <input
                     id="slip-upload"
@@ -248,22 +249,22 @@ export function PaymentDialog({
 
               {/* Transfer Date Time */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                <div className="space-y-1">
+                <div className="space-y-2">
                   <Label htmlFor="paid-at" className="text-xs font-semibold flex items-center gap-1">
                     <Clock className="size-3 text-muted-foreground" />
                     วันและเวลาที่โอน
                   </Label>
-                  <Input
+                  <DatePicker
                     id="paid-at"
-                    type="datetime-local"
+                    includeTime
                     value={paidAt}
-                    onChange={(e) => setPaidAt(e.target.value)}
-                    className="h-9 text-xs"
+                    onValueChange={setPaidAt}
+                    className="h-10 text-xs"
                     required
                   />
                 </div>
 
-                <div className="space-y-1">
+                <div className="space-y-2">
                   <Label htmlFor="note" className="text-xs font-semibold">
                     หมายเหตุเพิ่มเติม (ถ้ามี)
                   </Label>
@@ -272,7 +273,7 @@ export function PaymentDialog({
                     placeholder="เช่น โอนจากบัญชีโรงเรียน"
                     value={note}
                     onChange={(e) => setNote(e.target.value)}
-                    className="h-9 text-xs"
+                    className="h-10 text-xs"
                   />
                 </div>
               </div>
@@ -291,14 +292,14 @@ export function PaymentDialog({
                 variant="outline"
                 onClick={() => onOpenChange(false)}
                 disabled={isSubmitting}
-                className="w-full sm:w-auto h-9 text-xs"
+                className="w-full sm:w-auto h-10 text-xs"
               >
                 ยกเลิก
               </Button>
               <Button
                 type="submit"
                 disabled={isSubmitting}
-                className="w-full sm:w-auto h-9 text-xs bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5"
+                className="w-full sm:w-auto h-10 text-xs bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5"
               >
                 {isSubmitting && <Loader2 className="size-3.5 animate-spin" />}
                 ยืนยันการชำระเงิน

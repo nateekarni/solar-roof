@@ -5,7 +5,6 @@ import type {
   ColumnDef,
   ColumnFiltersState,
   SortingState,
-  VisibilityState,
 } from "@tanstack/react-table";
 import {
   flexRender,
@@ -21,8 +20,8 @@ import {
   ChevronsLeft,
   ChevronsRight,
   Database,
+  ArrowUpDown,
   Search,
-  SlidersHorizontal,
 } from "lucide-react";
 import {
   Table,
@@ -34,14 +33,8 @@ import {
 } from "./table";
 import { Button } from "./button";
 import { Input } from "./input";
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "./dropdown-menu";
+import { SearchInput } from "./search-input";
+import { Label } from "./label";
 import {
   Select,
   SelectContent,
@@ -52,32 +45,6 @@ import {
 import { Empty, EmptyDescription, EmptyMedia, EmptyTitle } from "./empty";
 import { useLocale } from "../../providers/locale-provider";
 import { cn } from "../../lib/utils";
-
-const DEFAULT_COLUMN_TITLES: Record<string, { th: string; en: string }> = {
-  name: { th: "ชื่อโรงเรียน", en: "School Name" },
-  schoolName: { th: "โรงเรียน", en: "School" },
-  siteName: { th: "ชื่อไซต์", en: "Site Name" },
-  region: { th: "ภูมิภาค", en: "Region" },
-  capacityMwp: { th: "กำลังติดตั้ง (MWp)", en: "Capacity (MWp)" },
-  sitesCount: { th: "จำนวนไซต์", en: "Sites Count" },
-  gatewaysCount: { th: "Gateway", en: "Gateways Count" },
-  gateway: { th: "Gateway", en: "Gateway" },
-  status: { th: "สถานะ", en: "Status" },
-  protocol: { th: "โพรโทคอล", en: "Protocol" },
-  productionKwh: { th: "ผลิตสะสม (kWh)", en: "Production (kWh)" },
-  period: { th: "รอบบิล", en: "Billing Period" },
-  consumedKwh: { th: "พลังงานที่ใช้ (kWh)", en: "Consumed (kWh)" },
-  rate: { th: "อัตราค่าไฟ", en: "Rate" },
-  amount: { th: "ยอดรวม", en: "Amount" },
-  severity: { th: "ระดับความรุนแรง", en: "Severity" },
-  title: { th: "หัวข้อ", en: "Title" },
-  detail: { th: "รายละเอียด", en: "Detail" },
-  occurredAt: { th: "เวลาที่เกิด", en: "Occurred At" },
-  action: { th: "การดำเนินการ", en: "Action" },
-  actor: { th: "ผู้ดำเนินการ", en: "Actor" },
-  entity: { th: "ข้อมูลเป้าหมาย", en: "Target" },
-  timestamp: { th: "วันเวลา", en: "Timestamp" },
-};
 
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
@@ -90,6 +57,9 @@ interface DataTableProps<TData, TValue> {
   pageSize?: number;
   onRowClick?: (row: TData) => void;
   serverManaged?: boolean;
+  variant?: "default" | "embedded";
+  emptyContent?: React.ReactNode;
+  renderSearchToolbar?: (search: React.ReactNode) => React.ReactNode;
 }
 
 export function DataTable<TData, TValue>({
@@ -97,17 +67,20 @@ export function DataTable<TData, TValue>({
   data,
   getRowId,
   searchKey,
-  searchPlaceholder = "ค้นหา...",
+  searchPlaceholder,
   filterComponent,
   actionsComponent,
   pageSize = 10,
   onRowClick,
   serverManaged = false,
+  variant = "default",
+  renderSearchToolbar,
+  emptyContent,
 }: DataTableProps<TData, TValue>) {
   const locale = useLocale();
+  const searchId = React.useId();
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
-  const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({});
   const [globalFilter, setGlobalFilter] = React.useState("");
 
   const table = useReactTable({
@@ -121,12 +94,10 @@ export function DataTable<TData, TValue>({
     state: {
       sorting,
       columnFilters,
-      columnVisibility,
       globalFilter,
     },
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
-    onColumnVisibilityChange: setColumnVisibility,
     onGlobalFilterChange: setGlobalFilter,
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
@@ -141,65 +112,31 @@ export function DataTable<TData, TValue>({
 
   return (
     <div className="space-y-3.5 w-full">
+      {renderSearchToolbar?.(<SearchInput aria-label={searchPlaceholder ?? (locale === "th" ? "ค้นหาในตาราง" : "Search table")} placeholder={searchPlaceholder ?? (locale === "th" ? "ค้นหา…" : "Search…")} value={globalFilter} onChange={event=>setGlobalFilter(event.target.value)} />)}
       {/* Table Toolbar */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-1 items-center gap-2">
-          {!serverManaged && <div className="relative w-full max-w-xs">
+      {!renderSearchToolbar && (!serverManaged || filterComponent || actionsComponent) && <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="w-full max-w-xs">
+          {!serverManaged && <div className="space-y-2"><Label htmlFor={searchId}>{locale === "th" ? "ค้นหา" : "Search"}</Label><div className="relative w-full">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
             <Input
-              placeholder={searchPlaceholder}
+              id={searchId}
+              placeholder={searchPlaceholder ?? (locale === "th" ? "ค้นหา…" : "Search…")}
               value={globalFilter ?? ""}
               onChange={(event) => setGlobalFilter(event.target.value)}
-              className="h-9 pl-8 text-xs bg-white dark:bg-card border-border shadow-2xs"
+              className="h-10 pl-8 bg-white dark:bg-card border-border shadow-2xs"
             />
-          </div>}
-          {filterComponent}
+          </div></div>}
         </div>
 
         <div className="flex items-center gap-2">
+          {filterComponent}
           {actionsComponent}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-10 gap-1.5 text-xs font-medium bg-white dark:bg-card border-border shadow-xs hover:bg-neutral-50 dark:hover:bg-accent"
-              >
-                <SlidersHorizontal className="size-3.5" />
-                {locale === "en" ? "Columns" : "คอลัมน์"}
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              <DropdownMenuLabel className="text-xs">
-                {locale === "en" ? "Toggle Columns" : "แสดง/ซ่อนคอลัมน์"}
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {table
-                .getAllColumns()
-                .filter((column) => column.getCanHide())
-                .map((column) => {
-                  const metaTitle = (column.columnDef.meta as { title?: string })?.title;
-                  const dictTitle = DEFAULT_COLUMN_TITLES[column.id]?.[locale === "th" ? "th" : "en"];
-                  const headerStr = typeof column.columnDef.header === "string" ? column.columnDef.header : undefined;
-                  const title = metaTitle || dictTitle || headerStr || column.id;
-                  return (
-                    <DropdownMenuCheckboxItem
-                      key={column.id}
-                      className="text-xs cursor-pointer"
-                      checked={column.getIsVisible()}
-                      onCheckedChange={(value) => column.toggleVisibility(!!value)}
-                    >
-                      {title}
-                    </DropdownMenuCheckboxItem>
-                  );
-                })}
-            </DropdownMenuContent>
-          </DropdownMenu>
+
         </div>
-      </div>
+      </div>}
 
       {/* Table Container */}
-      <div className="overflow-hidden rounded-xl border border-border bg-card shadow-xs">
+      <div className={cn("overflow-hidden bg-card", variant === "embedded" ? "border-0" : "rounded-xl border border-border shadow-xs")} style={{containerType:"inline-size"}}>
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
@@ -208,17 +145,18 @@ export function DataTable<TData, TValue>({
                   {headerGroup.headers.map((header) => (
                     <TableHead
                       key={header.id}
+                      style={header.column.id === "actions" ? {width:64,minWidth:64,maxWidth:64} : undefined}
                       className="h-10 py-0 text-xs font-semibold text-muted-foreground whitespace-nowrap"
                     >
                       {header.isPlaceholder
                         ? null
-                        : flexRender(header.column.columnDef.header, header.getContext())}
+                        : !serverManaged && typeof header.column.columnDef.header === 'string' && header.column.getCanSort() ? <Button className="h-10 px-0 py-0 text-xs font-semibold hover:bg-transparent tracking-normal" variant="ghost" size="sm" onClick={() => header.column.toggleSorting(header.column.getIsSorted() === 'asc')}>{header.column.columnDef.header}<ArrowUpDown className="size-3"/></Button> : flexRender(header.column.columnDef.header, header.getContext())}
                     </TableHead>
                   ))}
                 </TableRow>
               ))}
             </TableHeader>
-            <TableBody>
+            <TableBody className={variant === "embedded" ? "[&_tr]:border-y [&_tr]:border-border [&_tr:last-child]:border-b-0" : undefined}>
               {table.getRowModel().rows?.length ? (
                 table.getRowModel().rows.map((row) => (
                   <TableRow
@@ -248,7 +186,7 @@ export function DataTable<TData, TValue>({
                     }}
                   >
                     {row.getVisibleCells().map((cell) => (
-                      <TableCell key={cell.id} className="text-xs py-3">
+                      <TableCell key={cell.id} className="text-xs py-3" style={cell.column.id === "actions" ? {width:64,minWidth:64,maxWidth:64} : undefined}>
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </TableCell>
                     ))}
@@ -256,16 +194,16 @@ export function DataTable<TData, TValue>({
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={columns.length} className="h-44 text-center">
-                    <Empty className="py-6">
+                  <TableCell colSpan={Math.max(1, table.getVisibleLeafColumns().length)} className="h-44 text-center">
+                    {emptyContent ?? <Empty className="sticky left-0 gap-1 border-0 py-6" style={{width:"calc(100cqw - 1rem)"}}>
                       <EmptyMedia variant="icon">
                         <Database className="size-6 text-muted-foreground" />
                       </EmptyMedia>
-                      <EmptyTitle>ไม่พบข้อมูล</EmptyTitle>
+                      <EmptyTitle>{locale === 'th' ? 'ไม่พบข้อมูล' : 'No results'}</EmptyTitle>
                       <EmptyDescription>
-                        ไม่มีรายการข้อมูลที่ตรงกับเงื่อนไขการค้นหา
+                        {locale === 'th' ? 'ไม่มีรายการข้อมูลที่ตรงกับเงื่อนไขการค้นหา' : 'No records match your search criteria.'}
                       </EmptyDescription>
-                    </Empty>
+                    </Empty>}
                   </TableCell>
                 </TableRow>
               )}
@@ -274,22 +212,22 @@ export function DataTable<TData, TValue>({
         </div>
 
         {/* Pagination Bar */}
-        {!serverManaged && <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-4 py-3 bg-card/60">
+        {!serverManaged && <div data-slot="table-pagination" className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-4 py-3 bg-card/60">
           <div className="text-xs text-muted-foreground">
-            แสดง <span className="font-semibold text-foreground">{table.getRowModel().rows.length}</span> จากทั้งหมด{" "}
-            <span className="font-semibold text-foreground">{table.getFilteredRowModel().rows.length}</span> รายการ
+            {locale === "th" ? "แสดง" : "Showing"} <span className="font-semibold text-foreground">{table.getRowModel().rows.length}</span> {locale === "th" ? "จากทั้งหมด" : "of"}{" "}
+            <span className="font-semibold text-foreground">{table.getFilteredRowModel().rows.length}</span> {locale === "th" ? "รายการ" : "records"}
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground whitespace-nowrap">ต่อหน้า</span>
+              <span className="text-xs text-muted-foreground whitespace-nowrap">{locale === "th" ? "ต่อหน้า" : "Rows per page"}</span>
               <Select
                 value={`${table.getState().pagination.pageSize}`}
                 onValueChange={(value) => {
                   table.setPageSize(Number(value));
                 }}
               >
-                <SelectTrigger className="h-8 w-16 text-xs">
+                <SelectTrigger className="h-10 w-16 text-xs">
                   <SelectValue placeholder={table.getState().pagination.pageSize} />
                 </SelectTrigger>
                 <SelectContent side="top">
@@ -303,7 +241,7 @@ export function DataTable<TData, TValue>({
             </div>
 
             <div className="text-xs text-muted-foreground whitespace-nowrap">
-              หน้า <span className="font-semibold text-foreground">{table.getState().pagination.pageIndex + 1}</span> /{" "}
+              {locale === "th" ? "หน้า" : "Page"} <span className="font-semibold text-foreground">{table.getState().pagination.pageIndex + 1}</span> /{" "}
               {table.getPageCount() || 1}
             </div>
 
@@ -314,7 +252,7 @@ export function DataTable<TData, TValue>({
                 className="size-8"
                 onClick={() => table.setPageIndex(0)}
                 disabled={!table.getCanPreviousPage()}
-                aria-label="หน้าแรก"
+                aria-label={locale === "th" ? "หน้าแรก" : "First page"}
               >
                 <ChevronsLeft className="size-3.5" />
               </Button>
@@ -324,7 +262,7 @@ export function DataTable<TData, TValue>({
                 className="size-8"
                 onClick={() => table.previousPage()}
                 disabled={!table.getCanPreviousPage()}
-                aria-label="หน้าก่อนหน้า"
+                aria-label={locale === "th" ? "หน้าก่อนหน้า" : "Previous page"}
               >
                 <ChevronLeft className="size-3.5" />
               </Button>
@@ -334,7 +272,7 @@ export function DataTable<TData, TValue>({
                 className="size-8"
                 onClick={() => table.nextPage()}
                 disabled={!table.getCanNextPage()}
-                aria-label="หน้าถัดไป"
+                aria-label={locale === "th" ? "หน้าถัดไป" : "Next page"}
               >
                 <ChevronRight className="size-3.5" />
               </Button>
@@ -344,7 +282,7 @@ export function DataTable<TData, TValue>({
                 className="size-8"
                 onClick={() => table.setPageIndex(table.getPageCount() - 1)}
                 disabled={!table.getCanNextPage()}
-                aria-label="หน้าสุดท้าย"
+                aria-label={locale === "th" ? "หน้าสุดท้าย" : "Last page"}
               >
                 <ChevronsRight className="size-3.5" />
               </Button>

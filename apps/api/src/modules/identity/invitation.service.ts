@@ -8,9 +8,8 @@ import {schoolScope, type ScopePrincipal} from '../../common/auth/route-policy.j
 export type InvitationStatus='pending_delivery'|'sent'|'delivery_failed';
 export interface InviteInput {email:string;displayName:string;role:string;schoolId?:string|null}
 export function canGrantInvitation(actor:ScopePrincipal & {status?:string}, role:string, schoolId:string|null):boolean {
-  if(actor.status!=='active' || !['owner','admin'].includes(actor.role ?? '') || !['owner','admin','operator','accountant','school_user'].includes(role))return false;
+  if(actor.status!=='active' || actor.role !== 'admin' || !['owner','admin','operator','accountant','school_user'].includes(role))return false;
   if(role==='school_user'&&!schoolId)return false;
-  if(actor.role!=='owner'&&role!=='school_user')return false;
   const scope=schoolScope(actor);return scope===null || (!!schoolId&&scope.includes(schoolId));
 }
 const digest=(token:string)=>createHash('sha256').update(token).digest('hex');

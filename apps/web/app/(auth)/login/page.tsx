@@ -2,8 +2,8 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { createTranslator, type Locale } from "@solar/i18n";
-import { AlertCircle, Eye, EyeOff, Lock, Mail, ShieldCheck, Sun, Zap } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { AlertCircle, Eye, EyeOff, Lock, Mail, Sun, LoaderCircle } from "lucide-react";
+
 import * as React from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -11,6 +11,7 @@ import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Label } from "../../../components/ui/label";
 import { Tabs, TabsList, TabsTrigger } from "../../../components/ui/tabs";
+import { Card, CardContent } from "../../../components/ui/card";
 import { authStore } from "../../../stores/auth-store";
 
 const getInitialLocale = (): Locale => {
@@ -20,7 +21,7 @@ const getInitialLocale = (): Locale => {
 };
 
 export default function LoginPage() {
-  const router = useRouter();
+
   const [showPassword, setShowPassword] = React.useState(false);
   const [errorKey, setErrorKey] = React.useState<string | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
@@ -43,6 +44,7 @@ export default function LoginPage() {
   const handleLocaleChange = (nextLocale: string) => {
     const loc = (nextLocale as Locale) || "th";
     setLocaleState(loc);
+    clearErrors();
     document.cookie = `locale=${loc}; path=/; max-age=31536000; SameSite=Lax`;
   };
 
@@ -63,6 +65,7 @@ export default function LoginPage() {
   const {
     register,
     handleSubmit,
+    clearErrors,
     formState: { errors },
   } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
@@ -107,211 +110,33 @@ export default function LoginPage() {
     }
   };
 
-  const heroTitleLines = t("auth.heroTitle").split("\n");
 
-  return (
-    <div className="flex min-h-svh w-full flex-col lg:flex-row bg-background text-foreground">
-      {/* Left Branding Panel with Hero Image */}
-      <div className="relative hidden lg:flex lg:w-7/12 flex-col justify-between overflow-hidden p-12 text-white">
-        {/* Background Image */}
-        <img
-          src="/login-hero.jpg"
-          alt="Solar rooftop installation"
-          className="absolute inset-0 h-full w-full object-cover object-center"
-          aria-hidden="true"
-        />
-
-        {/* Ambient Dark Gradient Overlay */}
-        <div className="absolute inset-0 bg-gradient-to-br from-amber-950/85 via-stone-900/80 to-stone-950/95 pointer-events-none" />
-
-        {/* Subtle Decorative Grid Pattern */}
-        <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff0a_1px,transparent_1px),linear-gradient(to_bottom,#ffffff0a_1px,transparent_1px)] bg-[size:3rem_3rem] opacity-20 pointer-events-none" />
-
-        {/* Top Header */}
-        <div className="relative z-10 flex items-center gap-3">
-          <div className="flex size-11 items-center justify-center rounded-xl bg-white/10 backdrop-blur-md border border-white/20 shadow-inner">
-            <Sun className="size-6 text-amber-300" />
-          </div>
-          <div>
-            <span className="text-lg font-bold tracking-tight">Solar Roof</span>
-            <span className="block text-[11px] font-medium text-amber-200/80 uppercase tracking-widest">
-              {t("app.platform")}
-            </span>
-          </div>
-        </div>
-
-        {/* Middle Hero Content */}
-        <div className="relative z-10 my-auto max-w-lg space-y-6">
-          <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3.5 py-1.5 text-xs font-medium backdrop-blur-md shadow-xs">
-            <Zap className="size-3.5 text-amber-300" />
-            <span>{t("auth.badge")}</span>
-          </div>
-
-          <h1 className="text-4xl font-extrabold tracking-tight sm:text-5xl leading-[1.15]">
-            {heroTitleLines[0]} <br />
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-200 to-yellow-400">
-              {heroTitleLines[1] || ""}
-            </span>
-          </h1>
-
-          <p className="text-sm text-amber-100/80 leading-relaxed">
-            {t("auth.heroDesc")}
-          </p>
-
-          <div className="grid grid-cols-3 gap-4 pt-4 border-t border-white/15">
-            <div>
-              <div className="text-sm font-semibold text-white">{locale === "th" ? "ติดตามไซต์งาน" : "Site monitoring"}</div>
-              <div className="text-xs text-amber-200/70">{locale === "th" ? "สถานะไซต์และ Gateway" : "Site and gateway status"}</div>
-            </div>
-            <div>
-              <div className="text-sm font-semibold text-white">{locale === "th" ? "ข้อมูลพลังงาน" : "Energy readings"}</div>
-              <div className="text-xs text-amber-200/70">{locale === "th" ? "จากมิเตอร์ที่เชื่อมต่อ" : "From connected meters"}</div>
-            </div>
-            <div>
-              <div className="text-sm font-semibold text-white">{locale === "th" ? "สิทธิ์ตามบทบาท" : "Role-based access"}</div>
-              <div className="text-xs text-amber-200/70">{locale === "th" ? "ข้อมูลตามสิทธิ์บัญชี" : "Account-scoped data"}</div>
-            </div>
-          </div>
-        </div>
-
-        {/* Bottom Footer */}
-        <div className="relative z-10 flex items-center justify-between text-xs text-amber-200/60 pt-6">
-          <span>{t("auth.copyright")}</span>
-          <div className="flex items-center gap-1.5">
-            <ShieldCheck className="size-4 text-amber-300" />
-            <span>{t("auth.securedBy")}</span>
-          </div>
-        </div>
+  const th = locale === "th";
+  return <main className="grid min-h-svh bg-muted/30 text-foreground lg:grid-cols-2">
+    <section className="relative hidden min-h-svh overflow-hidden lg:flex lg:flex-col lg:justify-end" aria-label={th ? "แพลตฟอร์มพลังงานแสงอาทิตย์" : "Solar energy platform"}>
+      <img src="/login-hero.jpg" alt="" aria-hidden="true" className="absolute inset-0 h-full w-full object-cover"/>
+      <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-background/10"/>
+      <div className="relative space-y-5 px-10 py-16 xl:px-16">
+        <span className="inline-flex rounded-full bg-primary/15 px-4 py-2 text-sm font-medium">{th ? "แพลตฟอร์มบริหารพลังงานแสงอาทิตย์" : "Solar energy management platform"}</span>
+        <h2 className="max-w-lg text-3xl font-semibold leading-snug tracking-tight xl:text-4xl">{th ? "ติดตามพลังงานและจัดการการเรียกเก็บเงิน" : "Monitor energy and manage billing"}</h2>
+        <p className="max-w-md text-sm leading-relaxed text-muted-foreground">{th ? "เชื่อมต่อไซต์งาน ดูข้อมูลจากมิเตอร์ และจัดการเอกสารการเรียกเก็บเงินในที่เดียว" : "Connect your sites, view meter readings and manage billing documents in one place."}</p>
+        <p className="pt-6 text-xs text-muted-foreground">{t("auth.copyright")}</p>
       </div>
-
-      {/* Right Login Form Panel */}
-      <div className="flex flex-1 flex-col justify-center px-6 py-12 lg:px-16 lg:py-24">
-        <div className="mx-auto w-full max-w-md space-y-8">
-          {/* Mobile Header */}
-          <div className="lg:hidden flex items-center gap-2.5 pb-2">
-            <div className="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <Sun className="size-5" />
-            </div>
-            <div>
-              <span className="font-bold text-base">Solar Roof</span>
-              <span className="block text-[10px] text-muted-foreground uppercase tracking-widest">
-                Platform
-              </span>
-            </div>
-          </div>
-
-          {/* Heading Row with Language Switcher Tabs aligned right */}
-          <div className="flex items-start justify-between gap-4">
-            <div className="space-y-1.5">
-              <h2 className="text-2xl font-bold tracking-tight text-foreground md:text-3xl">
-                {t("auth.login")}
-              </h2>
-              <p className="text-sm text-muted-foreground">
-                {t("auth.subtitle")}
-              </p>
-            </div>
-
-              <Tabs
-              value={locale}
-              onValueChange={handleLocaleChange}
-              className="shrink-0"
-            >
-              <TabsList className="h-8">
-                <TabsTrigger value="th" className="text-xs px-3 font-medium">
-                  ไทย
-                </TabsTrigger>
-                <TabsTrigger value="en" className="text-xs px-3 font-medium">
-                  EN
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
-          </div>
-
-          {errorKey && (
-            <div className="flex items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/10 p-3.5 text-xs text-destructive">
-              <AlertCircle className="size-4 shrink-0" />
-              <span>{t(errorKey)}</span>
-            </div>
-          )}
-
-          <form
-            key={locale}
-            method="POST"
-            action=""
-            onSubmit={(e) => {
-              e.preventDefault();
-              handleSubmit(onSubmit)(e);
-            }}
-            className="space-y-4"
-          >
-            <div className="space-y-1.5">
-              <Label htmlFor="email" className="text-xs font-medium">
-                {t("auth.email")}
-              </Label>
-              <div className="relative">
-                <Mail className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder={t("auth.enterEmail")}
-                  autoComplete="email"
-                  className="pl-9 text-xs h-10"
-                  {...register("email")}
-                />
-              </div>
-              {errors.email && (
-                <p className="text-[11px] text-destructive">{errors.email.message}</p>
-              )}
-            </div>
-
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="password" className="text-xs font-medium">
-                  {t("auth.password")}
-                </Label>
-              </div>
-              <div className="relative">
-                <Lock className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-                <Input
-                  id="password"
-                  type={showPassword ? "text" : "password"}
-                  placeholder="••••••••••••"
-                  autoComplete="current-password"
-                  className="pl-9 pr-10 text-xs h-10"
-                  {...register("password")}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-1.5 top-1/2 -translate-y-1/2 flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                  aria-label={showPassword ? t("auth.hidePassword") : t("auth.showPassword")}
-                >
-                  {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-                </button>
-              </div>
-              {errors.password && (
-                <p className="text-[11px] text-destructive">{errors.password.message}</p>
-              )}
-            </div>
-
-            <Button
-              type="submit"
-              className="w-full h-10 font-semibold text-xs transition-all shadow-sm"
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <div className="flex items-center gap-2">
-                  <div className="size-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                  <span>{t("auth.signingIn")}</span>
-                </div>
-              ) : (
-                t("auth.login")
-              )}
-            </Button>
+    </section>
+    <section className="flex min-w-0 flex-col px-4 py-5 sm:px-8 sm:py-8">
+      <div className="flex justify-end"><Tabs value={locale} onValueChange={handleLocaleChange}><TabsList className="h-10 group-data-horizontal/tabs:h-10 bg-muted" aria-label={th ? "ภาษา" : "Language"}><TabsTrigger value="th" className="px-4">ไทย</TabsTrigger><TabsTrigger value="en" className="px-4">EN</TabsTrigger></TabsList></Tabs></div>
+      <div className="flex flex-1 items-start justify-center py-8 sm:items-center sm:py-10">
+        <Card className="w-full max-w-[420px] rounded-2xl shadow-sm"><CardContent className="space-y-7 p-6 sm:p-8">
+          <div className="flex items-center gap-3"><div className="flex size-10 items-center justify-center rounded-xl bg-primary text-primary-foreground"><Sun aria-hidden="true" className="size-6"/></div><div><p className="text-lg font-semibold">Solar Platform</p><p className="text-xs text-muted-foreground">{th ? "ระบบบริหารพลังงานแสงอาทิตย์" : "Solar energy management"}</p></div></div>
+          <div className="space-y-2"><h1 className="text-2xl font-semibold tracking-tight">{t("auth.login")}</h1><p className="text-sm leading-relaxed text-muted-foreground">{t("auth.subtitle")}</p></div>
+          {errorKey && <div role="alert" className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"><AlertCircle aria-hidden="true" className="mt-0.5 size-4 shrink-0"/><span>{t(errorKey)}</span></div>}
+          <form noValidate onSubmit={handleSubmit(onSubmit)} className="space-y-5" aria-busy={isLoading}>
+            <div className="space-y-2"><Label htmlFor="email" className="text-sm">{t("auth.email")}</Label><div className="relative"><Mail aria-hidden="true" className="pointer-events-none absolute left-[calc(0.75rem+1px)] top-1/2 size-4 -translate-y-1/2 text-muted-foreground"/><Input id="email" type="email" autoComplete="username" placeholder={t("auth.enterEmail")} className="h-10 pl-10 text-sm" aria-invalid={!!errors.email} aria-describedby={errors.email ? "email-error" : undefined} {...register("email")}/></div>{errors.email && <p id="email-error" role="alert" className="text-sm text-destructive">{errors.email.message}</p>}</div>
+            <div className="space-y-2"><Label htmlFor="password" className="text-sm">{t("auth.password")}</Label><div className="relative"><Lock aria-hidden="true" className="pointer-events-none absolute left-[calc(0.75rem+1px)] top-1/2 size-4 -translate-y-1/2 text-muted-foreground"/><Input id="password" type={showPassword ? "text" : "password"} autoComplete="current-password" placeholder={th ? "กรอกรหัสผ่าน" : "Enter your password"} className="h-10 pl-10 pr-12 text-sm" aria-invalid={!!errors.password} aria-describedby={errors.password ? "password-error" : undefined} {...register("password")}/><Button type="button" variant="ghost" size="icon" className="absolute right-0 top-0 size-10 text-muted-foreground" onClick={()=>setShowPassword(!showPassword)} aria-label={showPassword ? t("auth.hidePassword") : t("auth.showPassword")} aria-pressed={showPassword}>{showPassword ? <EyeOff aria-hidden="true" className="size-4"/> : <Eye aria-hidden="true" className="size-4"/>}</Button></div>{errors.password && <p id="password-error" role="alert" className="text-sm text-destructive">{errors.password.message}</p>}</div>
+            <Button type="submit" disabled={isLoading} className="h-10 w-full text-sm font-medium">{isLoading && <LoaderCircle aria-hidden="true" className="size-4 animate-spin"/>}{isLoading ? t("auth.signingIn") : t("auth.login")}</Button>
           </form>
-        </div>
+        </CardContent></Card>
       </div>
-    </div>
-  );
+    </section>
+  </main>;
 }
-

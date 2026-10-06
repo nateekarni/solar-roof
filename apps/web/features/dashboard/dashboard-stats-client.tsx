@@ -162,19 +162,14 @@ export function DashboardStatsClient({
   return (
     <>
 
-      <div className="mb-3 flex gap-4 text-sm"><span>{locale === "th" ? "จำนวนบิล" : "Bills"}: <strong>{stats.billCount}</strong></span><span>{locale === "th" ? "ชำระแล้ว" : "Paid bills"}: <strong>{stats.paidBillCount}</strong></span></div>
       <section className="stats-grid">
         {cardConfig.map((metricKey, idx) => {
           const def = metricDefinitions[metricKey] ?? defaultMetricDef;
-          const Icon = def.icon;
           const power = metricKey === 'currentMw' ? formatPower(stats.currentMw === null ? null : stats.currentMw * 1_000_000, locale) : null;
           return (
             <Card className={`stat-card ${def.tone}`} key={`${metricKey}-${idx}`}>
-              {/* Row 1: Icon + Label */}
+              {/* Metric label */}
               <div className="stat-header">
-                <span className="stat-icon">
-                  <Icon className="size-3.5" aria-hidden="true" />
-                </span>
                 <span className="stat-label">{def.label}</span>
               </div>
               {/* Row 2: Number + Badge */}

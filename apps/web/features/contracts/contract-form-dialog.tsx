@@ -1,12 +1,15 @@
 "use client";
 
+import { AddButton } from "../../components/ui/add-button";
+
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Plus, Trash2, Calendar, FileText, Building2, UserCheck } from "lucide-react";
+import { Trash2, Calendar, FileText, Building2, UserCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import * as React from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { notify } from "../../components/feedback/notifications";
+import {Table,TableHeader,TableHead,TableBody,TableRow,TableCell} from "../../components/ui/table";
 import { Button } from "../../components/ui/button";
 import { DatePicker } from "../../components/ui/date-picker";
 import {
@@ -28,7 +31,8 @@ import {
 } from "../../components/ui/select";
 import { apiClient } from "../../lib/api-client";
 import { useLocale, useT } from "../../providers/locale-provider";
-import { useAuth } from "../../stores/auth-store";
+import { useSessionUser } from "../../providers/session-user-provider";
+import { loadContractSites } from "../shared/business-operation-options";
 
 const contractSchema = z.object({
   siteId: z.string().min(1, "กรุณาเลือกไซต์งาน"),
@@ -67,7 +71,7 @@ export function ContractFormDialog({
   const router = useRouter();
   const t = useT();
   const locale = useLocale();
-  const { user } = useAuth();
+  const user = useSessionUser();
   const [loading, setLoading] = React.useState(false);
   const [loadingSites, setLoadingSites] = React.useState(false);
   const [sites, setSites] = React.useState<SiteOption[]>([]);
@@ -90,7 +94,7 @@ export function ContractFormDialog({
     resolver: zodResolver(contractSchema),
     defaultValues: {
       siteId: "",
-      effectiveDate: new Date().toISOString().slice(0, 10),
+
       paymentTerms: "",
       signerName: "",
       taxId: "",
@@ -105,20 +109,17 @@ export function ContractFormDialog({
   React.useEffect(() => {
     if (open) {
       setLoadingSites(true);
-      apiClient
-        .get<SiteOption[]>("/v1/sites")
+      loadContractSites(<T,>(path: string) => apiClient.get<T>(path))
         .then((siteList) => {
           if (Array.isArray(siteList)) {
             setSites(siteList);
-            if (siteList[0]) {
-              setValue("siteId", siteList[0].id, { shouldValidate: true });
-            }
+
           }
         })
-        .catch(() => {})
+        .catch((error: unknown) => { setSites([]); notify.error(error instanceof Error ? error.message : (locale === "th" ? "ไม่สามารถโหลดรายการโรงเรียนได้" : "Unable to load schools")); })
         .finally(() => setLoadingSites(false));
     }
-  }, [open, setValue]);
+  }, [open, setValue, locale]);
 
   const handleAddRateRow = () => {
     const lastRow = rateRows[rateRows.length - 1];
@@ -214,22 +215,22 @@ export function ContractFormDialog({
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 pt-2">
           {/* Section 1: Site and Signer Information */}
-          <div className="rounded-xl border border-border/70 bg-card p-3.5 space-y-3">
-            <div className="flex items-center gap-2 text-xs font-semibold text-foreground border-b border-border/50 pb-2">
+          <div className="space-y-3 border-t pt-4 first:border-t-0 first:pt-0">
+            <div className="flex items-center gap-2 text-xs font-semibold text-foreground">
               <Building2 className="size-4 text-primary" />
               <span>{locale === "th" ? "1. ข้อมูลไซต์งานและคู่สัญญา" : "1. Site & Signer Details"}</span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1.5 sm:col-span-2">
+              <div className="space-y-2 sm:col-span-2">
                 <Label htmlFor="c-site" required className="text-xs font-medium">
                   {locale === "th" ? "เลือกไซต์งานติดตั้ง" : "Solar Site"}
                 </Label>
                 <Select
                   value={watch("siteId")}
-                  onValueChange={(val) => setValue("siteId", val, { shouldValidate: true })}
+                  onValueChange={(val: string) => setValue("siteId", val, { shouldValidate: true })}
                 >
-                  <SelectTrigger id="c-site" className="text-xs h-10 w-full bg-background">
+                  <SelectTrigger id="c-site" className="text-xs h-10 w-full bg-white">
                     <SelectValue placeholder={loadingSites ? "กำลังโหลดไซต์..." : "เลือกไซต์งาน"} />
                   </SelectTrigger>
                   <SelectContent>
@@ -245,37 +246,38 @@ export function ContractFormDialog({
                 )}
               </div>
 
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 <Label htmlFor="effective-date" required className="text-xs font-medium">
                   {locale === "th" ? "วันเริ่มต้นสัญญา" : "Contract Effective Date"}
                 </Label>
                 <DatePicker
                   id="effective-date"
-                  value={watch("effectiveDate")}
-                  onChange={(val) => setValue("effectiveDate", val, { shouldValidate: true })}
+                  value={watch("effectiveDate") || ""}
+                  onValueChange={(val: string) => setValue("effectiveDate", val, { shouldValidate: true })}
+                  required
                 />
               </div>
 
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 <Label htmlFor="terms" required className="text-xs font-medium">
                   {locale === "th" ? "เงื่อนไขการชำระเงิน" : "Payment Terms"}
                 </Label>
                 <Input
                   id="terms"
                   placeholder="ชำระภายใน 30 วัน"
-                  className="text-xs h-10 bg-background"
+                  className="text-xs h-10 bg-white"
                   {...register("paymentTerms")}
                 />
               </div>
 
-              <div className="space-y-1.5 sm:col-span-2">
+              <div className="space-y-2 sm:col-span-2">
                 <Label htmlFor="signer" required className="text-xs font-medium">
                   {locale === "th" ? "ผู้ลงนามฝ่ายผู้ให้บริการ" : "Authorized Signatory"}
                 </Label>
                 <Input
                   id="signer"
                   placeholder="Solar Platform Owner"
-                  className="text-xs h-10 bg-background"
+                  className="text-xs h-10 bg-white"
                   {...register("signerName")}
                 />
               </div>
@@ -283,62 +285,62 @@ export function ContractFormDialog({
           </div>
 
           {/* Section 2: Tax Invoice & Customer Details */}
-          <div className="rounded-xl border border-border/70 bg-card p-3.5 space-y-3">
-            <div className="flex items-center gap-2 text-xs font-semibold text-foreground border-b border-border/50 pb-2">
+          <div className="space-y-3 border-t pt-4 first:border-t-0 first:pt-0">
+            <div className="flex items-center gap-2 text-xs font-semibold text-foreground">
               <FileText className="size-4 text-primary" />
               <span>{locale === "th" ? "2. ข้อมูลออกใบกำกับภาษี / ใบเสร็จรับเงิน (Tax Info)" : "2. Tax Invoice Information"}</span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 <Label htmlFor="tax-id" className="text-xs font-medium">
                   {locale === "th" ? "เลขประจำตัวผู้เสียภาษี (13 หลัก)" : "Tax ID"}
                 </Label>
                 <Input
                   id="tax-id"
                   placeholder="0105558123456"
-                  className="text-xs h-10 font-mono bg-background"
+                  className="text-xs h-10 font-mono bg-white"
                   {...register("taxId")}
                 />
               </div>
 
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 <Label htmlFor="branch" className="text-xs font-medium">
                   {locale === "th" ? "สาขา (Branch)" : "Branch"}
                 </Label>
                 <Input
                   id="branch"
                   placeholder="สำนักงานใหญ่ หรือ 00000"
-                  className="text-xs h-10 bg-background"
+                  className="text-xs h-10 bg-white"
                   {...register("branch")}
                 />
               </div>
 
-              <div className="space-y-1.5 sm:col-span-2">
+              <div className="space-y-2 sm:col-span-2">
                 <Label htmlFor="company-name" className="text-xs font-medium">
                   {locale === "th" ? "ชื่อนิติบุคคล / สถานศึกษาตาม ภ.พ.20" : "Company / School Entity Name"}
                 </Label>
                 <Input
                   id="company-name"
                   placeholder="โรงเรียนมัธยมดอนทอง หรือ บจก. พลังงานโซลาร์"
-                  className="text-xs h-10 bg-background"
+                  className="text-xs h-10 bg-white"
                   {...register("companyName")}
                 />
               </div>
 
-              <div className="space-y-1.5 sm:col-span-2">
+              <div className="space-y-2 sm:col-span-2">
                 <Label htmlFor="tax-address" className="text-xs font-medium">
                   {locale === "th" ? "ที่อยู่จดทะเบียนสำหรับใบกำกับภาษี" : "Tax Registered Address"}
                 </Label>
                 <Input
                   id="tax-address"
                   placeholder="เลขที่ 123 หมู่ 4 ต.ในเมือง อ.เมือง จ.ขอนแก่น 40000"
-                  className="text-xs h-10 bg-background"
+                  className="text-xs h-10 bg-white"
                   {...register("taxAddress")}
                 />
               </div>
 
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 <Label htmlFor="billing-email" className="text-xs font-medium">
                   {locale === "th" ? "อีเมลรับใบแจ้งหนี้ / ใบกำกับภาษี" : "Billing Email"}
                 </Label>
@@ -346,19 +348,19 @@ export function ContractFormDialog({
                   id="billing-email"
                   type="email"
                   placeholder="finance@school.ac.th"
-                  className="text-xs h-10 bg-background"
+                  className="text-xs h-10 bg-white"
                   {...register("billingEmail")}
                 />
               </div>
 
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 <Label htmlFor="billing-phone" className="text-xs font-medium">
                   {locale === "th" ? "เบอร์โทรศัพท์ติดต่อการเงิน" : "Billing Phone"}
                 </Label>
                 <Input
                   id="billing-phone"
                   placeholder="02-123-4567"
-                  className="text-xs h-10 bg-background"
+                  className="text-xs h-10 bg-white"
                   {...register("billingPhone")}
                 />
               </div>
@@ -366,55 +368,55 @@ export function ContractFormDialog({
           </div>
 
           {/* Section 3: Dynamic Rate Schedule Table */}
-          <div className="rounded-xl border border-border/70 bg-card p-3.5 space-y-3">
-            <div className="flex items-center justify-between border-b border-border/50 pb-2">
+          <div className="space-y-3 border-t pt-4 first:border-t-0 first:pt-0">
+            <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-xs font-semibold text-foreground">
                 <Calendar className="size-4 text-primary" />
                 <span>{locale === "th" ? "3. ตารางอัตราค่าไฟตามช่วงเวลา (Dynamic Rate Schedule)" : "3. Rate Schedule"}</span>
               </div>
-              <Button
+              <AddButton
                 type="button"
                 variant="outline"
-                size="sm"
+
                 onClick={handleAddRateRow}
-                className="h-8 gap-1 text-xs px-2.5 bg-background cursor-pointer"
+                className="h-10 gap-1 text-xs px-2.5 bg-background cursor-pointer"
               >
-                <Plus className="size-3.5 text-primary" />
+
                 <span>{locale === "th" ? "เพิ่มช่วงเวลา" : "Add Rate Period"}</span>
-              </Button>
+              </AddButton>
             </div>
 
             <div className="overflow-x-auto rounded-lg border border-border">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-muted/60 text-[11px] font-semibold text-muted-foreground uppercase">
-                  <tr>
-                    <th className="p-2.5 pl-3">{locale === "th" ? "วันเริ่มต้น" : "Start Date"}</th>
-                    <th className="p-2.5">{locale === "th" ? "วันสิ้นสุด (เว้นว่าง = ไม่มีกำหนด)" : "End Date (Blank = Ongoing)"}</th>
-                    <th className="p-2.5 w-32">{locale === "th" ? "อัตรา (฿/kWh)" : "Rate (฿/kWh)"}</th>
-                    <th className="p-2.5 w-10"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/60">
+              <Table className="w-full text-left text-xs">
+                <TableHeader className="bg-muted/60 text-[11px] font-semibold text-muted-foreground uppercase">
+                  <TableRow>
+                    <TableHead className="p-2.5 pl-3">{locale === "th" ? "วันเริ่มต้น" : "Start Date"}</TableHead>
+                    <TableHead className="p-2.5">{locale === "th" ? "วันสิ้นสุด (เว้นว่าง = ไม่มีกำหนด)" : "End Date (Blank = Ongoing)"}</TableHead>
+                    <TableHead className="p-2.5 w-32">{locale === "th" ? "อัตรา (฿/kWh)" : "Rate (฿/kWh)"}</TableHead>
+                    <TableHead className="p-2.5 w-10"></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody className="divide-y divide-border/60">
                   {rateRows.map((row, idx) => (
-                    <tr key={idx} className="hover:bg-muted/20">
-                      <td className="p-2 pl-3">
-                        <Input
-                          type="date"
+                    <TableRow key={idx} className="hover:bg-muted/20">
+                      <TableCell className="p-2 pl-3">
+                        <DatePicker
                           value={row.startDate}
-                          onChange={(e) => handleRateRowChange(idx, "startDate", e.target.value)}
-                          className="h-8 text-xs font-mono bg-background"
+                          onValueChange={(value) => handleRateRowChange(idx, "startDate", value)}
+                          aria-label={locale === "th" ? "วันเริ่มต้นอัตราค่าไฟ" : "Rate start date"}
+                          className="h-10 text-xs font-mono bg-white"
                         />
-                      </td>
-                      <td className="p-2">
-                        <Input
-                          type="date"
+                      </TableCell>
+                      <TableCell className="p-2">
+                        <DatePicker
                           value={row.endDate}
-                          onChange={(e) => handleRateRowChange(idx, "endDate", e.target.value)}
+                          onValueChange={(value) => handleRateRowChange(idx, "endDate", value)}
+                          aria-label={locale === "th" ? "วันสิ้นสุดอัตราค่าไฟ" : "Rate end date"}
                           placeholder="ไม่มีกำหนด"
-                          className="h-8 text-xs font-mono bg-background"
+                          className="h-10 text-xs font-mono bg-white"
                         />
-                      </td>
-                      <td className="p-2">
+                      </TableCell>
+                      <TableCell className="p-2">
                         <Input
                           type="number"
                           step="0.01"
@@ -423,25 +425,28 @@ export function ContractFormDialog({
                           min="0"
                           aria-label={locale === "th" ? "อัตราค่าไฟที่ตกลง" : "Agreed tariff"}
                           onChange={(e) => handleRateRowChange(idx, "rate", e.target.value === "" ? "" : Number(e.target.value))}
-                          className="h-8 text-xs font-mono font-bold text-primary bg-background"
+                          className="h-10 text-xs font-mono font-bold text-primary bg-white"
                         />
-                      </td>
-                      <td className="p-2 pr-3 text-center">
+                      </TableCell>
+                      <TableCell className="p-2 pr-3 text-center">
                         {rateRows.length > 1 && (
-                          <button
+                          <Button
+                            variant="ghost"
+                            size="sm"
                             type="button"
                             onClick={() => handleRemoveRateRow(idx)}
-                            className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
+                            className="h-auto gap-0 px-0 p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
+                            aria-label="ลบแถวนี้"
                             title="ลบแถวนี้"
                           >
                             <Trash2 className="size-3.5" />
-                          </button>
+                          </Button>
                         )}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
             <p className="text-[11px] text-muted-foreground">
               {locale === "th"

@@ -13,6 +13,7 @@
     "db:seed:reset": "tsx src/scripts/seed.ts --reset",
     "simulate:mqtt": "tsx src/scripts/simulate-mqtt.ts",
     "test:ingestion": "tsx src/scripts/test-gateway-ingestion.ts",
+    "test:payload-gateway": "tsx src/scripts/verify-payload-gateway.ts",
     "db:bootstrap": "tsx src/scripts/bootstrap-staging.ts"
   },
   "dependencies": {

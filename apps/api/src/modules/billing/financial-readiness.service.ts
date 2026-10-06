@@ -27,8 +27,8 @@ export class FinancialReadinessService implements FinancialReadinessEvidence {
     }
   }
   async capabilities(role: string, hasScope: boolean): Promise<Capabilities> {
-    const allowed: FinancialAction[] = !hasScope ? [] : ['owner','accountant'].includes(role)
-      ? ['calculate','issue','approve_payment','adjust','send'] : role === 'admin' ? ['calculate'] : [];
+    const allowed: FinancialAction[] = !hasScope ? [] : ['owner','admin','accountant'].includes(role)
+      ? ['calculate','issue','approve_payment','adjust','send'] : [];
     const enabled = await this.enabledActions();
     const operationsActions = hasScope ? [
       ['read_invoice','GET','/v1/operations/documents/fixture'],

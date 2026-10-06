@@ -1,0 +1,175 @@
+{
+  "projectId": "18405901547603576301",
+  "sessionId": "13977457513632993466",
+  "events": [
+    {
+      "actor": "Agent",
+      "eventId": "cdbf7b71",
+      "eventPayload": {
+        "dom_operations": [
+          {
+            "action": "replace_content",
+            "attr_name": null,
+            "attr_value": null,
+            "class_name": null,
+            "content": "<!-- 1. หน้าแรก (Home) -->\n<a class=\"flex flex-col items-center justify-center min-w-[64px] min-h-[48px] py-1 text-[#7B8580] hover:text-[#16a673] transition-colors duration-150 active:scale-95 bg-transparent\" href=\"#\">\n  <span class=\"material-symbols-outlined text-[24px]\">home</span>\n  <span class=\"font-label-sm text-label-sm mt-0.5\">หน้าแรก</span>\n</a>\n<!-- 2. การผลิต (Solar Production) -->\n<a class=\"flex flex-col items-center justify-center min-w-[64px] min-h-[48px] py-1 text-[#7B8580] hover:text-[#16a673] transition-colors duration-150 active:scale-95 bg-transparent\" href=\"#\">\n  <span class=\"material-symbols-outlined text-[24px]\">solar_power</span>\n  <span class=\"font-label-sm text-label-sm mt-0.5\">การผลิต</span>\n</a>\n<!-- 3. เอกสาร (Documents - ACTIVE: no background pill, emerald icon and text only) -->\n<a class=\"flex flex-col items-center justify-center min-w-[64px] min-h-[48px] py-1 text-[#16a673] font-semibold transition-colors duration-150 active:scale-95 bg-transparent\" href=\"#\">\n  <span class=\"material-symbols-outlined text-[24px] text-[#16a673]\" style=\"font-variation-settings: 'FILL' 1;\">description</span>\n  <span class=\"font-label-sm text-label-sm mt-0.5 text-[#16a673]\">เอกสาร</span>\n</a>\n<!-- 4. บัญชี (Account) -->\n<a class=\"flex flex-col items-center justify-center min-w-[64px] min-h-[48px] py-1 text-[#7B8580] hover:text-[#16a673] transition-colors duration-150 active:scale-95 bg-transparent\" href=\"#\">\n  <span class=\"material-symbols-outlined text-[24px]\">person</span>\n  <span class=\"font-label-sm text-label-sm mt-0.5\">บัญชี</span>\n</a>",
+            "selector": "nav.fixed.bottom-0",
+            "selector_strategy": "Directly target the bottom nav element via its tag 'nav.fixed.bottom-0'",
+            "target_element_goal": "Update the bottom navigation bar to remove the green pill container from the active item ('เอกสาร') and style all items with transparent backgrounds, using emerald #16a673 for active item's icon and label and muted #7B8580 for inactive items.",
+            "verified_html_context": "<nav class=\"fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 pt-2 pb-6 bg-surface-container-lowest border-t border-outline-variant/20 shadow-[0_-4px_20px_rgba(19,44,36,0.06)]\">"
+          }
+        ],
+        "payload_type": "DomOperationEvent",
+        "screen_id": "22e1437856ba4126b7e36eff89d84d63"
+      },
+      "eventTime": "2026-10-06T07:27:35.349348985Z",
+      "eventType": "project.file_update"
+    },
+    {
+      "actor": "Agent",
+      "eventId": "2a701d38",
+      "eventPayload": {
+        "dom_operations": [
+          {
+            "action": "replace_element",
+            "attr_name": null,
+            "attr_value": null,
+            "class_name": null,
+            "content": "<a class=\"flex flex-col items-center justify-center min-w-[64px] min-h-[48px] py-1 text-primary-container font-semibold transition-colors duration-150 active:scale-95\" href=\"#production\">\n<span class=\"material-symbols-outlined text-2xl text-primary-container\" style=\"font-variation-settings: 'FILL' 1;\">solar_power</span>\n<span class=\"font-label-sm text-label-sm font-bold text-primary-container mt-0.5\">การผลิต</span>\n</a>",
+            "selector": "nav a[href='#production']",
+            "selector_strategy": "Target the active nav item by its href attribute a[href='#production'] inside the nav container.",
+            "target_element_goal": "Update the active navigation item 'การผลิต' in the bottom navigation bar to remove the background pill container and keep clean icon and label colored in emerald (#16a673)",
+            "verified_html_context": "<a class=\"flex flex-col items-center justify-center min-w-[64px] min-h-[48px] py-1 text-primary font-semibold hover:text-primary transition-colors duration-150 active:scale-95 relative\" href=\"#production\">"
+          },
+          {
+            "action": "replace_element",
+            "attr_name": null,
+            "attr_value": null,
+            "class_name": null,
+            "content": "<a class=\"flex flex-col items-center justify-center min-w-[64px] min-h-[48px] py-1 text-outline hover:text-primary transition-colors duration-150 active:scale-95\" href=\"#home\">\n<span class=\"material-symbols-outlined text-2xl\">home</span>\n<span class=\"font-label-sm text-label-sm mt-0.5\">หน้าแรก</span>\n</a>",
+            "selector": "nav a[href='#home']",
+            "selector_strategy": "Target the inactive nav item with href='#home' inside nav.",
+            "target_element_goal": "Ensure inactive item 'หน้าแรก' uses muted outline text color #7B8580 / text-outline with transparent background",
+            "verified_html_context": "<a class=\"flex flex-col items-center justify-center min-w-[64px] min-h-[48px] py-1 text-on-surface-variant hover:text-primary transition-colors duration-150 active:scale-95\" href=\"#home\">"
+          },
+          {
+            "action": "replace_element",
+            "attr_name": null,
+            "attr_value": null,
+            "class_name": null,
+            "content": "<a class=\"flex flex-col items-center justify-center min-w-[64px] min-h-[48px] py-1 text-outline hover:text-primary transition-colors duration-150 active:scale-95\" href=\"#documents\">\n<span class=\"material-symbols-outlined text-2xl\">description</span>\n<span class=\"font-label-sm text-label-sm mt-0.5\">เอกสาร</span>\n</a>",
+            "selector": "nav a[href='#documents']",
+            "selector_strategy": "Target the inactive nav item with href='#documents' inside nav.",
+            "target_element_goal": "Ensure inactive item 'เอกสาร' uses muted outline text color #7B8580 / text-outline with transparent background",
+            "verified_html_context": "<a class=\"flex flex-col items-center justify-center min-w-[64px] min-h-[48px] py-1 text-on-surface-variant hover:text-primary transition-colors duration-150 active:scale-95\" href=\"#documents\">"
+          },
+          {
+            "action": "replace_element",
+            "attr_name": null,
+            "attr_value": null,
+            "class_name": null,
+            "content": "<a class=\"flex flex-col items-center justify-center min-w-[64px] min-h-[48px] py-1 text-outline hover:text-primary transition-colors duration-150 active:scale-95\" href=\"#profile\">\n<span class=\"material-symbols-outlined text-2xl\">person</span>\n<span class=\"font-label-sm text-label-sm mt-0.5\">บัญชี</span>\n</a>",
+            "selector": "nav a[href='#profile']",
+            "selector_strategy": "Target the inactive nav item with href='#profile' inside nav.",
+            "target_element_goal": "Ensure inactive item 'บัญชี' uses muted outline text color #7B8580 / text-outline with transparent background",
+            "verified_html_context": "<a class=\"flex flex-col items-center justify-center min-w-[64px] min-h-[48px] py-1 text-on-surface-variant hover:text-primary transition-colors duration-150 active:scale-95\" href=\"#profile\">"
+          }
+        ],
+        "payload_type": "DomOperationEvent",
+        "screen_id": "338ef965fca048b29ac7751848fe1429"
+      },
+      "eventTime": "2026-10-06T07:27:35.349380561Z",
+      "eventType": "project.file_update"
+    },
+    {
+      "actor": "Agent",
+      "eventId": "62fe9386",
+      "eventPayload": {
+        "dom_operations": [
+          {
+            "action": "replace_content",
+            "attr_name": null,
+            "attr_value": null,
+            "class_name": null,
+            "content": "<span class=\"material-symbols-outlined text-xs\" data-icon=\"route\">route</span>เส้นทางพลังงานจากโซลาร์",
+            "selector": ".xl\\:col-span-8 > div:first-child .inline-flex.border-outline-variant\\/40",
+            "selector_strategy": "Find the span with route icon in the hero header. Unique parent has title 'ผังการทำงานระบบโซลาร์เซลล์'. Direct class matching.",
+            "target_element_goal": "Update the energy pathway caption badge in the hero header to 'เส้นทางพลังงานจากโซลาร์'",
+            "verified_html_context": "<span class=\"inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-surface-container-low text-primary border border-outline-variant/40\"><span class=\"material-symbols-outlined text-xs\" data-icon=\"route\">route</span>ภาพอธิบายเส้นทางพลังงาน: แสงอาทิตย์ → แผงโซลาร์ → อินเวอร์เตอร์ → โรงเรียน</span>"
+          },
+          {
+            "action": "replace_element",
+            "attr_name": null,
+            "attr_value": null,
+            "class_name": null,
+            "content": "<div class=\"relative w-full rounded-2xl overflow-hidden my-2 border border-outline-variant/30 shadow-sm bg-surface-container-low/20 aspect-[16/9] max-h-[460px]\">\n  <img alt=\"3D Cutaway Campus Solar Flow\" class=\"w-full h-full object-cover block select-none\" src=\"https://lh3.googleusercontent.com/aida-public/AB6AXuDHfLgDo6m_ABzowxfuq8bG55_6JYXGihRMjWNQfFAtbCknupYpDjNJOP0u1pNdRv4kCez8ZP57cCfhgOFlO5IBBkZ5C6DW8w9RwI-wl8BV7GvYcLnKufeZFZJatoVT9aGdptkvG4xZtUdyn04OtGpid6S4bO2ItNBdg3UZqZoK3o_pqhxu_ZAjH0Xfr1Zpjv5z3q3TLHha9OLoeIcokkZWTgWOSn5tLcyg-OWTWhyApGvOpfx4HgrYPYtjWaRLh5_IoQZrWRDVUQVP\" />\n\n  <!-- Glowing Directional SVG Flow overlay -->\n  <svg class=\"absolute inset-0 w-full h-full pointer-events-none z-10\" viewBox=\"0 0 1000 560\" preserveAspectRatio=\"none\">\n    <defs>\n      <linearGradient id=\"sunRayGrad\" x1=\"0%\" y1=\"0%\" x2=\"100%\" y2=\"100%\">\n        <stop offset=\"0%\" stop-color=\"#febe48\" stop-opacity=\"0.9\" />\n        <stop offset=\"100%\" stop-color=\"#16a673\" stop-opacity=\"0.6\" />\n      </linearGradient>\n      <linearGradient id=\"emeraldFlowGrad\" x1=\"0%\" y1=\"0%\" x2=\"0%\" y2=\"100%\">\n        <stop offset=\"0%\" stop-color=\"#60dda5\" stop-opacity=\"1\" />\n        <stop offset=\"100%\" stop-color=\"#006c49\" stop-opacity=\"0.9\" />\n      </linearGradient>\n      <filter id=\"glow\" x=\"-20%\" y=\"-20%\" width=\"140%\" height=\"140%\">\n        <feGaussianBlur stdDeviation=\"4\" result=\"blur\" />\n        <feComposite in=\"SourceGraphic\" in2=\"blur\" operator=\"over\" />\n      </filter>\n    </defs>\n    <!-- Amber Sun Ray Path to Solar Rooftop Panels -->\n    <path d=\"M 105,75 Q 260,110 410,165\" fill=\"none\" stroke=\"url(#sunRayGrad)\" stroke-width=\"3\" stroke-dasharray=\"6 4\" filter=\"url(#glow)\" />\n    <!-- Directional emerald flow: Rooftop Panels down to Wall Inverter -->\n    <path d=\"M 380,195 C 310,230 270,250 266,305\" fill=\"none\" stroke=\"url(#emeraldFlowGrad)\" stroke-width=\"3.5\" stroke-dasharray=\"7 4\" filter=\"url(#glow)\" />\n    <!-- Directional emerald flow: Inverter into school classrooms -->\n    <path d=\"M 276,325 C 330,345 380,335 440,315\" fill=\"none\" stroke=\"#16a673\" stroke-width=\"3\" stroke-dasharray=\"6 4\" />\n  </svg>\n\n  <!-- Sun Source Anchor Indicator -->\n  <div class=\"absolute top-3 left-4 md:top-5 md:left-6 z-20 flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/85 backdrop-blur-md border border-amber-300/60 shadow-sm\">\n    <span class=\"material-symbols-outlined text-amber-500 text-lg leading-none\" data-icon=\"light_mode\" style=\"font-variation-settings: 'FILL' 1;\">light_mode</span>\n    <span class=\"text-xs font-semibold text-[#704e00]\">พลังงานแสงอาทิตย์</span>\n  </div>\n\n  <!-- Solar Rooftop Telemetry Bubble: Exactly ONE Measured Power Bubble at Rooftop (42.8 kW) -->\n  <div class=\"absolute top-[26%] left-[38%] md:left-[41%] -translate-x-1/2 z-20\">\n    <div class=\"px-4 py-2.5 rounded-2xl bg-white/95 backdrop-blur-md border-2 border-primary/40 shadow-xl flex items-center gap-3\">\n      <div class=\"w-9 h-9 rounded-xl bg-[#E1F5EC] flex items-center justify-center text-primary flex-shrink-0\">\n        <span class=\"material-symbols-outlined text-xl\" data-icon=\"solar_power\" style=\"font-variation-settings: 'FILL' 1;\">solar_power</span>\n      </div>\n      <div>\n        <div class=\"flex items-center gap-1.5\">\n          <span class=\"text-[11px] font-semibold text-on-surface-variant\">กำลังผลิตขณะนี้</span>\n          <span class=\"inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-[#E1F5EC] text-primary\">\n            <span class=\"w-1.5 h-1.5 rounded-full bg-primary pulse-dot\"></span>\n            สด\n          </span>\n        </div>\n        <div class=\"flex items-baseline gap-1 mt-0.5\">\n          <span class=\"text-2xl font-metric-hero font-bold text-primary tracking-tight\">42.8</span>\n          <span class=\"text-xs font-headline-sm font-bold text-on-surface-variant\">kW</span>\n        </div>\n      </div>\n    </div>\n    <div class=\"flex justify-center -mt-1\">\n      <span class=\"material-symbols-outlined text-primary text-base drop-shadow-sm\" data-icon=\"arrow_drop_down\">arrow_drop_down</span>\n    </div>\n  </div>\n\n  <!-- Inverter Tag Anchor at Building Side -->\n  <div class=\"absolute top-[52%] left-[21%] md:left-[24%] z-20 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-surface-container-lowest/90 backdrop-blur-md border border-primary/30 shadow-md\">\n    <span class=\"material-symbols-outlined text-primary text-sm\" data-icon=\"power\">power</span>\n    <span class=\"text-[11px] font-bold text-on-surface\">อินเวอร์เตอร์</span>\n    <span class=\"w-2 h-2 rounded-full bg-primary-container pulse-dot\"></span>\n  </div>\n\n  <!-- School Supply Anchor inside classrooms -->\n  <div class=\"absolute top-[56%] left-[45%] md:left-[48%] z-20 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/90 backdrop-blur-md border border-outline-variant/40 shadow-sm\">\n    <span class=\"material-symbols-outlined text-primary text-sm\" data-icon=\"school\">school</span>\n    <span class=\"text-[11px] font-bold text-on-surface\">โรงเรียน</span>\n    <span class=\"text-[10px] text-primary font-semibold\">• ใช้งานไฟฟ้าสะอาด</span>\n  </div>\n\n  <!-- Lower Edge: Two Compact Legible Frosted Glass Overlay Pills -->\n  <div class=\"absolute bottom-3 left-4 right-4 z-20 flex flex-wrap items-center justify-between gap-2\">\n    <div class=\"flex items-center gap-2\">\n      <div class=\"flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white/90 backdrop-blur-md border border-outline-variant/30 shadow-sm\">\n        <span class=\"material-symbols-outlined text-primary text-base\" data-icon=\"today\">today</span>\n        <span class=\"text-xs text-on-surface-variant font-medium\">พลังงานวันนี้</span>\n        <span class=\"font-metric-kpi font-bold text-sm text-[#062018]\">196.4</span>\n        <span class=\"text-[11px] font-semibold text-on-surface-variant\">kWh</span>\n      </div>\n      <div class=\"flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white/90 backdrop-blur-md border border-outline-variant/30 shadow-sm\">\n        <span class=\"material-symbols-outlined text-primary text-base\" data-icon=\"calendar_month\">calendar_month</span>\n        <span class=\"text-xs text-on-surface-variant font-medium\">เดือนนี้</span>\n        <span class=\"font-metric-kpi font-bold text-sm text-[#062018]\">1,234</span>\n        <span class=\"text-[11px] font-semibold text-on-surface-variant\">kWh</span>\n      </div>\n    </div>\n    <div class=\"hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/85 backdrop-blur-md border border-outline-variant/20 text-xs text-on-surface-variant font-medium\">\n      <span class=\"w-2 h-2 rounded-full bg-primary\"></span>\n      <span>ระบบกำลังทำงานปกติ</span>\n    </div>\n  </div>\n</div>",
+            "selector": ".xl\\:col-span-8 > div:first-child > div.relative.rounded-2xl.overflow-hidden",
+            "selector_strategy": "Select the visual container div right before the metrics strip within the first card of xl:col-span-8",
+            "target_element_goal": "Replace the schematic image and bottom metrics grid with a semi-realistic 3D cutaway campus scene using {{DATA:IMAGE:IMAGE_9}} featuring anchored telemetry bubble, energy flow paths, and frosted overlay pills",
+            "verified_html_context": "<div class=\"relative w-full rounded-2xl overflow-hidden my-2 border border-outline-variant/20 bg-surface-container-low/20 shadow-sm\"><img alt=\"ผังจำลองการทำงานระบบพลังงานแสงอาทิตย์ในโรงเรียน\" class=\"w-full h-auto object-cover max-h-[380px] rounded-2xl block\" src=\"https://lh3.googleusercontent.com/aida-public/AB6AXuBX5Zou2y2CpR5ZzbEbWM9Kpsxxb9ROWkilNfLpwlFusdcIm8ggKuR5EjXZ2ZFpazEPEAk-rXtpczx1kiFZF4f7xnaZ2tCrBeqopWsbOTM0MjvtvAcDmOr5qmaf4Te_lT51ayiRoH47GqljSR0ts2V2TwnLovouihoEX77bgu94Fz0miNGEQFbdWjpKxzrtMxBbsGWFMhS0ebhp0PJqw-uMVJV06Bp8r4aw7EtCRJ0IxMijm47jj9n24N2SU-PsBBZMZCsyZ7nQkkTV\"/></div>"
+          },
+          {
+            "action": "remove_element",
+            "attr_name": null,
+            "attr_value": null,
+            "class_name": null,
+            "content": null,
+            "selector": ".xl\\:col-span-8 > div:first-child > div.grid.grid-cols-1.sm\\:grid-cols-3",
+            "selector_strategy": "Select the redundant 3-card metric strip below the hero image container in the first card of xl:col-span-8",
+            "target_element_goal": "Remove redundant lower 3-column metric cards since telemetry and stats are integrated onto the 3D scene and lower frosted glass pills",
+            "verified_html_context": "<div class=\"grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6\"><div class=\"p-4 rounded-2xl bg-[#F7F9F6] border border-outline-variant/30 flex flex-col justify-between\"><div class=\"flex items-center justify-between mb-2\"><span class=\"text-body-sm font-body-sm text-on-surface-variant font-medium\">กำลังผลิตขณะนี้</span><span class=\"inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-[#E1F5EC] text-primary\"><span class=\"w-1.5 h-1.5 rounded-full bg-primary\"></span> เรียลไทม์</span></div><div class=\"flex items-baseline gap-1.5\"><span class=\"text-metric-hero font-metric-hero text-primary\">42.8</span><span class=\"text-headline-sm font-headline-sm text-on-surface-variant font-semibold\">kW</span></div><p class=\"text-body-sm font-body-sm text-on-surface-variant mt-1\">ระบบกำลังทำงานปกติ</p></div><div class=\"p-4 rounded-2xl bg-[#F7F9F6] border border-outline-variant/30 flex flex-col justify-between\"><div class=\"flex items-center justify-between mb-2\"><span class=\"text-body-sm font-body-sm text-on-surface-variant font-medium\">พลังงานที่ผลิตได้วันนี้</span></div><div class=\"flex items-baseline gap-1.5\"><span class=\"text-metric-hero font-metric-hero text-[#062018]\">196.4</span><span class=\"text-headline-sm font-headline-sm text-on-surface-variant font-semibold\">kWh</span></div><p class=\"text-body-sm font-body-sm text-on-surface-variant mt-1\">สะสมตั้งแต่ช่วงเช้า</p></div><div class=\"p-4 rounded-2xl bg-[#F7F9F6] border border-outline-variant/30 flex flex-col justify-between\"><div class=\"flex items-center justify-between mb-2\"><span class=\"text-body-sm font-body-sm text-on-surface-variant font-medium\">สะสมประจำเดือน ต.ค.</span></div><div class=\"flex items-baseline gap-1.5\"><span class=\"text-metric-hero font-metric-hero text-[#062018]\">1,234</span><span class=\"text-headline-sm font-headline-sm text-on-surface-variant font-semibold\">kWh</span></div><p class=\"text-body-sm font-body-sm text-on-surface-variant mt-1\">รวมทั้งเดือนปัจจุบัน</p></div></div>"
+          }
+        ],
+        "payload_type": "DomOperationEvent",
+        "screen_id": "a6872ade7a814ce898d927ff5bc7275e"
+      },
+      "eventTime": "2026-10-06T07:27:35.349403442Z",
+      "eventType": "project.file_update"
+    },
+    {
+      "actor": "Agent",
+      "eventId": "9e637be5",
+      "eventPayload": {
+        "dom_operations": [
+          {
+            "action": "replace_element",
+            "attr_name": null,
+            "attr_value": null,
+            "class_name": null,
+            "content": "<article class=\"bg-surface-container-lowest rounded-[22px] border border-[#DCE3DA] card-shadow-custom overflow-hidden relative\">\n  <div class=\"p-4 pb-3 flex items-center justify-between border-b border-[#EDF1EC]\">\n    <div class=\"inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-full bg-[#E1F5EC] border border-[#16A673]/20\">\n      <span class=\"w-2 h-2 rounded-full bg-[#16A673] animate-pulse-glow\"></span>\n      <span class=\"font-label-sm text-label-sm text-[#0E8055] font-semibold\">กำลังผลิตไฟฟ้า</span>\n    </div>\n    <div class=\"flex items-center text-[#4A6359] text-[11px] font-['Space_Grotesk']\">\n      <span class=\"material-symbols-outlined text-[13px] mr-1 text-[#16A673]\">schedule</span>\n      <span>อัปเดตล่าสุด 12:45 น.</span>\n    </div>\n  </div>\n  <div class=\"relative w-full overflow-hidden bg-slate-900 aspect-[16/10]\">\n    <img src=\"https://lh3.googleusercontent.com/aida-public/AB6AXuDHfLgDo6m_ABzowxfuq8bG55_6JYXGihRMjWNQfFAtbCknupYpDjNJOP0u1pNdRv4kCez8ZP57cCfhgOFlO5IBBkZ5C6DW8w9RwI-wl8BV7GvYcLnKufeZFZJatoVT9aGdptkvG4xZtUdyn04OtGpid6S4bO2ItNBdg3UZqZoK3o_pqhxu_ZAjH0Xfr1Zpjv5z3q3TLHha9OLoeIcokkZWTgWOSn5tLcyg-OWTWhyApGvOpfx4HgrYPYtjWaRLh5_IoQZrWRDVUQVP\" alt=\"3D Cutaway Solar Campus\" class=\"w-full h-full object-cover\" />\n    <div class=\"absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/15 pointer-events-none\"></div>\n    <svg class=\"absolute inset-0 w-full h-full pointer-events-none select-none\" viewBox=\"0 0 350 220\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\">\n      <defs>\n        <linearGradient id=\"sunRayGrad\" x1=\"0%\" y1=\"0%\" x2=\"100%\" y2=\"100%\">\n          <stop offset=\"0%\" stop-color=\"#F4B640\" stop-opacity=\"0.9\"/>\n          <stop offset=\"100%\" stop-color=\"#16A673\" stop-opacity=\"0.8\"/>\n        </linearGradient>\n        <linearGradient id=\"emeraldFlowGrad\" x1=\"0%\" y1=\"0%\" x2=\"0%\" y2=\"100%\">\n          <stop offset=\"0%\" stop-color=\"#60DDA5\" stop-opacity=\"0.95\"/>\n          <stop offset=\"100%\" stop-color=\"#16A673\" stop-opacity=\"0.9\"/>\n        </linearGradient>\n        <filter id=\"glow\" x=\"-20%\" y=\"-20%\" width=\"140%\" height=\"140%\">\n          <feGaussianBlur stdDeviation=\"2\" result=\"blur\" />\n          <feComposite in=\"SourceGraphic\" in2=\"blur\" operator=\"over\" />\n        </filter>\n      </defs>\n      <path d=\"M 45 42 Q 100 50 160 85\" stroke=\"url(#sunRayGrad)\" stroke-width=\"2.5\" stroke-dasharray=\"4,3\" class=\"flow-line-animated\" filter=\"url(#glow)\"/>\n      <path d=\"M 160 95 Q 115 110 98 128\" stroke=\"url(#emeraldFlowGrad)\" stroke-width=\"2.5\" stroke-dasharray=\"4,3\" class=\"flow-line-animated\" filter=\"url(#glow)\"/>\n      <path d=\"M 102 138 Q 130 155 180 145\" stroke=\"url(#emeraldFlowGrad)\" stroke-width=\"2.5\" stroke-dasharray=\"4,3\" class=\"flow-line-animated\" filter=\"url(#glow)\"/>\n    </svg>\n    <div class=\"absolute top-10 right-4 z-20 flex flex-col items-end\">\n      <div class=\"bg-[#132C24]/90 backdrop-blur-md text-white px-3 py-1.5 rounded-xl border border-white/20 shadow-lg flex items-center space-x-2\">\n        <span class=\"w-2.5 h-2.5 rounded-full bg-[#F4B640] animate-pulse-glow flex-shrink-0\"></span>\n        <div class=\"flex flex-col text-right\">\n          <span class=\"text-[10px] text-emerald-200 font-medium leading-none\">กำลังผลิตขณะนี้</span>\n          <div class=\"flex items-baseline space-x-1 mt-0.5 justify-end\">\n            <span class=\"font-['Space_Grotesk'] font-bold text-[18px] text-white leading-tight\">42.8</span>\n            <span class=\"text-[12px] font-bold text-[#60DDA5] font-['Space_Grotesk'] leading-none\">kW</span>\n          </div>\n        </div>\n      </div>\n      <span class=\"text-[10px] font-['Space_Grotesk'] text-amber-200/90 font-medium mt-1 bg-black/40 px-2 py-0.5 rounded-full backdrop-blur-sm border border-amber-300/30\">Peak: 45 kW</span>\n    </div>\n    <div class=\"absolute left-3 top-24 z-20\">\n      <div class=\"inline-flex items-center space-x-1 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded-full border border-white/20 text-[10px] text-emerald-100\">\n        <span class=\"w-1.5 h-1.5 rounded-full bg-[#16A673]\"></span>\n        <span>อินเวอร์เตอร์</span>\n      </div>\n    </div>\n    <div class=\"absolute right-12 bottom-14 z-20\">\n      <div class=\"inline-flex items-center space-x-1 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded-full border border-white/20 text-[10px] text-emerald-100\">\n        <span class=\"w-1.5 h-1.5 rounded-full bg-[#16A673]\"></span>\n        <span>อาคารเรียน</span>\n      </div>\n    </div>\n    <div class=\"absolute bottom-2.5 inset-x-2.5 z-20 grid grid-cols-2 gap-2\">\n      <div class=\"bg-black/60 backdrop-blur-md rounded-xl p-2 px-2.5 border border-white/15 flex items-center justify-between text-white\">\n        <div>\n          <span class=\"text-[10px] text-white/75 block leading-tight\">พลังงานวันนี้</span>\n          <span class=\"font-['Space_Grotesk'] text-[14px] font-bold text-white\">196.4 <span class=\"text-[10px] font-normal text-emerald-300\">kWh</span></span>\n        </div>\n        <span class=\"text-[10px] text-[#60DDA5] font-medium flex items-center\">\n          <span class=\"material-symbols-outlined text-[13px]\">trending_up</span>+8%\n        </span>\n      </div>\n      <div class=\"bg-black/60 backdrop-blur-md rounded-xl p-2 px-2.5 border border-white/15 flex items-center justify-between text-white\">\n        <div>\n          <span class=\"text-[10px] text-white/75 block leading-tight\">พลังงานเดือนนี้</span>\n          <span class=\"font-['Space_Grotesk'] text-[14px] font-bold text-white\">1,234 <span class=\"text-[10px] font-normal text-emerald-300\">kWh</span></span>\n        </div>\n        <span class=\"text-[9.5px] text-white/60 font-['Space_Grotesk']\">เป้า 2.4k</span>\n      </div>\n    </div>\n  </div>\n  <div class=\"p-3 bg-[#F0F5F2] flex items-center justify-center space-x-1.5 text-[11px] text-[#4A6359]\">\n    <span class=\"material-symbols-outlined text-[14px] text-[#16A673]\">route</span>\n    <span class=\"font-medium\">เส้นทางพลังงานจากโซลาร์: แสงอาทิตย์ → แผงโซลาร์ → อินเวอร์เตอร์ → โรงเรียน</span>\n  </div>\n</article>",
+            "selector": "div.space-y-4 > article:nth-child(1)",
+            "selector_strategy": "The hero card is the first article inside the dashboard canvas container `div.px-5.space-y-4.mt-2 > article:nth-child(1)`.",
+            "target_element_goal": "Replace the existing hero card with the redesigned hero card containing the 3D campus image {{DATA:IMAGE:IMAGE_9}}, edge-to-edge layout, floating telemetry bubble for rooftop solar power (42.8 kW), glowing energy flow overlay, caption 'เส้นทางพลังงานจากโซลาร์', and compact frosted overlays for daily and monthly yield.",
+            "verified_html_context": "<article class=\"bg-surface-container-lowest rounded-[22px] border border-[#DCE3DA] card-shadow-custom p-5 overflow-hidden relative\">"
+          },
+          {
+            "action": "remove_element",
+            "attr_name": null,
+            "attr_value": null,
+            "class_name": null,
+            "content": null,
+            "selector": "div.space-y-4 > section.grid.grid-cols-2",
+            "selector_strategy": "Directly target the section with class `grid grid-cols-2 gap-3` immediately following the hero article.",
+            "target_element_goal": "Remove the redundant separate 2-up metric cards section since the metrics are now integrated cleanly into the frosted overlays of the hero scene.",
+            "verified_html_context": "<section class=\"grid grid-cols-2 gap-3\">"
+          },
+          {
+            "action": "replace_content",
+            "attr_name": null,
+            "attr_value": null,
+            "class_name": null,
+            "content": "<!-- Destination 1: หน้าแรก (Active State: text-primary only, no background container) -->\n<a class=\"flex flex-col items-center justify-center min-w-[64px] min-h-[48px] py-1 text-primary font-semibold transition-colors duration-150 active:scale-[0.96] transition-transform bg-transparent\" href=\"#home\">\n  <div class=\"w-8 h-7 flex items-center justify-center mb-0.5 bg-transparent\">\n    <span class=\"material-symbols-outlined text-[22px] text-[#16A673]\" style=\"font-variation-settings: 'FILL' 1;\">home</span>\n  </div>\n  <span class=\"text-[11px] font-['Space_Grotesk'] tracking-wide text-[#16A673]\">หน้าแรก</span>\n</a>\n<!-- Destination 2: การผลิต (Inactive State: muted foreground #7B8580, transparent bg) -->\n<a class=\"flex flex-col items-center justify-center min-w-[64px] min-h-[48px] py-1 text-[#7B8580] hover:text-[#16A673] transition-colors duration-150 active:scale-[0.96] transition-transform bg-transparent\" href=\"#production\">\n  <div class=\"w-8 h-7 flex items-center justify-center mb-0.5 bg-transparent\">\n    <span class=\"material-symbols-outlined text-[22px] text-[#7B8580]\">solar_power</span>\n  </div>\n  <span class=\"text-[11px] font-['Space_Grotesk'] text-[#7B8580]\">การผลิต</span>\n</a>\n<!-- Destination 3: เอกสาร (Inactive State: muted foreground #7B8580, transparent bg) -->\n<a class=\"flex flex-col items-center justify-center min-w-[64px] min-h-[48px] py-1 text-[#7B8580] hover:text-[#16A673] transition-colors duration-150 active:scale-[0.96] transition-transform bg-transparent\" href=\"#documents\">\n  <div class=\"w-8 h-7 flex items-center justify-center mb-0.5 bg-transparent\">\n    <span class=\"material-symbols-outlined text-[22px] text-[#7B8580]\">description</span>\n  </div>\n  <span class=\"text-[11px] font-['Space_Grotesk'] text-[#7B8580]\">เอกสาร</span>\n</a>\n<!-- Destination 4: บัญชี (Inactive State: muted foreground #7B8580, transparent bg) -->\n<a class=\"flex flex-col items-center justify-center min-w-[64px] min-h-[48px] py-1 text-[#7B8580] hover:text-[#16A673] transition-colors duration-150 active:scale-[0.96] transition-transform bg-transparent\" href=\"#account\">\n  <div class=\"w-8 h-7 flex items-center justify-center mb-0.5 bg-transparent\">\n    <span class=\"material-symbols-outlined text-[22px] text-[#7B8580]\">person</span>\n  </div>\n  <span class=\"text-[11px] font-['Space_Grotesk'] text-[#7B8580]\">บัญชี</span>\n</a>",
+            "selector": "nav[aria-label='Bottom Navigation']",
+            "selector_strategy": "Target the nav element using `nav[aria-label='Bottom Navigation']`.",
+            "target_element_goal": "Update the bottom navigation bar to strictly satisfy navbar styling: Active item ('หน้าแรก') changes ONLY icon and label color to emerald (#16A673), no pill or background container, transparent background for all tabs, and inactive tabs use muted color #7B8580.",
+            "verified_html_context": "<nav aria-label=\"Bottom Navigation\" class=\"fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 pt-2 pb-6 bg-surface-container-lowest shadow-[0_-4px_20px_rgba(19,44,36,0.06)] border-t border-outline-variant/20 max-w-[390px] mx-auto right-0\">"
+          }
+        ],
+        "payload_type": "DomOperationEvent",
+        "screen_id": "fa4f29d0b3d74ffdb24148b9dd30537a"
+      },
+      "eventTime": "2026-10-06T07:27:35.349426271Z",
+      "eventType": "project.file_update"
+    }
+  ]
+}

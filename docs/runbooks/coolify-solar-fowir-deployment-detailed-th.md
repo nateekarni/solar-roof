@@ -132,7 +132,7 @@ limits ไม่เท่ากับ tuning PostgreSQL/Redis อย่าตั
 5. คัดลอก API_IMAGE, WEB_IMAGE, WORKER_IMAGE, MQTT_IMAGE, CERTBOT_IMAGE, POSTGRES_IMAGE จาก Summary ของ run เดียวกัน เป็น ghcr.io/...@sha256:... จริง
 6. ให้ server ดึง GHCR ได้ ใช้ package public เฉพาะเมื่อบริษัทอนุญาต หรือ registry authentication แบบ read-only ที่บริษัทจัดให้ ไม่เปิด package public โดยอัตโนมัติ
 7. ไม่ใช้ latest และไม่ใช้ digest ต่าง revision ปะปนกัน
-8. งานสิทธิ์ล่าสุดมี unit/render tests ผ่าน แต่ full web/API typecheck ยังมี diagnostic เดิมตาม `docs/role-experience/verification-2026-10-06.md` จึงยังไม่รับรองว่า image release ล่าสุด build ผ่าน ต้องให้ CI ที่ release จริงผ่านก่อน
+8. ผลตรวจรวมงาน6ตุลาคม2026: full workspace lint/test และproductionbuildผ่าน เมื่อรันนอกsandboxที่อ่านdependencyไม่ครบ ปัญหาtypeก่อนหน้านี้เป็นenvironmentของsandbox ไม่ใช่การรับรองimageบนserver ต้องให้CIของreleaseจริงผ่านและใช้digestที่CIทดสอบก่อนdeploy
 9. ภาพ School User ที่ออกแบบผ่าน Stitch เป็น prototype ยังไม่ใช่ UI ที่เชื่อมระบบจริงใน release
 
 ## 4. จัดการ DNS ของ fowir.com

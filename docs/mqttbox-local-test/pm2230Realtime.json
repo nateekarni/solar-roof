@@ -1,0 +1,63 @@
+{
+  "schemaVersion": "1.1",
+  "messageType": "telemetry",
+  "messageId": "d001c833-pm2230Realtime-0",
+  "sequence": 1258,
+  "lotNumber": 1258,
+  "siteId": "SITE-SETUP-VERIFY",
+  "gatewayId": "GW-SETUP-VERIFY",
+  "device": {
+    "deviceId": "METER-SETUP-VERIFY",
+    "deviceType": "energy-meter",
+    "manufacturer": "Schneider Electric",
+    "model": "PM2230",
+    "profileId": "schneider-pm2230",
+    "profileVersion": "1.0.0",
+    "protocol": "modbus-tcp"
+  },
+  "pollGroup": "realtime",
+  "timestamps": {
+    "polledAt": "2026-10-05T15:21:17.912Z",
+    "sentAt": "2026-10-05T15:21:37.945Z"
+  },
+  "data": {
+    "values": {
+      "electrical.voltage.l1_n": 230.41,
+      "electrical.voltage.l2_n": 229.88,
+      "electrical.voltage.l3_n": 230.12,
+      "electrical.voltage.l1_l2": 398.72,
+      "electrical.voltage.l2_l3": 399.05,
+      "electrical.voltage.l3_l1": 398.91,
+      "electrical.current.l1": 42.31,
+      "electrical.current.l2": 40.87,
+      "electrical.current.l3": 41.66,
+      "electrical.frequency": 50.02,
+      "power.active.total": 28240,
+      "power.reactive.total": 4350,
+      "power.apparent.total": 28580,
+      "power.factor.total": 0.988
+    },
+    "units": {
+      "electrical.voltage.l1_n": "V",
+      "electrical.voltage.l2_n": "V",
+      "electrical.voltage.l3_n": "V",
+      "electrical.voltage.l1_l2": "V",
+      "electrical.voltage.l2_l3": "V",
+      "electrical.voltage.l3_l1": "V",
+      "electrical.current.l1": "A",
+      "electrical.current.l2": "A",
+      "electrical.current.l3": "A",
+      "electrical.frequency": "Hz",
+      "power.active.total": "W",
+      "power.reactive.total": "var",
+      "power.apparent.total": "VA",
+      "power.factor.total": "1"
+    }
+  },
+  "quality": {
+    "status": "good",
+    "communication": "online",
+    "pollDurationMs": 52,
+    "queueDelayMs": 155
+  }
+}

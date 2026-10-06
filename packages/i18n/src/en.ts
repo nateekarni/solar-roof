@@ -160,8 +160,8 @@ export const en = {
     auditHistory: "Audit History",
     systemSettings: "System Settings",
     role: "Role",
-    owner: "Super Administrator",
-    admin: "Administrator",
+    owner: "Company Owner",
+    admin: "Super Administrator",
     schoolUser: "School Officer",
   },
   settings: {

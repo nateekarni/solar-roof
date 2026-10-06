@@ -5,7 +5,12 @@ import { Dialog as DialogPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
-import { XIcon } from "lucide-react"
+import { XIcon, PanelsTopLeft } from "lucide-react"
+
+const HeaderIconContext = React.createContext(false)
+function containsIcon(nodes: React.ReactNode): boolean {
+  return React.Children.toArray(nodes).some(node => React.isValidElement<{children?:React.ReactNode}>(node) && (typeof node.type === "object" || node.type === "svg" || containsIcon(node.props.children)));
+}
 
 function Dialog({
   ...props
@@ -93,13 +98,13 @@ function DialogContent({
   )
 }
 
-function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
+function DialogHeader({ className, children, ...props }: React.ComponentProps<"div">) {
   return (
-    <div
+    <HeaderIconContext.Provider value={containsIcon(children)}><div
       data-slot="dialog-header"
       className={cn("flex flex-col gap-1.5 text-left", className)}
       {...props}
-    />
+    >{children}</div></HeaderIconContext.Provider>
   )
 }
 
@@ -132,17 +137,22 @@ function DialogFooter({
 
 function DialogTitle({
   className,
+  children,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Title>) {
+  const headerHasIcon = React.useContext(HeaderIconContext);
   return (
     <DialogPrimitive.Title
       data-slot="dialog-title"
       className={cn(
-        "text-base leading-none font-medium",
+        "flex items-center gap-3 text-base leading-normal font-semibold",
         className
       )}
       {...props}
-    />
+    >
+      {!headerHasIcon && !containsIcon(children) && <span data-slot="dialog-title-icon" className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><PanelsTopLeft className="size-4" /></span>}
+      {children}
+    </DialogPrimitive.Title>
   )
 }
 

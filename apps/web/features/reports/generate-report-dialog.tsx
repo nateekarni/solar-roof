@@ -65,10 +65,10 @@ export function GenerateReportDialog({
   } = useForm<ReportFormValues>({
     resolver: zodResolver(reportSchema),
     defaultValues: {
-      type: "energy",
-      dateFrom: defaultFrom,
-      dateTo: defaultTo,
-      format: "csv",
+
+
+
+
     },
   });
 
@@ -110,13 +110,13 @@ export function GenerateReportDialog({
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 pt-3.5">
           {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <Label htmlFor="r-type" required className="text-xs font-medium">
               {locale === "th" ? "ประเภทรายงาน" : "Report Type"}
             </Label>
-            <Select defaultValue="energy" onValueChange={(val) => setValue("type", val)}>
+            <Select value={watch("type") ?? ""} onValueChange={(val) => setValue("type", val)}>
               <SelectTrigger id="r-type" className="text-xs h-10 w-full">
-                <SelectValue />
+                <SelectValue placeholder="เลือกประเภท" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="energy" className="text-xs">
@@ -139,7 +139,7 @@ export function GenerateReportDialog({
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="space-y-1.5">
+            <div className="space-y-2">
               <Label htmlFor="date-from" required className="text-xs font-medium">
                 {locale === "th" ? "ตั้งแต่วันที่" : "From Date"}
               </Label>
@@ -149,7 +149,7 @@ export function GenerateReportDialog({
                 onChange={(val) => setValue("dateFrom", val, { shouldValidate: true })}
               />
             </div>
-            <div className="space-y-1.5">
+            <div className="space-y-2">
               <Label htmlFor="date-to" required className="text-xs font-medium">
                 {locale === "th" ? "ถึงวันที่" : "To Date"}
               </Label>
@@ -161,13 +161,13 @@ export function GenerateReportDialog({
             </div>
           </div>
 
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <Label htmlFor="r-format" required className="text-xs font-medium">
               {locale === "th" ? "รูปแบบไฟล์" : "File Format"}
             </Label>
-            <Select defaultValue="csv" onValueChange={(val) => setValue("format", val)}>
+            <Select value={watch("format") ?? ""} onValueChange={(val) => setValue("format", val)}>
               <SelectTrigger id="r-format" className="text-xs h-10 w-full">
-                <SelectValue />
+                <SelectValue placeholder="เลือกประเภท" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="csv" className="text-xs">CSV (.csv)</SelectItem>

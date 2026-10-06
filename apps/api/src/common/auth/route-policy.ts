@@ -1,3 +1,4 @@
+import { isBusinessRole } from "@solar/domain";
 export interface ScopePrincipal {
   id?: string;
   role?: string;
@@ -6,7 +7,7 @@ export interface ScopePrincipal {
 
 export function schoolScope(user: ScopePrincipal | undefined): string[] | null {
   if (!user || !["owner", "admin", "operator", "accountant", "school_user"].includes(user.role ?? "")) return [];
-  if (user.role === "owner") return null;
+  if (user.role === "owner" || user.role === "admin") return null;
   if (user.schoolId) return [user.schoolId];
   return user.role === "school_user" ? [] : null;
 }
@@ -15,7 +16,14 @@ export function schoolScope(user: ScopePrincipal | undefined): string[] | null {
 export function routeAllowed(role: string, method: string, rawPath: string): boolean {
   if (!["owner", "admin", "operator", "accountant", "school_user"].includes(role)) return false;
   const path = rawPath.split("?")[0]!.replace(/\/$/, "");
+  if (/^\/v1\/mqtt-brokers(?:\/|$)/.test(path)) return role === "admin";
   const read = method === "GET" || method === "HEAD";
+  if (isBusinessRole(role)) {
+    if (/^\/v1\/(?:users|mqtt-brokers|platform|sites|schools|gateways|devices|meter-presets|alerts|reports|history|jobs)(?:\/|$)/.test(path)) return false;
+    if (/^\/v1\/operations(?:\/|$)/.test(path) && !/^\/v1\/operations\/(?:contracts|billing|invoices|receipts|documents)(?:\/|$)/.test(path)) return false;
+    if (/^\/v1\/dashboard(?:\/|$)/.test(path) && !/^\/v1\/dashboard\/(?:summary|production|revenue)$/.test(path)) return false;
+    if (/^\/v1\/settings(?:\/|$)/.test(path) && !/^\/v1\/settings\/(?:company|bank-accounts)(?:\/|$)/.test(path)) return false;
+  }
   if(['/v1/platform/readiness','/v1/platform/monitoring'].includes(path))return read&&['owner','admin'].includes(role);
   if (/^\/v1\/(?:auth\/(?:me|capabilities)|me(?:\/preferences)?|notifications\/settings)$/.test(path)) return true;
   if (/^\/v1\/operations\/(?:users|audit)(?:\/|$)/.test(path)) return read && ["owner", "admin"].includes(role);
@@ -23,10 +31,10 @@ export function routeAllowed(role: string, method: string, rawPath: string): boo
   if (path === "/v1/telemetry/ingest") return false; // MQTT is the only provisioned ingestion transport.
   if (/^\/v1\/billing-cycles\/[^/]+\/pay$/.test(path)) return method === "POST" && ["owner", "admin", "accountant", "school_user"].includes(role);
   if (path === '/v1/contracts' && !read) return method === 'POST' && ['owner','admin'].includes(role);
-  if (/^\/v1\/billing-cycles\/[^/]+\/(?:generate-invoice|verify-payment|status|adjust|send-email)$/.test(path) || path === '/v1/documents' && !read) return ['owner','accountant'].includes(role);
+  if (/^\/v1\/billing-cycles\/[^/]+\/(?:generate-invoice|verify-payment|status|adjust|send-email)$/.test(path) || path === '/v1/documents' && !read) return ['owner','admin','accountant'].includes(role);
   if (/^\/v1\/(?:billing-cycles|contracts|documents)(?:\/|$)/.test(path)) return read || ["owner", "admin", "accountant"].includes(role);
   if (/^\/v1\/settings(?:\/|$)/.test(path)) {
-    if (read) return role !== "school_user" || /\/settings\/(?:company|bank-accounts)$/.test(path);
+    if (read) return role !== "school_user" || /\/settings\/(?:company|bank-accounts)(?:\/|$)/.test(path);
     return ["owner", "admin"].includes(role);
   }
   if (/^\/v1\/users(?:\/|$)/.test(path)) return ["owner", "admin"].includes(role);

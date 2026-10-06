@@ -1,8 +1,9 @@
 "use client";
 
 import { Calendar as CalendarIcon, Check, ChevronLeft, ChevronRight } from "lucide-react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import * as React from "react";
+import {periodDestination} from "./period-destination";
 import type { DateRange } from "react-day-picker";
 import { Button } from "../../components/ui/button";
 import { Calendar } from "../../components/ui/calendar";
@@ -208,7 +209,7 @@ function MonthRangePicker({
           variant="outline"
           size="icon"
           onClick={() => setDisplayYear((y) => y - 1)}
-          className="size-8 rounded-lg border-border/70 bg-card hover:bg-accent cursor-pointer"
+          className="size-11 rounded-lg border-border/70 bg-card hover:bg-accent cursor-pointer"
         >
           <ChevronLeft className="size-4 text-foreground" />
         </Button>
@@ -217,7 +218,7 @@ function MonthRangePicker({
           variant="outline"
           size="icon"
           onClick={() => setDisplayYear((y) => y + 1)}
-          className="size-8 rounded-lg border-border/70 bg-card hover:bg-accent cursor-pointer"
+          className="size-11 rounded-lg border-border/70 bg-card hover:bg-accent cursor-pointer"
         >
           <ChevronRight className="size-4 text-foreground" />
         </Button>
@@ -231,7 +232,7 @@ function MonthRangePicker({
 
           let btnClass = "text-foreground hover:bg-accent hover:text-foreground";
           if (isSelectedEndpoint) {
-            btnClass = "bg-[#EAB308] text-[#0F172A] font-bold shadow-xs hover:bg-[#EAB308]";
+            btnClass = "bg-primary text-primary-foreground font-bold shadow-xs hover:bg-[#EAB308]";
           } else if (isMiddle) {
             btnClass = "bg-[#FEF08A] dark:bg-[#EAB308]/25 text-[#0F172A] dark:text-[#FEF08A] font-semibold";
           }
@@ -242,7 +243,7 @@ function MonthRangePicker({
               variant="ghost"
               size="sm"
               onClick={() => handleMonthClick(idx)}
-              className={`h-10 text-xs rounded-lg transition-colors cursor-pointer ${btnClass}`}
+              className={`min-h-11 text-sm rounded-lg transition-colors cursor-pointer ${btnClass}`}
             >
               {mName}
             </Button>
@@ -257,6 +258,7 @@ function MonthRangePicker({
 
 export function PeriodPicker() {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const locale = useLocale();
   const isMobile = useIsMobile();
@@ -333,7 +335,7 @@ export function PeriodPicker() {
     params.set("end_date", toISODate(to));
     params.delete("month");
     params.delete("year");
-    router.push(`/?${params.toString()}`);
+    router.push(periodDestination(pathname,params.toString()));
   };
 
   const handlePresetSelect = (preset: PresetItem) => {
@@ -378,7 +380,7 @@ export function PeriodPicker() {
       trigger={
         <Button
           variant="outline"
-          className="h-9 sm:h-10 gap-1.5 sm:gap-2 rounded-lg border-border bg-white dark:bg-card px-2.5 sm:px-3 text-xs font-medium text-foreground shadow-xs hover:bg-neutral-50 dark:hover:bg-accent cursor-pointer shrink-0 truncate max-w-[190px] sm:max-w-none"
+          className="min-h-11 gap-1.5 sm:gap-2 rounded-lg border-border bg-white dark:bg-card px-2.5 sm:px-3 text-sm font-medium text-foreground shadow-xs hover:bg-neutral-50 dark:hover:bg-accent cursor-pointer shrink-0 truncate max-w-[190px] sm:max-w-none"
         >
           <CalendarIcon className="size-3.5 sm:size-4 text-muted-foreground mr-0.5 sm:mr-1 shrink-0" />
           <span className="truncate">{triggerLabel}</span>
@@ -388,38 +390,44 @@ export function PeriodPicker() {
       <div className="space-y-3">
         {/* Header with Title and Formatted Relative Date */}
         <div className="flex items-center justify-between">
-          <span className="text-xs font-semibold text-foreground">
+          <span className="text-sm font-semibold text-foreground">
             {locale === "th" ? "ช่วงเวลาข้อมูล" : "Date Period"}
           </span>
-          <span className="text-xs font-medium text-muted-foreground">
+          <span className="text-sm font-medium text-muted-foreground">
             {activeRangeFormatted}
           </span>
         </div>
 
         {/* View Mode Segmented Tabs (รายวัน / รายเดือน) */}
         <div className="flex items-center p-1 bg-muted/60 rounded-xl gap-1 w-full max-w-[220px] mx-auto">
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
             type="button"
+            aria-pressed={viewMode === "day"}
             onClick={() => setViewMode("day")}
-            className={`flex-1 py-1.5 text-xs font-medium rounded-lg transition-all cursor-pointer ${
+            className={`h-auto min-h-11 gap-0 px-0 flex-1 py-1.5 text-sm font-medium rounded-lg transition-all cursor-pointer ${
               viewMode === "day"
                 ? "bg-card text-foreground font-semibold shadow-xs"
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >
             {locale === "th" ? "รายวัน" : "Daily"}
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
             type="button"
+            aria-pressed={viewMode === "month"}
             onClick={() => setViewMode("month")}
-            className={`flex-1 py-1.5 text-xs font-medium rounded-lg transition-all cursor-pointer ${
+            className={`h-auto min-h-11 gap-0 px-0 flex-1 py-1.5 text-sm font-medium rounded-lg transition-all cursor-pointer ${
               viewMode === "month"
                 ? "bg-card text-foreground font-semibold shadow-xs"
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >
             {locale === "th" ? "รายเดือน" : "Monthly"}
-          </button>
+          </Button>
         </div>
 
         {/* Preset buttons (Divider removed) */}
@@ -432,9 +440,9 @@ export function PeriodPicker() {
                 variant={isSelected ? "default" : "outline"}
                 size="sm"
                 onClick={() => handlePresetSelect(p)}
-                className={`h-8 text-xs justify-center font-medium px-2 transition-all ${
+                className={`min-h-11 text-sm justify-center font-medium px-2 transition-all ${
                   isSelected
-                    ? "bg-[#EAB308] text-[#0F172A] font-semibold shadow-xs hover:bg-[#EAB308] hover:text-[#0F172A]"
+                    ? "bg-primary text-primary-foreground font-semibold shadow-xs hover:bg-[#EAB308] hover:text-[#0F172A]"
                     : "text-muted-foreground hover:text-foreground border-border/80"
                 }`}
               >
@@ -477,10 +485,10 @@ export function PeriodPicker() {
           )}
         </div>
 
-        <p className="text-xs text-muted-foreground">{locale === "th" ? "เลือกได้สูงสุด 3 เดือน • ไม่รองรับรายปี" : "Select up to 3 calendar months • Annual selection disabled"}</p>
+        <p className="text-sm text-muted-foreground">{locale === "th" ? "เลือกได้สูงสุด 3 เดือน • ไม่รองรับรายปี" : "Select up to 3 calendar months • Annual selection disabled"}</p>
         {/* Action Footer: Divider removed */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-2.5 pt-2">
-          <div className="text-xs text-muted-foreground text-center sm:text-left">
+          <div className="text-sm text-muted-foreground text-center sm:text-left">
             {customRange?.from ? (
               <span>
                 <strong className="text-foreground">{formatAppDateRange(customRange.from, customRange.to || customRange.from, locale)}</strong>
@@ -500,7 +508,7 @@ export function PeriodPicker() {
               variant="ghost"
               size="sm"
               onClick={() => setOpen(false)}
-              className="flex-1 sm:flex-none h-8 text-xs cursor-pointer"
+              className="flex-1 sm:flex-none h-10 text-sm cursor-pointer"
             >
               {locale === "th" ? "ยกเลิก" : "Cancel"}
             </Button>
@@ -508,7 +516,7 @@ export function PeriodPicker() {
               size="sm"
               disabled={!customRange?.from || !customRange?.to || !rangeValid(customRange.from,customRange.to)}
               onClick={handleApplyCustom}
-              className="flex-1 sm:flex-none h-8 text-xs font-semibold bg-[#EAB308] text-[#0F172A] hover:bg-[#EAB308]/90 cursor-pointer shadow-xs"
+              className="flex-1 sm:flex-none h-10 text-sm font-semibold bg-primary text-primary-foreground hover:bg-[#EAB308]/90 cursor-pointer shadow-xs"
             >
               {locale === "th" ? "นำไปใช้" : "Apply"}
             </Button>

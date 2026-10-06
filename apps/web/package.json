@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start -p 3000",
     "lint": "tsc --noEmit -p tsconfig.json",
-    "test": "tsc --noEmit -p tsconfig.json && tsx --test lib/telemetry-age.spec.ts lib/power-format.spec.ts features/shared/operation-columns.spec.ts features/shared/telemetry-age-label.spec.tsx features/dashboard/summary-status.spec.tsx features/reports/history-summary.spec.tsx"
+    "test:ui": "tsx --tsconfig tsconfig.ui-tests.json --test features/shared/empty-table.spec.tsx",
+    "test": "tsc --noEmit -p tsconfig.json && tsx --tsconfig tsconfig.ui-tests.json --test lib/*.spec.ts features/**/*.spec.ts features/**/*.spec.tsx components/**/*.spec.ts components/**/*.spec.tsx"
   },
   "dependencies": {
     "@date-fns/tz": "^1.5.0",

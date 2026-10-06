@@ -30,6 +30,10 @@ try {
     "infra/migrations/021_platform_jobs.sql",
     "infra/migrations/022_archive_catalog.sql",
     "infra/migrations/023_platform_monitoring.sql",
+    "infra/migrations/024_payload_profiles.sql",
+    "infra/migrations/025_mqtt_brokers.sql",
+    "infra/migrations/026_payload_receive.sql",
+    "infra/migrations/027_payload_subscription.sql",
   ];
   for (const file of migrationFiles) {
     const sql = await readFile(new URL(`../../../../${file}`, import.meta.url), "utf8");

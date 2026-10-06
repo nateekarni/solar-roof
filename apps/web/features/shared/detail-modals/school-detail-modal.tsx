@@ -74,7 +74,7 @@ export function SchoolDetailModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-sm:fixed max-sm:inset-0 max-sm:top-0 max-sm:h-dvh max-sm:max-h-dvh max-sm:w-full max-sm:rounded-none max-sm:p-4 max-sm:flex max-sm:flex-col sm:max-w-xl sm:rounded-2xl sm:p-6 sm:max-h-[85vh] overflow-hidden">
         {/* Header */}
-        <DialogHeader className="shrink-0 pb-3 border-b border-border/60">
+        <DialogHeader className="shrink-0 pb-3 order/60">
           <div className="flex items-center gap-3">
             <div className="size-11 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
               <School className="size-6" />
@@ -104,7 +104,7 @@ export function SchoolDetailModal({
         <div className="flex-1 overflow-y-auto pr-1 space-y-4 text-sm my-2">
           {/* Key Metrics Overview */}
           <div className="grid grid-cols-3 gap-2.5">
-            <div className="p-3 rounded-xl border border-border/60 bg-muted/20 text-center space-y-1">
+            <div className="text-center space-y-1 border-t pt-4">
               <div className="text-[11px] text-muted-foreground flex items-center justify-center gap-1">
                 <Zap className="size-3 text-amber-500" />
                 <span>{locale === "th" ? "กำลังติดตั้ง" : "Capacity"}</span>
@@ -115,7 +115,7 @@ export function SchoolDetailModal({
               <div className="text-[10px] text-muted-foreground">MWp</div>
             </div>
 
-            <div className="p-3 rounded-xl border border-border/60 bg-muted/20 text-center space-y-1">
+            <div className="text-center space-y-1 border-t pt-4">
               <div className="text-[11px] text-muted-foreground flex items-center justify-center gap-1">
                 <Activity className="size-3 text-emerald-500" />
                 <span>{locale === "th" ? "ไซต์ระบบ" : "Solar Sites"}</span>
@@ -126,7 +126,7 @@ export function SchoolDetailModal({
               <div className="text-[10px] text-muted-foreground">{locale === "th" ? "จุดติดตั้ง" : "Sites"}</div>
             </div>
 
-            <div className="p-3 rounded-xl border border-border/60 bg-muted/20 text-center space-y-1">
+            <div className="text-center space-y-1 border-t pt-4">
               <div className="text-[11px] text-muted-foreground flex items-center justify-center gap-1">
                 <Radio className="size-3 text-blue-500" />
                 <span>{locale === "th" ? "IOT Gateway" : "Gateways"}</span>
@@ -143,7 +143,7 @@ export function SchoolDetailModal({
             <div className="text-xs font-semibold text-foreground uppercase tracking-wider px-1">
               {locale === "th" ? "ข้อมูลทั่วไปของสถานศึกษา" : "School Attributes"}
             </div>
-            <div className="rounded-xl border border-border/60 bg-card p-3 space-y-2.5 text-xs">
+            <div className="space-y-2.5 text-xs border-t pt-4">
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">{locale === "th" ? "รหัสสถานศึกษา (Code)" : "School Code"}</span>
                 <span className="font-mono font-medium text-foreground">{school.code || "-"}</span>
@@ -166,7 +166,7 @@ export function SchoolDetailModal({
               <Button
                 variant="ghost"
                 size="icon"
-                className="size-6 text-muted-foreground hover:text-foreground shrink-0"
+                className="size-10 text-muted-foreground hover:text-foreground shrink-0"
                 onClick={() => copyToClipboard(school.id!, "schoolId")}
               >
                 {copiedKey === "schoolId" ? <Check className="size-3 text-emerald-500" /> : <Copy className="size-3" />}
@@ -191,5 +191,3 @@ export function SchoolDetailModal({
     </Dialog>
   );
 }
-
-

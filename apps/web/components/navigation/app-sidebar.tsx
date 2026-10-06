@@ -1,4 +1,5 @@
 "use client";
+import { useSessionUser } from "../../providers/session-user-provider";
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
@@ -30,13 +31,17 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "../../components/ui/dropdown-menu";
-import { useT } from "../../providers/locale-provider";
-import { NAV_ITEMS } from "./nav-config";
+import { useLocale, useT } from "../../providers/locale-provider";
+import { getNavItems, navLabel } from "./nav-config";
 
 export function AppSidebar() {
-  const pathname = usePathname();
+  const currentPath = usePathname();
+  const navItems = getNavItems(useSessionUser().role);
+  const recordResource = currentPath.startsWith("/records/") ? currentPath.split("/")[2] : undefined;
+  const pathname = recordResource ? (["users","audit"].includes(recordResource) ? `/settings/${recordResource}` : `/${recordResource}`) : currentPath;
   const searchParams = useSearchParams();
   const t = useT();
+  const locale = useLocale();
   const { state } = useSidebar();
   const isCollapsed = state === "collapsed";
 
@@ -61,7 +66,7 @@ export function AppSidebar() {
         <SidebarGroup className="py-1 group-data-[collapsible=icon]:p-0">
           <SidebarGroupContent>
             <SidebarMenu className="space-y-1 group-data-[collapsible=icon]:space-y-1.5 group-data-[collapsible=icon]:items-center">
-              {NAV_ITEMS.map((item) => {
+              {navItems.map((item) => {
                 const Icon = item.icon;
                 const hasSubItems = Boolean(item.subItems && item.subItems.length > 0);
                 const hasActiveChild = Boolean(
@@ -76,12 +81,12 @@ export function AppSidebar() {
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <SidebarMenuButton
-                              tooltip={t(item.labelKey)}
+                              tooltip={navLabel(item, locale, t)}
                               isActive={hasActiveChild}
                               className="w-full cursor-pointer"
                             >
                               <Icon className="size-4 shrink-0" />
-                              <span className="truncate">{t(item.labelKey)}</span>
+                              <span className="truncate">{navLabel(item, locale, t)}</span>
                             </SidebarMenuButton>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent
@@ -91,7 +96,7 @@ export function AppSidebar() {
                             className="min-w-44 p-1.5 shadow-xl rounded-xl border border-border"
                           >
                             <div className="px-2 py-1 text-xs font-bold text-muted-foreground border-b border-border/50 mb-1">
-                              {t(item.labelKey)}
+                              {navLabel(item, locale, t)}
                             </div>
                             {item.subItems.map((sub) => {
                               const isSubActive = pathname === sub.href;
@@ -105,7 +110,7 @@ export function AppSidebar() {
                                         : "text-foreground hover:bg-muted"
                                     }`}
                                   >
-                                    <span className="truncate">{t(sub.labelKey)}</span>
+                                    <span className="truncate">{navLabel(sub, locale, t)}</span>
                                   </Link>
                                 </DropdownMenuItem>
                               );
@@ -127,12 +132,12 @@ export function AppSidebar() {
                       <SidebarMenuItem>
                         <CollapsibleTrigger asChild>
                           <SidebarMenuButton
-                            tooltip={t(item.labelKey)}
+                            tooltip={navLabel(item, locale, t)}
                             isActive={false}
                             className="w-full cursor-pointer hover:bg-sidebar-accent hover:text-sidebar-accent-foreground text-sidebar-foreground/85 font-medium"
                           >
                             <Icon className="size-4 shrink-0" />
-                            <span className="truncate">{t(item.labelKey)}</span>
+                            <span className="truncate">{navLabel(item, locale, t)}</span>
                             <ChevronDown className="ml-auto size-3.5 shrink-0 transition-transform duration-200 group-data-[state=open]/collapsible:rotate-180 group-data-[collapsible=icon]:hidden text-sidebar-foreground/60" />
                           </SidebarMenuButton>
                         </CollapsibleTrigger>
@@ -149,7 +154,7 @@ export function AppSidebar() {
                                     isActive={isSubActive}
                                   >
                                     <Link href={sub.href}>
-                                      <span className="truncate">{t(sub.labelKey)}</span>
+                                      <span className="truncate">{navLabel(sub, locale, t)}</span>
                                     </Link>
                                   </SidebarMenuSubButton>
                                 </SidebarMenuSubItem>
@@ -169,11 +174,11 @@ export function AppSidebar() {
                     <SidebarMenuButton
                       asChild
                       isActive={isActive}
-                      tooltip={t(item.labelKey)}
+                      tooltip={navLabel(item, locale, t)}
                     >
                       <Link href={item.href || "#"} className="flex items-center gap-2.5">
                         <Icon className="size-4 shrink-0" />
-                        <span className="truncate">{t(item.labelKey)}</span>
+                        <span className="truncate">{navLabel(item, locale, t)}</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

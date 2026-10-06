@@ -91,7 +91,7 @@ export function CustomizeCardsModal({
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 py-3">
           {Array.from({ length: 6 }).map((_, idx) => (
-            <div key={idx} className="space-y-1.5 rounded-lg border border-border/70 p-2.5 bg-muted/20">
+            <div key={idx} className="space-y-2 border-t pt-4">
               <Label className="text-xs font-semibold text-foreground flex items-center justify-between">
                 <span>{locale === "th" ? `การ์ดที่ ${idx + 1}` : `Card #${idx + 1}`}</span>
               </Label>
@@ -99,7 +99,7 @@ export function CustomizeCardsModal({
                 value={draftConfig[idx] ?? defaultConfig[idx] ?? "totalSites"}
                 onValueChange={(val) => handleChange(idx, val)}
               >
-                <SelectTrigger className="h-10 text-xs bg-card">
+                <SelectTrigger className="h-10 text-xs bg-white">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

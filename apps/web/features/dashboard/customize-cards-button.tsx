@@ -16,7 +16,7 @@ export function CustomizeCardsButton() {
       onClick={() => {
         window.dispatchEvent(new CustomEvent("open-customize-cards"));
       }}
-      className="h-8.5 gap-1.5 text-xs font-medium shadow-xs hover:bg-muted cursor-pointer"
+      className="h-10 gap-1.5 text-xs font-medium shadow-xs hover:bg-muted cursor-pointer"
     >
       <SlidersHorizontal className="size-3.5 text-primary" />
       <span>{locale === "th" ? "ปรับแต่งการ์ด" : "Customize"}</span>

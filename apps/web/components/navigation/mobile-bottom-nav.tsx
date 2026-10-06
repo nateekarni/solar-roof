@@ -2,18 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  AlertTriangle,
-  GraduationCap,
-  LayoutDashboard,
-  MapPin,
-  Receipt,
-  ScrollText,
-  Settings2,
-  Zap,
-} from "lucide-react";
-import * as React from "react";
-import { useAuth } from "../../stores/auth-store";
+import type * as React from "react";
+import { useSessionUser } from "../../providers/session-user-provider";
+import { getBottomNavItems, navLabel } from "./nav-config";
+import { useT } from "../../providers/locale-provider";
+import { useLocale } from "../../providers/locale-provider";
 import { cn } from "../../lib/utils";
 
 interface MobileTab {
@@ -25,80 +18,10 @@ interface MobileTab {
 
 export function MobileBottomNav() {
   const pathname = usePathname();
-  const { user } = useAuth();
-  const role = user?.role || "owner";
-
-  const tabs: MobileTab[] = React.useMemo(() => {
-    if (role === "school_user") {
-      return [
-        {
-          label: "หน้าแรก",
-          href: "/",
-          icon: LayoutDashboard,
-        },
-        {
-          label: "ใบแจ้งหนี้",
-          href: "/billing",
-          icon: Receipt,
-        },
-        {
-          label: "ตั้งค่า",
-          href: "/settings",
-          icon: Settings2,
-        },
-      ];
-    }
-
-    if (role === "admin") {
-      return [
-        {
-          label: "ภาพรวม",
-          href: "/",
-          icon: LayoutDashboard,
-        },
-        {
-          label: "ไซต์งาน",
-          href: "/sites",
-          icon: MapPin,
-        },
-        {
-          label: "แจ้งเตือน",
-          href: "/alerts",
-          icon: AlertTriangle,
-        },
-        {
-          label: "ตั้งค่า",
-          href: "/settings",
-          icon: Settings2,
-        },
-      ];
-    }
-
-    // Owner role (default)
-    return [
-      {
-        label: "หน้าแรก",
-        href: "/",
-        icon: LayoutDashboard,
-      },
-      {
-        label: "ไซต์งาน",
-        href: "/sites",
-        icon: MapPin,
-      },
-      {
-        label: "เอกสาร",
-        href: "/billing",
-        icon: ScrollText,
-      },
-      {
-        label: "ตั้งค่า",
-        href: "/settings",
-        icon: Settings2,
-      },
-    ];
-  }, [role]);
-
+  const th = useLocale() === "th";
+  const user = useSessionUser();
+ const t = useT();
+ const tabs: MobileTab[] = getBottomNavItems(user.role).map(item => ({label: navLabel(item, th ? "th" : "en", t), href: item.href!, icon:item.icon}));
   // Don't render inside login or public pages
   if (pathname === "/login") return null;
 
@@ -120,7 +43,7 @@ export function MobileBottomNav() {
               key={tab.href + tab.label}
               href={tab.href}
               className={cn(
-                "group relative flex flex-col items-center justify-center min-w-[56px] py-1.5 px-2 rounded-lg text-xs font-medium transition-all select-none active:scale-95",
+                "group relative flex flex-col items-center justify-center min-w-[56px] min-h-11 py-1.5 px-2 rounded-lg text-xs font-medium transition-all select-none active:scale-95",
                 isActive
                   ? "text-primary"
                   : "text-muted-foreground hover:text-foreground"

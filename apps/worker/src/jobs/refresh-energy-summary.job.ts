@@ -39,13 +39,13 @@ export class RefreshEnergySummaryJob implements OnModuleInit,OnModuleDestroy {
     if(!site.rows[0])continue;
     const baseline=await client.query<Sample>(`SELECT source_time::text at,max(total_energy_kwh)::text kwh,
      CASE WHEN bool_and(quality IN ('complete','partial')) THEN 'complete' ELSE 'invalid' END quality,
-     min(mapping_version_id::text) mapping,count(DISTINCT total_energy_kwh)>1 OR count(DISTINCT COALESCE(mapping_version_id::text,'unmapped'))>1 conflict
+     min(COALESCE(mapping_version_id,payload_profile_revision_id)::text) mapping,count(DISTINCT total_energy_kwh)>1 OR count(DISTINCT COALESCE(mapping_version_id::text,payload_profile_revision_id::text,'unmapped'))>1 conflict
      FROM telemetry_raw WHERE device_id=$1 AND total_energy_kwh IS NOT NULL AND source_time=(
       SELECT max(source_time) FROM telemetry_raw WHERE device_id=$1 AND source_time<=$2 AND total_energy_kwh IS NOT NULL)
      GROUP BY source_time`,[row.device_id,start]);
     const samples=await client.query<Sample>(`SELECT source_time::text at,max(total_energy_kwh)::text kwh,
      CASE WHEN bool_and(quality IN ('complete','partial')) THEN 'complete' ELSE 'invalid' END quality,
-     min(mapping_version_id::text) mapping,count(DISTINCT total_energy_kwh)>1 OR count(DISTINCT COALESCE(mapping_version_id::text,'unmapped'))>1 conflict
+     min(COALESCE(mapping_version_id,payload_profile_revision_id)::text) mapping,count(DISTINCT total_energy_kwh)>1 OR count(DISTINCT COALESCE(mapping_version_id::text,payload_profile_revision_id::text,'unmapped'))>1 conflict
      FROM telemetry_raw WHERE device_id=$1 AND source_time>$2 AND source_time<=$3 AND total_energy_kwh IS NOT NULL
      GROUP BY source_time ORDER BY source_time LIMIT 4097`,[row.device_id,start,end]);
     const today=new Date(Date.now()+7*3600000).toISOString().slice(0,10);

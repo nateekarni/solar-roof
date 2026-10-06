@@ -15,17 +15,12 @@ export interface AccessResource {
 }
 
 export function canAccess(actor: AccessActor, action: AccessAction, resource: AccessResource): boolean {
-  if (actor.role === "owner") return true;
+  if (!["owner", "admin", "operator", "accountant", "school_user"].includes(actor.role)) return false;
+  if (actor.role === "owner" || actor.role === "admin") return true;
   if (resource.schoolId && actor.schoolId === resource.schoolId) {
     return actor.role === "school_user"
       ? action === "read" || action === "upload_evidence"
       : true;
-  }
-  if (resource.schoolId && actor.assignedSchoolIds?.includes(resource.schoolId)) {
-    return actor.role === "admin";
-  }
-  if (resource.siteId && actor.assignedSiteIds?.includes(resource.siteId)) {
-    return actor.role === "admin";
   }
   return false;
 }

@@ -22,7 +22,7 @@ function Label({
       )}
       {...props}
     >
-      {children}
+      {React.Children.map(children, child => typeof child === "string" && /\*\s*$/.test(child) ? <>{child.replace(/\s*\*\s*$/, "")}<span className="text-destructive font-bold" aria-hidden="true">*</span></> : child)}
       {required && <span className="text-destructive font-bold ml-0.5">*</span>}
     </LabelPrimitive.Root>
   )
