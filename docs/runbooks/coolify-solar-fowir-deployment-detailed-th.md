@@ -6,7 +6,7 @@
 
 ทำตามลำดับนี้ ใช้ส่วนรายละเอียดเลข1–14ด้านล่างเมื่อกรอกค่าในแต่ละหน้า:
 
-1. **GitHub:** เปิด branch `codex/local-main` ตรวจ commit ของคู่มือ/Compose pilot แล้วนำ commit นี้เข้า `main` ผ่านกระบวนการ review ของทีม การ push branch ยังไม่ทำให้ CI เผยแพร่ image ของ main โดยอัตโนมัติ และไม่รวมงาน local อื่นที่ยังไม่ commit
+1. **GitHub:** ใช้ branch `main` ที่รวมหน้า School User แบบ Vector และคู่มือ deploy แล้ว ตรวจ SHA ของ release ใน Actions ให้ตรงกับ commit ที่จะ deploy การ push main เริ่ม CI แต่ต้องรอการทดสอบและเผยแพร่ image สำเร็จก่อนใช้ image
 2. **GitHub → Settings → Secrets and variables → Actions → Variables:** ตั้ง `STAGING_DEPLOY_ENABLED=false` ป้องกัน deploy อัตโนมัติระหว่างเตรียมครั้งแรก
 3. **GitHub → Actions → CI and staging:** รัน main ล่าสุด รอ verify ผ่าน แล้วคัดลอก image digestทั้ง6จาก Summary ห้ามข้าม CI ที่แดง
 4. **ผู้ดูแลเครื่อง:** ตรวจว่า liveยังเป็น2vCPU/4GiB, proxyทำงาน, พื้นที่ว่างพอ และแอปอื่นไม่กินRAMจนไม่มีพื้นที่ เปิด80/443/8883ที่firewallและNAT
@@ -17,13 +17,25 @@
 9. **Coolify → Environment Variables:** เปิดไฟล์ `infra/docker/.env.staging.example` ที่commitใหม่ ใช้เป็นรายการกรอก ใส่6digestsจริง, DB/Storage/JWT/MQTT secretsใหม่, Cloudflare token, ACMEemail, bootstrapAdminตามขั้น9 ค่าresourceท้ายไฟล์ใช้ตามpilotได้เลย หรือเว้นไว้ให้Composeใช้default อย่านำไฟล์ `.env` localขึ้นserver
 10. **Coolify → Environment Variables:** ยืนยัน `INGEST_CONCURRENCY=2`, `API_READ_POOL_MAX=4`, `INGEST_DB_POOL_MAX=2`, `API_EDGE_ENABLED=false`, `TRUSTED_PROXY_CIDRS`ว่าง และfeatureflagsเริ่มfalse จากนั้นSaveทั้งหมด
 11. **Coolify → Deploy:** ตรวจlog/healthตามขั้น10; one-shotต้องExited(0) ส่วนlong-runningต้องhealthy APIมีdependencyMQTT จึงต้องให้certbotออกcertificateได้ก่อน
-12. **Browser:** เปิด `https://solar.fowir.com` และloginด้วยbootstrapAdminที่กรอก บัญชีlocalไม่ย้ายตาม และStitchยังเป็นprototype
+12. **Browser:** เปิด `https://solar.fowir.com` และloginด้วยbootstrapAdminที่กรอก บัญชีlocalไม่ย้ายตาม หน้า School User แบบ Vector ใช้ข้อมูลจาก API แล้ว แต่ภาพ screenshot ของการตรวจ layout ใช้ข้อมูลทดสอบ ไม่ใช่ข้อมูลที่จะถูก seed ขึ้น server
 13. **Admin UI:** สร้างโรงเรียน/site/Gateway/มิเตอร์ตามเครื่องจริง ใช้GatewaynameตรงMQTTusername ตรวจserial/topic/payloadตามconnectiondraft ไม่เอาชื่อสมมติไปแทนserialจริง
 14. **Gateway:** ตั้งmqtt-solar.fowir.com:8883,TLS,username/passwordของเครื่องตามขั้น11 ส่งข้อความแล้วดูACKและDashboard ซ้อมdisconnect/replay/duplicate
 15. **Coolify → Metrics/Logs หรือserverterminal:** ตรวจlimitsมีผล, RAM/CPU, ไม่มีOOM/restartloop, queueลดลง และfreshnessจริง ซ้อม30–60นาทีก่อนสาธิต
 16. **ก่อนสาธิต:** เตรียมOwner/SchoolUserจริงตามworkflowเชิญและschoolscope, backupข้อมูลที่ต้องเก็บ, เปิดหน้าเว็บมือถือ/desktopตรวจการแสดงผล ไม่เปิดauto-deployระหว่างโชว์ลูกค้า
 
 ไฟล์Composeที่commitรอบนี้ใส่resource pilotเป็นdefaultและoverrideผ่านenvironmentได้แล้ว ไม่ต้องพิมพ์resourceทั้งหมดในช่องUIอีกครั้ง ข้อมูล16GiBด้านล่างมีไว้สำหรับอนาคตเท่านั้น
+
+### ถ้ามี Application นี้อยู่บน Coolify แล้ว: อัปเดตของเดิม
+
+1. เปิด Application เดิม ตรวจ Repository เป็น `nateekarni/solar-roof`, Branch `main` และ Compose Location `/infra/docker/docker-compose.staging.yml`
+2. สำรองข้อมูลที่ต้องเก็บและจด image digest เดิมทั้งหก รวม SHA และค่าตั้งเดิมก่อนเปลี่ยน
+3. รอ Actions ของ commit main ใหม่ผ่าน จาก Summary คัดลอก `API_IMAGE`, `WEB_IMAGE`, `WORKER_IMAGE`, `MQTT_IMAGE`, `CERTBOT_IMAGE`, `POSTGRES_IMAGE` จาก run เดียวกัน
+4. ใน Environment Variables ของ Application เดิม เปลี่ยนเฉพาะ image digest ทั้งหก และ `PLATFORM_RELEASE_REVISION` ให้ตรง release ใหม่ ส่วน secrets, domain, volumes และชื่อ resource ใช้ค่าเดิม
+5. ตรวจช่อง Commit SHA หากถูกล็อกไว้ที่รุ่นเก่า ให้เลือก SHA ของ run ใหม่ที่ผ่าน CI; เมื่อกรอก SHA ต้องไม่ปล่อยให้ Coolify ดึง commit อื่นที่ยังไม่ได้ทดสอบ
+6. Save แล้ว Deploy โดยไม่สร้าง resource ใหม่ ตรวจ migration/one-shot exit0 และ service health ตามขั้น10
+7. เปิด School User ตรวจสถานะมุมขวาหัวการ์ด Step มีเส้นเชื่อม และไม่มี divider ใต้รอบบิลหรือเหนือ Step ลองมือถือ320/390pxและdesktop1440px
+
+ถ้ามี PostgreSQL/MinIO volume เดิมอยู่แล้ว ไม่เปลี่ยน `POSTGRES_PASSWORD`, `DATABASE_URL` หรือ storage credentials โดยสุ่มใหม่ตามขั้นติดตั้งครั้งแรก การเปลี่ยน environment ไม่ได้เปลี่ยนรหัสในฐานข้อมูลเดิมโดยอัตโนมัติ ไม่ใช้ `docker compose down -v` และไม่ใช้คำสั่งล้างข้อมูลเพื่อแก้การ deploy
 
 ## 1. แบบติดตั้งที่ใช้
 
@@ -133,7 +145,7 @@ limits ไม่เท่ากับ tuning PostgreSQL/Redis อย่าตั
 6. ให้ server ดึง GHCR ได้ ใช้ package public เฉพาะเมื่อบริษัทอนุญาต หรือ registry authentication แบบ read-only ที่บริษัทจัดให้ ไม่เปิด package public โดยอัตโนมัติ
 7. ไม่ใช้ latest และไม่ใช้ digest ต่าง revision ปะปนกัน
 8. ผลตรวจรวมงาน6ตุลาคม2026: full workspace lint/test และproductionbuildผ่าน เมื่อรันนอกsandboxที่อ่านdependencyไม่ครบ ปัญหาtypeก่อนหน้านี้เป็นenvironmentของsandbox ไม่ใช่การรับรองimageบนserver ต้องให้CIของreleaseจริงผ่านและใช้digestที่CIทดสอบก่อนdeploy
-9. ภาพ School User ที่ออกแบบผ่าน Stitch เป็น prototype ยังไม่ใช่ UI ที่เชื่อมระบบจริงใน release
+9. หน้า School User แบบ Vector จาก Stitch นำเข้าระบบแล้วด้วย Shadcn: ฉากพลังงาน, กำลังผลิต kW, ยอดวันนี้/เดือนนี้แยกช่วงเวลา, กราฟพลังงานรายวัน kWh, ใบแจ้งหนี้จริง, status ที่หัวการ์ด และขั้นตอนตรวจบิล → แนบสลิป → รอตรวจสอบ ข้อมูลขาดแสดงไม่มีข้อมูล; ไม่มีตัวเลขตัวอย่างหรือกำหนดชำระที่ API ไม่ได้ส่งมา
 
 ## 4. จัดการ DNS ของ fowir.com
 
@@ -279,6 +291,7 @@ curl -I http://solar.fowir.com
 - unsafeOriginต่างโดเมนต้อง403 การrefreshผ่านGETต้องไม่เปลี่ยนsession
 - เก็บactualproxy/network configurationก่อนเปิดAPI_EDGE_ENABLED
 - เปิดmobile390pxและdesktop1280pxตรวจnavigationและหน้าเอกสาร
+- School User: ตรวจมือถือ320/390pxและdesktop1440px สถานะบิลอยู่หัวการ์ดด้านขวา Step แสดงแม้ไม่มีบิลแต่ไม่มีขั้นตอน active; เมื่อแนบหลักฐานแล้วจึง active รอตรวจสอบ และไม่มี divider ใต้ข้อมูลรอบบิล/เหนือ Step
 
 Gatewayตั้ง host mqtt-solar.fowir.com,port8883,TLSตรวจCA/hostname,usernamepilot-01,passwordของGateway topics/payloadใช้ `docs/gateway-handoff/gateway-connection-draft-th.md` และ protocolจริงของrepo
 ตรวจTLSจากเครื่องที่มีOpenSSL:
@@ -308,6 +321,8 @@ CPUต่อเนื่องเกิน70%,RAMเกิน80%,queueไม่�
 3. GitHub Environment staging: variables COOLIFY_URL=https://coolify.fowir.com, COOLIFY_APPLICATION_UUID=จริง, STAGING_WEB_URL=https://solar.fowir.com; secret COOLIFY_API_TOKEN
 4. repositoryvariable STAGING_DEPLOY_ENABLED=true เมื่อพร้อม; จำกัดmain/approvalตามทีม
 5. ให้CIเป็นผู้deploy ไม่ให้Git webhookกับCIสั่งซ้อนกัน
+
+ข้อจำกัดปัจจุบัน: helper `scripts/ci/coolify-deploy.mjs` อัปเดต digest อัตโนมัติห้าตัว (`api`, `worker`, `web`, `mqtt`, `certbot`) แต่ยังไม่อัปเดต `POSTGRES_IMAGE` ต้องจัดการ PostgreSQL image ที่ผ่านการทดสอบด้วยมือพร้อมตรวจ migration/backup อย่าเปิด auto-deploy แล้วถือว่า image ทั้งหกถูกอัปเดตจาก run เดียวกัน ช่วง pilot นี้ให้คง `STAGING_DEPLOY_ENABLED=false` และ deploy ด้วยมือตามขั้นข้างต้น
 
 ก่อนupgrade backupและจดoldimage digests/revision/config/schema การเปลี่ยนappimageย้อนใช้ได้เมื่อschemaยังcompatibleเท่านั้น Composeมีmigrationอยู่ด้วย ต้องreviewmigrationก่อนredeployรุ่นเก่า ห้ามdowngradePostgreSQLหรือทำdownmigrationโดยเดา ไม่ลบvolumes
 เครื่องมีข้อมูลGatewayต่อเนื่องต้องตรวจbuffer/replayและACKdurabilityระหว่างrestart

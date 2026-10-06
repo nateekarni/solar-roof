@@ -30,6 +30,7 @@ import { GatewayStatusSummary } from "./gateway-status-summary";
 import { SummaryStatus } from "./summary-status";
 import { BusinessDashboard } from "./business-dashboard";
 import { requirePageAccess } from "../../lib/session-user";
+import type { SchoolInvoice } from "./school-dashboard";
 
 type DashboardData = DashboardSummaryResponse;
 async function getDashboardData(
@@ -85,10 +86,24 @@ export async function Dashboard({
     resolvedParams?.end_date,
     resolvedParams?.month,
     resolvedParams?.year,
-    resolvedParams?.site_id,
+    user.role === "school_user" ? undefined : resolvedParams?.site_id,
   );
 
-  if (user.role === "owner" || user.role === "school_user") {
+  if (user.role === "school_user") {
+    const parts = new Intl.DateTimeFormat("en", {timeZone:"Asia/Bangkok",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date());
+    const part = (type:string) => parts.find(value=>value.type===type)?.value;
+    const today = `${part("year")}-${part("month")}-${part("day")}`;
+    const monthStart = `${part("year")}-${part("month")}-01`;
+    const [daily, monthly, billResponse] = await Promise.all([
+      data.range.start===today&&data.range.end===today ? Promise.resolve(data) : getDashboardData(today,today),
+      data.range.start===monthStart&&data.range.end===today ? Promise.resolve(data) : getDashboardData(monthStart,today),
+      serverFetch(`${getApiBaseUrl()}/v1/operations/billing?limit=1&sort=period&direction=desc`,{cache:"no-store"}),
+    ]);
+    if(billResponse.status===401) redirect("/login");
+    const bills = billResponse.ok ? await billResponse.json() as {rows:SchoolInvoice[]} : null;
+    return <><DashboardAutoRefresh/><BusinessDashboard data={data} role={user.role} locale={locale} todayKwh={daily.energyReadModel?.status==='preparing'?null:daily.stats.periodKwh} monthKwh={monthly.energyReadModel?.status==='preparing'?null:monthly.stats.periodKwh} invoice={bills?.rows[0] ?? null} billingUnavailable={!billResponse.ok} periodControl={<PeriodPicker/>}/></>;
+  }
+  if (user.role === "owner") {
     return <BusinessDashboard data={data} role={user.role} locale={locale} periodControl={<PeriodPicker />} />;
   }
   const alerts = data.alerts || [];

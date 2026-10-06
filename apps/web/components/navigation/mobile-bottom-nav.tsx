@@ -66,7 +66,7 @@ export function MobileBottomNav() {
                 className={cn(
                   "text-[11px] leading-none tracking-tight transition-colors",
                   isActive
-                    ? "font-semibold text-amber-800 dark:text-amber-300"
+                    ? "font-semibold text-primary"
                     : "font-normal text-muted-foreground group-hover:text-foreground"
                 )}
               >

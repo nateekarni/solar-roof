@@ -1,7 +1,7 @@
-import type {ReactNode} from 'react';
 import type {DashboardSummaryDataPoint, DashboardSummaryResponse} from '@solar/api-contracts';
 import { formatAppDate, formatAppDateRange } from "../../lib/date-format";
 import type {Locale} from '@solar/i18n';
+import { SchoolDashboard, type SchoolDashboardProps } from './school-dashboard';
 
 export function BusinessProductionTrend({points,locale='th',charges=false}:{points:DashboardSummaryDataPoint[];locale?:Locale;charges?:boolean}) {
   const th=locale==='th';
@@ -18,7 +18,8 @@ export function BusinessProductionTrend({points,locale='th',charges=false}:{poin
   </section>;
 }
 
-export function BusinessDashboard({data,role,locale,periodControl}:{data:DashboardSummaryResponse;role:string;locale:Locale;periodControl?:ReactNode}) {
+export function BusinessDashboard({data,role,locale,periodControl,...schoolProps}:SchoolDashboardProps & {role:string}) {
+  if(role==='school_user') return <SchoolDashboard data={data} locale={locale} periodControl={periodControl} {...schoolProps}/>;
   const th=locale==='th';const school=role==='school_user';
   const unknown=th?'ยังไม่มีข้อมูล':'Unavailable';
   const format=(value:number|null|undefined)=>value==null||!Number.isFinite(value)?unknown:value.toLocaleString(locale,{maximumFractionDigits:2});
