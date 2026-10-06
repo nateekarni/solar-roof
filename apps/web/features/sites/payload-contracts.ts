@@ -1,13 +1,17 @@
 export interface PayloadField {
+  sourceTag?:string; required?:boolean;
   tag: string; displayName: string; pollGroup: string; sourceUnit: string; targetUnit: string;
-  conversion: 'identity' | 'wh-to-kwh' | 'varh-to-kvarh' | 'auto-v1'; role?: 'billing-import' | 'active-power';
+  conversion: 'identity' | 'wh-to-kwh' | 'varh-to-kvarh' | 'auto-v1'; role?: 'billing-import' | 'active-power' | 'none';
 }
 export interface PayloadProfile {
+  sourceProfile?:{id:string;version:string};
   id: string; version: string; schemaVersion: '1.1'; displayName: string; deviceType: string;
   pollGroups: string[]; fields: PayloadField[];
 }
 export interface PayloadRevision { id: string; profileId: string; version: string; config: PayloadProfile; createdAt: string }
 export interface PayloadDevice {
+  profileDeviceType?:string;
+  sourceProfileId?:string;sourceProfileVersion?:string;
   id: string; name: string; externalDeviceId: string; profileRevisionId: string; profileId: string;
   model?:string; serialNumber?:string; deviceType?:string; fields?:PayloadField[];
   profileVersion: string; telemetryTopic: string; fixture: Record<string, unknown>;

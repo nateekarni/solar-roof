@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { Pool } from "pg";
 import { config } from "dotenv";
 import { fileURLToPath } from "node:url";
-import { createHash } from "node:crypto";
+import {migrationChecksum,matchesMigrationChecksum} from './migration-checksum.js';
 
 config({ path: fileURLToPath(new URL("../../../../.env", import.meta.url)) });
 if(!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required");
@@ -34,13 +34,14 @@ try {
     "infra/migrations/025_mqtt_brokers.sql",
     "infra/migrations/026_payload_receive.sql",
     "infra/migrations/027_payload_subscription.sql",
+    "infra/migrations/028_preset_catalog.sql",
   ];
   for (const file of migrationFiles) {
     const sql = await readFile(new URL(`../../../../${file}`, import.meta.url), "utf8");
-    const checksum=createHash("sha256").update(sql).digest("hex");
+    const checksum=migrationChecksum(sql);
     const applied=await client.query("SELECT checksum FROM schema_migrations WHERE name=$1",[file]);
     if(applied.rows[0]) {
-      if(applied.rows[0].checksum!==checksum)throw new Error(`Applied migration changed: ${file}`);
+      if(!matchesMigrationChecksum(applied.rows[0].checksum,sql))throw new Error(`Applied migration changed: ${file}`);
       console.log(`Already applied ${file}`); continue;
     }
     await client.query("BEGIN");

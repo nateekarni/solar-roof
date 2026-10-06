@@ -11,6 +11,7 @@ import { BrokerSelect } from "./broker-select";
 import { emptySiteValues, optionalNumber } from "./site-form-values";
 import { type PayloadRevision, isBillingProfile } from "./payload-contracts";
 import { ProfileSelect } from "./payload-connection-card";
+import {PresetPicker} from "./preset-picker";
 import { Field, FieldGroup, FieldLabel } from "../../components/ui/field";
 import { ChoiceSelect } from '../../components/ui/choice-select';
 
@@ -155,7 +156,7 @@ export function SiteFormDialog({
     }
   }, [open, setValue]);
 
-  const draftConfig:PayloadConfig=React.useMemo(()=>({siteId:'draft',gatewayId:'draft',externalSiteId:formValues.externalSiteId??'',externalGatewayId:formValues.externalGatewayId??'',subscriptionTopic:formValues.endpoint,ackTopic:null,receiveRevision:{id:null,version:0,createdAt:null,config:receiveConfig??{messagesPath:'payloads',fieldPaths:{},deviceAliases:[]}},bundleFixture:null,rejections:[],unmappedMessages:[],devices:[{name:'มิเตอร์หลัก',externalDeviceId:formValues.externalDeviceId??'',payloadProfileRevisionId:formValues.payloadProfileRevisionId??''},...additionalDevices].flatMap((d,index)=>{const r=payloadPresets.find(p=>p.id===d.payloadProfileRevisionId);return r?[{id:String(index),name:d.name,externalDeviceId:d.externalDeviceId,profileRevisionId:r.id,profileId:r.config.id,profileVersion:r.version,fixture:{},telemetryTopic:`solar/v1/sites/${formValues.externalSiteId}/gateways/${formValues.externalGatewayId}/devices/${d.externalDeviceId}/telemetry`}]:[];})}),[formValues.externalSiteId,formValues.externalGatewayId,formValues.externalDeviceId,formValues.payloadProfileRevisionId,formValues.endpoint,additionalDevices,payloadPresets,receiveConfig]);
+  const draftConfig:PayloadConfig=React.useMemo(()=>({siteId:'draft',gatewayId:'draft',externalSiteId:formValues.externalSiteId??'',externalGatewayId:formValues.externalGatewayId??'',subscriptionTopic:formValues.endpoint,ackTopic:null,receiveRevision:{id:null,version:0,createdAt:null,config:receiveConfig??{messagesPath:'payloads',fieldPaths:{},deviceAliases:[]}},bundleFixture:null,rejections:[],unmappedMessages:[],devices:[{name:'มิเตอร์หลัก',externalDeviceId:formValues.externalDeviceId??'',payloadProfileRevisionId:formValues.payloadProfileRevisionId??''},...additionalDevices].flatMap((d,index)=>{const r=payloadPresets.find(p=>p.id===d.payloadProfileRevisionId);return r?[{id:String(index),name:d.name,externalDeviceId:d.externalDeviceId,profileRevisionId:r.id,profileId:r.config.id,profileVersion:r.version,sourceProfileId:r.config.sourceProfile?.id??r.config.id,sourceProfileVersion:r.config.sourceProfile?.version??r.version,fixture:{},telemetryTopic:`solar/v1/sites/${formValues.externalSiteId}/gateways/${formValues.externalGatewayId}/devices/${d.externalDeviceId}/telemetry`}]:[];})}),[formValues.externalSiteId,formValues.externalGatewayId,formValues.externalDeviceId,formValues.payloadProfileRevisionId,formValues.endpoint,additionalDevices,payloadPresets,receiveConfig]);
 
   // Auto-generate suggested gateway and endpoint when site name changes
   const handleSiteNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -179,6 +180,7 @@ export function SiteFormDialog({
     generatedEndpoint.current = `solar/v1/sites/${formValues.externalSiteId || ""}/gateways/${formValues.externalGatewayId || ""}/devices/+/telemetry`;
   }, [payloadMode, formValues.externalSiteId, formValues.externalGatewayId, setValue]);
 
+  React.useEffect(()=>{const selected=payloadPresets.find(p=>p.id===formValues.payloadProfileRevisionId);if(selected)setValue('deviceModel',selected.config.displayName);},[payloadPresets,formValues.payloadProfileRevisionId,setValue]);
   const validatePayload = () => {
     if (!payloadMode) return true;
     if (!formValues.payloadProfileRevisionId || ![formValues.externalSiteId, formValues.externalGatewayId, formValues.externalDeviceId].every(v => typeof v === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(v))) { setFormError("เลือกโปรไฟล์มิเตอร์และระบุรหัสไซต์ เกตเวย์ และอุปกรณ์ (1–128 ตัว: A–Z, a–z, 0–9, _ หรือ -)"); return false; }
@@ -192,7 +194,7 @@ export function SiteFormDialog({
   const handleNextStep = async () => {
     const valid = await trigger(["name", "schoolName", "capacityMwp", "latitude", "longitude", "gatewayName", "protocol", "endpoint", "deviceSerial"]);
     if (!dataFormat || (!payloadMode && !formValues.meterPresetId)) {
-      setFormError(!dataFormat ? "เลือกรูปแบบข้อมูลและมิเตอร์หลักด้านล่าง หรือกดอ่านและเติมค่าจาก Payload ตัวอย่าง" : "เลือกแม่แบบมิเตอร์หลักก่อนดำเนินการต่อ");
+      setFormError(!dataFormat ? "เลือก Preset มิเตอร์หลัก หรือเพิ่ม Preset ด้วยตัวเอง" : "เลือกแม่แบบมิเตอร์หลักก่อนดำเนินการต่อ");
       return;
     }
     if (valid && validatePayload()) {
@@ -416,10 +418,10 @@ export function SiteFormDialog({
           }}/>
           <section className="space-y-5 border-t pt-5">
           { <FieldGroup>
-            <h3 className="flex items-center gap-2 text-sm font-semibold"><Wifi className="size-4 text-primary"/>การเชื่อมต่อและโปรไฟล์</h3>
+            <h3 className="flex items-center gap-2 text-sm font-semibold"><Wifi className="size-4 text-primary"/>การเชื่อมต่อและ Preset</h3>
 
-            <Field><FieldLabel htmlFor="payload-mode">รูปแบบข้อมูล</FieldLabel><ChoiceSelect id="payload-mode" className="w-full" value={dataFormat} onChange={e => { setDataFormat(e.target.value); const canonical = e.target.value === "payload"; setPayloadMode(canonical); payloadModeRef.current = canonical; setValue("meterPresetId", ""); setValue("payloadProfileRevisionId", ""); setValue("deviceModel", ""); if (!canonical) setValue("endpoint", formValues.gatewayName ? `energy/${formValues.gatewayName}/#` : ""); }}><option value="" disabled>เลือกรูปแบบข้อมูล</option><option value="legacy">{locale === "th" ? "ชุดรีจิสเตอร์" : "Register preset"}</option><option value="payload">{locale === "th" ? "โปรไฟล์ข้อมูล" : "Data profile"}</option></ChoiceSelect></Field>
-            {payloadMode && <>{additionalDevices.some(d=>(payloadPresets.some(p=>p.id===d.payloadProfileRevisionId&&isBillingProfile(p))))&&<Field><FieldLabel htmlFor="billing-device">มิเตอร์หลักที่ใช้คิดบิล</FieldLabel><ChoiceSelect id="billing-device" value="main" onChange={e=>{const index=Number(e.target.value);const device=additionalDevices[index];if(!device)return;const previous={name:'มิเตอร์หลัก',model:formValues.deviceModel??'',serialNumber:formValues.deviceSerial,externalDeviceId:formValues.externalDeviceId??'',payloadProfileRevisionId:formValues.payloadProfileRevisionId??''};setValue('deviceModel',device.model);setValue('deviceSerial',device.serialNumber);setValue('externalDeviceId',device.externalDeviceId);setValue('payloadProfileRevisionId',device.payloadProfileRevisionId);setAdditionalDevices(current=>current.map((d,i)=>i===index?previous:d));}}><option value="main">มิเตอร์หลัก · {formValues.externalDeviceId}</option>{additionalDevices.map((d,index)=>{const profile=payloadPresets.find(p=>p.id===d.payloadProfileRevisionId);return profile&&isBillingProfile(profile)?<option key={index} value={index}>{d.name} · {d.externalDeviceId}</option>:null;})}</ChoiceSelect></Field>}<ProfileSelect revisions={payloadPresets.filter(isBillingProfile)} value={formValues.payloadProfileRevisionId ?? ""} onChange={id => { setValue("payloadProfileRevisionId", id); setValue("deviceModel", payloadPresets.find(p => p.id === id)?.config.displayName ?? ""); }}/>{(["externalSiteId", "externalGatewayId", "externalDeviceId"] as const).map(key => <Field key={key}><FieldLabel htmlFor={key}>{locale === "th" ? ({ externalSiteId: "รหัสไซต์สำหรับรับข้อมูล (Site ID)", externalGatewayId: "รหัสเกตเวย์สำหรับรับข้อมูล (Gateway ID)", externalDeviceId: "รหัสอุปกรณ์สำหรับรับข้อมูล (Device ID)" })[key] : ({ externalSiteId: "Telemetry site ID", externalGatewayId: "Telemetry gateway ID", externalDeviceId: "Telemetry device ID" })[key]}</FieldLabel><Input id={key} {...register(key)}/></Field>)}<p className="text-sm text-muted-foreground">รหัสเหล่านี้ต้องตรงกับ Topic และ JSON ที่อุปกรณ์ส่ง โดยรหัสอุปกรณ์แยกจากซีเรียลจริง และเปลี่ยนไม่ได้หลังสร้างไซต์</p></>}
+            <PresetPicker billingOnly label="Preset มิเตอร์หลัก" revisions={payloadPresets.filter(isBillingProfile)} value={formValues.payloadProfileRevisionId??''} legacyPresets={presets} legacyValue={formValues.meterPresetId??''} onCatalogChange={rows=>setPayloadPresets(current=>[...current.filter(r=>!isBillingProfile(r)),...rows])} onLegacyCatalogChange={rows=>setPresets(rows as MeterPresetOption[])} onChange={id=>{setPayloadMode(true);setDataFormat('payload');payloadModeRef.current=true;setValue('meterPresetId','');setValue('payloadProfileRevisionId',id);setValue('deviceModel',payloadPresets.find(p=>p.id===id)?.config.displayName??'');if(!payloadMode)setValue('endpoint','');}} onLegacyChange={id=>{setPayloadMode(false);setDataFormat('legacy');payloadModeRef.current=false;setValue('payloadProfileRevisionId','');setValue('meterPresetId',id);setValue('deviceModel',presets.find(p=>p.id===id)?.model??'');setValue('endpoint',formValues.gatewayName?`energy/${formValues.gatewayName}/#`:'');}}/>
+            {payloadMode && <>{additionalDevices.some(d=>(payloadPresets.some(p=>p.id===d.payloadProfileRevisionId&&isBillingProfile(p))))&&<Field><FieldLabel htmlFor="billing-device">มิเตอร์หลักที่ใช้คิดบิล</FieldLabel><ChoiceSelect id="billing-device" value="main" onChange={e=>{const index=Number(e.target.value);const device=additionalDevices[index];if(!device)return;const previous={name:'มิเตอร์หลัก',model:formValues.deviceModel??'',serialNumber:formValues.deviceSerial,externalDeviceId:formValues.externalDeviceId??'',payloadProfileRevisionId:formValues.payloadProfileRevisionId??''};setValue('deviceModel',device.model);setValue('deviceSerial',device.serialNumber);setValue('externalDeviceId',device.externalDeviceId);setValue('payloadProfileRevisionId',device.payloadProfileRevisionId);setAdditionalDevices(current=>current.map((d,i)=>i===index?previous:d));}}><option value="main">มิเตอร์หลัก · {formValues.externalDeviceId}</option>{additionalDevices.map((d,index)=>{const profile=payloadPresets.find(p=>p.id===d.payloadProfileRevisionId);return profile&&isBillingProfile(profile)?<option key={index} value={index}>{d.name} · {d.externalDeviceId}</option>:null;})}</ChoiceSelect></Field>}{(["externalSiteId", "externalGatewayId", "externalDeviceId"] as const).map(key => <Field key={key}><FieldLabel htmlFor={key}>{locale === "th" ? ({ externalSiteId: "รหัสไซต์สำหรับรับข้อมูล (Site ID)", externalGatewayId: "รหัสเกตเวย์สำหรับรับข้อมูล (Gateway ID)", externalDeviceId: "รหัสอุปกรณ์สำหรับรับข้อมูล (Device ID)" })[key] : ({ externalSiteId: "Telemetry site ID", externalGatewayId: "Telemetry gateway ID", externalDeviceId: "Telemetry device ID" })[key]}</FieldLabel><Input id={key} {...register(key)}/></Field>)}<p className="text-sm text-muted-foreground">รหัสเหล่านี้ต้องตรงกับ Topic และ JSON ที่อุปกรณ์ส่ง โดยรหัสอุปกรณ์แยกจากซีเรียลจริง และเปลี่ยนไม่ได้หลังสร้างไซต์</p></>}
           </FieldGroup>}
           {/* STEP 2: Gateway & Meter Config */}
           { (
@@ -496,33 +498,7 @@ export function SiteFormDialog({
                   <span>{locale === "th" ? "การตั้งค่ามิเตอร์หลัก (Billing Meter)" : "Billing Meter Setup"}</span>
                 </div>
 
-                {!payloadMode && <div className="space-y-2">
-                  <Label htmlFor="meter-preset" className="text-sm font-medium">
-                    {locale === "th" ? "แม่แบบมิเตอร์ (Meter Preset)" : "Meter Preset (Register Mapping)"}
-                  </Label>
-                  <Select
-                    disabled={payloadMode}
-                    value={formValues.meterPresetId ?? ""}
-                    onValueChange={(val) => {
-                      setValue("meterPresetId", val);
-                      const matched = presets.find((p) => p.id === val);
-                      if (matched) {
-                        setValue("deviceModel", matched.model);
-                      }
-                    }}
-                  >
-                    <SelectTrigger id="meter-preset" className="text-sm h-10 w-full bg-white">
-                      <SelectValue placeholder="เลือกแม่แบบมิเตอร์ (Auto-map Registers)" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {presets.map((p) => (
-                        <SelectItem key={p.id} value={p.id} className="text-sm">
-                          {p.brand} - {p.model} ({p.deviceType})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>}
+
 
                 {payloadMode && <p className="text-sm text-muted-foreground">ใช้ energy.active.import.total → kWh สำหรับคำนวณบิล · ฟิลด์อื่นเก็บเพื่อแสดงผล</p>}
                 <div className="grid grid-cols-2 gap-3">
@@ -561,7 +537,7 @@ export function SiteFormDialog({
           {payloadMode && <section className="space-y-4 border-t pt-5">
             <div className="flex items-center justify-between"><h3 className="flex items-center gap-2 text-sm font-semibold"><Cpu className="size-4 text-primary"/>อุปกรณ์เพิ่มเติม</h3><AddButton type="button" variant="outline" disabled={additionalDevices.length>=31} onClick={()=>setAdditionalDevices([...additionalDevices,{name:'',model:'',serialNumber:'',externalDeviceId:'',payloadProfileRevisionId:''}])}>เพิ่มอุปกรณ์</AddButton></div>
             <p className="text-sm text-muted-foreground">เพิ่มอุปกรณ์ทุกตัวที่ส่งข้อมูล เช่น SmartLogger โดยมิเตอร์หลักด้านบนใช้คำนวณบิล</p>
-            {additionalDevices.map((device,index)=><div key={index} className="space-y-3 border-t pt-4"><div className="grid gap-3 sm:grid-cols-2">{(['name','model','serialNumber','externalDeviceId'] as const).map(key=><Field key={key}><FieldLabel htmlFor={`planned-${index}-${key}`}>{({name:'ชื่ออุปกรณ์',model:'รุ่นอุปกรณ์',serialNumber:'ซีเรียลจริง',externalDeviceId:'รหัสอุปกรณ์สำหรับรับข้อมูล'})[key]}</FieldLabel><Input id={`planned-${index}-${key}`} value={device[key]} onChange={e=>setAdditionalDevices(additionalDevices.map((d,i)=>i===index?{...d,[key]:e.target.value}:d))}/></Field>)}</div><ProfileSelect revisions={payloadPresets} value={device.payloadProfileRevisionId} onChange={id=>setAdditionalDevices(additionalDevices.map((d,i)=>i===index?{...d,payloadProfileRevisionId:id}:d))}/><Button type="button" variant="ghost" className="text-destructive hover:text-destructive" onClick={()=>setAdditionalDevices(additionalDevices.filter((_,i)=>i!==index))}><Trash2/>ลบอุปกรณ์</Button></div>)}
+            {additionalDevices.map((device,index)=><div key={index} className="space-y-3 border-t pt-4"><div className="grid gap-3 sm:grid-cols-2">{(['name','model','serialNumber','externalDeviceId'] as const).map(key=><Field key={key}><FieldLabel htmlFor={`planned-${index}-${key}`}>{({name:'ชื่ออุปกรณ์',model:'รุ่นอุปกรณ์',serialNumber:'ซีเรียลจริง',externalDeviceId:'รหัสอุปกรณ์สำหรับรับข้อมูล'})[key]}</FieldLabel><Input id={`planned-${index}-${key}`} value={device[key]} onChange={e=>setAdditionalDevices(additionalDevices.map((d,i)=>i===index?{...d,[key]:e.target.value}:d))}/></Field>)}</div><ProfileSelect onCatalogChange={setPayloadPresets} revisions={payloadPresets} value={device.payloadProfileRevisionId} onChange={id=>setAdditionalDevices(additionalDevices.map((d,i)=>i===index?{...d,payloadProfileRevisionId:id}:d))}/><Button type="button" variant="ghost" className="text-destructive hover:text-destructive" onClick={()=>setAdditionalDevices(additionalDevices.filter((_,i)=>i!==index))}><Trash2/>ลบอุปกรณ์</Button></div>)}
           </section>}
           <ManualConnectionSection key={importVersion}>
 
@@ -611,7 +587,7 @@ export function SiteFormDialog({
 
 
           {payloadMode && <section className="space-y-4">
-            <section className="space-y-3"><h3 className="flex items-center gap-2 text-sm font-semibold"><Layers className="size-4 text-primary"/>ฟิลด์จากโปรไฟล์ที่เลือก</h3>{[formValues.payloadProfileRevisionId,...additionalDevices.map(d=>d.payloadProfileRevisionId)].filter((id,index,ids)=>id&&ids.indexOf(id)===index).map(id=>{const profile=payloadPresets.find(p=>p.id===id);return profile?<div key={id} className="space-y-2"><p className="text-sm font-medium">{profile.config.displayName} · {profile.version}</p><div className="max-h-64 overflow-auto rounded-lg border"><Table><TableHeader><TableRow><TableHead>ฟิลด์</TableHead><TableHead>กลุ่ม</TableHead><TableHead>หน่วยต้นทาง</TableHead><TableHead>หน่วยปลายทาง</TableHead><TableHead>การแปลง</TableHead></TableRow></TableHeader><TableBody>{profile.config.fields.map(field=><TableRow key={field.tag}><TableCell>{field.tag}</TableCell><TableCell>{field.pollGroup}</TableCell><TableCell>{field.sourceUnit}</TableCell><TableCell>{field.targetUnit}</TableCell><TableCell>{field.conversion}</TableCell></TableRow>)}</TableBody></Table></div></div>:null;})}</section>
+            <section className="space-y-3"><h3 className="flex items-center gap-2 text-sm font-semibold"><Layers className="size-4 text-primary"/>รายการข้อมูลจาก Preset ที่เลือก</h3>{[formValues.payloadProfileRevisionId,...additionalDevices.map(d=>d.payloadProfileRevisionId)].filter((id,index,ids)=>id&&ids.indexOf(id)===index).map(id=>{const profile=payloadPresets.find(p=>p.id===id);return profile?<div key={id} className="space-y-2"><p className="text-sm font-medium">{profile.config.displayName} · {profile.version}</p><div className="max-h-64 overflow-auto rounded-lg border"><Table><TableHeader><TableRow><TableHead>ฟิลด์</TableHead><TableHead>กลุ่ม</TableHead><TableHead>หน่วยต้นทาง</TableHead><TableHead>หน่วยปลายทาง</TableHead><TableHead>การแปลง</TableHead></TableRow></TableHeader><TableBody>{profile.config.fields.map(field=><TableRow key={field.tag}><TableCell>{field.tag}</TableCell><TableCell>{field.pollGroup}</TableCell><TableCell>{field.sourceUnit}</TableCell><TableCell>{field.targetUnit}</TableCell><TableCell>{field.conversion}</TableCell></TableRow>)}</TableBody></Table></div></div>:null;})}</section>
             <PayloadReceiveSettings key={importVersion} config={draftConfig} draft advancedOnly onDraftChange={setReceiveConfig} onRefresh={()=>{}}/>
           </section>}
 

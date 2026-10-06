@@ -35,6 +35,7 @@ Files: `apps/web/app/session/refresh/page.tsx`, `apps/web/features/settings/gene
 - [x] Verify typecheck (8 packages), delayed-refresh icon/label and timeout fallback, preferences rendering at 390/1440px before commit
 
 ## Task 2: Versioned profile + register schema
+ปรับทิศทางตาม payload จริงเป็น Unified Preset สำหรับ JSON พร้อม legacy Register adapter: ดู [implementation และสถานะ](2026-10-06-unified-presets.md). ไม่บังคับ Register recipe สำหรับ JSON ที่ Gateway แปลแล้ว งาน register recipe/hardware configuration ด้านล่างยังแยกเป็นงานภายหลัง
 Files: `apps/api/src/modules/telemetry/payload-profile.ts`, `apps/web/features/sites/payload-contracts.ts`, `apps/api/src/modules/settings/payload-presets.controller.ts`, `apps/api/src/modules/telemetry/payload-profile.spec.ts`.
 Interface: เพิ่ม optional `register` ใน field: `{address:string,count:number,dataType:string,wordOrder:string,byteOrder:string,signed:boolean,scale:number}`; ใช้ enum/type เดียวกับ register mapping ปัจจุบัน ไม่เพิ่ม arbitrary expression execution
 - [ ] เขียน failing tests: field เดิมยังผ่าน; register recipe ที่ขาด count/invalid type/nonfinite scale ถูกปฏิเสธ; duplicate tags/billing role/unit validation ยังทำงาน
@@ -44,6 +45,7 @@ Interface: เพิ่ม optional `register` ใน field: `{address:string,co
 - [ ] เพิ่ม generic custom meter profile ผ่าน UI; ใส่ SPM91 template เฉพาะเมื่อยืนยัน register/manual และ source units จริง
 
 ## Task 3: Editable mapping in site modal
+งาน JSON Preset selector/editor/manual fields/Preview/version separation ทำแล้วตาม [Unified Preset](2026-10-06-unified-presets.md); checklist เดิมด้านล่างเป็นขอบเขตข้อเสนอเดิม ไม่ใช่การอ้างว่าการส่ง config ไป hardware ถูกทำแล้ว
 Files: `apps/web/features/shared/payload-fields-editor.tsx`, `apps/web/features/sites/site-form-dialog.tsx`, `apps/api/src/modules/assets/assets.controller.ts`, `apps/api/src/modules/assets/payload-provisioning.spec.ts`.
 Interface: รับ draft fields และ source profile revision; validate/publish derived profile revision และ bind อุปกรณ์ใน transaction เดียว ไม่ใช้ client-provided revision โดยข้ามสิทธิ์
 - [ ] แสดง field name/tag, group, source/target unit, conversion, billing role และ register recipe เมื่อเลือก profile

@@ -773,7 +773,7 @@ export class AssetsController {
   }
 
   private async getPayloadRevision(id: string) {
-    const row=(await this.db.query("SELECT id,config FROM payload_profile_revisions WHERE id=$1",[id])).rows[0];
+    const row=(await this.db.query("SELECT id,config FROM payload_profile_revisions WHERE id=$1 AND NOT EXISTS(SELECT 1 FROM payload_preset_archives a WHERE a.profile_id=payload_profile_revisions.profile_id)",[id])).rows[0];
     if(!row)throw new BadRequestException("Payload revision not found");
     return {id:row.id as string,config:validatePayloadProfile(row.config)};
   }
@@ -818,7 +818,7 @@ export class AssetsController {
     const devices=(await this.db.query(`SELECT d.id,d.name,d.model,d.serial_number AS "serialNumber",d.device_type AS "deviceType",d.external_device_id AS "externalDeviceId",p.id AS "profileRevisionId",p.profile_id AS "profileId",p.version AS "profileVersion",p.config FROM devices d JOIN payload_profile_revisions p ON p.id=d.payload_profile_revision_id WHERE d.site_id=$1 ORDER BY d.name,d.id`,[siteId])).rows.map(d=>{
       const config=validatePayloadProfile(d.config),polledAt=new Date().toISOString(),field=config.fields[0]!;
       const {config:_config,...info}=d;
-      return {...info,fields:config.fields,telemetryTopic:payloadTopic(gateway.externalSiteId,gateway.externalGatewayId,d.externalDeviceId),fixture:{schemaVersion:'1.1',messageType:'telemetry',messageId:randomUUID(),sequence:1,lotNumber:1,siteId:gateway.externalSiteId,gatewayId:gateway.externalGatewayId,device:{deviceId:d.externalDeviceId,deviceType:config.deviceType,profileId:config.id,profileVersion:config.version},pollGroup:field.pollGroup,timestamps:{polledAt,sentAt:polledAt},data:{values:{[field.tag]:1},units:{[field.tag]:field.sourceUnit}},quality:{status:'good',communication:'online'}}};
+      return {...info,profileDeviceType:config.deviceType,sourceProfileId:config.sourceProfile?.id??config.id,sourceProfileVersion:config.sourceProfile?.version??config.version,fields:config.fields,telemetryTopic:payloadTopic(gateway.externalSiteId,gateway.externalGatewayId,d.externalDeviceId),fixture:{schemaVersion:'1.1',messageType:'telemetry',messageId:randomUUID(),sequence:1,lotNumber:1,siteId:gateway.externalSiteId,gatewayId:gateway.externalGatewayId,device:{deviceId:d.externalDeviceId,deviceType:config.deviceType,profileId:config.sourceProfile?.id??config.id,profileVersion:config.sourceProfile?.version??config.version},pollGroup:field.pollGroup,timestamps:{polledAt,sentAt:polledAt},data:{values:Object.fromEntries(config.fields.filter(f=>f.pollGroup===field.pollGroup).map(f=>[f.sourceTag??f.tag,1])),units:Object.fromEntries(config.fields.filter(f=>f.pollGroup===field.pollGroup).map(f=>[f.sourceTag??f.tag,f.sourceUnit]))},quality:{status:'good',communication:'online'}}};
     });
     const rejections=(await this.db.query(`SELECT topic,reason,received_at AS "receivedAt" FROM payload_rejections WHERE site_id=$1 ORDER BY received_at DESC,id DESC LIMIT 100`,[siteId])).rows;
     const unmappedMessages=(await this.db.query(`SELECT device_id AS "deviceId",message_id AS "messageId",unmapped,accepted_at AS "receivedAt" FROM payload_messages WHERE gateway_id=$1 AND unmapped<>'[]'::jsonb ORDER BY accepted_at DESC,id DESC LIMIT 20`,[gateway.gatewayId])).rows;

@@ -24,7 +24,7 @@ export class PayloadReceptionSettings {
   for(const alias of config.deviceAliases) {
    const target=devices.find(device=>device.externalDeviceId===alias.target);
    if(!target)throw new BadRequestException(`Alias target ${alias.target} is not a registered device in this gateway`);
-   if(alias.profileAlias && (alias.profileAlias.targetId!==target.config.id || alias.profileAlias.targetVersion!==target.config.version))throw new BadRequestException(`Target profile for ${alias.target} must match its assigned revision`);
+   if(alias.profileAlias && (alias.profileAlias.targetId!==(target.config.sourceProfile?.id??target.config.id) || alias.profileAlias.targetVersion!==(target.config.sourceProfile?.version??target.config.version)))throw new BadRequestException(`Target profile for ${alias.target} must match its assigned revision`);
   }
  }
  async save(siteId:string,input:unknown) {
@@ -76,7 +76,7 @@ export class PayloadReceptionSettings {
    for(const group of config.pollGroups) {
     const fields=config.fields.filter(field=>field.pollGroup===group);if(!fields.length)continue;
     sequence++;
-    payloads[`${device.externalDeviceId}.${group}`]={schemaVersion:'1.1',messageType:'telemetry',messageId:randomUUID(),sequence,lotNumber:sequence,siteId:context.externalSiteId,gatewayId:context.externalGatewayId,device:{deviceId:device.externalDeviceId,deviceType:config.deviceType,profileId:config.id,profileVersion:config.version},pollGroup:group,timestamps:{polledAt:now,sentAt:now},data:{values:Object.fromEntries(fields.map(field=>[field.tag,1])),units:Object.fromEntries(fields.map(field=>[field.tag,field.sourceUnit]))},quality:{status:'good',communication:'online'}};
+    payloads[`${device.externalDeviceId}.${group}`]={schemaVersion:'1.1',messageType:'telemetry',messageId:randomUUID(),sequence,lotNumber:sequence,siteId:context.externalSiteId,gatewayId:context.externalGatewayId,device:{deviceId:device.externalDeviceId,deviceType:config.deviceType,profileId:config.sourceProfile?.id??config.id,profileVersion:config.sourceProfile?.version??config.version},pollGroup:group,timestamps:{polledAt:now,sentAt:now},data:{values:Object.fromEntries(fields.map(field=>[field.sourceTag??field.tag,1])),units:Object.fromEntries(fields.map(field=>[field.sourceTag??field.tag,field.sourceUnit]))},quality:{status:'good',communication:'online'}};
    }
   }
   return {schemaVersion:'1.1',payloads};

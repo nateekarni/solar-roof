@@ -5,13 +5,14 @@ import { z } from "zod";
 const identifier = z.string().min(1).max(128).regex(/^[A-Za-z0-9_-]+$/);
 const tag = z.string().min(1).max(128).regex(/^[A-Za-z0-9_.-]+$/);
 const unit = z.string().min(1).max(32);
-const fieldSchema = z.object({ tag, displayName: z.string().min(1).max(128), pollGroup: identifier, sourceUnit: unit, targetUnit: unit, conversion: z.enum(["identity", "wh-to-kwh", "varh-to-kvarh", "auto-v1"]), role: z.enum(["billing-import", "active-power"]).optional() }).strict();
-const profileSchema = z.object({ id: identifier, version: z.string().regex(/^\d+\.\d+\.\d+$/), schemaVersion: z.literal("1.1"), displayName: z.string().min(1).max(128), deviceType: identifier, pollGroups: z.array(identifier).min(1).max(16), fields: z.array(fieldSchema).min(1).max(256) }).strict();
+const fieldSchema = z.object({ tag, sourceTag:tag.optional(),required:z.boolean().optional(), displayName: z.string().min(1).max(128), pollGroup: identifier, sourceUnit: unit, targetUnit: unit, conversion: z.enum(["identity", "wh-to-kwh", "varh-to-kvarh", "auto-v1"]), role: z.enum(["billing-import", "active-power", "none"]).optional() }).strict();
+const profileSchema = z.object({ id: identifier, version: z.string().regex(/^\d+\.\d+\.\d+$/), sourceProfile:z.object({id:identifier,version:z.string().regex(/^\d+\.\d+\.\d+$/)}).strict().optional(),schemaVersion: z.literal("1.1"), displayName: z.string().min(1).max(128), deviceType: identifier, pollGroups: z.array(identifier).min(1).max(16), fields: z.array(fieldSchema).min(1).max(256) }).strict();
 export type PayloadProfile = z.infer<typeof profileSchema>;
 export type PayloadProfileField = z.infer<typeof fieldSchema>;
 export function validatePayloadProfile(input: unknown): PayloadProfile {
   const p = profileSchema.parse(input);
   if (new Set(p.pollGroups).size !== p.pollGroups.length || new Set(p.fields.map(f => f.tag)).size !== p.fields.length) throw new Error("Duplicate group or tag");
+  if(new Set(p.fields.map(f=>f.sourceTag??f.tag)).size!==p.fields.length)throw new Error('Duplicate source tag');
   for (const f of p.fields) {
     if (!p.pollGroups.includes(f.pollGroup)) throw new Error("Field group is unsupported");
     if (!(f.conversion === "auto-v1" && derivedConversion(f.sourceUnit,f.targetUnit) !== "identity" || f.conversion === "identity" && f.sourceUnit === f.targetUnit || f.conversion === "wh-to-kwh" && f.sourceUnit === "Wh" && f.targetUnit === "kWh" || f.conversion === "varh-to-kvarh" && f.sourceUnit === "varh" && f.targetUnit === "kvarh")) throw new Error("Invalid unit conversion");
@@ -52,7 +53,7 @@ const envelopeSchema = z.object({
 export type PayloadEnvelope = z.infer<typeof envelopeSchema>;
 export interface PayloadBinding { profile: PayloadProfile; siteId: string; gatewayId: string; deviceId: string }
 export interface RawPayloadField { tag: string; rawValue: number; rawUnit: string }
-export interface CanonicalPayloadSample extends RawPayloadField { value: number; unit: string; displayName: string; pollGroup: string; polledAt: string; measuredAt?: string; role?: PayloadProfileField["role"] }
+export interface CanonicalPayloadSample extends RawPayloadField { sourceTag?:string; value: number; unit: string; displayName: string; pollGroup: string; polledAt: string; measuredAt?: string; role?: PayloadProfileField["role"] }
 export interface NormalizedPayloadEnvelope {
   raw: PayloadEnvelope; siteId: string; gatewayId: string; deviceId: string; messageId: string; sequence: number; lotNumber: number; pollGroup: string; profileId: string; profileVersion: string;
   polledAt: string; sentAt: string; measuredAt?: string; quality: PayloadEnvelope["quality"]; samples: CanonicalPayloadSample[]; unmapped: RawPayloadField[]; digest: string;
@@ -65,20 +66,22 @@ export function normalizePayloadEnvelope(input: unknown, binding: PayloadBinding
   const profile = validatePayloadProfile(binding.profile);
   for (const id of [binding.siteId, binding.gatewayId, binding.deviceId]) identifier.parse(id);
   if (raw.siteId !== binding.siteId || raw.gatewayId !== binding.gatewayId || raw.device.deviceId !== binding.deviceId || topic !== `solar/v1/sites/${binding.siteId}/gateways/${binding.gatewayId}/devices/${binding.deviceId}/telemetry`) throw new Error("Topic/envelope identity does not match registered binding");
-  if (raw.device.deviceType !== profile.deviceType || raw.device.profileId !== undefined && raw.device.profileId !== profile.id || raw.device.profileVersion !== undefined && raw.device.profileVersion !== profile.version) throw new Error("Profile reference does not match assigned revision");
+  const sourceProfile=profile.sourceProfile??profile;
+  if (raw.device.deviceType !== profile.deviceType || raw.device.profileId !== undefined && raw.device.profileId !== sourceProfile.id || raw.device.profileVersion !== undefined && raw.device.profileVersion !== sourceProfile.version) throw new Error("Profile reference does not match assigned revision");
   if (!profile.pollGroups.includes(raw.pollGroup)) throw new Error("Unsupported poll group");
   const entries = Object.entries(raw.data.values);
   if (!entries.length || entries.length > 256 || Object.keys(raw.data.units).length !== entries.length) throw new Error("Expected 1..256 value/unit pairs");
   const samples: CanonicalPayloadSample[] = []; const unmapped: RawPayloadField[] = [];
+  for(const f of profile.fields)if(f.required&&f.pollGroup===raw.pollGroup&&!Object.hasOwn(raw.data.values,f.sourceTag??f.tag))throw new Error(`Required field missing: ${f.sourceTag??f.tag}`);
   for (const [name, value] of entries) {
     const rawUnit = raw.data.units[name]; if (!rawUnit) throw new Error(`Missing unit for ${name}`);
     const source = { tag: name, rawValue: value, rawUnit };
-    const mapping = profile.fields.find(f => f.tag === name);
+    const mapping = profile.fields.find(f => (f.sourceTag??f.tag) === name);
     if (!mapping) { unmapped.push(source); continue; }
     if (mapping.pollGroup !== raw.pollGroup || mapping.sourceUnit !== rawUnit) throw new Error(`Invalid group/unit for ${name}`);
     const canonical = mapping.conversion === "auto-v1" ? convertUnit(value,mapping.sourceUnit,mapping.targetUnit) : mapping.conversion === "identity" ? value : value / 1000;
     if (!Number.isFinite(canonical)) throw new Error("Nonfinite canonical value");
-    samples.push({ ...source, value: canonical, unit: mapping.targetUnit, displayName: mapping.displayName, pollGroup: raw.pollGroup, polledAt: raw.timestamps.polledAt, ...(raw.timestamps.measuredAt ? { measuredAt: raw.timestamps.measuredAt } : {}), ...(mapping.role ? { role: mapping.role } : {}) });
+    samples.push({ ...source,tag:mapping.tag,...(mapping.sourceTag?{sourceTag:name}:{}), value: canonical, unit: mapping.targetUnit, displayName: mapping.displayName, pollGroup: raw.pollGroup, polledAt: raw.timestamps.polledAt, ...(raw.timestamps.measuredAt ? { measuredAt: raw.timestamps.measuredAt } : {}), ...(mapping.role ? { role: mapping.role } : {}) });
   }
   return { raw, siteId: raw.siteId, gatewayId: raw.gatewayId, deviceId: raw.device.deviceId, messageId: raw.messageId, sequence: raw.sequence, lotNumber: raw.lotNumber, pollGroup: raw.pollGroup, profileId: profile.id, profileVersion: profile.version, polledAt: raw.timestamps.polledAt, sentAt: raw.timestamps.sentAt, ...(raw.timestamps.measuredAt ? { measuredAt: raw.timestamps.measuredAt } : {}), quality: raw.quality, samples, unmapped, digest: logicalPayloadDigest(raw) };
 }

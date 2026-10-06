@@ -95,7 +95,7 @@ export class MeterPresetsController {
     return res.rows[0];
   }
 
-  @Roles("owner")
+  @Roles("admin")
   @Delete(":id")
   async deletePreset(@Param("id") id: string) {
     const res = await this.db.query("DELETE FROM meter_presets WHERE id = $1 RETURNING id", [id]);
