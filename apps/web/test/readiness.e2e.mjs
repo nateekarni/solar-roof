@@ -10,6 +10,10 @@ if(!ownerEmail)throw new Error('Set READINESS_ACCOUNTS_FILE or READINESS_EMAIL t
 const browser=await launchFixtureBrowser();
 const page=await browser.newPage({viewport:{width:1440,height:1000}});
 const errors=[];page.on('pageerror',error=>errors.push(error.message));
+// Streamed Next.js notFound pages can retain HTTP 200; assert the rendered denial.
+async function expectDeniedPage(target,path) {
+ await target.goto(base+path);await target.getByRole('heading',{name:'404',exact:true}).waitFor();
+}
 try {
  const health=await page.request.get(base+'/health');
  assert.equal(health.status(),200,'Web liveness must work with only web runtime configuration');
@@ -23,11 +27,10 @@ try {
  assert.equal(await page.getByRole('button',{name:'รายปี',exact:true}).count(),0);
  await mkdir('test/artifacts',{recursive:true});
  await page.screenshot({path:'test/artifacts/dashboard-desktop.png',fullPage:true});
- await page.goto(base+'/sites');await page.getByRole('main').first().waitFor(); await page.getByRole('heading',{level:1}).waitFor();
- assert.equal(await page.getByRole('button',{name:/เพิ่มไซต์/}).count(),0,'Owner must be view only');
- await page.getByRole('columnheader',{name:'อัปเดตล่าสุด'}).waitFor();
- await page.goto(base+'/reports');await page.getByRole('main').first().waitFor(); await page.getByRole('heading',{level:1}).waitFor();
- assert.equal((await page.locator('body').innerText()).includes('1.8 MB'),false);
+ await expectDeniedPage(page,'/sites');
+ assert.equal((await page.request.get(base+'/v1/sites')).status(),403);
+ await expectDeniedPage(page,'/reports');
+ await page.goto(base+'/billing');await page.getByRole('heading',{level:1}).waitFor();
  await page.setViewportSize({width:390,height:844});
  await page.goto(base+'/');await page.getByRole('main').first().waitFor(); await page.getByRole('heading',{level:1}).waitFor();
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth),false,'Mobile horizontal overflow');
@@ -44,17 +47,28 @@ try {
    await rolePage.getByRole('heading',{level:1}).waitFor();
    const identity=await rolePage.request.get(base+'/v1/auth/me');
    assert.equal(identity.status(),200);assert.equal((await identity.json()).role,role==='school'?'school_user':role);
-   await rolePage.goto(base+'/sites');await rolePage.getByRole('heading',{level:1}).waitFor();
-   if(role==='admin')await rolePage.getByRole('button',{name:/เพิ่มไซต์/}).waitFor();
-   else assert.equal(await rolePage.getByRole('button',{name:/เพิ่มไซต์/}).count(),0);
    if(role==='school') {
+    await expectDeniedPage(rolePage,'/sites');
+    await expectDeniedPage(rolePage,'/reports');
     const denied=await rolePage.request.get(base+'/v1/sites/'+fixture.otherSiteId);
     assert.equal(denied.status(),403);
     const live=await rolePage.request.get(base+'/v1/sites/'+fixture.siteId+'/live-telemetry');
-    assert.equal(live.status(),200);assert.equal((await live.json()).metrics.activePower,1200);
-    await rolePage.getByText(fixture.siteName,{exact:true}).filter({visible:true}).first().waitFor();
+    assert.equal(live.status(),403);
+    const summary=await rolePage.request.get(base+'/v1/dashboard/summary');
+    assert.equal(summary.status(),200);const data=await summary.json();assert.deepEqual(data.sites.map(site=>site.id),[fixture.siteId]);
+    assert.equal((await rolePage.goto(base+'/production')).status(),200);await rolePage.getByRole('heading',{level:1}).waitFor();
+   } else {
+    await rolePage.goto(base+'/sites');await rolePage.getByRole('heading',{level:1}).waitFor();
+    if(role==='admin')await rolePage.getByRole('button',{name:/เพิ่มไซต์/}).waitFor();
+    else assert.equal(await rolePage.getByRole('button',{name:/เพิ่มไซต์/}).count(),0);
+   }
+   if(role==='operator') {
     await rolePage.goto(base+'/reports');await rolePage.getByRole('button',{name:/สร้างรายงาน|Generate Report/}).first().click();
     await rolePage.locator('#r-type').click();await rolePage.getByRole('option',{name:/รายงานสถานะอุปกรณ์|Device & Gateway/}).click();
+    for(const id of ['date-from','date-to']) {
+     await rolePage.locator('#'+id).click();await rolePage.locator('[data-slot=calendar] .rdp-today button').filter({visible:true}).last().click();await rolePage.locator('#'+id).getAttribute('aria-expanded').then(value=>assert.equal(value,'false'));
+    }
+    await rolePage.locator('#r-format').click();await rolePage.getByRole('option',{name:'CSV (.csv)',exact:true}).click();
     const accepted=rolePage.waitForResponse(response=>response.request().method()==='POST'&&response.url().endsWith('/v1/reports'));
     await rolePage.getByRole('dialog').locator('form').evaluate(form=>form.requestSubmit());const response=await accepted;assert.equal(response.status(),202);const queued=await response.json();assert.equal(queued.status,'queued');
     const card=rolePage.locator(`[data-job-id="${queued.jobId}"]`);await card.getByRole('status').filter({hasText:/^พร้อมใช้งาน —|^Ready —/}).waitFor({timeout:45000});
@@ -66,7 +80,7 @@ try {
   }
  }
  assert.deepEqual(errors,[]);
- console.log('PASS: browser login, dashboard, hidden school/year controls, owner view-only sites, report catalogue, mobile width, zero page errors');
+ console.log('PASS: browser role destinations, own-school production, denied technical access for business roles, scoped operator reports, mobile width, zero page errors');
 }finally{await browser.close();}
 
 

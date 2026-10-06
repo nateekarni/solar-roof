@@ -51,21 +51,24 @@ try {
   assert.equal(summary.status,200,JSON.stringify(summary.body));
   assert.equal(summary.body.sites.length,1);assert.equal(summary.body.stats.currentMw,null);
   assert.deepEqual(summary.body.production,[]);
-  assert.equal((await request('school',`/v1/sites/${site.id}/live-telemetry`)).body,null);
+  assert.equal((await request('school',`/v1/sites/${site.id}/live-telemetry`)).status,403);
+  assert.equal((await request('admin',`/v1/sites/${site.id}/live-telemetry`)).body,null);
+  for(const role of ['school','owner']) assert.equal((await request(role,'/v1/reports','POST',{type:'energy',format:'csv'})).status,403);
   const scopeId=randomUUID();
   await db.query("INSERT INTO users(id,email,display_name,role,status,school_id,password_hash) VALUES($1,$2,'Scoped admin','admin','active',$3,$4)",[scopeId,`scoped-${suffix}@example.test`,site.schoolId,auth.hashPassword('Local-test-only-123!')]);
   users.scoped={id:scopeId,token:await loginToken(`scoped-${suffix}@example.test`,'admin')};
-  assert.equal((await request('scoped','/v1/sites/','POST',{name:'Escape',schoolName:'Outside',gatewayName:`escape-${suffix}`,deviceSerial:`escape-${suffix}`})).status,403);
-  assert.equal((await request('scoped','/v1/contracts','POST',{siteIds:[other.body.id]})).status,403);
-  assert.equal((await request('scoped','/v1/users/invite','POST',{email:'bad@example.test',displayName:'No',role:'owner'})).status,403);
+  assert.equal((await request('scoped',`/v1/sites/${other.body.id}`)).status,200,'Super Admin retains global access even with legacy school metadata');
+  // Technical report coverage belongs to a scoped operator, not the school role.
+  await db.query('UPDATE users SET school_id=$1 WHERE id=$2',[site.schoolId,users.operator!.id]);
+  users.operator!.token=await loginToken(`operator-${suffix}@example.test`,'operator');
   assert.equal((await request('owner','/v1/dashboard/summary?start_date=2026-01-01&end_date=2026-04-01')).status,400);
   assert.equal((await request('owner','/v1/dashboard/summary?period=year')).status,400);
-  const report=await request('school','/v1/reports','POST',{type:'energy',format:'csv',dateFrom:'2026-09-01',dateTo:'2026-09-30'});
+  const report=await request('operator','/v1/reports','POST',{type:'energy',format:'csv',dateFrom:'2026-09-01',dateTo:'2026-09-30'});
   assert.equal(report.status,202,JSON.stringify(report.body));assert.equal(report.body.status,'queued');assert.match(report.body.jobId,/^[a-f0-9-]{36}$/);
   let completed:any;const reportDeadline=Date.now()+45000;
-  do{const state=await request('school',`/v1/jobs/${report.body.jobId}`);assert.equal(state.status,200);completed=state.body;if(completed.status==='ready')break;assert.ok(['queued','running'].includes(completed.status),JSON.stringify(completed));await new Promise(resolve=>setTimeout(resolve,100));}while(Date.now()<reportDeadline);
+  do{const state=await request('operator',`/v1/jobs/${report.body.jobId}`);assert.equal(state.status,200);completed=state.body;if(completed.status==='ready')break;assert.ok(['queued','running'].includes(completed.status),JSON.stringify(completed));await new Promise(resolve=>setTimeout(resolve,100));}while(Date.now()<reportDeadline);
   assert.equal(completed.status,'ready',JSON.stringify(completed));assert.equal(completed.report.dataKind,'raw');assert.equal(completed.report.format,'csv');assert.equal(completed.rowCount,0,'September fixture contains no telemetry yet');
-  const downloadPath=`/v1/jobs/${report.body.jobId}/download`,download=await fetch(base+downloadPath,{headers:{Authorization:`Bearer ${users.school.token}`}});
+  const downloadPath=`/v1/jobs/${report.body.jobId}/download`,download=await fetch(base+downloadPath,{headers:{Authorization:`Bearer ${users.operator!.token}`}});
   assert.equal(download.status,200);assert.ok(download.headers.get('content-type')?.includes('text/csv'));
   const bytes=Buffer.from(await download.arrayBuffer()),manifest=(await db.query('SELECT manifest FROM platform_jobs WHERE id=$1',[report.body.jobId])).rows[0].manifest;
   assert.equal(createHash('sha256').update(bytes).digest('hex'),manifest.checksum);
@@ -85,29 +88,31 @@ try {
   // Malformed data must be rejected without logging its payload or emitting ACKs.
   const {execFileSync}=await import('node:child_process');
   const apiLogs=()=>execFileSync('docker',['compose','-f','infra/ci/compose.yml','logs','--no-color','api'],{cwd:new URL('../../../',import.meta.url),encoding:'utf8'});
-  const failedCount=(text:string)=>Math.max(0,...text.split('\n').flatMap(line=>{
+  const rejectedCount=(text:string)=>Math.max(0,...text.split('\n').flatMap(line=>{
     const start=line.indexOf('{');if(start<0)return [];
-    try{const event=JSON.parse(line.slice(start));return event.event==='metrics'&&Array.isArray(event.samples)?event.samples.filter((sample:any)=>sample.name==='ingress_failed').map((sample:any)=>Number(sample.value)):[];}catch{return [];}
+    try{const event=JSON.parse(line.slice(start));return event.event==='metrics'&&Array.isArray(event.samples)?event.samples.filter((sample:any)=>sample.name==='ingress_rejected').map((sample:any)=>Number(sample.value)):[];}catch{return [];}
   }));
-  const beforeFailure=failedCount(apiLogs()),beforeResponses=responses.length;
+  const beforeRejection=rejectedCount(apiLogs()),beforeResponses=responses.length;
   await broker.publishAsync(`energy/${name}/telemetry`,'{"test-secret":',{qos:1});
   // Q2 suppresses exception/payload logs. Failed parse is a bounded metrics sample;
   // the existing metrics writer flushes every 30s, so allow one full flush interval.
   let logs='';const rejectedDeadline=Date.now()+35000;
   while(Date.now()<rejectedDeadline) {
     logs=apiLogs();
-    if(failedCount(logs)>beforeFailure)break;
+    if(rejectedCount(logs)>beforeRejection)break;
     await new Promise(resolve=>setTimeout(resolve,50));
   }
   assert.equal(acknowledgements.length,2);
   assert.equal(responses.length,beforeResponses,'Malformed JSON emits no application response or ACK');
   assert.equal(logs.includes('test-secret'),false);
-  assert.ok(failedCount(logs)>beforeFailure,'Structured metrics event records a new ingress_failed sample after malformed JSON');
+  assert.ok(rejectedCount(logs)>beforeRejection,'Structured metrics event records a new ingress_rejected sample after malformed JSON');
   const raw=await db.query('SELECT * FROM telemetry_raw WHERE device_id=$1',[device]);
   assert.equal(raw.rows.length,1);assert.equal(Number(raw.rows[0].active_power_w),1200);assert.ok(raw.rows[0].received_time);
-  const live=await request('school',`/v1/sites/${site.id}/live-telemetry`);
+  const live=await request('admin',`/v1/sites/${site.id}/live-telemetry`);
   assert.equal(live.body.metrics.activePower,1200);assert.equal(live.body.metrics.current,null);
   assert.equal(live.body.status,'online');
+  const schoolLive=await request('school','/v1/dashboard/summary');
+  assert.equal(schoolLive.status,200);assert.equal(schoolLive.body.sites.length,1);assert.equal(schoolLive.body.stats.currentMw,0.0012);
   console.log('PASS: real HTTP authorization, school isolation, cardinality, empty dashboard, periods, persisted report and MQTT durability/replay/ACK checks');
   if(process.env.READINESS_ACCOUNTS_FILE)await writeFile(process.env.READINESS_ACCOUNTS_FILE,JSON.stringify({password:'Local-test-only-123!',accounts:Object.fromEntries(['owner','admin','operator','accountant','school'].map(role=>[role,role+'-'+suffix+'@example.test'])),siteId:site.id,otherSiteId:other.body.id,siteName:name,device,payload,ingestionId:`test-${suffix}`,reportJobId:report.body.jobId,reportChecksum:manifest.checksum}));
   console.log('Browser accounts written for isolated E2E run');

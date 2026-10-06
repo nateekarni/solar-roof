@@ -12,7 +12,7 @@ const base=process.env.READINESS_API_URL||'http://127.0.0.1:13001';
 const db=new Pool({connectionString:database});
 const broker=await mqtt.connectAsync('mqtt://127.0.0.1:18883');
 try {
- const response=await fetch(base+'/v1/auth/login',{method:'POST',headers:{'Content-Type':'application/json',Origin:'http://localhost:13000'},body:JSON.stringify({email:fixture.accounts.school,password:fixture.password})});
+ const response=await fetch(base+'/v1/auth/login',{method:'POST',headers:{'Content-Type':'application/json',Origin:'http://localhost:13000'},body:JSON.stringify({email:fixture.accounts.operator,password:fixture.password})});
  assert.equal(response.status,200);const {accessToken}=await response.json();
  const live=await fetch(base+'/v1/sites/'+fixture.siteId+'/live-telemetry',{headers:{Authorization:`Bearer ${accessToken}`}});
  assert.equal(live.status,200);assert.equal((await live.json()).metrics.activePower,1200);
