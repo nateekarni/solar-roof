@@ -45,7 +45,7 @@ export function MobileBottomNav() {
               className={cn(
                 "group relative flex flex-col items-center justify-center min-w-[56px] min-h-11 py-1.5 px-2 rounded-lg text-xs font-medium transition-all select-none active:scale-95",
                 isActive
-                  ? "text-primary"
+                  ? "text-amber-700 dark:text-primary"
                   : "text-muted-foreground hover:text-foreground"
               )}
             >
@@ -54,7 +54,7 @@ export function MobileBottomNav() {
                   className={cn(
                     "size-5 transition-all",
                     isActive
-                      ? "text-primary stroke-[2.25px] scale-110"
+                      ? "text-amber-700 dark:text-primary stroke-[2.25px] scale-110"
                       : "text-muted-foreground stroke-[1.75px] group-hover:text-foreground"
                   )}
                 />
@@ -66,7 +66,7 @@ export function MobileBottomNav() {
                 className={cn(
                   "text-[11px] leading-none tracking-tight transition-colors",
                   isActive
-                    ? "font-semibold text-primary"
+                    ? "font-semibold text-amber-700 dark:text-primary"
                     : "font-normal text-muted-foreground group-hover:text-foreground"
                 )}
               >

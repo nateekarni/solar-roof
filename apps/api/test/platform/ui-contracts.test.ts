@@ -43,9 +43,9 @@ test('billing document identities are scoped persisted IDs; direct preview never
   for(const role of ['owner','admin','operator','accountant','school_user']) {
    await db.query('UPDATE users SET role=$1 WHERE id=$2',[role,user]);
    const response=await req('/v1/operations/documents/'+invoice);assert.equal(response.status,200);const doc=await response.json();assert.equal(doc.id,invoice);assert.equal(doc.documentNumber,'U1-INV');assert.equal(doc.snapshot,undefined);assert.ok(doc.previewUnavailableReason,'No invented persisted snapshot');
-   assert.equal((await req('/v1/operations/documents/'+foreign)).status,role==='owner'?200:404,'Tenant scope applies to direct ID');
+   assert.equal((await req('/v1/operations/documents/'+foreign)).status,['owner','admin'].includes(role)?200:404,'Tenant scope applies to direct ID');
    const caps=await (await req('/v1/auth/capabilities')).json();assert.equal(caps.operationsActions.includes('submit_payment'),role!=='operator');assert.equal(caps.actions.includes('approve_payment'),false);
-   assert.equal((await req('/v1/billing-cycles/'+cycle+'/verify-payment','PATCH',{status:'approved'})).status,['owner','accountant'].includes(role)?503:403);
+   assert.equal((await req('/v1/billing-cycles/'+cycle+'/verify-payment','PATCH',{status:'approved'})).status,['owner','admin','accountant'].includes(role)?503:403);
   }
  } finally {
   await db.query('DELETE FROM audit_events WHERE actor_id=$1',[user]);await db.query('DELETE FROM users WHERE id=$1',[user]);await db.query('DELETE FROM documents WHERE site_id=ANY($1::uuid[])',[[site,otherSite]]);await db.query('DELETE FROM payments WHERE billing_cycle_id=$1',[cycle]);await db.query('DELETE FROM billing_cycles WHERE site_id=$1',[site]);await db.query('DELETE FROM sites WHERE id=ANY($1::uuid[])',[[site,otherSite]]);await db.query('DELETE FROM schools WHERE id=ANY($1::uuid[])',[[school,other]]);await db.end();

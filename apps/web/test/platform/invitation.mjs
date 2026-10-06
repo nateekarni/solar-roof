@@ -17,7 +17,7 @@ const browser=await launchFixtureBrowser();
 const errors=[];
 try {
   await db.query("INSERT INTO schools(id,name,code,region) VALUES($1,'Browser invite school',$2,'fixture')",[school,school]);
-  await db.query("INSERT INTO users(id,email,display_name,role,status,password_hash) VALUES($1,$2,'Browser Owner','owner','active',$3)",[owner,ownerEmail,hash]);
+  await db.query("INSERT INTO users(id,email,display_name,role,status,password_hash) VALUES($1,$2,'Browser Admin','admin','active',$3)",[owner,ownerEmail,hash]);
   const login=await post('/v1/auth/login',{email:ownerEmail,password});assert.equal(login.status,200);const tokens=await login.json();
   const invite=async()=>{
     await fetch(capture+'/ok',{method:'POST'});const email=`browser-recipient-${randomUUID()}@example.test`;emails.push(email);
@@ -44,10 +44,11 @@ try {
   assert.deepEqual(errors,[],"No client errors before invite form");
   const uiEmail=`browser-ui-${randomUUID()}@example.test`;emails.push(uiEmail);
   await dialog.getByLabel(/^อีเมล/).fill(uiEmail);await dialog.getByLabel(/^ชื่อ-นามสกุล/).fill('UI Recipient');
+  await dialog.locator('#u-role').click();await ownerPage.getByRole('option',{name:'ผู้ดูแลระบบสูงสุด',exact:true}).click();
   await fetch(capture+'/fail',{method:'POST'});await dialog.getByRole('button',{name:'ยืนยัน',exact:true}).click();
   await dialog.getByRole('status').filter({hasText:'ส่งอีเมลไม่สำเร็จ'}).waitFor();assert.equal((await dialog.innerText()).includes('Temporary Password'),false);
   await dialog.getByRole('button',{name:'เสร็จสิ้น',exact:true}).click();await ownerPage.reload();await ownerPage.getByRole('button',{name:'เชิญผู้ใช้',exact:true}).click();
-  await dialog.getByLabel(/^อีเมล/).fill(uiEmail);await dialog.getByRole('button',{name:'ค้นหาคำเชิญเดิม',exact:true}).click();await dialog.getByRole('status').filter({hasText:'ส่งอีเมลไม่สำเร็จ'}).waitFor();
+  await dialog.getByLabel(/^อีเมล/).fill(uiEmail);await dialog.getByLabel(/^อีเมล/).press('Tab');await dialog.getByRole('status').filter({hasText:'ส่งอีเมลไม่สำเร็จ'}).waitFor();
   await fetch(capture+'/ok',{method:'POST'});await dialog.getByRole('button',{name:'ส่งคำเชิญอีกครั้ง',exact:true}).click();await dialog.getByRole('status').filter({hasText:'ส่งอีเมลคำเชิญแล้ว'}).waitFor();
   assert.deepEqual(errors,[]);console.log('PASS: browser activation, cleared URL, no-referrer, login, reused/expired errors, failed delivery and resend UI');
 } finally {

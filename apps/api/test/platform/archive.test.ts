@@ -34,7 +34,7 @@ async function siteFixture(pool:Pool){
 async function actor(pool:Pool,school:string){
  const id=randomUUID(),email=`d1-${id}@example.test`,password='D1-fixture-password-123!';
  const auth=new AuthService('readiness-test-access-secret-000000000000','readiness-test-refresh-secret-000000000000');
- await pool.query("INSERT INTO users(id,email,display_name,role,status,school_id,password_hash) VALUES($1,$2,'D1 actor','school_user','active',$3,$4)",[id,email,school,auth.hashPassword(password)]);
+ await pool.query("INSERT INTO users(id,email,display_name,role,status,school_id,password_hash) VALUES($1,$2,'D1 actor','operator','active',$3,$4)",[id,email,school,auth.hashPassword(password)]);
  const response=await fetch(process.env.READINESS_API_URL+'/v1/auth/login',{method:'POST',headers:{Origin:process.env.READINESS_WEB_URL!,'Content-Type':'application/json'},body:JSON.stringify({email,password})});assert.equal(response.status,200);
  return {id,headers:{Origin:process.env.READINESS_WEB_URL!,'Content-Type':'application/json',Authorization:`Bearer ${(await response.json()).accessToken}`}};
 }

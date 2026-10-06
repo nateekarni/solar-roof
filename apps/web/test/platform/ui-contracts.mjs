@@ -26,23 +26,25 @@ try {
   if(!process.env.U1_PAYMENT_ONLY)for(const role of ['owner','admin','operator','accountant','school_user']) {
    await db.query('UPDATE users SET role=$1 WHERE id=$2',[role,user]);
    for(const width of [1440,390]) {
+    const business=['owner','school_user'].includes(role),mobileMode=business&&width===390;
     await page.setViewportSize({width,height:900});await page.goto(web+'/billing');
-    await page.getByRole('searchbox',{name:'Operations search'}).fill('U1 Browser');
-    await page.getByRole('status').filter({hasText:'25 rows on this page'}).waitFor();
+    await page.getByRole('searchbox').fill('U1 Browser');
+    await page.getByRole('status').filter({hasText:/^25 / }).waitFor();
     if(role==='operator')assert.equal(await page.getByText('ชำระเงินและแนบสลิป',{exact:true}).filter({visible:true}).count(),0,'Operator cannot submit evidence');
-    if(width===390){const unavailable=page.getByRole('button',{name:/ดูใบแจ้งหนี้.*ยังไม่มีเอกสาร/}).first();assert.equal(await unavailable.isDisabled(),true);}else{await page.getByRole('button',{name:'Open menu',exact:true}).first().click();assert.equal(await page.getByRole('menuitem',{name:/ดูใบแจ้งหนี้.*ยังไม่มีเอกสาร/}).isDisabled(),true);await page.keyboard.press('Escape');}
-    await page.getByRole('button',{name:'Next operation page',exact:true}).click();await page.getByRole('status').filter({hasText:'1 rows on this page'}).waitFor();
+    if(mobileMode){const unavailable=page.getByRole('button',{name:/ดูใบแจ้งหนี้.*ยังไม่มีเอกสาร/}).first();assert.equal(await unavailable.isDisabled(),true);}else{await page.getByRole('button',{name:/เมนูการดำเนินการ|Open actions menu/}).first().click();assert.equal(await page.getByRole('menuitem',{name:/ดูใบแจ้งหนี้.*ยังไม่มีเอกสาร/}).isDisabled(),true);await page.keyboard.press('Escape');}
+    await page.getByRole('button',{name:'Next operation page',exact:true}).click();await page.getByRole('status').filter({hasText:/^1 / }).waitFor();
     const page2=page.url();await page.setViewportSize({width:width===390?1440:390,height:900});assert.equal(page.url(),page2,'Resize preserves server cursor');
-    if(width===390) await page.getByRole('button',{name:'Open menu',exact:true}).click();
-    const invoiceAction=width===390?page.getByRole('menuitem',{name:'ดูใบแจ้งหนี้',exact:true}):page.getByRole('button',{name:'ดูใบแจ้งหนี้',exact:true});
+    const menuMode=width===390||!business;
+    if(menuMode) await page.getByRole('button',{name:/เมนูการดำเนินการ|Open actions menu/}).click();
+    const invoiceAction=menuMode?page.getByRole('menuitem',{name:'ดูใบแจ้งหนี้',exact:true}):page.getByRole('button',{name:'ดูใบแจ้งหนี้',exact:true});
     const response=page.waitForResponse(r=>r.url()===web+'/v1/operations/documents/'+invoice);
     await invoiceAction.click();assert.equal((await response).status(),200);
     await page.getByRole('dialog').getByRole('alert').waitFor();assert.equal(await page.getByRole('dialog').getByRole('button',{name:/พิมพ์|Print/}).isDisabled(),true,'Metadata-only issued fixture cannot print invented evidence');
     await page.keyboard.press('Escape');
-    if(width===390)await page.getByRole('button',{name:'Open menu',exact:true}).click();
+    if(menuMode)await page.getByRole('button',{name:/เมนูการดำเนินการ|Open actions menu/}).click();
     const visibleForbiddenActions=await page.getByText(/ตรวจสอบสลิป|ตรวจสลิป|Verify Payment Slip|Verify Payment/).filter({visible:true}).count();assert.equal(visibleForbiddenActions,0,role);
-    if(width===390)await page.keyboard.press('Escape');
-    await page.goBack();await page.getByRole('status').filter({hasText:'25 rows on this page'}).waitFor();await page.goForward();await page.getByRole('status').filter({hasText:'1 rows on this page'}).waitFor();assert.equal(page.url(),page2);
+    if(menuMode)await page.keyboard.press('Escape');
+    await page.goBack();await page.getByRole('status').filter({hasText:/^25 / }).waitFor();await page.goForward();await page.getByRole('status').filter({hasText:/^1 / }).waitFor();assert.equal(page.url(),page2);
    }
   }
   await db.query("UPDATE users SET role='school_user' WHERE id=$1",[user]);
@@ -76,17 +78,16 @@ try {
   await db.query("UPDATE users SET role='admin',preferred_language='en' WHERE id=$1",[user]);
   const context=await browser.newContext({viewport:{width:1440,height:900}});await context.addCookies([{name:'access_token',value:tokens.accessToken,domain:'localhost',path:'/',httpOnly:true},{name:'locale',value:'en',domain:'localhost',path:'/'}]);
   const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
-  await page.goto(web+'/billing');await page.getByRole('status').filter({hasText:'25 rows on this page'}).waitFor();
+  await page.goto(web+'/billing');await page.getByRole('status').filter({hasText:/^25 / }).waitFor();
   const row=page.getByRole('row').filter({has:page.getByText('2025-08',{exact:true})});await row.waitFor();
   await row.evaluate(element=>{window.__u1PersistedRow=element;});
   const reordered=page.waitForResponse(response=>response.url().includes('/v1/operations/billing?')&&new URL(response.url()).searchParams.get('direction')==='asc');
-  await page.getByRole('combobox',{name:'Operation direction'}).selectOption('asc');assert.equal((await reordered).status(),200);
+  await page.getByRole('button',{name:'Billing Period',exact:true}).click();assert.equal((await reordered).status(),200);
   await page.getByRole('row').nth(1).getByText('2024-07',{exact:true}).waitFor();
   assert.equal(await row.evaluate(element=>element===window.__u1PersistedRow),true,'The same persisted billing record retains its DOM row identity after real server reorder');
   for(const width of [1440,390]) {
-   await page.setViewportSize({width,height:900});await page.goto(web+'/billing');await page.getByRole('status').filter({hasText:'25 rows on this page'}).waitFor();
-   if(width===1440){await page.getByRole('button',{name:'Open menu',exact:true}).first().click();await page.getByRole('menuitem',{name:'View Billing Details',exact:true}).waitFor();await page.getByRole('menuitem',{name:/View Invoice.*No issued document/}).waitFor();await page.keyboard.press('Escape');}
-   else {await page.getByRole('button',{name:'View Billing Details',exact:true}).first().waitFor();await page.getByRole('button',{name:/View Invoice.*No issued document/}).first().waitFor();}
+   await page.setViewportSize({width,height:900});await page.goto(web+'/billing');await page.getByRole('status').filter({hasText:/^25 / }).waitFor();
+   await page.getByRole('button',{name:/เมนูการดำเนินการ|Open actions menu/}).first().click();await page.getByRole('menuitem',{name:'View Billing Details',exact:true}).waitFor();await page.getByRole('menuitem',{name:/View Invoice.*No issued document/}).waitFor();await page.keyboard.press('Escape');
   }
   assert.deepEqual(errors,[]);await context.close();console.log('PASS U1 review fix: real server reorder retains persisted DOM row identity; English actions/reasons in desktop/mobile');
  }

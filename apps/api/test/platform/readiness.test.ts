@@ -119,7 +119,7 @@ test('readiness and monitoring endpoints require staff authority and expose no e
       assert.equal(login.status,200);const tokens=await login.json();
       for(const path of ['readiness','monitoring']){
         const response=await fetch(`${process.env.READINESS_API_URL}/v1/platform/${path}`,{headers:{Authorization:`Bearer ${tokens.accessToken}`}});
-        assert.equal(response.status,['owner','admin'].includes(role)?200:403,`${role}/${path}`);
+        assert.equal(response.status,role==='admin'?200:403,`${role}/${path}`);
         if(response.ok&&path==='readiness'){
           const body=await response.json();assert.equal(body.financialReady,false);assert.equal(body.recoveryVerified,false);
           assert.deepEqual(Object.keys(body).sort(),['blockers','financialReady','monitoringReady','recoveryVerified','retentionReady'].sort());

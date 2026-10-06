@@ -17,7 +17,7 @@ test('operations HTTP pages are bounded, stable, scoped, searchable beyond old a
   const auth = new AuthService('readiness-test-access-secret-000000000000', 'readiness-test-refresh-secret-000000000000');
   await db.query("INSERT INTO schools(id,name,code,region) VALUES($1::uuid,'Q1 A',$1::text,'fixture'),($2::uuid,'Q1 B',$2::text,'fixture')", [school, other]);
   await db.query("INSERT INTO sites(id,school_id,name,capacity_mwp) VALUES($1,$2,'Q1 A',0.1),($3,$4,'Q1 B',0.1)", [site, school, otherSite, other]);
-  await db.query("INSERT INTO users(id,email,display_name,role,status,password_hash,school_id) VALUES($1,$2,'Q1 actor','admin','active',$3,$4)", [user, email, auth.hashPassword(password), school]);
+  await db.query("INSERT INTO users(id,email,display_name,role,status,password_hash,school_id) VALUES($1,$2,'Q1 actor','accountant','active',$3,$4)", [user, email, auth.hashPassword(password), school]);
   await db.query("INSERT INTO billing_cycles(id,site_id,period_start,period_end,cutoff_time,status,quality,opening_energy,closing_energy,consumed_kwh,rate,amount) SELECT gen_random_uuid(),$1,date '2026-09-01'-n*interval '1 month',date '2026-09-30'-n*interval '1 month',now(),'pending_verification','complete',100,110,10,1,10 FROM generate_series(1,1001) n", [site]);
   await db.query("INSERT INTO billing_cycles(id,site_id,period_start,period_end,cutoff_time,status,quality,opening_energy,closing_energy,consumed_kwh,rate,amount) VALUES(gen_random_uuid(),$1,'2026-09-01','2026-09-30',now(),'paid','complete',100,110,10,1,10)", [otherSite]);
   await db.query("INSERT INTO audit_events(id,actor_id,action,entity_type,entity_id,correlation_id,occurred_at) SELECT gen_random_uuid(),$1,CASE WHEN n=501 THEN 'Q1-old-search' ELSE 'Q1-event' END,'fixture',$1,gen_random_uuid(),now()-(n/10)*interval '1 minute' FROM generate_series(1,501) n", [user]);
@@ -49,6 +49,7 @@ test('operations HTTP pages are bounded, stable, scoped, searchable beyond old a
     assert.equal((await get('/v1/operations/billing?cursor='+Buffer.from(JSON.stringify(malformed)).toString('base64url'))).status,400);
     assert.equal((await get('/v1/operations/documents?cursor=' + encodeURIComponent(first.page.nextCursor))).status, 400);
     assert.equal((await get('/v1/operations/billing?search=no-match&cursor=' + encodeURIComponent(first.page.nextCursor))).status, 400);
+    await db.query("UPDATE users SET role='admin' WHERE id=$1",[user]);
     const audit = await (await get('/v1/operations/audit')).json();
     assert.equal(audit.rows.length, 25); assert.equal(audit.page.hasMore, true);
     const old = await (await get('/v1/operations/audit?search=Q1-old-search')).json();
@@ -59,10 +60,11 @@ test('operations HTTP pages are bounded, stable, scoped, searchable beyond old a
       do {const response=await get(`/v1/operations/${resource}?limit=25${cursor?'&cursor='+cursor:''}`);const part=await response.json();assert.equal(response.status,200,JSON.stringify(part));for(const row of part.rows){assert.equal(seenIds.has(row.id),false);seenIds.add(row.id);}cursor=part.page.nextCursor??'';}while(cursor);
       assert.ok(seenIds.size>=expected,`${resource} walks all equal-date ties`);
     }
+    await db.query("UPDATE users SET role='accountant' WHERE id=$1",[user]);
     assert.equal((await (await get('/v1/operations/billing?from=2026-10-01&to=2026-10-31')).json()).rows.length,1);
     assert.equal((await (await get('/v1/operations/billing/summary?from=2026-10-01&to=2026-10-31')).json())[0].value,1);
     const exported=await get('/v1/operations/billing/export?search=Q1 A');
-    assert.equal(exported.headers.get('X-Export-Scope'),'first-100-matching-rows');assert.equal(exported.headers.get('X-Export-Truncated'),'true');assert.equal((await exported.text()).split('\r\n').length,101);
+    assert.equal(exported.headers.get('X-Export-Scope'),'all-matching-rows');assert.equal(exported.headers.get('X-Export-Truncated'),'false');assert.equal((await exported.text()).split('\r\n').length,1003);
     const summary = await (await get('/v1/operations/billing/summary?search=no-match')).json();
     assert.equal(summary[0].value, 0); assert.equal(summary[2].value, 0);
     const allSummary = await (await get('/v1/operations/billing/summary')).json();
@@ -77,7 +79,7 @@ test('operations HTTP pages are bounded, stable, scoped, searchable beyond old a
     const statements:{sql:string;params:unknown[];returned:number}[]=[];
     database.query=async (sql:string,params:unknown[]=[])=>{const result=await originalQuery(sql,params);statements.push({sql,params:[...params],returned:result.rows.length});return result;};
     try {
-      const service=new OperationsService(database),principal={id:user,role:'admin',schoolId:school};
+      const service=new OperationsService(database),principal={id:user,role:'accountant',schoolId:school};
       await service.summary('billing',principal);
       assert.equal(statements.length,1);assert.equal(statements[0]!.returned,1);assert.match(statements[0]!.sql,/SELECT count\(\*\)/);
       statements.length=0;

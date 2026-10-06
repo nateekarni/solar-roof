@@ -22,7 +22,7 @@ try {
   await db.query("INSERT INTO schools(id,name,code,region) SELECT id,'U3 School '||n,id::text,'fixture' FROM unnest($1::uuid[]) WITH ORDINALITY AS x(id,n)",[schools]);
   await db.query("INSERT INTO sites(id,school_id,name,capacity_mwp) SELECT id,school,'U3 Site '||n,0.1 FROM unnest($1::uuid[],$2::uuid[]) WITH ORDINALITY AS x(id,school,n)",[sites,schools]);
   await db.query("INSERT INTO gateways(id,site_id,name,protocol,endpoint,last_seen_at) SELECT id,site,id::text,'mqtt','energy/'||id||'/#',CASE WHEN n=1 THEN now() ELSE now()-interval '1 day' END FROM unnest($1::uuid[],$2::uuid[]) WITH ORDINALITY AS x(id,site,n)",[gateways,sites]);
-  await db.query("INSERT INTO users(id,email,display_name,role,status,password_hash,school_id,preferred_language) VALUES($1,$2,'U3 User','owner','active',$3,$4,'en')",[user,email,hash,school]);
+  await db.query("INSERT INTO users(id,email,display_name,role,status,password_hash,school_id,preferred_language) VALUES($1,$2,'U3 User','admin','active',$3,$4,'en')",[user,email,hash,school]);
   await db.query("INSERT INTO devices(id,gateway_id,site_id,name,device_type,model,serial_number) VALUES($1::uuid,$2,$3,'U3 meter','meter','fixture',$1::text)",[device,gateways[0],sites[0]]);
   await db.query("INSERT INTO billing_meters(id,site_id,device_id) VALUES(gen_random_uuid(),$1,$2)",[sites[0],device]);
   await db.query("INSERT INTO telemetry_raw(id,device_id,site_id,source_time,received_time,raw_payload,normalized_value,unit,quality,ingestion_id,total_energy_kwh,active_power_w) VALUES(gen_random_uuid(),$1,$2,now(),now(),'{}',100,'kWh','complete',gen_random_uuid(),100,1200)",[device,sites[0]]);
@@ -43,10 +43,10 @@ try {
   const summary=page.getByRole('region',{name:'Gateway status summary',exact:true});
   await summary.waitFor();
   assert.ok(await summary.locator('li').count()<=5,'At most five actionable sites');
-  assert.ok(await summary.locator('a[href*="search="]').count()>0,'Site links preserve a real supported filter');
+  assert.ok(await summary.locator('a[href^="/records/sites/"]').count()>0,'Site links point to their actual record details');
   assert.equal(await page.locator('.stat-value').filter({hasText:'1.2kW'}).count(),1,'1200W is visible instead of rounded 0MW');
   assert.ok((await page.getByText('U3 Critical alert',{exact:true}).boundingBox()).y<(await page.locator('.dashboard-3col').boundingBox()).y,'Critical alert precedes trends and map');
-  const details=page.getByRole('button',{name:'Show power details',exact:true});
+  const details=page.getByRole('button',{name:'Show details',exact:true});
   let powerRequests=0;page.on('request',request=>{if(request.url().includes('/v1/dashboard/power-flow'))powerRequests++;});
   await details.focus();await page.keyboard.press('Enter');
   await page.getByRole('heading',{name:'U3 Site 100',exact:true}).waitFor();
@@ -59,24 +59,27 @@ try {
     await db.query('UPDATE users SET role=$1 WHERE id=$2',[role,user]);
     for(const width of [390,1440]) {
       await page.setViewportSize({width,height:844});await page.goto(web+'/');
-      await page.locator('.dashboard-content .stats-grid:visible').waitFor();
+      await page.getByRole('heading',{level:1}).waitFor();
       const result=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21a','wcag21aa','wcag22aa']).analyze();
       const serious=result.violations.filter(item=>['serious','critical'].includes(item.impact));
+      if(serious.length)console.error(JSON.stringify(serious.map(({id,nodes})=>({id,nodes:nodes.map(({html,failureSummary})=>({html,failureSummary}))})),null,2));
       checks.push({role,width,violations:result.violations.map(({id,impact,nodes})=>({id,impact,targets:nodes.map(node=>node.target)})),incomplete:result.incomplete.map(({id})=>id)});
       assert.deepEqual(serious.map(item=>({id:item.id,targets:item.nodes.map(node=>node.target)})),[],`${role}/${width} accessibility`);
       const compare=page.getByRole('button',{name:'Compare sites',exact:true});
-      await compare.focus();await page.keyboard.press('Enter');await page.getByRole('dialog').waitFor();
-      await page.keyboard.press('Escape');await page.getByRole('dialog').waitFor({state:'hidden'});
-      assert.equal(await compare.evaluate(element=>element===document.activeElement),true,'Dialog returns keyboard focus');
+      if(['owner','school_user'].includes(role)){assert.equal(await compare.count(),0,'Business home has no technical comparison');}
+      else {await compare.focus();await page.keyboard.press('Enter');await page.getByRole('dialog').waitFor();
+       await page.keyboard.press('Escape');await page.getByRole('dialog').waitFor({state:'hidden'});
+       assert.equal(await compare.evaluate(element=>element===document.activeElement),true,'Dialog returns keyboard focus');}
     }
   }
+  await db.query("UPDATE users SET role='admin' WHERE id=$1",[user]);
   await page.setViewportSize({width:720,height:422});await page.goto(web+'/');
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'200% effective viewport reflows without page-level horizontal scrolling');
   await page.setViewportSize({width:1440,height:844});
   await page.goto(web+'/sites');
   const row=page.locator('tbody tr').filter({hasText:'U3 Site'}).first();
-  await row.focus();await page.keyboard.press('Enter');await page.getByRole('dialog').waitFor();
-  await page.keyboard.press('Escape');await page.getByRole('dialog').waitFor({state:'hidden'});
+  await row.focus();await page.keyboard.press('Enter');await page.waitForURL('**/records/sites/*');await page.getByRole('heading',{name:'Site details',exact:true}).waitFor();
+  await page.getByRole('link',{name:'Back to list',exact:true}).focus();await page.keyboard.press('Enter');await page.waitForURL(web+'/sites');
   // U2 carry: terminal jobs clear connectivity notices without restarting polling.
   await db.query("INSERT INTO platform_jobs(id,kind,status,created_by,scope,payload,payload_hash) VALUES($1,'report','cancelled',$2,$3,'{}','fixture')",[job,user,[school]]);
   await page.goto(web+`/reports?job=${job}`);const card=page.locator(`[data-job-id="${job}"]`);

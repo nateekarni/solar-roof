@@ -203,18 +203,21 @@ test('late readings replace both days, duplicates stay idempotent, resets unknow
 
 
 // Q3 fix round 1: deployment rendering and real-database regression cases.
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, unlinkSync } from 'node:fs';
 test('[Q3 fix1] staging renders the worker scheduling flag with safe default',()=>{
   const yaml=readFileSync('../../infra/docker/docker-compose.staging.yml','utf8');
   const environment={...process.env} as Record<string,string>;
   for(const match of yaml.matchAll(/\$\{([A-Z_]+):\?[^}]*\}/g))environment[match[1]!]=match[1]!.endsWith('_IMAGE')?'fixture:unused':'fixture-unused';
   environment.DATABASE_URL='postgresql://solar:fixture@127.0.0.1:15432/solar_readiness';
-  const envPath='../../.superpowers/sdd/2026-10-01-platform-improvement/scratch/q3-empty.env';writeFileSync(envPath,'# isolated config fixture\n');
+  mkdirSync('../../test/artifacts',{recursive:true});
+  const envPath=`../../test/artifacts/q3-${randomUUID()}.env`;writeFileSync(envPath,'# isolated config fixture\n');
   const render=()=>JSON.parse(execFileSync('docker',['compose','--env-file',envPath,'-f','../../infra/docker/docker-compose.staging.yml','config','--format','json'],{env:environment,stdio:['ignore','pipe','pipe']}).toString());
-  delete environment.ENERGY_SUMMARY_WORKER_ENABLED;
-  assert.equal(render().services.worker.environment.ENERGY_SUMMARY_WORKER_ENABLED,'false');
-  environment.ENERGY_SUMMARY_WORKER_ENABLED='true';
-  assert.equal(render().services.worker.environment.ENERGY_SUMMARY_WORKER_ENABLED,'true');
+  try {
+    delete environment.ENERGY_SUMMARY_WORKER_ENABLED;
+    assert.equal(render().services.worker.environment.ENERGY_SUMMARY_WORKER_ENABLED,'false');
+    environment.ENERGY_SUMMARY_WORKER_ENABLED='true';
+    assert.equal(render().services.worker.environment.ENERGY_SUMMARY_WORKER_ENABLED,'true');
+  } finally {unlinkSync(envPath);}
 });
 
 async function withFix1Fixture(count:number,run:(fixture:{db:Pool;sites:string[];devices:string[];mappings:string[][]})=>Promise<void>) {

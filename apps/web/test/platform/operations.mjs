@@ -21,15 +21,13 @@ try {
  const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
  for(const viewport of [{width:1440,height:900},{width:390,height:844}]) {
   await page.setViewportSize(viewport);await page.goto(web+'/billing');
-  await page.getByRole('searchbox',{name:'Operations search'}).waitFor();
+  await page.getByRole('searchbox').waitFor();
   await page.getByRole('button',{name:'Next operation page',exact:true}).click();
   await page.waitForFunction(()=>new URL(location.href).searchParams.has('cursor'));
   await page.getByText('Q1 Browser Site',{exact:true}).filter({visible:true}).first().waitFor();
-  const detailResponse=page.waitForResponse(response=>response.url().includes('/v1/billing-cycles/'+oldest)&&response.status()===200);
-  if(viewport.width>1000){await page.getByRole('button',{name:'Open menu',exact:true}).click();await page.getByRole('menuitem',{name:/ดูรายละเอียดรอบบิล|View Billing Details/}).click();}
-  else await page.getByRole('button',{name:/รายละเอียดรอบบิล|Billing Details/}).click();
-  await detailResponse;await page.getByRole('dialog').waitFor();await page.getByRole('dialog').getByText('Q1 Browser School').first().waitFor();
-  await page.keyboard.press('Escape');
+  await page.getByRole('button',{name:/เมนูการดำเนินการ|Open actions menu/}).click();await page.getByRole('menuitem',{name:/ดูรายละเอียดรอบบิล|View Billing Details/}).click();
+  await page.waitForURL(web+'/records/billing/'+oldest);await page.getByRole('heading',{level:1}).waitFor();await page.getByText('Q1 Browser School',{exact:true}).first().waitFor();
+  await page.goBack();await page.getByRole('searchbox').waitFor();
   // Hold a real HTTP result to reproduce a response arriving after a new
   // search. The payload still comes from the private PostgreSQL fixture.
   let delayed;
@@ -42,17 +40,17 @@ try {
     await route.fulfill({response}).catch(()=>{});
    }else await route.continue();
   });
-  await page.getByRole('searchbox',{name:'Operations search'}).fill('Q1 Browser');
+  await page.getByRole('searchbox').fill('Q1 Browser');
   await page.waitForFunction(()=>new URL(location.href).searchParams.get('search')==='Q1 Browser');assert.equal(new URL(page.url()).searchParams.has('cursor'),false,'Search resets server cursor');
   await delayedSeen;
-  await page.getByRole('searchbox',{name:'Operations search'}).fill('no');
-  await page.getByRole('searchbox',{name:'Operations search'}).fill('no-such');
-  await page.getByRole('searchbox',{name:'Operations search'}).fill('no-such-row');
-  await page.getByRole('status').filter({hasText:'0 rows on this page'}).waitFor();
+  await page.getByRole('searchbox').fill('no');
+  await page.getByRole('searchbox').fill('no-such');
+  await page.getByRole('searchbox').fill('no-such-row');
+  await page.getByRole('status').filter({hasText:/^0 / }).waitFor();
   await new Promise(resolve=>setTimeout(resolve,1000));
-  assert.equal(await page.getByRole('status').filter({hasText:'0 rows on this page'}).count(),1,'Delayed prior HTTP result cannot overwrite current search');
+  assert.equal(await page.getByRole('status').filter({hasText:/^0 / }).count(),1,'Delayed prior HTTP result cannot overwrite current search');
   await page.unroute('**/v1/operations/billing?*');
-  await page.reload();await page.getByRole('searchbox',{name:'Operations search'}).waitFor();assert.equal(await page.getByRole('searchbox',{name:'Operations search'}).inputValue(),'no-such-row','URL query survives reload');
+  await page.reload();await page.getByRole('searchbox').waitFor();assert.equal(await page.getByRole('searchbox').inputValue(),'no-such-row','URL query survives reload');
  }
  assert.deepEqual(errors,[]);console.log('PASS: Q1 desktop/mobile keyset next page, later-page actual detail, URL search reset and reload');
 } finally {await browser.close();await db.query('DELETE FROM audit_events WHERE actor_id=$1',[user]);await db.query('DELETE FROM users WHERE id=$1',[user]);await db.query('DELETE FROM billing_cycles WHERE site_id=$1',[site]);await db.query('DELETE FROM sites WHERE id=$1',[site]);await db.query('DELETE FROM schools WHERE id=$1',[school]);await db.end();}

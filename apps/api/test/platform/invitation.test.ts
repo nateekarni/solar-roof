@@ -22,7 +22,7 @@ test('persistent invitation lifecycle uses local SMTP, atomic activation and cur
   const login=async(email:string)=>{const r=await post('/v1/auth/login',{email,password});assert.equal(r.status,200);return (await r.json()).accessToken;};
   const ownerToken=await login(`owner-${owner}@example.test`),adminToken=await login(`admin-${admin}@example.test`);
   const activate=(token:string,extras={})=>post('/v1/auth/activate',{token,password,...extras},undefined,`${ipPrefix}::${++tokenSequence}`);
-  const invite=async(role='school_user',issuer=ownerToken,schoolId:string|null=school)=>{
+  const invite=async(role='school_user',issuer=adminToken,schoolId:string|null=school)=>{
     await fetch(capture+'/ok',{method:'POST'});
     const email=`invite-${randomUUID()}@example.test`;emails.push(email);
     const r=await post('/v1/users/invite',{email,displayName:'Recipient',role,schoolId},issuer);assert.equal(r.status,201);
@@ -43,34 +43,34 @@ test('persistent invitation lifecycle uses local SMTP, atomic activation and cur
     });
     await t.test('expired token rejected and resend revokes original token',async()=>{
       const i=await invite();await db.query("UPDATE user_invitations SET expires_at=now()-interval '1 second' WHERE id=$1",[i.invitationId]);assert.equal((await activate(i.token)).status,401);
-      await fetch(capture+'/ok',{method:'POST'});const r=await post(`/v1/users/invitations/${i.invitationId}/resend`,{},ownerToken);assert.equal(r.status,201);assert.equal((await r.json()).status,'sent');
+      await fetch(capture+'/ok',{method:'POST'});const r=await post(`/v1/users/invitations/${i.invitationId}/resend`,{},adminToken);assert.equal(r.status,201);assert.equal((await r.json()).status,'sent');
       const message=(await (await fetch(capture)).json())[0].replace(/=\r\n/g,'').replace(/=3D/g,'=');const next=message.match(/token=([\w-]+)/)[1];assert.notEqual(next,i.token);assert.equal((await activate(i.token)).status,401);assert.equal((await activate(next)).status,200);
     });
     await t.test('SMTP rejection returns truthful delivery_failed and invalidates undelivered token',async()=>{
       await fetch(capture+'/fail',{method:'POST'});const email=`failed-${randomUUID()}@example.test`;emails.push(email);
-      const r=await post('/v1/users/invite',{email,displayName:'Fail',role:'school_user',schoolId:school},ownerToken);assert.equal(r.status,201);const i=await r.json();assert.equal(i.status,'delivery_failed');
+      const r=await post('/v1/users/invite',{email,displayName:'Fail',role:'school_user',schoolId:school},adminToken);assert.equal(r.status,201);const i=await r.json();assert.equal(i.status,'delivery_failed');
       const row=(await db.query('SELECT delivery_status,revoked_at FROM user_invitations WHERE id=$1',[i.invitationId])).rows[0];assert.equal(row.delivery_status,'delivery_failed');assert.ok(row.revoked_at);
     });
-    await t.test('scope and platform role grants enforced on invite and resend',async()=>{
-      for(const body of [{schoolId:otherSchool,role:'school_user'},{schoolId:school,role:'owner'}]) assert.equal((await post('/v1/users/invite',{email:`deny-${randomUUID()}@example.test`,displayName:'Denied',...body},adminToken)).status,403);
-      const i=await invite('school_user',ownerToken,otherSchool);assert.equal((await post(`/v1/users/invitations/${i.invitationId}/resend`,{},adminToken)).status,403);
+    await t.test('only Super Admin can grant invitations across schools',async()=>{
+      for(const body of [{schoolId:otherSchool,role:'school_user'},{schoolId:school,role:'owner'}]) assert.equal((await post('/v1/users/invite',{email:`deny-${randomUUID()}@example.test`,displayName:'Denied',...body},ownerToken)).status,403);
+      const i=await invite('school_user',adminToken,otherSchool);assert.equal((await post(`/v1/users/invitations/${i.invitationId}/resend`,{},ownerToken)).status,403);
     });
     await t.test('activation rejects changed recipient role/status/school and revoked issuer authority',async()=>{
       for(const mutation of ["role='admin'","status='disabled'",`school_id='${otherSchool}'`]){const i=await invite();await db.query(`UPDATE users SET ${mutation} WHERE email=$1`,[i.email]);assert.equal((await activate(i.token)).status,401);}
       const i=await invite('school_user',adminToken);await db.query("UPDATE users SET role='school_user' WHERE id=$1",[admin]);assert.equal((await activate(i.token)).status,401);await db.query("UPDATE users SET role='admin' WHERE id=$1",[admin]);
     });
     await t.test('outstanding invitation can be found after reload only within current grant scope',async()=>{
-      const i=await invite('school_user',ownerToken,otherSchool);
+      const i=await invite('school_user',adminToken,otherSchool);
       const path=`/v1/users/invitations?email=${encodeURIComponent(i.email)}`;
-      const found=await fetch(base+path,{headers:{Authorization:`Bearer ${ownerToken}`}});assert.equal(found.status,200);const value=await found.json();assert.equal(value.invitationId,i.invitationId);assert.equal(value.status,'sent');assert.equal('token' in value,false);
-      assert.equal((await fetch(base+path,{headers:{Authorization:`Bearer ${adminToken}`}})).status,403);
+      const found=await fetch(base+path,{headers:{Authorization:`Bearer ${adminToken}`}});assert.equal(found.status,200);const value=await found.json();assert.equal(value.invitationId,i.invitationId);assert.equal(value.status,'sent');assert.equal('token' in value,false);
+      assert.equal((await fetch(base+path,{headers:{Authorization:`Bearer ${ownerToken}`}})).status,403);
       assert.equal((await fetch(base+path)).status,401);
     });
     await t.test('active account invitation cannot replace credentials',async()=>{
-      const before=(await db.query('SELECT password_hash FROM users WHERE id=$1',[owner])).rows[0];const r=await post('/v1/users/invite',{email:`owner-${owner}@example.test`,displayName:'Overwrite',role:'admin'},ownerToken);assert.equal(r.status,409);assert.deepEqual((await db.query('SELECT password_hash FROM users WHERE id=$1',[owner])).rows[0],before);
+      const before=(await db.query('SELECT password_hash FROM users WHERE id=$1',[owner])).rows[0];const r=await post('/v1/users/invite',{email:`owner-${owner}@example.test`,displayName:'Overwrite',role:'admin'},adminToken);assert.equal(r.status,409);assert.deepEqual((await db.query('SELECT password_hash FROM users WHERE id=$1',[owner])).rows[0],before);
     });
     await t.test('shared per recipient and actor delivery limit rejects sixth resend',async()=>{
-      const i=await invite();for(let n=0;n<4;n++)assert.equal((await post(`/v1/users/invitations/${i.invitationId}/resend`,{},ownerToken)).status,201);assert.equal((await post(`/v1/users/invitations/${i.invitationId}/resend`,{},ownerToken)).status,429);
+      const i=await invite();for(let n=0;n<4;n++)assert.equal((await post(`/v1/users/invitations/${i.invitationId}/resend`,{},adminToken)).status,201);assert.equal((await post(`/v1/users/invitations/${i.invitationId}/resend`,{},adminToken)).status,429);
     });
     await t.test('successful activations do not consume the invalid-attempt budget',async()=>{
       for(let n=0;n<6;n++){const i=await invite();assert.equal((await post('/v1/auth/activate',{token:i.token,password},undefined,`${ipPrefix}::eeee`)).status,200);}

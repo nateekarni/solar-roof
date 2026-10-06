@@ -167,7 +167,9 @@ test('real database adapters isolate identity/mapping/write capacity and enforce
     const { MqttIngestionService } = await import('../../src/modules/telemetry/mqtt-ingestion.service.js');
     const service = new MqttIngestionService(read, ingress);
     for (const body of ['x'.repeat(131073), '['.repeat(17) + '0' + ']'.repeat(17)]) {
-      const start = performance.now(); await assert.rejects(service.handleIncomingMessage('energy/fixture/telemetry', body));
+      const rejected = () => metricsSnapshot().find(metric => metric.name === 'ingress_rejected')?.value ?? 0;
+      const before = rejected(), start = performance.now(); await service.handleIncomingMessage('energy/fixture/telemetry', body);
+      assert.equal(rejected(), before + 1, 'invalid payload is rejected without throwing or accessing the database');
       assert.ok(performance.now() - start < 500); assert.equal(ingress.pool.waitingCount, 0, 'invalid JSON never waits on the occupied ingestion pool');
     }
     const mapping = service.getDeviceMappings(randomUUID());

@@ -41,11 +41,11 @@ test('financial HTTP entry points fail closed without creating or mutating rows,
    ['POST','/v1/documents',{siteId:site,type:'invoice',amount:999}],
   ] as const){const response=await request(path,method,body);assert.equal(response.status,503,path);assert.equal((await response.json()).code,'FINANCIAL_NOT_READY');const after=await snapshot();const createdRows=after.cycles+after.documents+after.payments-before.cycles-before.documents-before.payments;assert.equal(createdRows,0);assert.deepEqual(after,before,path);}
   assert.equal((await request(`/v1/billing-cycles/${cycle}`)).status,200);
-  for(const [role,want] of [['owner',['calculate','issue','approve_payment','adjust','send']],['accountant',['calculate','issue','approve_payment','adjust','send']],['admin',['calculate']],['operator',[]],['school_user',[]]] as const){
+  for(const [role,want] of [['owner',['calculate','issue','approve_payment','adjust','send']],['accountant',['calculate','issue','approve_payment','adjust','send']],['admin',['calculate','issue','approve_payment','adjust','send']],['operator',[]],['school_user',[]]] as const){
    await db.query('UPDATE users SET role=$1 WHERE id=$2',[role,id]);
    const response=await request('/v1/auth/capabilities');assert.equal(response.status,200);const capabilities=await response.json();assert.deepEqual(capabilities.actions,role === 'owner' || role === 'admin' ? ['create_contract'] : []);assert.deepEqual(Object.keys(capabilities.unavailable),want);
-   for(const [method,suffix] of [['POST','generate-invoice'],['PATCH','verify-payment'],['PATCH','status'],['PATCH','adjust'],['POST','send-email']] as const) assert.equal((await request(`/v1/billing-cycles/${cycle}/${suffix}`,method,{status:'approved'})).status,role==='owner'||role==='accountant'?503:403,`${role} ${suffix}`);
-   assert.equal((await request('/v1/documents','POST',{siteId:site})).status,role==='owner'||role==='accountant'?503:403);
+   for(const [method,suffix] of [['POST','generate-invoice'],['PATCH','verify-payment'],['PATCH','status'],['PATCH','adjust'],['POST','send-email']] as const) assert.equal((await request(`/v1/billing-cycles/${cycle}/${suffix}`,method,{status:'approved'})).status,['owner','admin','accountant'].includes(role)?503:403,`${role} ${suffix}`);
+   assert.equal((await request('/v1/documents','POST',{siteId:site})).status,['owner','admin','accountant'].includes(role)?503:403);
    assert.equal((await request('/v1/billing-cycles','POST',{siteId:site})).status,['owner','accountant','admin'].includes(role)?503:403);
    assert.equal((await request('/v1/contracts','POST',{siteId:site})).status,['owner','admin'].includes(role)?400:403,'Capability and retained contract author route agree');
   }

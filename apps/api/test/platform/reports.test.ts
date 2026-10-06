@@ -14,7 +14,7 @@ test('report POST durably queues a normalized request and enforces idempotency a
  const id=randomUUID(),email=`q4-${id}@example.test`,password='Q4-fixture-password-123!';
  const auth=new AuthService('readiness-test-access-secret-000000000000','readiness-test-refresh-secret-000000000000');
  try {
-  await db.query("INSERT INTO users(id,email,display_name,role,status,password_hash) VALUES($1,$2,'Q4 actor','owner','active',$3)",[id,email,auth.hashPassword(password)]);
+  await db.query("INSERT INTO users(id,email,display_name,role,status,password_hash) VALUES($1,$2,'Q4 actor','admin','active',$3)",[id,email,auth.hashPassword(password)]);
   const base=process.env.READINESS_API_URL!,origin=process.env.READINESS_WEB_URL!;
   const login=await fetch(base+'/v1/auth/login',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify({email,password})});
   assert.equal(login.status,200);const {accessToken}=await login.json();
@@ -39,7 +39,7 @@ test('worker exports more than 100000 filtered rows and neutralizes CSV formulas
   await db.query("INSERT INTO sites(id,school_id,name,capacity_mwp) VALUES($1,$2,'=Q4 formula',0.1)",[site,school]);
   await db.query("INSERT INTO gateways(id,site_id,name,protocol,endpoint) VALUES($1::uuid,$2,$1::text,'mqtt','energy/'||$1::text||'/#')",[gateway,site]);
   await db.query("INSERT INTO devices(id,gateway_id,site_id,name,device_type,model,serial_number) VALUES($1::uuid,$2,$3,'meter','meter','fixture',$1::text)",[device,gateway,site]);
-  const user=await actor(db,'school_user',school);
+  const user=await actor(db,'operator',school);
   const fixture=await db.connect();try{await fixture.query('BEGIN');await fixture.query('SET LOCAL session_replication_role=replica');
   await fixture.query(`INSERT INTO telemetry_raw(id,device_id,site_id,source_time,received_time,raw_payload,normalized_value,unit,quality,ingestion_id,total_energy_kwh,semantic_field) SELECT gen_random_uuid(),$1,$2,'2026-01-01T00:00:00Z'::timestamptz+n*interval '1 second',now(),'{}',n,'kWh','complete',gen_random_uuid()::text,n,'total_energy' FROM generate_series(1,100005) n`,[device,site]);
   await fixture.query('COMMIT');}catch(error){await fixture.query('ROLLBACK');throw error;}finally{fixture.release();}
@@ -75,7 +75,7 @@ test('leases cap reports across workers, reject stale owners, and support archiv
 
 
 
-async function actor(db:Pool,role='owner',school:string|null=null){
+async function actor(db:Pool,role='admin',school:string|null=null){
  const id=randomUUID(),email=`${id}@example.test`,password='Q4-test-password-123!';
  const auth=new AuthService('readiness-test-access-secret-000000000000','readiness-test-refresh-secret-000000000000');
  await db.query("INSERT INTO users(id,email,display_name,role,status,school_id,password_hash) VALUES($1,$2,'Q4 actor',$3,'active',$4,$5)",[id,email,role,school,auth.hashPassword(password)]);
@@ -124,7 +124,7 @@ test('crash after real S3 upload reuses snapshot and artifact; stale generation 
   assert.equal(Number((await db.query('SELECT count(*) FROM notification_deliveries WHERE job_id=$1',[id])).rows[0].count),1);assert.equal(Number((await db.query('SELECT count(*) FROM job_outbox WHERE job_id=$1',[id])).rows[0].count),1);
   const get=(path:string,headers=user.headers)=>fetch(process.env.READINESS_API_URL+path,{headers});
   assert.equal((await get(`/v1/jobs/${id}/download`)).status,200);assert.equal((await get(`/v1/jobs/${id}`,other.headers)).status,403);
-  await db.query("UPDATE users SET role='operator' WHERE id=$1",[user.id]);assert.equal((await get(`/v1/jobs/${id}/download`)).status,403);await db.query("UPDATE users SET role='owner' WHERE id=$1",[user.id]);
+  await db.query("UPDATE users SET role='operator' WHERE id=$1",[user.id]);assert.equal((await get(`/v1/jobs/${id}/download`)).status,403);await db.query("UPDATE users SET role='admin' WHERE id=$1",[user.id]);
   const race=await make();const slow=fork(new URL('./reports-child.mjs',import.meta.url),[],{execArgv:['--import','tsx'],env:{...process.env,REPORT_CHILD_MODE:'delay'},stdio:['ignore','pipe','pipe','ipc']});
   const [message]=await once(slow,'message');assert.equal(message.event,'before-complete');
   const initialLease=(await db.query('SELECT lease_until FROM platform_jobs WHERE id=$1',[race])).rows[0].lease_until;
@@ -165,7 +165,7 @@ test('storage 503 is durable, retries stop after four attempts, cancellation abo
   assert.equal((await s3.send(new ListMultipartUploadsCommand({Bucket:'solar-readiness',Prefix:`reports/${cancelled}/`}))).Uploads?.length??0,0);
   const revoked=randomUUID();await db.query("INSERT INTO platform_jobs(id,kind,payload,created_by,payload_hash) VALUES($1,'report',$2,$3,'fixture')",[revoked,{type:'audit',dateFrom:'2026-01-01',dateTo:'2026-01-02'},user.id]);
   await db.query("UPDATE users SET role='operator' WHERE id=$1",[user.id]);await new ReportExportJob(db,s3,'solar-readiness').runOnce();
-  assert.equal((await db.query('SELECT error_code FROM platform_jobs WHERE id=$1',[revoked])).rows[0].error_code,'permission_revoked');await db.query("UPDATE users SET role='owner' WHERE id=$1",[user.id]);
+  assert.equal((await db.query('SELECT error_code FROM platform_jobs WHERE id=$1',[revoked])).rows[0].error_code,'permission_revoked');await db.query("UPDATE users SET role='admin' WHERE id=$1",[user.id]);
   const list=await fetch(process.env.READINESS_API_URL+'/v1/jobs?limit=1',{headers:user.headers});assert.equal(list.status,200);const first=await list.json();assert.equal(first.items.length,1);assert.ok(first.nextCursor);
   const second=await (await fetch(process.env.READINESS_API_URL+`/v1/jobs?limit=1&cursor=${first.nextCursor}`,{headers:user.headers})).json();assert.equal(second.items.length,1);assert.notEqual(second.items[0].id,first.items[0].id);
  }finally{s3.destroy();broken.destroy();await new Promise<void>(resolve=>server.close(()=>resolve()));await db.end();}
@@ -244,7 +244,7 @@ test('I1 fresh multipart completion verifies stored bytes before publishing read
  compose('stop','worker');const db=new Pool({connectionString:assertIsolatedDatabase(process.env.READINESS_DATABASE_URL!)}),s3=storage();
  try{
   await db.query("UPDATE platform_jobs SET status='cancelled' WHERE status IN ('queued','running')");const user={id:randomUUID()},id=randomUUID();
-  await db.query("INSERT INTO users(id,email,display_name,role,status) VALUES($1::uuid,$1::text||'@example.test','Fresh integrity actor','owner','active')",[user.id]);
+  await db.query("INSERT INTO users(id,email,display_name,role,status) VALUES($1::uuid,$1::text||'@example.test','Fresh integrity actor','admin','active')",[user.id]);
   await db.query("INSERT INTO platform_jobs(id,kind,payload,created_by,payload_hash) VALUES($1,'report',$2,$3,'fresh-integrity')",[id,{type:'audit',dateFrom:'2026-01-01',dateTo:'2026-01-02'},user.id]);
   const realSend=s3.send.bind(s3);let tampered=false;
   (s3 as any).send=async(command:any,options:any)=>{const result=await realSend(command,options);if(command.constructor.name==='CompleteMultipartUploadCommand'){
