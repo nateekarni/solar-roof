@@ -41,13 +41,16 @@ jobs:
       - run: pnpm lint && pnpm test
       - run: node --test scripts/ci/*.test.mjs
       - run: python3 scripts/ci/recovery-sampler.test.py
-      - run: pnpm --filter @solar/api exec tsx --test test/performance/capacity-policy.test.ts
+      - run: pnpm --filter @solar/api exec tsx --test test/performance/capacity-policy.test.ts test/performance/page-budget.test.ts
       - name: Build immutable candidate images
+        timeout-minutes: 10
         run: |
+          node scripts/ci/phase-timing.mjs application-image-build bash -euo pipefail <<'BUILD'
           for app in api worker web mqtt certbot; do
             docker build --label org.opencontainers.image.revision="$GITHUB_SHA" -f "infra/docker/Dockerfile.$app" -t "solar-$app:ci" .
           done
           docker build --label org.opencontainers.image.revision="$GITHUB_SHA" -f infra/docker/postgres-backup/Dockerfile -t solar-postgres-backup:ci .
+          BUILD
       - name: Validate artifact backup scheduler in the Linux runtime
         run: docker run --rm --entrypoint bash solar-api:ci -n /app/scripts/ci/recovery-artifacts-scheduler.sh
       - name: Test managed MQTT and certificate lifecycle without external credentials
@@ -60,23 +63,31 @@ jobs:
         run: bash infra/ci/managed-staging-smoke.sh
       - name: Verify web-first deployment without MQTT
         run: bash infra/ci/web-first-smoke.sh
-      - name: Install browser
-        run: pnpm --filter @solar/web exec playwright install --with-deps chromium
+      - name: Prepare version-matched browser server
+        timeout-minutes: 5
+        run: node scripts/ci/phase-timing.mjs browser-preparation bash scripts/ci/browser-server.sh start
       - name: Verify MQTT credentials and ACLs
         run: bash infra/docker/mosquitto/smoke.sh
       - name: Real integration and browser E2E in disposable stack
-        run: bash scripts/ci/integration.sh
+        timeout-minutes: 8
+        run: node scripts/ci/phase-timing.mjs integration bash scripts/ci/integration.sh
       - name: Isolated platform regression and latency baseline
-        run: bash scripts/ci/platform-check.sh all-fast --prebuilt
+        timeout-minutes: 15
+        run: node scripts/ci/phase-timing.mjs platform-regression bash scripts/ci/platform-check.sh all-fast --prebuilt
       - name: Verify isolated recovery fixture
+        timeout-minutes: 12
         env:
           RECOVERY_IMAGE: solar-postgres-backup:ci
           PLATFORM_CI_STORAGE_PORT: '19001'
-        run: bash scripts/ci/recovery-drill.sh --profile fixture
+        run: node scripts/ci/phase-timing.mjs recovery bash scripts/ci/recovery-drill.sh --profile fixture
       - name: Exercise reduced mixed workload in an isolated stack
+        timeout-minutes: 10
         env:
           CAPACITY_PREBUILT: 'true'
-        run: bash scripts/ci/platform-load.sh --profile smoke --history-days 90
+        run: node scripts/ci/phase-timing.mjs capacity bash scripts/ci/platform-load.sh --profile smoke --history-days 90
+      - name: Capture browser server logs and remove owned container
+        if: always()
+        run: bash scripts/ci/browser-server.sh cleanup
       - name: Upload test evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -91,14 +102,17 @@ jobs:
             test/artifacts/recovery-result.json
             test/artifacts/platform-capacity.json
             test/artifacts/platform-capacity-*.json
+            test/artifacts/browser-server.log
             apps/web/test/artifacts/*.png
           retention-days: 7
       - name: Publish the tested image IDs
+        timeout-minutes: 10
         id: publish
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && github.repository == 'nateekarni/solar-roof'
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          node scripts/ci/phase-timing.mjs ghcr-publication bash -euo pipefail <<'PUBLISH'
           printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           for app in api worker web mqtt certbot postgres-backup; do
             ref="ghcr.io/nateekarni/solar-roof/$app:$GITHUB_SHA"
@@ -112,6 +126,7 @@ jobs:
             printf '%s_IMAGE=%s\n' "$label" "$digest" >> "$GITHUB_STEP_SUMMARY"
           done
           docker logout ghcr.io
+          PUBLISH
   deploy-staging:
     needs: verify
     if: vars.STAGING_DEPLOY_ENABLED == 'true' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && github.repository == 'nateekarni/solar-roof'

@@ -40,7 +40,7 @@ export async function measurePages(tokens) {
         for(const path of ['/','/sites','/billing','/settings/audit']) {
           const page=await context.newPage();
           for(const cache of ['browser-cold','browser-warm']) {
-            const started=performance.now();let error=null,ms;
+            const started=performance.now();let error=null,ms,timing;
             try {
               const response=await page.goto(process.env.READINESS_WEB_URL+path,{waitUntil:'domcontentloaded',timeout:30000});
               assert.ok(response?.ok(),'Page HTTP response');
@@ -51,12 +51,19 @@ export async function measurePages(tokens) {
               }
               await page.waitForFunction(()=>Number.isFinite(globalThis.__criticalPageReadyMs),{},{timeout:30000});
               ms=await page.evaluate(()=>globalThis.__criticalPageReadyMs);
+              timing=await page.evaluate(()=>{
+                const navigation=performance.getEntriesByType('navigation')[0];
+                const scripts=performance.getEntriesByType('resource').filter(entry=>entry.initiatorType==='script');
+                return {responseStartMs:navigation?.responseStart,domContentLoadedMs:navigation?.domContentLoadedEventEnd,
+                  scriptBytes:scripts.reduce((sum,entry)=>sum+entry.encodedBodySize,0),
+                  scripts:scripts.map(entry=>({path:new URL(entry.name).pathname,bytes:entry.encodedBodySize,durationMs:entry.duration})).sort((a,b)=>b.durationMs-a.durationMs).slice(0,5)};
+              });
               assert.equal(new URL(page.url()).pathname,path,'Authenticated route remains selected');
               // Next's global route announcer is an ARIA live region, not an application error.
               const alerts=page.locator('main [role="alert"]:visible');
               assert.equal(await alerts.count(),0,`No rendered page error: ${(await alerts.allTextContents()).join('; ')}`);
             } catch(cause) {error=String(cause);}
-            samples.push({user,path,cache,ms:ms??performance.now()-started,driverElapsedMs:performance.now()-started,error});
+            samples.push({user,path,cache,ms:ms??performance.now()-started,driverElapsedMs:performance.now()-started,error,timing});
           }
           await page.close();
         }

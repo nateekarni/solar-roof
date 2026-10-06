@@ -4,6 +4,7 @@ import {createRequire} from 'node:module';
 import {randomUUID,randomBytes,scryptSync,createHash} from 'node:crypto';
 import {writeFileSync} from 'node:fs';
 import {backupArtifacts,restoreArtifacts,assertArtifactCoverage} from './recovery-artifacts.mjs';
+import {withRecoveryProgress} from './recovery-progress.mjs';
 const require=createRequire(new URL('../../apps/api/package.json',import.meta.url));
 const {Pool}=require('pg');
 const mqtt=require('mqtt');
@@ -12,12 +13,13 @@ const resultPath='test/artifacts/recovery-result.json';
 assert.match(process.env.RECOVERY_COMPOSE_PROJECT||'',/^solar-ci-[a-f0-9-]+$/);
 assert.equal(process.env.READINESS_DATABASE_URL,'postgresql://solar:ci-only-password@127.0.0.1:15432/solar_readiness');
 const args=['compose','-p',process.env.RECOVERY_COMPOSE_PROJECT,'-f','infra/ci/compose.yml','-f','infra/ci/recovery-compose.yml'];
-function compose(command,{input,allowFailure=false,timeout=240000}={}){const r=spawnSync('docker',[...args,...command],{encoding:'utf8',env:process.env,input,timeout,maxBuffer:8*1024*1024});if(!allowFailure&&r.status!==0)throw Error(`Compose ${command[0]} failed (${r.status}): ${r.stderr}\n${r.stdout}`);return r;}
+function compose(command,{input,allowFailure=false,timeout=240000}={}){const r=withRecoveryProgress(command,()=>spawnSync('docker',[...args,...command],{encoding:'utf8',env:process.env,input,timeout,maxBuffer:8*1024*1024}));if(!allowFailure&&r.status!==0)throw Error(`Compose ${command[0]} failed (${r.status}): ${r.stderr}\n${r.stdout}`);return r;}
 function sql(service,query){return compose(['exec','-T',service,'psql','-U','solar','-d','solar_readiness','-At','-v','ON_ERROR_STOP=1','-c',query]).stdout.trim();}
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function until(check){for(let i=0;i<150;i++){if(await check())return;await delay(100);}throw Error('Timed out waiting for recovery boundary');}
 // Fixture-only fault: stop the scheduler's real backup, never the sampler or database.
 async function proveSamplerDuringLongBackup(){
+ console.log('[recovery] phase=sampler-during-paused-backup; intentional pause=190s');
  const tag=randomUUID(),state=`/tmp/d2-backup-${tag}`,watcher=String.raw`
 import json, os, signal, time
 from pathlib import Path
@@ -107,6 +109,7 @@ const s3=new S3Client({endpoint:`http://127.0.0.1:${process.env.PLATFORM_CI_STOR
 let db;
 writeFileSync(resultPath,JSON.stringify({status:'running',profile:'fixture',productionRecoveryVerified:false}));
 try {
+ console.log('[recovery] phase=fixture-setup');
  compose(['up','-d','--wait','storage','repository-proxy']);
  await s3.send(new CreateBucketCommand({Bucket:'solar-backups'}));
  await s3.send(new CreateBucketCommand({Bucket:'restored-documents'}));
@@ -161,6 +164,7 @@ try {
  await db.query('SELECT pg_switch_wal()');
  compose(['exec','-T','postgres','su-exec','postgres','pgbackrest','--stanza=solar','check']);
  await db.end();db=null;
+ console.log('[recovery] phase=physical-point-in-time-restore');
  const outageDeclaredAt=new Date();
  compose(['stop','api','worker','postgres']);
  process.env.RESTORE_TARGET_TIME=targetTime;process.env.RESTORE_BACKUP_ID=backupId;
@@ -183,6 +187,7 @@ try {
  const replay=await mqttSession(gateway);
  try {await replay.publish(payload);await until(()=>replay.acks.length===1);assert.equal(replay.acks[0].duplicate,true);compose(['restart','mqtt']);await delay(100);compose(['up','-d','--no-deps','--wait','--wait-timeout','60','mqtt']);await until(()=>replay.client.connected);await new Promise((resolve,reject)=>replay.client.subscribe(`energy/${gateway}/response`,{qos:1},e=>e?reject(e):resolve()));await until(async()=>{try{return(await fetch(base+'/ready')).ok;}catch{return false;}});await replay.publish(payload);await until(()=>replay.acks.length===2);assert.equal(replay.acks[1].duplicate,true);assert.equal(sql('restore-db',`SELECT count(*) FROM telemetry_raw WHERE device_id='${device}'`),'1');}finally{replay.client.end(true);}
  const usableAt=new Date();
+ console.log('[recovery] phase=negative-recovery-boundaries');
  const nonempty=compose(['exec','-T','restore-db','/opt/solar-backup/restore.sh'],{allowFailure:true});assert.notEqual(nonempty.status,0);assert.match(nonempty.stderr,/nonempty/);
  const inaccessible=compose(['exec','-T','-e','PGBACKREST_REPO1_S3_ENDPOINT=127.0.0.1','-e','PGBACKREST_REPO1_STORAGE_PORT=1','-e','PGBACKREST_IO_TIMEOUT=2','restore-db','su-exec','postgres','pgbackrest','--stanza=solar','--output=json','info'],{allowFailure:true,timeout:15000});assert.ok(inaccessible.status!==0||JSON.parse(inaccessible.stdout)[0].status.code!==0,'Inaccessible repository cannot report valid recovery chain');
  // Remove exactly the required fixture WAL object, then prove a fresh restore cannot reach target.

@@ -9,6 +9,7 @@ import {performance} from 'node:perf_hooks';
 import mqtt from 'mqtt';
 import {profileConfig,assertTargetHost,evaluateCapacity,summary,DuplicateAckBarrier} from './capacity-policy';
 import {verifyDockerExecution} from './docker-identity';
+import {assertPageBudget} from './page-budget';
 import {ownedPool,seedHistory} from './seed-history';
 import {OperationsService} from '../../src/modules/dashboard/operations.service';
 import type {DatabaseService} from '../../src/database/database.service';
@@ -35,6 +36,7 @@ try {
   const containerIds=compose('ps','-q').trim().split(/\s+/).filter(Boolean);
   const containers=JSON.parse(execFileSync('docker',['inspect',...containerIds],{encoding:'utf8'}));
   artifact.hardware={hostname:hostname(),cpus:cpus().length,memoryBytes:totalmem(),availableDiskBytes,disk,containers:containers.map((c:any)=>({service:c.Config.Labels['com.docker.compose.service'],image:c.Image,memoryLimit:c.HostConfig.Memory,nanoCpus:c.HostConfig.NanoCpus}))};
+  console.log(`[capacity] phase=seed profile=${profile.name} historyRows=${profile.historyRows} users=${profile.users}`);
   const fixture=await seedHistory(db,profile);artifact.rows=fixture.historyRows;artifact.fixture={seedTriggers:fixture.seedTriggers,roleDistribution:fixture.roleDistribution};
   compose('restart','api');
   for(let i=0;;i++){try{if((await fetch(api+'/ready')).ok && (await fetch(api+'/ready/mqtt')).ok)break;}catch{} assert.ok(i<120,'API and MQTT readiness after seed');await pause(500);}
@@ -83,16 +85,19 @@ try {
     throw new Error('Report ready timeout');
   }
   const started=performance.now();
+  console.log(`[capacity] phase=steady duration=${profile.steadySeconds}s; browser pages and two reports start concurrently`);
   await walSnapshot('beforeSteady');
   const reportWork=Promise.allSettled([report(0),report(1)]);
   const pageWork=Promise.allSettled([measurePages(tokens)]);
   const steadyStart=performance.now();const steadySent=await paced(profile.steadyPerMinute,profile.steadySeconds);const steadySeconds=(performance.now()-steadyStart)/1000;
   await walSnapshot('afterSteady');
   const burstStart=performance.now();
+  console.log(`[capacity] phase=burst messages=${profile.burst}`);
   const burstPageWork=Promise.allSettled([measurePages(tokens)]);
   await Promise.all(Array.from({length:profile.burst},()=>send()));
   const burstSeconds=(performance.now()-burstStart)/1000;
   await walSnapshot('afterBurst');
+  console.log(`[capacity] phase=replay duration=${profile.replaySeconds}s`);
   const replayStart=performance.now();const replaySent=await paced(profile.replayPerMinute,profile.replaySeconds);const replaySeconds=(performance.now()-replayStart)/1000;
   const replayEnd=performance.now();await walSnapshot('afterReplay');
   for(let i=0;i<60&&acked.size<sent.size;i++)await pause(1000);
@@ -128,11 +133,12 @@ try {
   }} as unknown as DatabaseService);
   for(const resource of ['billing','audit'])await service.list(resource,{id:fixture.users[0].id,role:'admin'});
   const errors=publishErrors+pages.filter((p:any)=>p.error).length+reports.filter(r=>r.status==='rejected').length;
+  console.log(`[capacity] phase=validation samples=${pages.length} maxReadyMs=${summary(pages.map((p:any)=>p.ms)).max} errors=${errors}`);
   const evidence={profile,historyRows:fixture.historyRows,users:tokens.length,steadySent,steadySeconds,burstSent:profile.burst,burstSeconds,replaySent,replaySeconds,exportsReady:reports.filter(r=>r.status==='fulfilled').length,exportPeakOverlap:exportActivity.some(sample=>sample.at>=burstStart&&sample.at<=replayEnd&&sample.running===2),ackedButMissing,unexpectedDuplicateRows,unacked:sent.size-acked.size,errors,pageSamples:pages.map((p:any)=>p.ms),coldAndWarm:false,queryPlans:plans.length===2,hardwareProof:true};
   artifact.actualRatesPerMinute={steady:steadySent/steadySeconds*60,replay:replaySent/replaySeconds*60};
   Object.assign(artifact,evaluateCapacity(evidence),{scenario:evidence,...summary(evidence.pageSamples),pages,reports,acked:acked.size,persisted,duplicates:unexpectedDuplicateRows,ackedButMissing,errors,ackLatency:summary(ackLatency),peakMemory:observations,plans,durationMs:performance.now()-started,database:(await db.query('SELECT pg_database_size(current_database()) bytes')).rows[0],cacheLimitation:'Browser fresh/warm contexts measured; database/OS cold cache is NOT established. Target gate stays failed.'});
   assert.equal(ackedButMissing,0);assert.equal(unexpectedDuplicateRows,0);assert.equal(evidence.unacked,0);assert.equal(errors,0);
-  assert.ok(evidence.pageSamples.every((v:number)=>v<=2000),'Every critical page sample must be <=2000ms');
+  assertPageBudget(pages);
   if(profile.name==='target')assert.equal(artifact.releaseGate,'pass','Incomplete evidence cannot pass target gate');
 } catch(error) {artifact.error=String(error);artifact.releaseGate='fail';console.error('Mixed workload validation failed:',String(error));process.exitCode=1;}
 finally {if(timer)clearInterval(timer);client?.end(true);await db.end();artifact.finishedAt=new Date().toISOString();await writeFile('test/artifacts/platform-capacity.json',JSON.stringify(artifact,null,2));}
