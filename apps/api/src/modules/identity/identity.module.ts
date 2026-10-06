@@ -10,6 +10,7 @@ import { JwtAuthGuard } from "./jwt.guard.js";
 import { MeController } from "./me.controller.js";
 import { InvitationController } from "./invitation.controller.js";
 import { UsersController } from "./users.controller.js";
+import {SiteSchoolUsersService} from './site-school-users.service.js';
 
 @Module({
   imports: [DatabaseModule],
@@ -25,6 +26,7 @@ import { UsersController } from "./users.controller.js";
     },
     SessionService,
     InvitationService,
+    SiteSchoolUsersService,
     JwtAuthGuard,
   ],
   exports: [SessionService, AuthService, InvitationService, JwtAuthGuard],

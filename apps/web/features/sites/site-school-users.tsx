@@ -1,0 +1,34 @@
+"use client";
+import {useCallback,useEffect,useState,type FormEvent} from 'react';
+import {apiClient} from '../../lib/api-client';
+import {useLocale} from '../../providers/locale-provider';
+import {Button} from '../../components/ui/button';
+import {Card,CardContent} from '../../components/ui/card';
+import {Input} from '../../components/ui/input';
+import {Label} from '../../components/ui/label';
+import {Dialog,DialogContent,DialogHeader,DialogTitle,DialogDescription} from '../../components/ui/dialog';
+import {renderStatusBadge} from '../../lib/status-badge';
+type SchoolUser={id:string;email:string;displayName:string;status:string};
+export function SiteSchoolUsers({siteId}:{siteId:string}){
+ const th=useLocale()==='th',base=`/v1/sites/${encodeURIComponent(siteId)}/school-users`;
+ const [users,setUsers]=useState<SchoolUser[]>([]),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false);
+ const [error,setError]=useState(''),[message,setMessage]=useState(''),[open,setOpen]=useState(false),[editing,setEditing]=useState<SchoolUser|null>(null),[removing,setRemoving]=useState<SchoolUser|null>(null);
+ const [name,setName]=useState(''),[email,setEmail]=useState('');
+ const load=useCallback(async()=>{setLoading(true);try{const result=await apiClient.get<{users:SchoolUser[]}>(base);setUsers(result.users);}catch(e){setError(e instanceof Error?e.message:'Unable to load users');}finally{setLoading(false);}},[base]);
+ useEffect(()=>{void load();},[load]);
+ const edit=(user:SchoolUser|null)=>{setError('');setMessage('');setEditing(user);setName(user?.displayName??'');setEmail(user?.email??'');setOpen(true);};
+ const submit=async(event:FormEvent)=>{event.preventDefault();setBusy(true);setError('');try{
+  if(editing){await apiClient.put(`${base}/${editing.id}`,{displayName:name,email});setMessage(th?'บันทึกข้อมูลผู้ใช้แล้ว':'User updated');}
+  else {const result=await apiClient.post<{status:string}>(base,{displayName:name,email});setMessage(result.status==='sent'?(th?'ส่งคำเชิญทางอีเมลแล้ว':'Invitation sent'):(th?'บันทึกคำเชิญแล้ว แต่ยังส่งอีเมลไม่สำเร็จ กรุณาส่งใหม่':'Invitation saved; email has not been delivered. Resend it.'));}
+  setOpen(false);await load();
+ }catch(e){setError(e instanceof Error?e.message:'Unable to save user');}finally{setBusy(false);}};
+ const remove=async()=>{if(!removing)return;setBusy(true);setError('');try{await apiClient.delete(`${base}/${removing.id}`);setRemoving(null);setMessage(th?'ปิดบัญชีและเพิกถอนการเข้าสู่ระบบแล้ว':'Account disabled and sessions revoked');await load();}catch(e){setError(e instanceof Error?e.message:'Unable to disable user');}finally{setBusy(false);}};
+ const resend=async(user:SchoolUser)=>{setBusy(true);setError('');try{const invitation=await apiClient.get<{invitationId:string}>(`/v1/users/invitations?email=${encodeURIComponent(user.email)}`);const result=await apiClient.post<{status:string}>(`/v1/users/invitations/${invitation.invitationId}/resend`,{});setMessage(result.status==='sent'?(th?'ส่งคำเชิญใหม่แล้ว':'Invitation resent'):(th?'ยังส่งอีเมลไม่สำเร็จ โปรดตรวจ SMTP':'Email not delivered; check SMTP'));}catch(e){setError(e instanceof Error?e.message:'Unable to resend');}finally{setBusy(false);}};
+ return <section className="flex flex-col gap-4" aria-label={th?'ผู้ใช้งานโรงเรียน':'School users'}>
+  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><h2 className="text-lg font-semibold">{th?'ผู้ใช้งานโรงเรียน':'School users'}</h2><p className="text-sm text-muted-foreground">{th?'บัญชีเหล่านี้เข้าถึงทุกไซต์ของโรงเรียนเดียวกัน การเพิ่มผู้ใช้ส่งคำเชิญทางอีเมล':'These accounts access all sites of this school. New users receive email invitations.'}</p></div><Button onClick={()=>edit(null)} disabled={busy}>{th?'เพิ่มผู้ใช้งาน':'Add user'}</Button></div>
+  {error&&<p role="alert" className="text-sm text-destructive">{error}</p>}{message&&<p role="status" className="text-sm">{message}</p>}
+  {loading?<p role="status">{th?'กำลังโหลด…':'Loading…'}</p>:users.length===0?<Card><CardContent className="py-8 text-center text-muted-foreground">{th?'ยังไม่มีผู้ใช้งานของโรงเรียนนี้':'No school users yet'}</CardContent></Card>:<div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{users.map(user=><Card key={user.id}><CardContent className="flex flex-col gap-3 pt-5"><div className="flex items-start justify-between gap-2"><div className="min-w-0"><p className="font-medium break-words">{user.displayName}</p><p className="break-all text-sm text-muted-foreground">{user.email}</p></div>{renderStatusBadge(user.status,th?'th':'en')}</div><div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" disabled={busy} onClick={()=>edit(user)}>{th?'แก้ไข':'Edit'}</Button>{user.status==='invited'&&<Button size="sm" variant="outline" disabled={busy} onClick={()=>void resend(user)}>{th?'ส่งคำเชิญใหม่':'Resend'}</Button>}{user.status!=='disabled'&&<Button size="sm" variant="destructive" disabled={busy} onClick={()=>setRemoving(user)}>{th?'ลบผู้ใช้':'Remove'}</Button>}</div></CardContent></Card>)}</div>}
+  <Dialog open={open} onOpenChange={value=>{if(!busy)setOpen(value);}}><DialogContent><DialogHeader><DialogTitle>{editing?(th?'แก้ไขผู้ใช้งาน':'Edit user'):(th?'เพิ่มผู้ใช้งาน':'Add user')}</DialogTitle><DialogDescription>{th?'สิทธิ์ถูกกำหนดเป็น School User ของโรงเรียนนี้':'Role is fixed to School User of this school'}</DialogDescription></DialogHeader><form onSubmit={submit} className="flex flex-col gap-4"><div className="flex flex-col gap-2"><Label htmlFor="school-user-name">{th?'ชื่อผู้ใช้':'Name'}</Label><Input id="school-user-name" value={name} onChange={e=>setName(e.target.value)} required minLength={2} maxLength={200}/></div><div className="flex flex-col gap-2"><Label htmlFor="school-user-email">Email</Label><Input id="school-user-email" type="email" value={email} onChange={e=>setEmail(e.target.value)} required disabled={editing?.status==='invited'}/></div>{error&&<p role="alert" className="text-destructive text-sm">{error}</p>}<Button type="submit" disabled={busy} className="w-full">{busy?(th?'กำลังบันทึก…':'Saving…'):editing?(th?'บันทึก':'Save'):(th?'ส่งคำเชิญ':'Send invitation')}</Button></form></DialogContent></Dialog>
+  <Dialog open={!!removing} onOpenChange={value=>{if(!value&&!busy)setRemoving(null);}}><DialogContent><DialogHeader><DialogTitle>{th?'ลบผู้ใช้งานนี้?':'Remove this user?'}</DialogTitle><DialogDescription>{th?'บัญชีจะถูกปิดและออกจากระบบทันที โดยเก็บประวัติเอกสารและการใช้งานไว้':'The account will be disabled and sessions revoked. Document and audit history is retained.'} {removing?.email}</DialogDescription></DialogHeader><Button variant="destructive" disabled={busy} onClick={()=>void remove()}>{th?'ยืนยันลบผู้ใช้งาน':'Confirm removal'}</Button></DialogContent></Dialog>
+ </section>;
+}

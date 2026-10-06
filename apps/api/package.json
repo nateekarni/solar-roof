@@ -11,6 +11,7 @@
     "db:migrate": "tsx src/scripts/db-migrate.ts",
     "db:seed": "tsx src/scripts/seed.ts",
     "db:seed:users": "tsx src/scripts/seed-pilot-users.ts",
+    "db:seed:school-user": "tsx src/scripts/seed-site-school-user.ts",
     "db:seed:reset": "tsx src/scripts/seed.ts --reset",
     "simulate:mqtt": "tsx src/scripts/simulate-mqtt.ts",
     "test:ingestion": "tsx src/scripts/test-gateway-ingestion.ts",

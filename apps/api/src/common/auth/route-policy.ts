@@ -16,6 +16,7 @@ export function schoolScope(user: ScopePrincipal | undefined): string[] | null {
 export function routeAllowed(role: string, method: string, rawPath: string): boolean {
   if (!["owner", "admin", "operator", "accountant", "school_user"].includes(role)) return false;
   const path = rawPath.split("?")[0]!.replace(/\/$/, "");
+  if (/^\/v1\/sites\/[^/]+\/school-users(?:\/|$)/.test(path)) return role === 'admin';
   if (/^\/v1\/mqtt-brokers(?:\/|$)/.test(path)) return role === "admin";
   const read = method === "GET" || method === "HEAD";
   if (isBusinessRole(role)) {
