@@ -1,5 +1,7 @@
 # Deploy Solar staging ผ่านหน้าเว็บทีละขั้น
 
+สำหรับ pilot เครื่องเดิม2vCPU/4GiB ใช้ [คู่มือพร้อมค่าทุกขั้นฉบับ6ตุลาคม2026](coolify-solar-fowir-deployment-detailed-th.md) และresource defaultsในComposeล่าสุด ก่อนทำขั้นตอนด้านล่าง
+
 ใช้ Coolify ของบริษัทที่มีอยู่แล้ว ไม่ต้องเพิ่ม server, SSH, SCP หรือติดตั้งอะไรบนเครื่องส่วนตัว งาน build/test ทำบน GitHub ส่วน Coolify ดึง image มารัน
 
 - เว็บ: https://solar.fowir.com

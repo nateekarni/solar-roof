@@ -2,6 +2,10 @@
 # Set app images to immutable ghcr.io/...@sha256:... references from CI.
 services:
   postgres:
+    # Pilot defaults for the existing 2 vCPU / 4 GiB host; verify peak usage.
+    cpus: ${POSTGRES_CPU_LIMIT:-0.75}
+    mem_limit: ${POSTGRES_MEMORY_LIMIT:-768m}
+    mem_reservation: ${POSTGRES_MEMORY_RESERVATION:-256m}
     image: ${POSTGRES_IMAGE:?immutable tested postgres-backup image required}
     restart: unless-stopped
     environment:
@@ -23,6 +27,10 @@ services:
       timeout: 5s
       retries: 12
   redis:
+    # Pilot defaults for the existing 2 vCPU / 4 GiB host; verify peak usage.
+    cpus: ${REDIS_CPU_LIMIT:-0.25}
+    mem_limit: ${REDIS_MEMORY_LIMIT:-128m}
+    mem_reservation: ${REDIS_MEMORY_RESERVATION:-32m}
     image: redis:7.4.2-alpine
     restart: unless-stopped
     command: [redis-server, --appendonly, 'yes']
@@ -33,6 +41,10 @@ services:
       timeout: 5s
       retries: 12
   certbot:
+    # Pilot defaults for the existing 2 vCPU / 4 GiB host; verify peak usage.
+    cpus: ${CERTBOT_CPU_LIMIT:-0.25}
+    mem_limit: ${CERTBOT_MEMORY_LIMIT:-128m}
+    mem_reservation: ${CERTBOT_MEMORY_RESERVATION:-32m}
     image: ${CERTBOT_IMAGE:?immutable certificate service image required}
     restart: unless-stopped
     environment:
@@ -49,6 +61,10 @@ services:
       retries: 30
       start_period: 60s
   mqtt:
+    # Pilot defaults for the existing 2 vCPU / 4 GiB host; verify peak usage.
+    cpus: ${MQTT_CPU_LIMIT:-0.25}
+    mem_limit: ${MQTT_MEMORY_LIMIT:-128m}
+    mem_reservation: ${MQTT_MEMORY_RESERVATION:-32m}
     image: ${MQTT_IMAGE:?immutable managed MQTT image required}
     restart: unless-stopped
     ports: ['8883:8883']
@@ -68,6 +84,10 @@ services:
       retries: 12
       start_period: 30s
   storage:
+    # Pilot defaults for the existing 2 vCPU / 4 GiB host; verify peak usage.
+    cpus: ${STORAGE_CPU_LIMIT:-0.25}
+    mem_limit: ${STORAGE_MEMORY_LIMIT:-256m}
+    mem_reservation: ${STORAGE_MEMORY_RESERVATION:-64m}
     image: ${STORAGE_IMAGE:-ghcr.io/coollabsio/minio@sha256:69b55a1c1c5dc285ce04db96689f5b2102317fc77a50680a1874ca6efd1c87f9}
     restart: unless-stopped
     command: [server, /data, --console-address, ':9001']
@@ -81,6 +101,9 @@ services:
       timeout: 5s
       retries: 12
   storage-init:
+    # Pilot defaults for the existing 2 vCPU / 4 GiB host; verify peak usage.
+    cpus: ${STORAGE_INIT_CPU_LIMIT:-0.25}
+    mem_limit: ${STORAGE_INIT_MEMORY_LIMIT:-128m}
     image: ${API_IMAGE:?immutable API image required}
     restart: 'no'
     environment:
@@ -101,6 +124,9 @@ services:
     depends_on:
       storage: {condition: service_healthy}
   migrate:
+    # Pilot defaults for the existing 2 vCPU / 4 GiB host; verify peak usage.
+    cpus: ${MIGRATE_CPU_LIMIT:-0.50}
+    mem_limit: ${MIGRATE_MEMORY_LIMIT:-256m}
     image: ${API_IMAGE:?immutable API image required}
     restart: 'no'
     command: [pnpm, --filter, '@solar/api', 'db:migrate']
@@ -109,6 +135,9 @@ services:
     depends_on:
       postgres: {condition: service_healthy}
   bootstrap:
+    # Pilot defaults for the existing 2 vCPU / 4 GiB host; verify peak usage.
+    cpus: ${BOOTSTRAP_CPU_LIMIT:-0.25}
+    mem_limit: ${BOOTSTRAP_MEMORY_LIMIT:-128m}
     image: ${API_IMAGE:?immutable API image required}
     restart: 'no'
     command: [pnpm, --filter, '@solar/api', 'db:bootstrap']
@@ -125,6 +154,9 @@ services:
       migrate: {condition: service_completed_successfully}
       storage-init: {condition: service_completed_successfully}
   release-evidence:
+    # Pilot defaults for the existing 2 vCPU / 4 GiB host; verify peak usage.
+    cpus: ${RELEASE_EVIDENCE_CPU_LIMIT:-0.25}
+    mem_limit: ${RELEASE_EVIDENCE_MEMORY_LIMIT:-128m}
     image: ${API_IMAGE:?immutable API image required}
     network_mode: none
     restart: 'no'
@@ -138,6 +170,10 @@ services:
       PLATFORM_RELEASE_EVIDENCE_JSON: ${PLATFORM_RELEASE_EVIDENCE_JSON:-}
     volumes: [solar-release-evidence:/var/lib/solar-release]
   api:
+    # Pilot defaults for the existing 2 vCPU / 4 GiB host; verify peak usage.
+    cpus: ${API_CPU_LIMIT:-0.75}
+    mem_limit: ${API_MEMORY_LIMIT:-512m}
+    mem_reservation: ${API_MEMORY_RESERVATION:-256m}
     image: ${API_IMAGE:?immutable API image required}
     restart: unless-stopped
     stop_grace_period: 15s
@@ -169,14 +205,14 @@ services:
       MQTT_PASSWORD: ${MQTT_PASSWORD:?required}
       MQTT_MAX_PAYLOAD_BYTES: ${MQTT_MAX_PAYLOAD_BYTES:-131072}
       MQTT_MAX_JSON_DEPTH: ${MQTT_MAX_JSON_DEPTH:-16}
-      INGEST_CONCURRENCY: ${INGEST_CONCURRENCY:-8}
+      INGEST_CONCURRENCY: ${INGEST_CONCURRENCY:-2}
       INGEST_QUEUE_LIMIT: ${INGEST_QUEUE_LIMIT:-1024}
       INGEST_QUEUE_BYTES: ${INGEST_QUEUE_BYTES:-16777216}
       INGEST_PER_GATEWAY_RATE: ${INGEST_PER_GATEWAY_RATE:-50}
       INGEST_PER_GATEWAY_BURST: ${INGEST_PER_GATEWAY_BURST:-100}
       INGEST_SHUTDOWN_TIMEOUT_MS: ${INGEST_SHUTDOWN_TIMEOUT_MS:-10000}
-      API_READ_POOL_MAX: ${API_READ_POOL_MAX:-12}
-      INGEST_DB_POOL_MAX: ${INGEST_DB_POOL_MAX:-8}
+      API_READ_POOL_MAX: ${API_READ_POOL_MAX:-4}
+      INGEST_DB_POOL_MAX: ${INGEST_DB_POOL_MAX:-2}
       API_READ_STATEMENT_TIMEOUT_MS: ${API_READ_STATEMENT_TIMEOUT_MS:-1500}
       INGEST_DB_STATEMENT_TIMEOUT_MS: ${INGEST_DB_STATEMENT_TIMEOUT_MS:-5000}
       STORAGE_ENDPOINT: http://storage:9000
@@ -213,6 +249,10 @@ services:
       retries: 12
       start_period: 30s
   worker:
+    # Pilot defaults for the existing 2 vCPU / 4 GiB host; verify peak usage.
+    cpus: ${WORKER_CPU_LIMIT:-0.25}
+    mem_limit: ${WORKER_MEMORY_LIMIT:-256m}
+    mem_reservation: ${WORKER_MEMORY_RESERVATION:-64m}
     image: ${WORKER_IMAGE:?immutable worker image required}
     restart: unless-stopped
     environment:
@@ -248,6 +288,10 @@ services:
       retries: 12
       start_period: 30s
   web:
+    # Pilot defaults for the existing 2 vCPU / 4 GiB host; verify peak usage.
+    cpus: ${WEB_CPU_LIMIT:-0.50}
+    mem_limit: ${WEB_MEMORY_LIMIT:-384m}
+    mem_reservation: ${WEB_MEMORY_RESERVATION:-128m}
     image: ${WEB_IMAGE:?immutable web image required}
     restart: unless-stopped
     environment:
