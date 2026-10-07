@@ -16,6 +16,7 @@ import { Button } from "../../components/ui/button";
 import { Card } from "../../components/ui/card";
 import { useLocale, useT } from "../../providers/locale-provider";
 import { CustomizeCardsModal } from "./customize-cards-modal";
+import {dashboardMetrics} from "./dashboard-metrics";
 import { formatPower } from "../../lib/power-format";
 
 const STORAGE_KEY = "solar_dashboard_card_config";
@@ -32,29 +33,31 @@ const DEFAULT_CARD_CONFIG = [
 export function DashboardStatsClient({
   stats,
   totalSites,
+  role="admin",
 }: {
   stats: Omit<DashboardSummaryStats,"currentMw"|"periodKwh"> & {currentMw:number|null;periodKwh:number|null;billCount:number;paidBillCount:number};
   totalSites?: number;
+  role?:string;
 }) {
   const t = useT();
   const locale = useLocale();
   const [isCustomizeOpen, setIsCustomizeOpen] = React.useState(false);
 
-  const [cardConfig, setCardConfig] = React.useState<string[]>(DEFAULT_CARD_CONFIG);
+  const [cardConfig, setCardConfig] = React.useState<string[]>(dashboardMetrics(role,DEFAULT_CARD_CONFIG));
 
   React.useEffect(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length === 6) {
-          setCardConfig(parsed.map(key => key === "schools" ? "totalSites" : key));
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setCardConfig(dashboardMetrics(role,parsed.map(key => key === "schools" ? "totalSites" : key)));
         }
       }
     } catch {
       // ignore
     }
-  }, []);
+  }, [role]);
 
   React.useEffect(() => {
     const handleOpen = () => setIsCustomizeOpen(true);
@@ -63,7 +66,7 @@ export function DashboardStatsClient({
   }, []);
 
   const handleSaveConfig = (newConfig: string[]) => {
-    setCardConfig(newConfig);
+    setCardConfig(dashboardMetrics(role,newConfig));
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(newConfig));
     } catch {
@@ -121,13 +124,10 @@ export function DashboardStatsClient({
       digits: 2,
     },
     currentMw: {
-      label: t("dashboard.stats.currentProduction"),
+      label: locale === "th" ? "กำลังไฟฟ้าจากมิเตอร์" : "Metered active power",
       value: stats.currentMw,
       unit: t("dashboard.stats.unitMw"),
-      note:
-        stats.installedMwp > 0 && stats.currentMw !== null
-          ? `${((stats.currentMw / stats.installedMwp) * 100).toFixed(1)}${t("dashboard.stats.capacityPercent")}`
-          : "-",
+      note: locale === "th" ? "ค่าที่วัดได้จากมิเตอร์" : "Measured meter power",
       tone: "teal",
       icon: Zap,
       digits: 2,
@@ -152,7 +152,7 @@ export function DashboardStatsClient({
     },
   };
 
-  const availableMetrics = Object.entries(metricDefinitions).map(
+  const availableMetrics = Object.entries(metricDefinitions).filter(([key])=>dashboardMetrics(role).includes(key)).map(
     ([key, def]) => ({
       key,
       label: def.label,
@@ -162,8 +162,8 @@ export function DashboardStatsClient({
   return (
     <>
 
-      <section className="stats-grid">
-        {cardConfig.map((metricKey, idx) => {
+      <section className="stats-grid" style={{"--stats-column-count":role==="owner"?5:6} as React.CSSProperties}>
+        {dashboardMetrics(role,cardConfig).map((metricKey, idx) => {
           const def = metricDefinitions[metricKey] ?? defaultMetricDef;
           const power = metricKey === 'currentMw' ? formatPower(stats.currentMw === null ? null : stats.currentMw * 1_000_000, locale) : null;
           return (
@@ -193,10 +193,10 @@ export function DashboardStatsClient({
       <CustomizeCardsModal
         open={isCustomizeOpen}
         onOpenChange={setIsCustomizeOpen}
-        currentConfig={cardConfig}
+        currentConfig={dashboardMetrics(role,cardConfig)}
         onSave={handleSaveConfig}
         availableMetrics={availableMetrics}
-        defaultConfig={DEFAULT_CARD_CONFIG}
+        defaultConfig={dashboardMetrics(role,DEFAULT_CARD_CONFIG)}
       />
     </>
   );

@@ -230,7 +230,7 @@ export function ContractFormDialog({
                   value={watch("siteId")}
                   onValueChange={(val: string) => setValue("siteId", val, { shouldValidate: true })}
                 >
-                  <SelectTrigger id="c-site" className="text-xs h-10 w-full bg-white">
+                  <SelectTrigger id="c-site" className="text-xs h-10 w-full bg-card">
                     <SelectValue placeholder={loadingSites ? "กำลังโหลดไซต์..." : "เลือกไซต์งาน"} />
                   </SelectTrigger>
                   <SelectContent>
@@ -265,7 +265,7 @@ export function ContractFormDialog({
                 <Input
                   id="terms"
                   placeholder="ชำระภายใน 30 วัน"
-                  className="text-xs h-10 bg-white"
+                  className="text-xs h-10 bg-card"
                   {...register("paymentTerms")}
                 />
               </div>
@@ -277,7 +277,7 @@ export function ContractFormDialog({
                 <Input
                   id="signer"
                   placeholder="Solar Platform Owner"
-                  className="text-xs h-10 bg-white"
+                  className="text-xs h-10 bg-card"
                   {...register("signerName")}
                 />
               </div>
@@ -299,7 +299,7 @@ export function ContractFormDialog({
                 <Input
                   id="tax-id"
                   placeholder="0105558123456"
-                  className="text-xs h-10 font-mono bg-white"
+                  className="text-xs h-10 font-mono bg-card"
                   {...register("taxId")}
                 />
               </div>
@@ -311,7 +311,7 @@ export function ContractFormDialog({
                 <Input
                   id="branch"
                   placeholder="สำนักงานใหญ่ หรือ 00000"
-                  className="text-xs h-10 bg-white"
+                  className="text-xs h-10 bg-card"
                   {...register("branch")}
                 />
               </div>
@@ -323,7 +323,7 @@ export function ContractFormDialog({
                 <Input
                   id="company-name"
                   placeholder="โรงเรียนมัธยมดอนทอง หรือ บจก. พลังงานโซลาร์"
-                  className="text-xs h-10 bg-white"
+                  className="text-xs h-10 bg-card"
                   {...register("companyName")}
                 />
               </div>
@@ -335,7 +335,7 @@ export function ContractFormDialog({
                 <Input
                   id="tax-address"
                   placeholder="เลขที่ 123 หมู่ 4 ต.ในเมือง อ.เมือง จ.ขอนแก่น 40000"
-                  className="text-xs h-10 bg-white"
+                  className="text-xs h-10 bg-card"
                   {...register("taxAddress")}
                 />
               </div>
@@ -348,7 +348,7 @@ export function ContractFormDialog({
                   id="billing-email"
                   type="email"
                   placeholder="finance@school.ac.th"
-                  className="text-xs h-10 bg-white"
+                  className="text-xs h-10 bg-card"
                   {...register("billingEmail")}
                 />
               </div>
@@ -360,7 +360,7 @@ export function ContractFormDialog({
                 <Input
                   id="billing-phone"
                   placeholder="02-123-4567"
-                  className="text-xs h-10 bg-white"
+                  className="text-xs h-10 bg-card"
                   {...register("billingPhone")}
                 />
               </div>
@@ -404,7 +404,7 @@ export function ContractFormDialog({
                           value={row.startDate}
                           onValueChange={(value) => handleRateRowChange(idx, "startDate", value)}
                           aria-label={locale === "th" ? "วันเริ่มต้นอัตราค่าไฟ" : "Rate start date"}
-                          className="h-10 text-xs font-mono bg-white"
+                          className="h-10 text-xs font-mono bg-card"
                         />
                       </TableCell>
                       <TableCell className="p-2">
@@ -413,7 +413,7 @@ export function ContractFormDialog({
                           onValueChange={(value) => handleRateRowChange(idx, "endDate", value)}
                           aria-label={locale === "th" ? "วันสิ้นสุดอัตราค่าไฟ" : "Rate end date"}
                           placeholder="ไม่มีกำหนด"
-                          className="h-10 text-xs font-mono bg-white"
+                          className="h-10 text-xs font-mono bg-card"
                         />
                       </TableCell>
                       <TableCell className="p-2">
@@ -425,7 +425,7 @@ export function ContractFormDialog({
                           min="0"
                           aria-label={locale === "th" ? "อัตราค่าไฟที่ตกลง" : "Agreed tariff"}
                           onChange={(e) => handleRateRowChange(idx, "rate", e.target.value === "" ? "" : Number(e.target.value))}
-                          className="h-10 text-xs font-mono font-bold text-primary bg-white"
+                          className="h-10 text-xs font-mono font-bold text-primary bg-card"
                         />
                       </TableCell>
                       <TableCell className="p-2 pr-3 text-center">

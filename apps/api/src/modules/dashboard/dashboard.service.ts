@@ -72,7 +72,8 @@ export class DashboardService {
       this.db.query<{site_id:string;day:string;amount:string;consumed_kwh:string;paid:boolean}>(`SELECT b.site_id,b.period_end::text AS day,b.amount::text,b.consumed_kwh::text,
         EXISTS(SELECT 1 FROM payments p WHERE p.billing_cycle_id=b.id AND p.status='paid') paid
         FROM billing_cycles b WHERE b.site_id=ANY($1::uuid[]) AND b.period_start >= $2::date AND b.period_start <= $3::date ORDER BY b.period_end`,[ids,start,end]),
-      this.db.query<{title:string;detail:string;severity:string;status:string;occurred_at:string}>(`SELECT title,detail,severity,status,occurred_at::text FROM alerts WHERE site_id=ANY($1::uuid[])
+      this.db.query<{id:string;title:string;detail:string;severity:string;status:string;occurred_at:string;active_count?:string}>(`SELECT id,title,detail,severity,status,occurred_at::text,
+        count(*) FILTER (WHERE status <> 'acknowledged') OVER ()::text active_count FROM alerts WHERE site_id=ANY($1::uuid[])
         AND occurred_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok') AND occurred_at < (($3::date+1)::timestamp AT TIME ZONE 'Asia/Bangkok') ORDER BY occurred_at DESC LIMIT 5`,[ids,start,end]),
     ]);
     const production=new Map<string,number|null>(); const qualities=new Map<string,string>(); const watermarks=new Map<string,string>(); const reasons=new Map<string,Set<string>>(); const unknownSites=new Set<string>(); const revenue=new Map<string,number>(); const perSite=new Map<string,number>();
@@ -88,6 +89,8 @@ export class DashboardService {
     const online=(s:SiteRow)=>Boolean(s.last_seen_at && Date.now()-Date.parse(s.last_seen_at)>=0 && Date.now()-Date.parse(s.last_seen_at)<=120000);
     return {
       range:{start,end},availableSites:availableSites.map(s=>({id:s.id,name:s.name})),
+      // Navigation metadata only: do not expose measurements or gateway state for unselected sites.
+      availableMapSites:availableSites.map(s=>({id:s.id,name:s.name,schoolName:s.school_name,latitude:s.latitude===null?null:Number(s.latitude),longitude:s.longitude===null?null:Number(s.longitude)})),
       stats:{totalSites:sites.length,onlineSites:sites.filter(online).length,installedMwp:sites.reduce((n,s)=>n+Number(s.capacity_mwp),0),
         currentMw:power.rows.length ? power.rows.reduce((n,r)=>n+Number(r.power_kw),0)/1000 : null,
         periodKwh:energy.rows.length && ![...production.values()].includes(null) ? [...production.values()].reduce<number>((a,b)=>a+(b??0),0) : null,periodAmount:total,
@@ -96,7 +99,7 @@ export class DashboardService {
       energyReadModel:{enabled:process.env.ENERGY_READ_MODEL_ENABLED==='true',status:energy.rows.some(r=>r.quality==='preparing')?'preparing':'ready',watermark:energy.rows.map(r=>r.watermark).filter(Boolean).sort()[0]??null},
       revenue:[...revenue].map(([date,value])=>({date,value})),
       rankings:sites.filter(s=>perSite.has(s.id)&&!unknownSites.has(s.id)).map(s=>({name:s.name,productionKwh:perSite.get(s.id)!})).sort((a,b)=>b.productionKwh-a.productionKwh).slice(0,5),
-      alerts:alerts.rows,collection:{total,paid,pending:total-paid,paidPercent:total ? paid/total*100 : 0},
+      alerts:alerts.rows.map(({active_count,...alert})=>alert),alertActiveCount:Number(alerts.rows[0]?.active_count??0),collection:{total,paid,pending:total-paid,paidPercent:total ? paid/total*100 : 0},
       sites:sites.map(s=>({id:s.id,name:s.name,schoolName:s.school_name,latitude:s.latitude===null?null:Number(s.latitude),longitude:s.longitude===null?null:Number(s.longitude),
         status:online(s)?'online':'offline',capacityMwp:Number(s.capacity_mwp),productionKwh:unknownSites.has(s.id)?null:perSite.get(s.id)??null,
         gatewayId:s.gateway_id,gatewayName:s.gateway_name,lastUpdated:s.last_seen_at})),
@@ -131,11 +134,27 @@ export class DashboardService {
   async getPowerFlow(user:DashboardPrincipal,siteId?:string) {
     const sites=await this.sites(user,siteId);
     const values=await this.power(sites.map(s=>s.id));
+    const pv=await this.db.query<{site_id:string;generation_kw:string|null;generation_time:string|null}>(`WITH loggers AS (
+ SELECT d.id,d.site_id,p.config FROM devices d JOIN payload_profile_revisions p ON p.id=d.payload_profile_revision_id
+ WHERE d.site_id=ANY($1::uuid[]) AND p.config->>'deviceType'='solar-logger'
+), latest AS (
+ SELECT l.site_id,l.id,ps.value,ps.polled_at,ps.received_at,ps.quality,ps.communication,ps.unit
+ FROM loggers l LEFT JOIN LATERAL (SELECT * FROM payload_samples ps WHERE ps.device_id=l.id AND ps.site_id=l.site_id
+ AND ps.profile_revision_id=(SELECT payload_profile_revision_id FROM devices WHERE id=l.id)
+ AND ps.tag='solar.active_power' ORDER BY ps.polled_at DESC,ps.received_at DESC,ps.id DESC LIMIT 1) ps ON true
+ WHERE EXISTS (SELECT 1 FROM jsonb_array_elements(l.config->'fields') f WHERE f->>'tag'='solar.active_power' AND f->>'targetUnit'='W')
+) SELECT site_id,CASE WHEN (SELECT count(*) FROM loggers all_loggers WHERE all_loggers.site_id=latest.site_id)=1 AND bool_and(unit='W' AND quality='good' AND communication='online'
+ AND polled_at BETWEEN now()-interval '120 seconds' AND now() AND received_at BETWEEN now()-interval '120 seconds' AND now()
+ AND value>=0 AND value<'Infinity'::float8) THEN max(value)/1000 ELSE NULL END generation_kw,max(polled_at)::text generation_time
+ FROM latest GROUP BY site_id`,[sites.map(site=>site.id)]);
     return {sites:sites.map(s=>{
       const reading=values.rows.find(r=>r.site_id===s.id);
       return {siteId:s.id,siteName:s.name,gatewayId:s.gateway_id,gatewayName:s.gateway_name,
         timestamp:reading?.source_time??null,serverReceivedAt:reading?.received_time??null,lastUpdated:s.last_seen_at,
-        solarKw:reading?Number(reading.power_kw):null,
+        meterPowerKw:reading?Number(reading.power_kw):null,
+        solarKw:reading?Number(reading.power_kw):null, // Legacy generic billing meter field; never use as PV.
+        generationKw:pv.rows.find(row=>row.site_id===s.id)?.generation_kw==null?null:Number(pv.rows.find(row=>row.site_id===s.id)!.generation_kw),
+        generationTimestamp:pv.rows.find(row=>row.site_id===s.id)?.generation_time??null,
         // A generation meter cannot establish building load, grid import or export.
         schoolLoadKw:null,gridImportKw:null,gridExportKw:null};
     })};

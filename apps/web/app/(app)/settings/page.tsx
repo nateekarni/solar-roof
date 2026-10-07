@@ -135,8 +135,6 @@ export default function SettingsPage() {
                 </div>
                 <ChevronRight className="size-4 text-muted-foreground shrink-0" />
               </Link>
-
-              <Link href="/settings/general" className="flex items-center gap-3 p-3.5 min-h-11 hover:bg-muted/50"><Sliders className="size-5" /><span className="text-sm">{locale === "th" ? "การแสดงผล" : "Preferences"}</span><ChevronRight className="ml-auto size-4" /></Link>
               {/* 2. Account Settings */}
               <Link
                 href="/settings/account"

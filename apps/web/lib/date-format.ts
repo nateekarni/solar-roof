@@ -115,7 +115,7 @@ export function formatAppDateRange(
 
   // Same Year & Same Month
   if (y1 === y2 && m1 === m2) {
-    const sep = locale === "th" ? "-" : "–";
+    const sep = locale === "th" ? " - " : "–";
     return includeYear
       ? `${day1}${sep}${day2} ${monthName1} ${year1Str}`
       : `${day1}${sep}${day2} ${monthName1}`;

@@ -351,7 +351,7 @@ export function SiteEditDialog({
                   </Label>
                   <Input
                     id="edit-gw-name"
-                    className="text-sm h-10 font-mono bg-white"
+                    className="text-sm h-10 font-mono bg-card"
                     {...register("gatewayName", { onChange: (event) => { if (!formValues.endpoint || formValues.endpoint === `energy/${formValues.gatewayName}/#`) setValue("endpoint", `energy/${event.target.value}/#`); } })}
                   />
                 </div>
@@ -364,7 +364,7 @@ export function SiteEditDialog({
                     value={formValues.protocol}
                     onValueChange={(val) => setValue("protocol", val as "mqtt")}
                   >
-                    <SelectTrigger id="edit-gw-proto" className="text-sm h-10 w-full bg-white">
+                    <SelectTrigger id="edit-gw-proto" className="text-sm h-10 w-full bg-card">
                       <SelectValue placeholder="โปรโตคอล" />
                     </SelectTrigger>
                     <SelectContent>
@@ -381,12 +381,12 @@ export function SiteEditDialog({
                 </Label>
                 <Input
                   id="edit-gw-endpoint"
-                  className="text-sm h-10 font-mono bg-white"
+                  className="text-sm h-10 font-mono bg-card"
                   {...register("endpoint")}
                 />
               </div>
 
-              <div className="space-y-2"><Label htmlFor="edit-device">Meter Device</Label><ChoiceSelect id="edit-device" value={formValues.deviceId ?? ""} className="h-10 w-full rounded-md border bg-white" onChange={event => {
+              <div className="space-y-2"><Label htmlFor="edit-device">Meter Device</Label><ChoiceSelect id="edit-device" value={formValues.deviceId ?? ""} className="h-10 w-full rounded-md border bg-card" onChange={event => {
                 const device = devices.find(item => item.id === event.target.value);
                 if (device) { setValue("deviceId", device.id); setValue("deviceModel", device.model); setValue("deviceSerial", device.serialNumber); }
               }}>{devices.map(device => <option key={device.id} value={device.id}>{device.name} · {device.serialNumber}</option>)}</ChoiceSelect></div>
@@ -397,7 +397,7 @@ export function SiteEditDialog({
                   </Label>
                   <Input
                     id="edit-dev-model"
-                    className="text-sm h-10 bg-white"
+                    className="text-sm h-10 bg-card"
                     {...register("deviceModel")}
                   />
                 </div>
@@ -407,7 +407,7 @@ export function SiteEditDialog({
                   </Label>
                   <Input
                     id="edit-dev-serial"
-                    className="text-sm h-10 font-mono bg-white"
+                    className="text-sm h-10 font-mono bg-card"
                     {...register("deviceSerial")}
                   />
                   {errors.deviceSerial && (
@@ -426,7 +426,7 @@ export function SiteEditDialog({
                 <Input aria-label="New meter slave ID" type="number" min={1} max={247} value={newDevice.slaveId} onChange={event => setNewDevice({ ...newDevice, slaveId: Number(event.target.value) })} />
               </div>
               <Label htmlFor="new-meter-preset">Meter Preset</Label>
-              <ChoiceSelect id="new-meter-preset" className="h-10 w-full rounded-md border bg-white" value={newDevice.meterPresetId} onChange={event => { const preset = meterPresets.find(item => item.id === event.target.value); setNewDevice({ ...newDevice, meterPresetId: event.target.value, model: preset?.model ?? newDevice.model }); }}>
+              <ChoiceSelect id="new-meter-preset" className="h-10 w-full rounded-md border bg-card" value={newDevice.meterPresetId} onChange={event => { const preset = meterPresets.find(item => item.id === event.target.value); setNewDevice({ ...newDevice, meterPresetId: event.target.value, model: preset?.model ?? newDevice.model }); }}>
                 <option value="">เลือก Register Preset</option>{meterPresets.map(preset => <option key={preset.id} value={preset.id}>{preset.model}</option>)}
               </ChoiceSelect>
               {newDevice.meterPresetId && <pre className="max-h-40 overflow-auto rounded bg-muted p-2 text-sm">{JSON.stringify(meterPresets.find(preset => preset.id === newDevice.meterPresetId)?.registers, null, 2)}</pre>}

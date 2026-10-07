@@ -19,6 +19,7 @@ export function routeAllowed(role: string, method: string, rawPath: string): boo
   if (/^\/v1\/sites\/[^/]+\/school-users(?:\/|$)/.test(path)) return role === 'admin';
   if (/^\/v1\/mqtt-brokers(?:\/|$)/.test(path)) return role === "admin";
   const read = method === "GET" || method === "HEAD";
+  if (role === "owner" && ["/v1/dashboard/compare", "/v1/dashboard/power-flow"].includes(path)) return read;
   if (isBusinessRole(role)) {
     if (/^\/v1\/(?:users|mqtt-brokers|platform|sites|schools|gateways|devices|meter-presets|alerts|reports|history|jobs)(?:\/|$)/.test(path)) return false;
     if (/^\/v1\/operations(?:\/|$)/.test(path) && !/^\/v1\/operations\/(?:contracts|billing|invoices|receipts|documents)(?:\/|$)/.test(path)) return false;

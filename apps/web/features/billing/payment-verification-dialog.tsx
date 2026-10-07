@@ -210,7 +210,7 @@ export function PaymentVerificationDialog({
                   placeholder="เช่น ยอดเงินไม่ตรงกับใบแจ้งหนี้, สลิปซ้ำ หรือภาพไม่ชัดเจน"
                   value={rejectionReason}
                   onChange={(e) => setRejectionReason(e.target.value)}
-                  className="text-xs bg-white"
+                  className="text-xs bg-card"
                   autoFocus
                 />
               </div>

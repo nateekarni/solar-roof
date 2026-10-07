@@ -1,15 +1,28 @@
 'use client';
 import {useEffect,useState} from 'react';
+import {Layers,ArrowRight} from 'lucide-react';
 import {apiClient} from '../../lib/api-client';
 import {AppLoading} from '../../components/feedback/app-loading';
-import {PresetPicker} from '../sites/preset-picker';
+import {Button} from '../../components/ui/button';
+import {PresetEditor} from '../sites/preset-editor';
 import type {PayloadRevision} from '../sites/payload-contracts';
-import {Card,CardHeader,CardTitle,CardContent} from '../../components/ui/card';
+import {Card} from '../../components/ui/card';
 import {DataTable} from '../../components/ui/data-table';
+import {AddButton} from '../../components/ui/add-button';
+import {Dialog,DialogContent,DialogHeader,DialogTitle,DialogDescription} from '../../components/ui/dialog';
+import {useLocale} from '../../providers/locale-provider';
+import {useSessionUser} from '../../providers/session-user-provider';
 export function PayloadProfileSettings(){
- const [rows,setRows]=useState<PayloadRevision[]>([]),[selected,setSelected]=useState(''),[loading,setLoading]=useState(true),[error,setError]=useState('');
- useEffect(()=>{apiClient.get<PayloadRevision[]>('/v1/settings/payload-presets').then(setRows).catch(e=>setError(e instanceof Error?e.message:'โหลด Preset ไม่สำเร็จ')).finally(()=>setLoading(false));},[]);
+ const th=useLocale()==='th',user=useSessionUser();
+ const [rows,setRows]=useState<PayloadRevision[]>([]),[selected,setSelected]=useState(''),[loading,setLoading]=useState(true),[error,setError]=useState(''),[editor,setEditor]=useState<PayloadRevision|null|undefined>(undefined),[returnTo,setReturnTo]=useState('');
+ useEffect(()=>{let active=true;apiClient.get<PayloadRevision[]>('/v1/settings/payload-presets').then(data=>{if(active)setRows(data);}).catch(e=>{if(active)setError(e instanceof Error?e.message:'Unable to load profiles');}).finally(()=>{if(active)setLoading(false);});return()=>{active=false;};},[]);
  const preset=rows.find(r=>r.id===selected);
- if(loading)return <AppLoading fullPage={false} message="กำลังโหลด Preset…"/>;
- return <section className="flex min-w-0 flex-col gap-4"><div><h2 className="text-lg font-semibold">Preset ข้อมูลอุปกรณ์</h2><p className="text-sm text-muted-foreground">เลือก Preset เพื่อดูรายการข้อมูล ใช้เมนู Edit / Delete ในรายการ หรือเพิ่ม Preset ด้วยตัวเอง การแก้ไขสร้าง Mapping version ใหม่</p></div><PresetPicker revisions={rows} value={selected} onChange={setSelected} onCatalogChange={setRows}/>{error&&<p role="alert" className="text-destructive">{error}</p>}{preset&&<Card><CardHeader><CardTitle>{preset.config.displayName} · Mapping {preset.version}</CardTitle><p className="text-sm text-muted-foreground">Source profile: {preset.config.sourceProfile?.id??preset.config.id} / {preset.config.sourceProfile?.version??preset.version} · {preset.config.deviceType}</p></CardHeader><CardContent><DataTable data={preset.config.fields} columns={[{accessorKey:'tag',header:'ความหมายมาตรฐาน'},{accessorKey:'sourceTag',header:'Field ต้นทาง',cell:({row})=>row.original.sourceTag??row.original.tag},{accessorKey:'displayName',header:'ชื่อแสดงผล'},{accessorKey:'pollGroup',header:'กลุ่ม'},{accessorKey:'sourceUnit',header:'หน่วยต้นทาง'},{accessorKey:'targetUnit',header:'หน่วยจัดเก็บ'},{accessorKey:'required',header:'จำเป็น',cell:({row})=>row.original.required?'ใช่':'ไม่'},{accessorKey:'role',header:'บทบาท'}]}/></CardContent></Card>}</section>;
+ const latest=[...rows].sort((a,b)=>b.version.localeCompare(a.version,undefined,{numeric:true})).filter((r,index,all)=>all.findIndex(other=>other.profileId===r.profileId)===index);
+ return <section className="flex min-w-0 flex-col gap-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><h1 className="text-xl font-semibold md:text-2xl">{th?'ค่าจากมิเตอร์':'Meter values'}</h1><p className="mt-1 text-sm text-muted-foreground">{th?'จัดการโปรไฟล์ข้อมูลสำหรับอุปกรณ์':'Manage data profiles for devices'}</p></div>{user.role==='admin'&&<AddButton onClick={()=>{setReturnTo('');setEditor(null);}}>{th?'เพิ่มโปรไฟล์':'Add Profile'}</AddButton>}</div>
+ {loading&&<AppLoading fullPage={false} message={th?'กำลังโหลดโปรไฟล์…':'Loading profiles…'}/>}
+ {error&&<p role="alert" className="text-destructive">{error}</p>}
+ <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{latest.map(profile=><Card key={profile.id} className="overflow-hidden"><button type="button" className="flex h-full w-full flex-col gap-3 p-4 text-left hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={()=>setSelected(profile.id)}><div className="flex w-full items-start justify-between gap-3"><Layers className="size-7 text-primary"/><span className="rounded-md bg-primary/10 px-2 py-1 text-xs text-primary">Mapping {profile.version}</span></div><h3 className="font-semibold">{profile.config.displayName}</h3><p className="break-all text-xs text-muted-foreground">{profile.config.deviceType}</p><div className="mt-auto flex w-full items-center justify-between text-sm"><span>{profile.config.fields.length} {th?'รายการ':'fields'}</span><ArrowRight className="size-4 text-primary"/></div></button></Card>)}</div>
+ {!loading&&!latest.length&&!error&&<div className="flex min-h-40 flex-col items-center justify-center gap-3 text-muted-foreground"><Layers className="size-7"/><p>{th?'ยังไม่มีโปรไฟล์':'No profiles available'}</p></div>}
+ <Dialog open={!!preset} onOpenChange={opened=>{if(!opened)setSelected('');}}><DialogContent className="flex max-h-[90vh] w-[calc(100vw-2rem)] max-w-none flex-col sm:w-[80vw] sm:max-w-[80vw]"><DialogHeader><DialogTitle>{preset?.config.displayName}</DialogTitle><DialogDescription>{preset?.config.deviceType} · Mapping {preset?.version}</DialogDescription></DialogHeader><div className="min-h-0 space-y-4 overflow-y-auto"><div className="flex justify-end">{user.role==='admin'&&<Button variant="outline" onClick={()=>{setReturnTo(selected);setSelected('');setEditor(preset);}}>{th?'แก้ไขข้อมูลและ Fields':'Edit metadata & Fields'}</Button>}</div>{preset&&<DataTable data={preset.config.fields} columns={[{accessorKey:'tag',header:th?'มาตรฐาน':'Canonical tag'},{accessorKey:'sourceTag',header:th?'ต้นทาง':'Source field',cell:({row})=>row.original.sourceTag??row.original.tag},{accessorKey:'displayName',header:th?'ชื่อ':'Name'},{accessorKey:'pollGroup',header:'Group'},{accessorKey:'sourceUnit',header:'Source unit'},{accessorKey:'targetUnit',header:'Target unit'},{accessorKey:'required',header:th?'จำเป็น':'Required',cell:({row})=>row.original.required?(th?'ใช่':'Yes'):(th?'ไม่':'No')},{accessorKey:'role',header:th?'บทบาท':'Role'}]}/>}</div></DialogContent></Dialog>
+ {editor!==undefined&&<PresetEditor catalog revision={editor} revisions={rows} onClose={()=>{setEditor(undefined);setSelected(returnTo);}} onSaved={saved=>{setRows(old=>[saved,...old.filter(row=>row.id!==saved.id)]);setSelected(saved.id);setEditor(undefined);}}/>}</section>;
 }

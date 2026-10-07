@@ -1,0 +1,3 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {dashboardLayout} from './dashboard-layout';
+test('Owner shares main dashboard while hiding Gateway and generic metered power',()=>{assert.deepEqual(dashboardLayout('owner'),{school:false,gateway:false,meteredPower:false,alertsLink:false});assert.deepEqual(dashboardLayout('admin'),{school:false,gateway:true,meteredPower:true,alertsLink:true});});
+test('school remains in scoped presentation and never gets equipment or alert actions',()=>{assert.deepEqual(dashboardLayout('school_user'),{school:true,gateway:false,meteredPower:false,alertsLink:false});});

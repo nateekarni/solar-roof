@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSiteSelection } from './site-selection-provider';
 import { Check, ChevronsUpDown } from 'lucide-react';
 import { useLocale } from '../../providers/locale-provider';
 import { Button } from '../../components/ui/button';
@@ -8,16 +8,12 @@ import { Popover, PopoverContent, PopoverTrigger } from '../../components/ui/pop
 import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from '../../components/ui/command';
 
 export function SiteFilter({ sites }: { sites: { id: string; name: string }[] }) {
-  const router = useRouter();
-  const params = useSearchParams();
+  const {selectedSiteId:selected,chooseSite}=useSiteSelection();
   const th = useLocale() === 'th';
   const [open, setOpen] = useState(false);
-  const selected = params.get('site_id') || '';
   const options = [{ id: '', name: th ? 'ทุกไซต์' : 'All sites' }, ...sites];
   function choose(id: string) {
-    const next = new URLSearchParams(params.toString());
-    if (id) next.set('site_id', id); else next.delete('site_id');
-    router.push(`/?${next}`);
+    chooseSite(id);
     setOpen(false);
   }
   return <div className="flex items-center gap-2 text-sm">

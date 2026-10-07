@@ -1,20 +1,15 @@
-import { AlertTriangle } from "lucide-react";
-import Link from "next/link";
+import { dashboardLayout } from "./dashboard-layout";
+import { DashboardScope } from "./site-selection-provider";
+import { SolarGenerationDiagram } from "./solar-generation-diagram";
+import {DashboardAlertsCard} from "./dashboard-alerts-card";
+
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import type {
-  DashboardSummaryAlert,
   DashboardSummaryResponse,
 } from "@solar/api-contracts";
 import { createTranslator, type Locale } from "@solar/i18n";
 import { serverFetch, getApiBaseUrl } from "../../lib/server-fetch";
-import { renderStatusBadge } from "../../lib/status-badge";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "../../components/ui/card";
 import { CollectionChart } from "./collection-chart";
 import { CompareModal } from "./compare-modal";
 import { DashboardAutoRefresh } from "./dashboard-auto-refresh";
@@ -22,7 +17,7 @@ import { DashboardStatsClient } from "./dashboard-stats-client";
 import { PeriodPicker } from "./period-picker";
 import { PowerFlowCard } from "./power-flow-card";
 import { ProductionChart } from "./production-chart";
-import { RankingChart } from "./ranking-chart";
+
 import { RevenueChart } from "./revenue-chart";
 import { SiteFilter } from "./site-filter";
 import { SiteMap } from "./site-map";
@@ -103,9 +98,8 @@ export async function Dashboard({
     const bills = billResponse.ok ? await billResponse.json() as {rows:SchoolInvoice[]} : null;
     return <><DashboardAutoRefresh/><BusinessDashboard data={data} role={user.role} locale={locale} todayKwh={daily.energyReadModel?.status==='preparing'?null:daily.stats.periodKwh} monthKwh={monthly.energyReadModel?.status==='preparing'?null:monthly.stats.periodKwh} invoice={bills?.rows[0] ?? null} billingUnavailable={!billResponse.ok} periodControl={<PeriodPicker/>}/></>;
   }
-  if (user.role === "owner") {
-    return <BusinessDashboard data={data} role={user.role} locale={locale} periodControl={<PeriodPicker />} />;
-  }
+
+  const presentation=dashboardLayout(user.role);
   const alerts = data.alerts || [];
 
   return (
@@ -125,80 +119,22 @@ export async function Dashboard({
         </div>
       </div>
 
-      {/* Top 6 Stat Cards (Customizable) */}
-      <DashboardStatsClient stats={data.stats} totalSites={data.sites?.length} />
+      {/* Summary Stat Cards (Customizable) */}
+      <DashboardScope siteId={resolvedParams?.site_id}>
+      <DashboardStatsClient role={user.role} stats={data.stats} totalSites={data.sites?.length} />
       <SummaryStatus model={data.energyReadModel} locale={locale} />
+      </DashboardScope>
 
-      <section className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-2">
-          {/* Recent Alerts Card */}
-          <Card className="panel flex flex-col flex-1 h-full justify-between">
-            <CardHeader className="p-0 pb-2">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-semibold text-foreground">
-                  {t("dashboard.liveHealth")}
-                </CardTitle>
-                <Link
-                  href="/alerts"
-                  className="text-xs font-semibold text-primary hover:underline"
-                >
-                  {t("dashboard.all")}
-                </Link>
-              </div>
-            </CardHeader>
-            <CardContent className="p-0 flex-1 min-h-0 overflow-hidden flex flex-col justify-start">
-              {alerts.length === 0 ? (
-                <div className="py-6 text-center text-xs text-muted-foreground">
-                  {t("dashboard.noAlerts")}
-                </div>
-              ) : (
-                <div className="divide-y divide-border">
-                  {alerts.slice(0, 5).map((alert: DashboardSummaryAlert, idx: number) => {
-                    const isCritical =
-                      alert.severity === "critical" ||
-                      alert.status === "ออฟไลน์";
-                    return (
-                      <div
-                        className="flex items-center justify-between gap-3 py-2"
-                        key={`${alert.title}-${idx}`}
-                      >
-                        <div className="flex items-start gap-2.5 min-w-0 flex-1">
-                          <div
-                            className={`grid size-6 shrink-0 place-items-center rounded-md mt-0.5 ${
-                              isCritical
-                                ? "bg-destructive/10 text-destructive"
-                                : "bg-warning/15 text-warning"
-                            }`}
-                          >
-                            <AlertTriangle className="size-3.5" />
-                          </div>
-                          <div className="min-w-0 flex-1 flex flex-col gap-0.5">
-                            <span className="truncate text-xs font-semibold text-foreground leading-tight">
-                              {alert.title}
-                            </span>
-                            <span className="truncate text-[11px] text-muted-foreground leading-tight">
-                              {alert.detail}
-                            </span>
-                          </div>
-                        </div>
-                        {renderStatusBadge(alert.status, locale)}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </CardContent>
-          </Card>
 
-      <GatewayStatusSummary sites={data.sites || []} locale={locale} />
-      </section>
 
       {/* 3-Column Main Dashboard Grid */}
-      <section className="dashboard-3col w-full min-w-0 max-w-full">
+      <section className="dashboard-main-grid w-full min-w-0 max-w-full">
         {/* Left Column: All Schools Map */}
-        <SiteMap sites={data.sites || []} />
+        <SiteMap sites={data.sites || []} availableSites={data.availableMapSites} dataSiteId={resolvedParams?.site_id} />
 
         {/* Center Column: Production Chart & Revenue Chart */}
-        <div className="chart-stack w-full min-w-0 max-w-full">
+        <div className="dashboard-chart-grid w-full min-w-0 max-w-full">
+          <DashboardScope siteId={resolvedParams?.site_id} className="dashboard-energy">
           <ProductionChart
             initialData={data.production}
             hasCustomRange={Boolean(
@@ -207,6 +143,8 @@ export async function Dashboard({
             startDate={data.range.start}
             endDate={data.range.end}
           />
+          </DashboardScope>
+          <DashboardScope siteId={resolvedParams?.site_id} className="dashboard-revenue">
           <RevenueChart
             initialData={data.revenue}
             hasCustomRange={Boolean(
@@ -215,24 +153,25 @@ export async function Dashboard({
             startDate={data.range.start}
             endDate={data.range.end}
           />
-        </div>
-
-        {/* Right Column: Recent Alerts & Collection Status */}
-        <div className="right-stack w-full min-w-0 max-w-full">
-          {/* Collection Status Card */}
-          <CollectionChart collection={data.collection} />
+          </DashboardScope>
+          <DashboardScope siteId={resolvedParams?.site_id} className="dashboard-collection">
+          <CollectionChart collection={data.collection} startDate={data.range.start} endDate={data.range.end} />
+          </DashboardScope>
         </div>
       </section>
 
       {/* Live Power Flow Diagram & System Overview */}
-      <div className="mb-4 w-full min-w-0">
-        <PowerFlowCard siteId={resolvedParams?.site_id} />
-      </div>
+      <DashboardScope siteId={resolvedParams?.site_id} className="mb-4 w-full min-w-0">
+        <SolarGenerationDiagram key={`solar-${resolvedParams?.site_id||'all'}`} locale={locale} siteId={resolvedParams?.site_id} />
+        {presentation.meteredPower && <PowerFlowCard key={`meter-${resolvedParams?.site_id||'all'}`} siteId={resolvedParams?.site_id} summaryMw={data.stats.currentMw}/>}
+      </DashboardScope>
 
-      {/* Bottom Row: Highest Energy Producing Schools Today */}
-      <section className="mt-3 w-full min-w-0 max-w-full">
-        <RankingChart sites={data.rankings} />
-      </section>
+      <DashboardScope siteId={resolvedParams?.site_id} className={`grid grid-cols-1 items-stretch gap-4 ${presentation.gateway?"lg:grid-cols-2":""}`}>
+          <DashboardAlertsCard alerts={alerts} role={user.role} locale={locale}/>
+
+
+      {presentation.gateway && <GatewayStatusSummary sites={data.sites || []} locale={locale} />}
+      </DashboardScope>
     </div>
   );
 }

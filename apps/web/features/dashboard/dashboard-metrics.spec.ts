@@ -1,0 +1,2 @@
+import assert from 'node:assert/strict';import test from 'node:test';import {dashboardMetrics} from './dashboard-metrics';
+test('Owner cannot restore generic meter power through stored or custom card configuration',()=>{assert.equal(dashboardMetrics('owner').length,5);assert.equal(dashboardMetrics('owner',['currentMw','periodKwh']).includes('currentMw'),false);assert.equal(dashboardMetrics('owner',['currentMw']).includes('currentMw'),false);assert.equal(dashboardMetrics('admin').includes('currentMw'),true);});

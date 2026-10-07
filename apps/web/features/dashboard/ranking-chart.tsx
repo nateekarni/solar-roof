@@ -27,7 +27,7 @@ export function RankingChart({ sites }: { sites?: SiteRanking[] }) {
         </div>
 
         {rankingList.length === 0 ? (
-          <div className="flex h-20 items-center justify-center gap-2 rounded-lg text-sm text-muted-foreground">
+          <div className="flex h-32 flex-col items-center justify-center gap-3 text-center rounded-lg text-sm text-muted-foreground">
             <Award className="size-4 text-muted-foreground/50" />
             <span>{th ? "ยังไม่มีข้อมูลการผลิตในช่วงเวลาที่เลือก" : "No production data for the selected period"}</span>
           </div>

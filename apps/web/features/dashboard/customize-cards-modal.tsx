@@ -82,15 +82,15 @@ export function CustomizeCardsModal({
               </DialogTitle>
               <DialogDescription className="text-xs">
                 {locale === "th"
-                  ? "เลือกหัวข้อตัวชี้วัดที่ต้องการให้แสดงในแต่ละการ์ด (ตำแหน่ง 1 - 6)"
-                  : "Choose which metric to display on each summary card (Position 1 - 6)"}
+                  ? `เลือกหัวข้อตัวชี้วัดที่ต้องการให้แสดงในแต่ละการ์ด (ตำแหน่ง 1 - ${defaultConfig.length})`
+                  : `Choose which metric to display on each summary card (Position 1 - ${defaultConfig.length})`}
               </DialogDescription>
             </div>
           </div>
         </DialogHeader>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 py-3">
-          {Array.from({ length: 6 }).map((_, idx) => (
+          {Array.from({ length: defaultConfig.length }).map((_, idx) => (
             <div key={idx} className="space-y-2 border-t pt-4">
               <Label className="text-xs font-semibold text-foreground flex items-center justify-between">
                 <span>{locale === "th" ? `การ์ดที่ ${idx + 1}` : `Card #${idx + 1}`}</span>
@@ -99,7 +99,7 @@ export function CustomizeCardsModal({
                 value={draftConfig[idx] ?? defaultConfig[idx] ?? "totalSites"}
                 onValueChange={(val) => handleChange(idx, val)}
               >
-                <SelectTrigger className="h-10 text-xs bg-white">
+                <SelectTrigger className="h-10 text-xs bg-card">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

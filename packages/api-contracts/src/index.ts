@@ -50,6 +50,7 @@ export interface DashboardSummaryDataPoint {
 }
 
 export interface DashboardSummaryAlert {
+  id?: string;
   title: string;
   detail: string;
   severity: string;
@@ -72,6 +73,8 @@ export interface DashboardCompareItem {
 }
 
 export interface DashboardSummaryResponse {
+  availableMapSites?: Pick<DashboardSummarySite,'id'|'name'|'schoolName'|'latitude'|'longitude'>[];
+  alertActiveCount?: number;
   energyReadModel?: {enabled:boolean;status:'preparing'|'ready';watermark:string|null};
   range: {start: string; end: string};
   availableSites: {id: string; name: string}[];

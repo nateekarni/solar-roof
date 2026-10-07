@@ -29,7 +29,7 @@ test("school scope never widens missing school membership", () => {
 });
 
 test('business routes exclude operational configuration and user management', () => {
- for(const role of ['owner','school_user']) for(const path of ['/v1/mqtt-brokers','/v1/operations/users','/v1/operations/gateways','/v1/settings','/v1/settings/notifications','/v1/dashboard/power-flow','/v1/dashboard/compare']) assert.equal(routeAllowed(role,'GET',path),false);
+ for(const role of ['owner','school_user']) for(const path of ['/v1/mqtt-brokers','/v1/operations/users','/v1/operations/gateways','/v1/settings','/v1/settings/notifications']) assert.equal(routeAllowed(role,'GET',path),false);
  assert.equal(routeAllowed('owner','POST','/v1/users/invite'),false);
  assert.equal(routeAllowed('owner','PUT','/v1/settings/company'),true);
  assert.equal(routeAllowed('school_user','GET','/v1/settings/bank-accounts'),true);
@@ -40,3 +40,5 @@ test('business routes exclude operational configuration and user management', ()
 test('business roles can read scoped billing collections and details',()=>{
  for(const role of ['owner','school_user']) for(const path of ['/v1/operations/billing','/v1/operations/billing/records/1']) assert.equal(routeAllowed(role,'GET',path),true);
 });
+
+test('Owner receives narrowly scoped dashboard read APIs without technical privileges',()=>{for(const path of ['/v1/dashboard/compare','/v1/dashboard/power-flow']){assert.equal(routeAllowed('owner','GET',path),true);assert.equal(routeAllowed('owner','HEAD',path),true);for(const method of ['POST','PUT','PATCH','DELETE'])assert.equal(routeAllowed('owner',method,path),false);assert.equal(routeAllowed('school_user','GET',path),false);}for(const path of ['/v1/sites','/v1/gateways','/v1/dashboard/technical','/v1/settings/payload-presets'])assert.equal(routeAllowed('owner','GET',path),false);});

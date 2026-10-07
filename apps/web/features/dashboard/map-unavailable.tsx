@@ -1,0 +1,6 @@
+import {MapPin} from 'lucide-react';
+import {Button} from '../../components/ui/button';
+export function MapUnavailable({sites,locale,selectedId,onSelect}:{sites:{id:string;name:string;schoolName:string}[];locale:'th'|'en';selectedId?:string;onSelect?:(id:string)=>void}) {
+ const th=locale==='th';
+ return <div className="flex h-full min-h-64 flex-col gap-4 bg-muted/20 p-4"><div role="status" className="flex flex-col items-center justify-center gap-3 py-5 text-center text-sm text-muted-foreground"><MapPin className="size-7 opacity-50"/><p>{th?'โหลดแผนที่ไม่ได้':'Unable to load map'}</p><p className="text-xs">{th?'ยังสามารถเลือกไซต์จากรายชื่อด้านล่างได้':'Select a site from the list below.'}</p></div><ul aria-label={th?'ไซต์ที่มีพิกัด':'Sites with coordinates'} className="grid max-h-56 gap-2 overflow-y-auto sm:grid-cols-2">{sites.map(site=><li key={site.id} className="min-w-0"><Button variant="outline" type="button" className="h-auto w-full flex-col items-start gap-1 p-3 text-left" aria-label={`${th?'เลือก':'Select'} ${site.name}`} aria-pressed={selectedId===site.id} onClick={()=>onSelect?.(site.id)}><span className="max-w-full truncate text-sm font-medium">{site.name}</span><span className="max-w-full truncate text-xs font-normal text-muted-foreground">{site.schoolName}</span></Button></li>)}</ul></div>;
+}

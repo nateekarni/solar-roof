@@ -11,16 +11,16 @@ const render = (element: React.ReactNode) => renderToStaticMarkup(<LocaleProvide
 test('empty measured chart renders useful range and empty state without a renderer loading state', () => {
   const html = render(<MeasuredChart startDate="2026-10-01" endDate="2026-10-06" />);
   assert.match(html, /Metered energy \(kWh\)/);
-  assert.match(html, /2026-10-01/);
-  assert.match(html, /2026-10-06/);
+  assert.match(html, /1–6 October 2026/);
+
   assert.match(html, /No data in this date range/);
   assert.doesNotMatch(html, /aria-busy="true"|recharts/);
 });
 
-test('measured data retains range and quality warning while interactive renderer loads on client', () => {
+test('measured data retains formatted range without the removed cumulative note while renderer loads', () => {
   const html = render(<MeasuredChart initialData={[{date:'2026-10-01',value:12}]} startDate="2026-10-01" endDate="2026-10-06" />);
   assert.match(html, /Metered energy \(kWh\)/);
-  assert.match(html, /Gaps may make totals partial/);
+  assert.doesNotMatch(html, /Gaps may make totals partial/);
   assert.match(html, /aria-busy="true"/);
   assert.doesNotMatch(html, /No data in this date range/);
 });
@@ -33,17 +33,17 @@ test('a padded range without measurements renders the empty state without loadin
   assert.doesNotMatch(html, /aria-busy="true"|Gaps may make totals partial/);
 });
 
-test('a genuine measured zero amid missing readings still loads the chart and preserves its quality warning', () => {
+test('a genuine measured zero amid missing readings still loads the chart without the removed note', () => {
   const points = [{date:'2026-10-01',value:null},{date:'2026-10-02',value:0}];
   const html = render(<MeasuredChart initialData={points} />);
   assert.match(html, /aria-busy="true"/);
-  assert.match(html, /Gaps may make totals partial/);
+  assert.doesNotMatch(html, /Gaps may make totals partial/);
   assert.doesNotMatch(html, /No data in this date range/);
 });
 
 test('collection without billed amounts renders the empty state and billing link without renderer loading', () => {
   const html = render(<CollectionChart collection={{total:0,paid:0,pending:0,paidPercent:0}} />);
-  assert.match(html, /Collection for selected range/);
+  assert.match(html, />Collection<\/h2>/);
   assert.match(html, /No billed amounts in this date range/);
   assert.match(html, /href="\/billing"/);
   assert.doesNotMatch(html, /aria-busy="true"|recharts/);

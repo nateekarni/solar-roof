@@ -1,8 +1,11 @@
 "use client";
 
-import { X } from "lucide-react";
+import { MapPin, X } from "lucide-react";
 import type { StyleSpecification } from "maplibre-gl";
 import React from "react";
+import {MapUnavailable} from "./map-unavailable";
+import {useSiteSelection} from './site-selection-provider';
+import {dashboardScopeMatches} from './site-selection';
 import Map, { Marker, NavigationControl, Popup } from "react-map-gl/maplibre";
 import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
@@ -19,10 +22,10 @@ type Site = {
   name: string;
   latitude: number | null;
   longitude: number | null;
-  status: string;
-  capacityMwp: number;
+  status?: string;
+  capacityMwp?: number;
   schoolName: string;
-  productionKwh: number | null;
+  productionKwh?: number | null;
 };
 
 const style: StyleSpecification = {
@@ -38,17 +41,22 @@ const style: StyleSpecification = {
   layers: [{ id: "osm", type: "raster", source: "osm" }],
 } as const;
 
-export function SiteMap({ sites }: { sites: Site[] }) {
+export function SiteMap({ sites,availableSites,dataSiteId }: { sites: Site[]; availableSites?: Pick<Site,'id'|'name'|'schoolName'|'latitude'|'longitude'>[]|undefined; dataSiteId?:string|undefined }) {
+  const {selectedSiteId,chooseSite}=useSiteSelection();
+  const scoped=dashboardScopeMatches(selectedSiteId,dataSiteId);
+  const mapSites=(availableSites??sites).map(site=>({...site,...(scoped?sites.find(value=>value.id===site.id):undefined)}));
   const locale = useLocale();
   const th = locale === "th";
-  const formatNumber = (value: number | null) => value === null
+  const formatNumber = (value: number | null | undefined) => value == null
     ? (th ? "ไม่มีข้อมูล" : "No data")
     : new Intl.NumberFormat(th ? "th-TH" : "en-US", { maximumFractionDigits: 2 }).format(value);
-  const validSites = (sites || []).filter(
+  const validSites = mapSites.filter(
     (site) => site.latitude !== null && site.longitude !== null,
   );
 
-  const [selectedId, setSelectedId] = React.useState<string | null>(null);
+  const [mapFailed,setMapFailed]=React.useState(false);
+  const selectedId=selectedSiteId;
+  const setSelectedId=(id:string|null)=>chooseSite(id||'');
   const selected = validSites.find((site) => site.id === selectedId) ?? null;
 
   const counts = {
@@ -59,6 +67,7 @@ export function SiteMap({ sites }: { sites: Site[] }) {
     offline: validSites.filter((s) => s.status === "offline").length,
   };
 
+  if(validSites.length===0)return <Card className="panel map-panel flex h-full flex-col"><CardHeader className="p-0 pb-3"><CardTitle className="text-sm">{th?'แผนที่ไซต์':'Site map'}</CardTitle></CardHeader><CardContent className="flex min-h-64 flex-1 flex-col items-center justify-center gap-3 p-0 text-center text-sm text-muted-foreground"><MapPin className="size-7 text-muted-foreground/50"/><p>{th?'ยังไม่มีไซต์ที่มีพิกัดบนแผนที่':'No sites with map coordinates'}</p></CardContent></Card>;
   return (
     <Card className="panel map-panel flex flex-col h-full">
       <CardHeader className="p-0 pb-2.5">
@@ -73,9 +82,10 @@ export function SiteMap({ sites }: { sites: Site[] }) {
       </CardHeader>
       <CardContent className="map-content relative flex flex-col flex-1 p-0 min-h-0">
         <div className="site-map relative flex-1 min-h-[260px] sm:min-h-[350px] w-full rounded-xl overflow-hidden border border-border">
-          <Map
+          {mapFailed?<MapUnavailable sites={validSites} locale={locale} selectedId={selectedId} onSelect={chooseSite}/>:<Map
             initialViewState={{ latitude: 13.75, longitude: 100.8, zoom: 5.5 }}
             mapStyle={style}
+            onError={()=>setMapFailed(true)}
             reuseMaps
           >
             <NavigationControl position="bottom-right" showCompass={false} />
@@ -86,7 +96,7 @@ export function SiteMap({ sites }: { sites: Site[] }) {
                   ? "online"
                   : site.status === "offline"
                     ? "offline"
-                    : "degraded";
+                    : site.status ? "degraded" : "unavailable";
 
               return (
                 <Marker
@@ -105,6 +115,7 @@ export function SiteMap({ sites }: { sites: Site[] }) {
                         : ""
                     }`}
                     aria-label={`${th ? "เลือก" : "Select"} ${site.name}`}
+                    aria-pressed={selectedId === site.id}
                     onClick={() => setSelectedId(site.id)}
                   />
                 </Marker>
@@ -122,7 +133,7 @@ export function SiteMap({ sites }: { sites: Site[] }) {
                 onClose={() => setSelectedId(null)}
               >
                 <div className="map-popup">
-                  <span
+                  {selected.status && <span
                     className={`map-popup-status ${
                       selected.status === "online"
                         ? "online"
@@ -145,22 +156,22 @@ export function SiteMap({ sites }: { sites: Site[] }) {
                       : selected.status === "offline"
                         ? (th ? "ออฟไลน์" : "Offline")
                         : (th ? "แจ้งเตือน" : "Warning")}
-                  </span>
+                  </span>}
                   <strong className="text-foreground">{selected.name}</strong>
                   <span className="text-muted-foreground">
                     {selected.schoolName}
                   </span>
-                  <small className="font-semibold text-primary">
+                  {scoped && <small className="font-semibold text-primary">
                     {formatNumber(selected.productionKwh)} kWh ·{" "}
                     {formatNumber(selected.capacityMwp)} MWp
-                  </small>
+                  </small>}
                 </div>
               </Popup>
             )}
-          </Map>
+          </Map>}
 
           {/* Status Legend Overlay in Bottom-Left */}
-          <div className="absolute bottom-3 left-3 z-10 rounded-lg border border-border/70 bg-card/95 p-3 shadow-md backdrop-blur-sm">
+          {!mapFailed&&!selectedId&&scoped&&<div className="absolute bottom-3 left-3 z-10 rounded-lg border border-border/70 bg-card/95 p-3 shadow-md backdrop-blur-sm">
             <p className="text-[11px] font-bold text-foreground mb-1.5">
               {th ? "สถานะไซต์ที่มีพิกัด" : "Status of mapped sites"}
             </p>
@@ -193,7 +204,7 @@ export function SiteMap({ sites }: { sites: Site[] }) {
                 </strong>
               </div>
             </div>
-          </div>
+          </div>}
         </div>
 
         {/* Always-visible Site / Overall Info Bar */}
@@ -209,6 +220,7 @@ export function SiteMap({ sites }: { sites: Site[] }) {
             </span>
           </div>
           {selected && <div className="site-metrics">
+            {scoped && <>
             <div className="metric">
               <b>
                 {formatNumber(selected.productionKwh)}
@@ -221,6 +233,7 @@ export function SiteMap({ sites }: { sites: Site[] }) {
               </b>
               <span>MWp {th ? "กำลังติดตั้ง" : "Installed capacity"}</span>
             </div>
+            </>}
             {selected && (
               <Button
                 variant="ghost"

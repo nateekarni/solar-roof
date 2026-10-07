@@ -11,3 +11,10 @@ test('timestamps show the same explicit Bangkok business time regardless of serv
   }
  } finally {if(original===undefined)delete process.env.TZ;else process.env.TZ=original;}
 });
+
+import {formatAppDateRange} from './date-format';
+test('Thai ranges use spaced separators and unambiguous years',()=>{
+ assert.equal(formatAppDateRange('2026-10-01','2026-10-30','th'),'1 - 30 ตุลาคม 2569');
+ assert.equal(formatAppDateRange('2026-10-01','2026-11-30','th'),'1 ตุลาคม - 30 พฤศจิกายน 2569');
+ assert.equal(formatAppDateRange('2026-10-01','2027-10-31','th'),'1 ตุลาคม 2569 - 31 ตุลาคม 2570');
+});

@@ -12,6 +12,8 @@ import {
 } from "recharts";
 import { ChartContainer } from "../../components/ui/chart";
 import { formatAppDate } from "../../lib/date-format";
+import {ChartTooltipContent,chartTooltipBounds} from './chart-tooltip';
+import {useChartTooltipTrigger} from './use-chart-tooltip-trigger';
 
 export function SchoolProductionChart({
   points,
@@ -20,6 +22,7 @@ export function SchoolProductionChart({
   points: DashboardSummaryDataPoint[];
   locale: Locale;
 }) {
+  const {trigger,handlers}=useChartTooltipTrigger();
   const measured = points.map((point) => ({
     ...point,
     value: Number.isFinite(point.value) ? point.value : null,
@@ -37,8 +40,9 @@ export function SchoolProductionChart({
       config={{ value: { label: "kWh", color: "var(--primary)" } }}
       className="h-56"
     >
-      <ResponsiveContainer width="100%" height="100%">
+      <div className="h-full min-w-0" {...handlers}><ResponsiveContainer width="100%" height="100%">
         <AreaChart
+          accessibilityLayer
           data={measured}
           margin={{ top: 12, right: 12, left: 0, bottom: 0 }}
         >
@@ -58,6 +62,10 @@ export function SchoolProductionChart({
             tickLine={false}
           />
           <Tooltip
+            trigger={trigger}
+            {...chartTooltipBounds}
+            cursor={{stroke:'var(--muted-foreground)',strokeDasharray:'3 3'}}
+            content={props=><ChartTooltipContent {...props} locale={locale} unit="kWh" title={locale==='th'?'พลังงานที่ผลิต':'Generated energy'} dateLabel/>}
             labelFormatter={(value) => formatAppDate(String(value), locale)}
             formatter={(value) => [
               `${Number(value).toLocaleString(locale, { maximumFractionDigits: 2 })} kWh`,
@@ -81,7 +89,7 @@ export function SchoolProductionChart({
             isAnimationActive={false}
           />
         </AreaChart>
-      </ResponsiveContainer>
+      </ResponsiveContainer></div>
     </ChartContainer>
   );
 }

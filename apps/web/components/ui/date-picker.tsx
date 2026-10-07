@@ -108,7 +108,7 @@ export function DatePicker({
             !selectedDate && "text-muted-foreground",
             className,
             iconInputLayout.trigger,
-            "h-10 bg-white hover:bg-white aria-expanded:bg-white disabled:bg-muted dark:bg-white dark:hover:bg-white dark:aria-expanded:bg-white dark:disabled:bg-muted dark:text-neutral-950"
+            "h-10 bg-card hover:bg-card aria-expanded:bg-card disabled:bg-muted dark:bg-card dark:hover:bg-muted dark:aria-expanded:bg-muted dark:disabled:bg-muted dark:text-foreground"
           )}
         >
           <CalendarIcon className={cn(iconInputLayout.icon, "text-muted-foreground")} />

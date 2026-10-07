@@ -29,10 +29,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: LayoutDashboard,
     href: "/",
   },
-  {
-    key: "production", labelKey: "navigation.production", icon: Zap, href: "/production",
-  },
-  {
+{
     key: "sites",
     labelKey: "navigation.sites",
     icon: MapPin,
@@ -62,7 +59,6 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/settings",
     subItems: [
       { href: "/settings/account", labelKey: "settings.account" },
-      { href: "/settings/general", labelKey: "settings.general" },
       { href: "/settings/security", labelKey: "settings.security" },
       { href: "/settings/company", labelKey: "navigation.companyAndBanking" },
       { href: "/settings/system", labelKey: "navigation.systemDefaults" },

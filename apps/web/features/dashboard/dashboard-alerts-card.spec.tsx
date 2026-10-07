@@ -1,0 +1,4 @@
+import React from 'react';import test from 'node:test';import assert from 'node:assert/strict';import {renderToStaticMarkup} from 'react-dom/server';import {DashboardAlertsCard} from './dashboard-alerts-card';
+const alerts=[{title:'Gateway requires attention',detail:'Actual shared alert content',severity:'warning',status:'warning',occurred_at:'2026-10-07T00:00:00Z'}];
+test('rendered Owner alert card retains shared content and hides forbidden alert destination',()=>{const html=renderToStaticMarkup(<DashboardAlertsCard role="owner" locale="en" alerts={alerts}/>);assert.match(html,/Gateway requires attention/);assert.match(html,/Actual shared alert content/);assert.doesNotMatch(html,/href="\/alerts"/);});
+test('rendered Admin alert card preserves permitted All destination',()=>{const html=renderToStaticMarkup(<DashboardAlertsCard role="admin" locale="en" alerts={alerts}/>);assert.match(html,/href="\/alerts"/);assert.match(html,/Gateway requires attention/);});

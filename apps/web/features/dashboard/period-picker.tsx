@@ -380,7 +380,7 @@ export function PeriodPicker() {
       trigger={
         <Button
           variant="outline"
-          className="min-h-11 gap-1.5 sm:gap-2 rounded-lg border-border bg-white dark:bg-card px-2.5 sm:px-3 text-sm font-medium text-foreground shadow-xs hover:bg-neutral-50 dark:hover:bg-accent cursor-pointer shrink-0 truncate max-w-[190px] sm:max-w-none"
+          className="min-h-11 gap-1.5 sm:gap-2 rounded-lg border-border bg-card dark:bg-card px-2.5 sm:px-3 text-sm font-medium text-foreground shadow-xs hover:bg-muted dark:hover:bg-accent cursor-pointer shrink-0 truncate max-w-[190px] sm:max-w-none"
         >
           <CalendarIcon className="size-3.5 sm:size-4 text-muted-foreground mr-0.5 sm:mr-1 shrink-0" />
           <span className="truncate">{triggerLabel}</span>

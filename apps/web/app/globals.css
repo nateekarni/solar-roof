@@ -6,6 +6,8 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
+  --color-tabs-background: var(--tabs-background);
+  --color-tabs-foreground: var(--tabs-foreground);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-sans);
@@ -58,6 +60,8 @@
 }
 
 :root {
+  --tabs-background: var(--color-amber-50);
+  --tabs-foreground: var(--color-amber-950);
   --font-sans:
     "Noto Sans Thai Looped", "Sarabun", ui-sans-serif, system-ui, -apple-system,
     BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -106,6 +110,8 @@
 }
 
 .dark {
+  --tabs-background: color-mix(in oklab, var(--color-amber-950) 40%, transparent);
+  --tabs-foreground: var(--color-amber-100);
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.205 0 0);
@@ -248,7 +254,7 @@ a {
 /* Stats Grid */
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(6, minmax(130px, 1fr));
+  grid-template-columns: repeat(var(--stats-column-count, 6), minmax(130px, 1fr));
   gap: 10px;
 }
 
@@ -368,8 +374,7 @@ a {
   height: 100%;
 }
 
-.chart-stack > *,
-.right-stack > * {
+.chart-stack > * {
   flex: 1;
   min-height: 0;
   display: flex;
@@ -1156,3 +1161,22 @@ td.rdp-range_middle:has(+ td.rdp-hidden) {
 [data-slot="dialog-footer"] [data-slot="button"] { height: 40px; padding-inline: 20px; }
 [data-slot="select-item"] { font-size: .875rem; }
 [data-slot="button"][data-add-action="true"] { height: 40px; padding-inline: 16px; font-size: .875rem; }
+
+/* Collection follows its content height; chart-stack keeps its independent stretch. */
+.right-stack { height:auto; align-self:start; }
+.right-stack > * { flex:0 0 auto; }
+
+/* Map takes 40%; energy spans the right side above 65:35 revenue/collection columns. */
+.dashboard-content { justify-content:flex-start; }
+.dashboard-main-grid { display:grid; grid-template-columns:minmax(0,2fr) minmax(0,3fr); gap:16px; align-items:stretch; }
+.dashboard-chart-grid { display:grid; grid-template-columns:minmax(0,13fr) minmax(0,7fr); gap:16px; align-content:start; align-items:stretch; }
+.dashboard-chart-grid > * { min-width:0; width:100%; }
+.dashboard-energy { grid-column:1 / -1; }
+.dashboard-chart-grid .panel { width:100%; }
+.dashboard-revenue .panel { height:100%; display:flex; flex-direction:column; }
+.dashboard-revenue .measured-chart-plot { flex:1; min-height:13rem; }
+.map-marker.unavailable { background:var(--muted-foreground); }
+@media (max-width:1023px) { .dashboard-main-grid { grid-template-columns:minmax(0,1fr); } }
+@media (max-width:639px) { .dashboard-chart-grid { grid-template-columns:minmax(0,1fr); } }
+/* Browser autofill inherits the same readable control surface in either theme. */
+input:-webkit-autofill, textarea:-webkit-autofill { -webkit-text-fill-color:var(--foreground); box-shadow:0 0 0 1000px var(--card) inset; caret-color:var(--foreground); }

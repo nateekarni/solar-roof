@@ -1,4 +1,8 @@
 "use client";
+import {ProfilePreferences} from "./profile-preferences";
+import {acknowledgeAlertScope} from './acknowledge-alert-scope';
+import {useSiteSelection} from '../../features/dashboard/site-selection-provider';
+import type {DashboardSummaryResponse} from '@solar/api-contracts';
 import { canVisitPage } from "@solar/domain";
 import { useSessionUser } from "../../providers/session-user-provider";
 
@@ -22,7 +26,7 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTheme } from "next-themes";
 import * as React from "react";
 import { MobileMenuSheet } from "./mobile-menu-sheet";
@@ -61,6 +65,14 @@ interface AlertItem {
 
 export function AppHeader() {
   const pathname = usePathname();
+  const searchParams=useSearchParams();
+  const {selectedSiteId}=useSiteSelection();
+  const scopedDashboard=pathname==='/'&&Boolean(selectedSiteId);
+  const notificationParams=new URLSearchParams();
+  if(scopedDashboard){notificationParams.set('site_id',selectedSiteId);for(const key of ['start_date','end_date','month','year']){const value=searchParams.get(key);if(value)notificationParams.set(key,value);}}
+  const notificationScope=scopedDashboard?notificationParams.toString():'global';
+  const notificationScopeRef=React.useRef(notificationScope);
+  notificationScopeRef.current=notificationScope;
   const router = useRouter();
   const t = useT();
   const locale = useLocale();
@@ -77,39 +89,57 @@ export function AppHeader() {
   const [visibleCount, setVisibleCount] = React.useState(6);
   const [loadingMore, setLoadingMore] = React.useState(false);
   const [alerts, setAlerts] = React.useState<AlertItem[]>([]);
-  const [activeAlertCount, setActiveAlertCount] = React.useState(0);
+  const [storedActiveAlertCount, setActiveAlertCount] = React.useState(0);
   const [loadingAlerts, setLoadingAlerts] = React.useState(false);
+  const [loadedAlertScope,setLoadedAlertScope]=React.useState('');
+  const alertRequest=React.useRef(0);
+  const activeAlertCount=loadedAlertScope===notificationScope?storedActiveAlertCount:0;
+  const displayedAlerts=loadedAlertScope===notificationScope?alerts:[];
 
   // Fetch active alerts count on mount and on open
   const fetchAlerts = React.useCallback(async () => {
     if (!canViewAlerts) return;
+    const request=++alertRequest.current;
     setLoadingAlerts(true);
+    setLoadingMore(false);
+    setAllAlerts([]);setAlerts([]);setActiveAlertCount(0);
     try {
+      if(scopedDashboard){
+        const summary=await apiClient.get<DashboardSummaryResponse>(`/v1/dashboard/summary?${notificationScope}`);
+        if(request!==alertRequest.current)return;
+        const rows=summary.alerts.map((alert,index)=>({...alert,id:alert.id||`${selectedSiteId}-${index}`}));
+        setAllAlerts(rows);setAlerts(rows.slice(0,6));setVisibleCount(6);setActiveAlertCount(summary.alertActiveCount??rows.filter(row=>row.status!=='acknowledged').length);setLoadedAlertScope(notificationScope);
+        return;
+      }
       const [listRes, summaryRes] = await Promise.all([
         apiClient.get<{ rows: AlertItem[] }>("/v1/operations/alerts").catch(() => ({ rows: [] })),
         apiClient.get<{ label: string; value: number }[]>("/v1/operations/alerts/summary").catch(() => []),
       ]);
+      if(request!==alertRequest.current)return;
 
       const rows = listRes.rows || [];
       setAllAlerts(rows);
       setAlerts(rows.slice(0, 6));
       setVisibleCount(6);
+      setLoadedAlertScope(notificationScope);
       const activeItem = summaryRes.find((s) => s.label.includes("active") || s.label.includes("ใช้งาน"));
       setActiveAlertCount(Number(activeItem?.value ?? rows.filter((r) => r.status !== "acknowledged").length));
     } catch {
       // ignore
     } finally {
-      setLoadingAlerts(false);
+      if(request===alertRequest.current){setLoadingAlerts(false);setLoadedAlertScope(notificationScope);}
     }
-  }, [canViewAlerts]);
+  }, [canViewAlerts,notificationScope,scopedDashboard,selectedSiteId]);
 
   const handleMarkAllAsRead = async () => {
+    if(scopedDashboard)return;
     try {
-      await apiClient.put("/v1/alerts/acknowledge-all");
+      await acknowledgeAlertScope(apiClient,{scope:notificationScope,generation:alertRequest.current},()=>({scope:notificationScopeRef.current,generation:alertRequest.current}),()=>{
       setActiveAlertCount(0);
       setAllAlerts((prev) => prev.map((a) => ({ ...a, status: "acknowledged" })));
       setAlerts((prev) => prev.map((a) => ({ ...a, status: "acknowledged" })));
-      fetchAlerts();
+      void fetchAlerts();
+      });
     } catch {
       // ignore
     }
@@ -119,8 +149,10 @@ export function AppHeader() {
     const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
     if (scrollHeight - scrollTop - clientHeight < 25) {
       if (visibleCount < allAlerts.length && !loadingMore) {
+        const request=alertRequest.current;
         setLoadingMore(true);
         setTimeout(() => {
+          if(request!==alertRequest.current)return;
           setVisibleCount((prev) => {
             const next = Math.min(prev + 6, allAlerts.length);
             setAlerts(allAlerts.slice(0, next));
@@ -134,6 +166,7 @@ export function AppHeader() {
 
   React.useEffect(() => {
     fetchAlerts();
+    return()=>{alertRequest.current++;};
   }, [fetchAlerts]);
 
   React.useEffect(() => {
@@ -199,7 +232,7 @@ export function AppHeader() {
       case "/settings/system":
         return t("navigation.systemDefaults");
       case "/settings/meter-presets":
-        return t("navigation.meterPresets");
+        return locale === "th" ? "ค่าจากมิเตอร์" : "Meter values";
       default:
         return t("app.title");
     }
@@ -268,7 +301,7 @@ export function AppHeader() {
           title={t("notifications.header")}
           sheetHeaderClassName="sr-only"
           showCloseButton={false}
-          popoverClassName="w-80 max-w-[calc(100vw-2rem)] p-0 shadow-lg rounded-xl"
+          popoverClassName="w-80 max-w-[calc(100vw-2rem)] gap-0 overflow-hidden rounded-xl border border-border p-0 shadow-lg ring-0"
           sheetClassName="h-full max-h-screen inset-0 rounded-none w-full p-0 flex flex-col gap-0 bg-background overflow-hidden"
           trigger={
             <Button
@@ -285,8 +318,8 @@ export function AppHeader() {
           }
         >
           {/* Notification header with compact actions */}
-          <div className="p-3.5 sm:p-3 shrink-0 bg-card border-b border-border ">
-            <div className="flex items-center justify-between">
+          <div className="flex h-12 shrink-0 items-center bg-card px-3">
+            <div className="flex w-full items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="text-sm sm:text-xs font-bold sm:font-semibold text-foreground">
                   {t("notifications.header")}
@@ -309,13 +342,13 @@ export function AppHeader() {
               </div>
 
               <div className="flex shrink-0 items-center gap-1">
-              <Button variant="ghost" size="icon" type="button" onClick={handleMarkAllAsRead} disabled={activeAlertCount === 0} className="size-8 text-primary hover:bg-primary/10" aria-label={t("notifications.markAllAsRead")} title={t("notifications.markAllAsRead")}><CheckCheck aria-hidden="true" className="size-4" /></Button>
+              <Button variant="ghost" size="icon" type="button" onClick={handleMarkAllAsRead} disabled={scopedDashboard || activeAlertCount === 0} className="size-8 text-primary hover:bg-primary/10" aria-label={t("notifications.markAllAsRead")} title={t("notifications.markAllAsRead")}><CheckCheck aria-hidden="true" className="size-4" /></Button>
               <Button
                 variant="ghost"
                 size="sm"
                 type="button"
                 onClick={() => setNotificationOpen(false)}
-                className="h-auto gap-0 px-0 size-10 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
+                className="size-8 rounded-full p-0 text-muted-foreground hover:text-foreground hover:bg-muted"
                 aria-label={locale === "th" ? "ปิด" : "Close"}
               >
                 <X className="size-4" />
@@ -329,11 +362,11 @@ export function AppHeader() {
             onScroll={handleNotificationScroll}
             className="divide-y divide-border/60 flex-1 md:max-h-72 overflow-y-auto scrollbar-none [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           >
-            {loadingAlerts ? (
+            {loadingAlerts || loadedAlertScope !== notificationScope ? (
               <div className="p-4 text-center text-xs text-muted-foreground">
                 {t("common.loading")}
               </div>
-            ) : alerts.length === 0 ? (
+            ) : displayedAlerts.length === 0 ? (
               <div className="flex flex-col items-center justify-center p-6 text-center">
                 <CheckCircle2 className="size-8 text-emerald-500/70 mb-2" />
                 <p className="text-xs text-muted-foreground">
@@ -342,7 +375,7 @@ export function AppHeader() {
               </div>
             ) : (
               <>
-                {alerts.map((alert) => (
+                {displayedAlerts.map((alert) => (
                   <Link
                     key={alert.id}
                     href="/alerts"
@@ -407,7 +440,7 @@ export function AppHeader() {
             <PopoverContent
               align="end"
               sideOffset={8}
-              className="w-72 p-0 shadow-xl rounded-xl border border-border"
+              className="w-72 gap-0 overflow-hidden rounded-xl border border-border p-0 shadow-xl ring-0"
             >
               {/* User Profile Header */}
               <div className="flex items-center gap-3 p-3.5 border-b border-border bg-muted/30">
@@ -435,17 +468,17 @@ export function AppHeader() {
               {/* User Account Navigation Links */}
               <div className="p-1.5 border-b border-border/70 space-y-0.5 bg-card">
                 <Link
-                  href="/settings/general"
+                  href="/settings"
                   onClick={() => setProfileOpen(false)}
-                  className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-foreground hover:bg-muted/80 transition-colors"
+                  className="flex items-center gap-2.5 px-2.5 min-h-10 py-2 rounded-lg text-sm font-normal text-foreground hover:bg-muted/80 transition-colors"
                 >
                   <Settings2 className="size-3.5 text-muted-foreground" />
-                  <span>{locale === "en" ? "General Settings" : "การตั้งค่าทั่วไป"}</span>
+                  <span>{locale === "en" ? "Settings" : "การตั้งค่า"}</span>
                 </Link>
                 <Link
                   href="/settings/account"
                   onClick={() => setProfileOpen(false)}
-                  className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-foreground hover:bg-muted/80 transition-colors"
+                  className="flex items-center gap-2.5 px-2.5 min-h-10 py-2 rounded-lg text-sm font-normal text-foreground hover:bg-muted/80 transition-colors"
                 >
                   <User className="size-3.5 text-muted-foreground" />
                   <span>{locale === "en" ? "Account Settings" : "การตั้งค่าบัญชี"}</span>
@@ -453,125 +486,21 @@ export function AppHeader() {
                 <Link
                   href="/settings/security"
                   onClick={() => setProfileOpen(false)}
-                  className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-foreground hover:bg-muted/80 transition-colors"
+                  className="flex items-center gap-2.5 px-2.5 min-h-10 py-2 rounded-lg text-sm font-normal text-foreground hover:bg-muted/80 transition-colors"
                 >
                   <Shield className="size-3.5 text-muted-foreground" />
                   <span>{locale === "en" ? "Security & Password" : "ความปลอดภัยและรหัสผ่าน"}</span>
                 </Link>
               </div>
 
-              {/* Quick Preferences Toggles */}
-              {/* User Preferences (Language & Theme) */}
-              <div className="p-2.5 px-3 border-b border-border/80 space-y-2 bg-card">
-                {/* Language Switch */}
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 text-xs font-medium text-foreground">
-                    <Globe className="size-3.5 text-muted-foreground" />
-                    <span>{t("profile.language")}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <Button variant="ghost" size="sm"
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleLanguageChange("th");
-                      }}
-                      title="ไทย"
-                      aria-label="ไทย"
-                      className={`flex items-center justify-center h-7 px-2 rounded-md text-xs transition-all cursor-pointer ${
-                        locale === "th"
-                          ? "bg-primary/15 text-foreground ring-1 ring-primary/40 font-semibold shadow-2xs"
-                          : "bg-muted/80 border border-border/60 hover:bg-muted text-muted-foreground hover:text-foreground shadow-2xs"
-                      }`}
-                    >
-                      <span className="mr-1">🇹🇭</span>
-                      <span className="font-semibold text-[11px]">TH</span>
-                    </Button>
-                    <Button variant="ghost" size="sm"
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleLanguageChange("en");
-                      }}
-                      title="English"
-                      aria-label="English"
-                      className={`flex items-center justify-center h-7 px-2 rounded-md text-xs transition-all cursor-pointer ${
-                        locale === "en"
-                          ? "bg-primary/15 text-foreground ring-1 ring-primary/40 font-semibold shadow-2xs"
-                          : "bg-muted/80 border border-border/60 hover:bg-muted text-muted-foreground hover:text-foreground shadow-2xs"
-                      }`}
-                    >
-                      <span className="mr-1">🇬🇧</span>
-                      <span className="font-semibold text-[11px]">EN</span>
-                    </Button>
-                  </div>
-                </div>
-
-                {/* Theme Switch */}
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 text-xs font-medium text-foreground">
-                    <Palette className="size-3.5 text-muted-foreground" />
-                    <span>{t("profile.theme")}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <Button variant="ghost" size="sm"
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleThemeChange("light");
-                      }}
-                      title={t("profile.light")}
-                      aria-label={t("profile.light")}
-                      className={`flex items-center justify-center size-7 rounded-md text-xs transition-all cursor-pointer ${
-                        theme === "light"
-                          ? "bg-primary/15 text-foreground ring-1 ring-primary/40 shadow-2xs"
-                          : "bg-muted/80 border border-border/60 hover:bg-muted text-muted-foreground hover:text-foreground shadow-2xs"
-                      }`}
-                    >
-                      <Sun className="size-3.5" />
-                    </Button>
-                    <Button variant="ghost" size="sm"
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleThemeChange("dark");
-                      }}
-                      title={t("profile.dark")}
-                      aria-label={t("profile.dark")}
-                      className={`flex items-center justify-center size-7 rounded-md text-xs transition-all cursor-pointer ${
-                        theme === "dark"
-                          ? "bg-primary/15 text-foreground ring-1 ring-primary/40 shadow-2xs"
-                          : "bg-muted/80 border border-border/60 hover:bg-muted text-muted-foreground hover:text-foreground shadow-2xs"
-                      }`}
-                    >
-                      <Moon className="size-3.5" />
-                    </Button>
-                    <Button variant="ghost" size="sm"
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleThemeChange("system");
-                      }}
-                      title={t("profile.system")}
-                      aria-label={t("profile.system")}
-                      className={`flex items-center justify-center size-7 rounded-md text-xs transition-all cursor-pointer ${
-                        theme === "system"
-                          ? "bg-primary/15 text-foreground ring-1 ring-primary/40 shadow-2xs"
-                          : "bg-muted/80 border border-border/60 hover:bg-muted text-muted-foreground hover:text-foreground shadow-2xs"
-                      }`}
-                    >
-                      <Laptop className="size-3.5" />
-                    </Button>
-                  </div>
-                </div>
-              </div>
+              <ProfilePreferences locale={locale} theme={theme??"system"} onLocaleChange={handleLanguageChange} onThemeChange={handleThemeChange}/>
 
               {/* Logout Button */}
               <div className="p-2 pb-2.5">
                 <Button variant="ghost" size="sm"
                   type="button"
                   onClick={handleLogout}
-                  className="flex w-full items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold text-destructive hover:bg-destructive/10 transition-colors cursor-pointer border border-transparent hover:border-destructive/20"
+                  className="flex w-full items-center gap-2.5 px-3 min-h-10 py-2 rounded-lg text-sm font-normal text-destructive hover:bg-destructive/10 transition-colors cursor-pointer border border-transparent hover:border-destructive/20"
                 >
                   <LogOut className="size-4" />
                   <span>{t("auth.logout")}</span>

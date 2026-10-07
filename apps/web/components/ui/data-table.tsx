@@ -123,7 +123,7 @@ export function DataTable<TData, TValue>({
               placeholder={searchPlaceholder ?? (locale === "th" ? "ค้นหา…" : "Search…")}
               value={globalFilter ?? ""}
               onChange={(event) => setGlobalFilter(event.target.value)}
-              className="h-10 pl-8 bg-white dark:bg-card border-border shadow-2xs"
+              className="h-10 pl-8 bg-card dark:bg-card border-border shadow-2xs"
             />
           </div></div>}
         </div>

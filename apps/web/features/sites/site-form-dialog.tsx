@@ -509,7 +509,7 @@ export function SiteFormDialog({
                     <Input
                       id="meter-model"
                       placeholder="PM5350"
-                      className="text-sm h-10 bg-white"
+                      className="text-sm h-10 bg-card"
                       readOnly={payloadMode}
                       {...register("deviceModel")}
                     />
@@ -521,7 +521,7 @@ export function SiteFormDialog({
                     <Input
                       id="meter-serial"
                       placeholder={locale === "th" ? "ระบุรหัสซีเรียลมิเตอร์" : "Enter meter serial number"}
-                      className="text-sm h-10 font-mono bg-white"
+                      className="text-sm h-10 font-mono bg-card"
                       {...register("deviceSerial")}
                     />
                     {errors.deviceSerial && (
