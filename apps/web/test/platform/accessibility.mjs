@@ -45,7 +45,14 @@ try {
   assert.ok(await summary.locator('li').count()<=5,'At most five actionable sites');
   assert.ok(await summary.locator('a[href^="/records/sites/"]').count()>0,'Site links point to their actual record details');
   assert.equal(await page.locator('.stat-value').filter({hasText:'1.2kW'}).count(),1,'1200W is visible instead of rounded 0MW');
-  assert.ok((await page.getByText('U3 Critical alert',{exact:true}).boundingBox()).y<(await page.locator('.dashboard-3col').boundingBox()).y,'Critical alert precedes trends and map');
+  const mainGrid=page.locator('.dashboard-main-grid');
+  const powerDiagram=page.getByText('Solar and building power',{exact:true}).locator('xpath=ancestor::*[@data-slot="card"]');
+  const alert=page.getByText('U3 Critical alert',{exact:true});
+  await mainGrid.waitFor();await powerDiagram.waitFor();await alert.waitFor();
+  const mainGridBox=await mainGrid.boundingBox(),powerDiagramBox=await powerDiagram.boundingBox(),alertBox=await alert.boundingBox();
+  assert.ok(mainGridBox&&powerDiagramBox&&alertBox,'Dashboard grid, power diagram and critical alert are visible');
+  assert.ok(powerDiagramBox.y>=mainGridBox.y+mainGridBox.height,'Power diagram follows charts and map');
+  assert.ok(alertBox.y>=powerDiagramBox.y+powerDiagramBox.height,'Critical alert appears below the power diagram');
   const details=page.getByRole('button',{name:'Show details',exact:true});
   let powerRequests=0;page.on('request',request=>{if(request.url().includes('/v1/dashboard/power-flow'))powerRequests++;});
   await details.focus();await page.keyboard.press('Enter');
@@ -54,7 +61,10 @@ try {
   assert.deepEqual(expandedAxe.violations.filter(item=>['serious','critical'].includes(item.impact)).map(item=>({id:item.id,targets:item.nodes.map(node=>node.target)})),[],'Expanded power details accessibility');
   await page.getByRole('button',{name:'Hide details',exact:true}).click();
   await page.waitForTimeout(500);const stoppedPowerRequests=powerRequests;
-  await page.waitForTimeout(10500);assert.equal(powerRequests,stoppedPowerRequests,'Closed power details stop polling');
+  // The always-visible solar diagram shares this endpoint and polls every 10s.
+  // Over two intervals it sends 2–3 requests; a leaked meter poller adds at least 2.
+  await page.waitForTimeout(21000);const closedPowerRequests=powerRequests-stoppedPowerRequests;
+  assert.ok(closedPowerRequests>=2&&closedPowerRequests<=3,'Only the visible solar diagram keeps polling after power details close');
   for(const role of ['owner','admin','operator','accountant','school_user']) {
     await db.query('UPDATE users SET role=$1 WHERE id=$2',[role,user]);
     for(const width of [390,1440]) {
@@ -74,7 +84,7 @@ try {
         }
       }
       const compare=page.getByRole('button',{name:'Compare sites',exact:true});
-      if(['owner','school_user'].includes(role)){assert.equal(await compare.count(),0,'Business home has no technical comparison');}
+      if(role==='school_user'){assert.equal(await compare.count(),0,'School home has no technical comparison');}
       else {await compare.focus();await page.keyboard.press('Enter');await page.getByRole('dialog').waitFor();
        await page.keyboard.press('Escape');await page.getByRole('dialog').waitFor({state:'hidden'});
        assert.equal(await compare.evaluate(element=>element===document.activeElement),true,'Dialog returns keyboard focus');}

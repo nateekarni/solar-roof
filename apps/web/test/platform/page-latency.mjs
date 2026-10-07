@@ -62,7 +62,10 @@ export async function measurePages(tokens) {
               // Next's global route announcer is an ARIA live region, not an application error.
               const alerts=page.locator('main [role="alert"]:visible');
               assert.equal(await alerts.count(),0,`No rendered page error: ${(await alerts.allTextContents()).join('; ')}`);
-            } catch(cause) {error=String(cause);}
+            } catch(cause) {
+              error=String(cause);
+              timing={failureUrl:page.url(),visibleContent:await page.locator('main').innerText({timeout:1000}).catch(()=>''),statusMessages:await page.getByRole('status').allTextContents().catch(()=>[])};
+            }
             samples.push({user,path,cache,ms:ms??performance.now()-started,driverElapsedMs:performance.now()-started,error,timing});
           }
           await page.close();
