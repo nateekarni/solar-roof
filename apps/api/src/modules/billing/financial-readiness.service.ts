@@ -39,9 +39,10 @@ export class FinancialReadinessService implements FinancialReadinessEvidence {
       ['read_receipt','GET','/v1/operations/documents/fixture'],
       ['submit_payment','POST','/v1/billing-cycles/fixture/pay'],
     ].filter(([,method,path])=>routeAllowed(role,method!,path!)).map(([action])=>action!) : [];
-    return {operationsActions,actions:[...(hasScope && routeAllowed(role,'POST','/v1/contracts') ? ['create_contract'] : []),...allowed.filter(action=>enabled.includes(action))],unavailable:Object.fromEntries(allowed.filter(action=>!enabled.includes(action)).map(action=>[action,'Financial workflows await verified accounting requirements and implementation readiness.']))};
+    return {...(await this.isLocalTestReady()?{financialScope:'TEST' as const}:{}),operationsActions,actions:[...(hasScope && routeAllowed(role,'POST','/v1/contracts') ? ['create_contract'] : []),...allowed.filter(action=>enabled.includes(action))],unavailable:Object.fromEntries(allowed.filter(action=>!enabled.includes(action)).map(action=>[action,'Financial workflows await verified accounting requirements and implementation readiness.']))};
   }
 }
+
 
 
 

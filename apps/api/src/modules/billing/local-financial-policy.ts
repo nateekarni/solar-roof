@@ -18,7 +18,12 @@ export function requireTestSettlement(amounts:unknown[],total:unknown):void {
  const minor=(value:unknown)=>{if(!/^\d+(\.\d{1,2}0*)?$/.test(String(value)))throw new Error('Amounts require whole satang');return scaled(value,2);};
  if(!amounts.length||amounts.some(value=>minor(value)<=0n)||amounts.reduce<bigint>((sum,value)=>sum+minor(value),0n)!==minor(total))throw new Error('Transfers must sum to the full invoice amount');
 }
-export function actualEnergyDifference(opening:unknown,closing:unknown):string { const start=scaled(opening,3),end=scaled(closing,3);if(end<start)throw new Error('Meter reset requires review');return decimal(end-start,3); }
+export function actualEnergyDifference(opening:unknown,closing:unknown):string {
+ const parts=(value:unknown)=>{const raw=String(value);if(!/^\d+(\.\d+)?$/.test(raw))throw new Error('Explicit actual decimal reading required');const [whole,fraction='']=raw.split('.');return {digits:BigInt(whole!+fraction),scale:fraction.length};};
+ const first=parts(opening),last=parts(closing),scale=Math.max(first.scale,last.scale);
+ const start=first.digits*10n**BigInt(scale-first.scale),end=last.digits*10n**BigInt(scale-last.scale);if(end<start)throw new Error('Meter reset requires review');
+ const delta=end-start;if(scale<=3)return decimal(delta*10n**BigInt(3-scale),3);const divisor=10n**BigInt(scale-3);return decimal((delta+divisor/2n)/divisor,3);
+}
 
 export function sqlCalendarPeriod(row:{starts?:string;ends?:string;period_start?:unknown;period_end?:unknown}) {
  if(!row.starts||!row.ends||!/^\d{4}-\d{2}-\d{2}$/.test(row.starts)||!/^\d{4}-\d{2}-\d{2}$/.test(row.ends)||row.starts>row.ends)throw new Error('SQL calendar strings required');return {start:row.starts,end:row.ends};
@@ -37,4 +42,6 @@ export function normalizeTestRateSchedule(rows:Array<{startDate:string;endDate?:
   return {startDate:row.startDate,endDate,rate:row.rate};
  });
 }
+
+
 
