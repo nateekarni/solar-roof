@@ -38,7 +38,12 @@ try {
   const created=await request('admin','/v1/sites','POST',{name,schoolName:`School ${suffix}`,gatewayName:name,protocol:'mqtt',endpoint:`energy/${name}/#`,deviceSerial:`meter-${suffix}`,capacityMwp:0.1,pollingIntervalSeconds:10});
   assert.equal(created.status,201,JSON.stringify(created.body));
   const site=created.body;
-  assert.equal((await request('admin','/v1/sites','POST',{name:'Duplicate',schoolId:site.schoolId,gatewayName:`duplicate-${suffix}`,deviceSerial:`duplicate-${suffix}`})).status,400);
+  // Organizations may own multiple sites; only an existing meter serial is a conflict.
+  const duplicate=await request('admin','/v1/sites','POST',{name:'Duplicate serial',schoolId:site.schoolId,gatewayName:`duplicate-${suffix}`,deviceSerial:`meter-${suffix}`});
+  assert.equal(duplicate.status,400,JSON.stringify(duplicate.body));
+  assert.match(duplicate.body.message,/ซีเรียล.*มีอยู่ในระบบแล้ว/);
+  assert.ok(duplicate.body.message.includes(`meter-${suffix}`));
+  assert.equal((await db.query('SELECT count(*)::int AS count FROM sites WHERE school_id=$1',[site.schoolId])).rows[0].count,1,'Rejected duplicate serial must not create another site');
   const userId=randomUUID();
   await db.query("INSERT INTO users(id,email,display_name,role,status,school_id,password_hash) VALUES($1,$2,'School user','school_user','active',$3,$4)",[userId,`school-${suffix}@example.test`,site.schoolId,auth.hashPassword('Local-test-only-123!')]);
   users.school={id:userId,token:await loginToken(`school-${suffix}@example.test`,'school_user')};
