@@ -476,14 +476,7 @@ export function SiteFormDialog({
                   {errors.endpoint && (
                     <p className="text-sm text-destructive">{errors.endpoint.message}</p>
                   )}
-                  <p className="text-sm text-muted-foreground">{payloadMode ? 'โปรไฟล์ข้อมูล: Topic ต้องตรงกับรหัส Site ID และ Gateway ID ด้านบน เลือกอุปกรณ์ด้วย Device ID หรือ +' : 'ชุดรีจิสเตอร์: ใช้ energy/{ชื่อ Gateway}/# หากรับ solar/v1/... ให้เลือกรูปแบบข้อมูลเป็นโปรไฟล์ข้อมูล'}</p>
-                  <span className="text-sm text-muted-foreground">
-                    {locale === "th"
-                      ? `Subscribe: ${formValues.endpoint}`
-                      : `Subscribe: ${formValues.endpoint}`}
-                  </span>
-
-                </div>
+                    </div>
 
               </div>
 
@@ -496,7 +489,7 @@ export function SiteFormDialog({
           </section>
           {payloadMode && <section className="space-y-4 border-t pt-5">
             <div className="flex items-center justify-between"><h3 className="flex items-center gap-2 text-sm font-semibold"><Cpu className="size-4 text-primary"/>อุปกรณ์เพิ่มเติม</h3><AddButton type="button" variant="outline" disabled={additionalDevices.length>=31} onClick={()=>setAdditionalDevices([...additionalDevices,newDeviceDraft()])}>เพิ่มอุปกรณ์</AddButton></div>
-            <p className="text-sm text-muted-foreground">เพิ่มอุปกรณ์ทุกตัวที่ส่งข้อมูล เช่น SmartLogger โดยมิเตอร์หลักด้านบนใช้คำนวณบิล</p>
+            <p className="text-sm text-muted-foreground">{locale==="th"?"เพิ่มอุปกรณ์ที่ส่งข้อมูล เช่น SmartLogger · หลังบันทึกไซต์ ต้องผูกฟิลด์สะสมและวัตถุประสงค์ของมิเตอร์หลักอย่างชัดเจนก่อนคำนวณบิล":"Add devices that send data, such as SmartLogger. After saving the site, explicitly bind the main meter cumulative field and physical purpose before calculating bills."}</p>
             {additionalDevices.map((device,index)=><section key={device.key} className="flex flex-col gap-3 border-t pt-4"><DeviceProfileEditor value={device} onChange={next=>setAdditionalDevices(current=>current.map((d,i)=>i===index?next:d))} revisions={payloadPresets} onCatalogChange={setPayloadPresets} locale={locale}/><Button type="button" variant="ghost" onClick={()=>setAdditionalDevices(current=>current.filter((_,i)=>i!==index))}><Trash2/>{locale==='th'?'ลบอุปกรณ์':'Remove device'}</Button></section>)}
           </section>}
           <section>
