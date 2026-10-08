@@ -1,0 +1,43 @@
+{
+  "synthetic": true,
+  "status": "approved isolated local TEST fixture; real workflow verified 2026-10-08",
+  "timezone": "Asia/Bangkok",
+  "history": {"start": "2026-07-01", "end": "2026-09-30", "jobTime": "2026-10-01T01:00:00+07:00"},
+  "issuer": {
+    "companyName": "บริษัท โซลาร์ รูฟ จำกัด",
+    "companyNameEn": "SOLAR ROOF COMPANY LIMITED",
+    "referenceRegistrationNumber": "0105554059286",
+    "taxId": "0105554059286",
+    "branch": "00000",
+    "address": "68/184 ซอยรามคำแหง 164 แขวงมีนบุรี เขตมีนบุรี กรุงเทพมหานคร 10510",
+    "phone": "02-000-0000",
+    "email": "billing@solar-roof.example.test",
+    "signerName": "ผู้ลงนามทดสอบ Solar Roof",
+    "logoUrl": "/brand/solar-roof-document.png",
+    "provenance": "name/address/registration from user screenshot; all other fields synthetic; no VAT status verification",
+    "bankAccounts": [{"bankName": "ธนาคารทดสอบ", "bankCode": "test", "accountName": "บริษัท โซลาร์ รูฟ จำกัด (ทดสอบ)", "accountNumber": "000-0-00000-0", "isDefault": true}]
+  },
+  "organizations": [
+    {"key": "organization-a", "name": "[TEST] องค์กรทดสอบเอ", "code": "FLOW-A", "taxId": "0000000000001", "branch": "00000", "address": "1 ถนนทดสอบ กรุงเทพมหานคร 10510", "billingEmail": "finance-a@example.test"},
+    {"key": "organization-b", "name": "[TEST] องค์กรทดสอบบี", "code": "FLOW-B", "taxId": "0000000000002", "branch": "00000", "address": "2 ถนนทดสอบ กรุงเทพมหานคร 10510", "billingEmail": "finance-b@example.test"}
+  ],
+  "sites": [
+    {"key": "site-a-main", "organizationKey": "organization-a", "name": "[TEST] อาคารหลักเอ", "capacityMwp": 0.1, "boundaryReadings": "complete", "contractFixture": "active; synthetic 3.5000 THB/kWh rate and 30 calendar-day payment term"},
+    {"key": "site-a-new", "organizationKey": "organization-a", "name": "[TEST] อาคารใหม่เอ", "capacityMwp": 0.08, "boundaryReadings": "complete", "contractFixture": "none; create through actual permitted contract API/UI"},
+    {"key": "site-b-missing", "organizationKey": "organization-b", "name": "[TEST] อาคารบี", "capacityMwp": 0.12, "boundaryReadings": "September final boundary missing; supply canonical reading during recheck test", "contractFixture": "active; synthetic 3.5000 THB/kWh rate and 30 calendar-day payment term"}
+  ],
+  "users": [
+    {"key": "admin", "email": "admin@example.test", "role": "admin"},
+    {"key": "owner", "email": "owner@example.test", "role": "owner"},
+    {"key": "accountant", "email": "accountant@example.test", "role": "accountant"},
+    {"key": "operator", "email": "operator@example.test", "role": "operator"},
+    {"key": "organization-user-a", "email": "finance-a@example.test", "role": "school_user", "organizationKey": "organization-a"},
+    {"key": "organization-user-b", "email": "finance-b@example.test", "role": "school_user", "organizationKey": "organization-b"}
+  ],
+  "passwordPolicy": "generate local-only fixture credentials during explicit seed; do not store real credentials in this manifest",
+  "measurements": "seed cumulative billing energy and canonical solar logger generation independently; building/grid values only with actual supported mappings",
+  "scenarioOutputs": "create bills/documents/payments/receipts through the accepted real TEST workflow, not direct fake-issued inserts",
+  "email": "loopback local capture service only",
+  "oldDataset": {"project": "solar-dashboard-review", "database": "solar_dashboard_review", "host": "127.0.0.1", "port": 15439, "volumes": ["solar-dashboard-review_review-postgres", "solar-dashboard-review_review-storage"]},
+  "newDataset": {"project": "solar-financial-flow-review", "database": "solar_financial_flow_review", "host": "127.0.0.1", "port": 15449}
+}

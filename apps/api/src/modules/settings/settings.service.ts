@@ -22,6 +22,8 @@ export interface CompanyProfile {
   phone: string;
   email: string;
   logoUrl?: string;
+  signatoryName?: string;
+  signatoryTitle?: string;
   updatedAt?: string;
 }
 
@@ -49,8 +51,8 @@ export class SettingsService {
     const map = new Map(res.rows.map((r) => [r.key, r.value]));
 
     return {
-      invoicePrefix: map.get("invoicePrefix") ?? "INV{year}{month}",
-      receiptPrefix: map.get("receiptPrefix") ?? "RCT{year}{month}",
+      invoicePrefix: "INV{YY}{MM}",
+      receiptPrefix: "RCP{YY}{MM}",
       rawTelemetryRetentionYears: Number(map.get("rawTelemetryRetentionYears") ?? 2),
       aggregateRetentionYears: Number(map.get("aggregateRetentionYears") ?? 7),
       language: map.get("language") ?? "th",
@@ -62,7 +64,7 @@ export class SettingsService {
   }
 
   async updateSettings(newSettings: Partial<SystemSettings>): Promise<SystemSettings> {
-    const entries = Object.entries(newSettings).filter(([_, v]) => v !== undefined);
+    const entries = Object.entries(newSettings).filter(([key, v]) => v !== undefined && !["invoicePrefix","receiptPrefix"].includes(key));
     for (const [k, v] of entries) {
       await this.db.query(
         `INSERT INTO system_settings (key, value, updated_at)
@@ -76,13 +78,15 @@ export class SettingsService {
 
   async getCompanyProfile(): Promise<CompanyProfile> {
     const res = await this.db.query<CompanyProfile>(
-      `SELECT id, company_name AS "companyName", tax_id AS "taxId", branch, address, phone, email, logo_url AS "logoUrl", updated_at AS "updatedAt"
+      `SELECT id, company_name AS "companyName", tax_id AS "taxId", branch, address, phone, email, logo_url AS "logoUrl", signatory_name AS "signatoryName", signatory_title AS "signatoryTitle", updated_at AS "updatedAt"
        FROM company_profile
        ORDER BY updated_at DESC
        LIMIT 1`
     );
     if (res.rows.length === 0 || !res.rows[0]) {
       return {
+        signatoryName: "",
+        signatoryTitle: "",
         companyName: "",
         taxId: "",
         branch: "",
@@ -104,18 +108,21 @@ export class SettingsService {
     const email = input.email ?? current.email;
     const logoUrl = input.logoUrl ?? current.logoUrl ?? null;
 
+    const signatoryName = input.signatoryName?.trim() ?? current.signatoryName ?? '';
+    const signatoryTitle = input.signatoryTitle?.trim() ?? current.signatoryTitle ?? '';
+
     if (current.id) {
       await this.db.query(
         `UPDATE company_profile
-         SET company_name = $1, tax_id = $2, branch = $3, address = $4, phone = $5, email = $6, logo_url = $7, updated_at = now()
-         WHERE id = $8`,
-        [name, taxId, branch, address, phone, email, logoUrl, current.id]
+         SET company_name = $1, tax_id = $2, branch = $3, address = $4, phone = $5, email = $6, logo_url = $7, signatory_name = $8, signatory_title = $9, updated_at = now()
+         WHERE id = $10`,
+        [name, taxId, branch, address, phone, email, logoUrl, signatoryName, signatoryTitle, current.id]
       );
     } else {
       await this.db.query(
-        `INSERT INTO company_profile (company_name, tax_id, branch, address, phone, email, logo_url, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, now())`,
-        [name, taxId, branch, address, phone, email, logoUrl]
+        `INSERT INTO company_profile (company_name, tax_id, branch, address, phone, email, logo_url, signatory_name, signatory_title, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())`,
+        [name, taxId, branch, address, phone, email, logoUrl, signatoryName, signatoryTitle]
       );
     }
     return this.getCompanyProfile();

@@ -4,7 +4,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
 import * as React from "react";
 import { useForm } from "react-hook-form";
-import { z } from "zod";
+import type { z } from "zod";
+import { organizationFormSchema } from "./organization-form-schema";
 import { notify } from "../../components/feedback/notifications";
 import { Button } from "../../components/ui/button";
 import {
@@ -27,12 +28,7 @@ import {
 import { apiClient } from "../../lib/api-client";
 import { useLocale, useT } from "../../providers/locale-provider";
 
-const schoolSchema = z.object({
-  name: z.string().min(2, "ชื่อโรงเรียนต้องมีอย่างน้อย 2 ตัวอักษร"),
-  region: z.string().min(1, "กรุณาเลือกภูมิภาค"),
-});
-
-type SchoolFormValues = z.infer<typeof schoolSchema>;
+type SchoolFormValues = z.infer<ReturnType<typeof organizationFormSchema>>;
 
 const regions = [
   "ภาคกลาง",
@@ -62,7 +58,7 @@ export function SchoolFormDialog({
     reset,
     formState: { errors },
   } = useForm<SchoolFormValues>({
-    resolver: zodResolver(schoolSchema),
+    resolver: zodResolver(organizationFormSchema(locale)),
     defaultValues: {
       name: "",
 
@@ -75,8 +71,8 @@ export function SchoolFormDialog({
       await apiClient.post("/v1/schools", values);
       notify.success(
         locale === "th"
-          ? `เพิ่มโรงเรียน "${values.name}" เรียบร้อยแล้ว`
-          : `School "${values.name}" added successfully`
+          ? `เพิ่มองค์กร "${values.name}" เรียบร้อยแล้ว`
+          : `Organization "${values.name}" added successfully`
       );
       reset();
       onOpenChange(false);
@@ -93,23 +89,23 @@ export function SchoolFormDialog({
       <DialogContent className="sm:max-w-lg sm:rounded-2xl sm:p-6">
         <DialogHeader className="pb-1">
           <DialogTitle className="text-base font-semibold">
-            {locale === "th" ? "เพิ่มโรงเรียนใหม่" : "Add New School"}
+            {locale === "th" ? "เพิ่มองค์กรใหม่" : "Add New Organization"}
           </DialogTitle>
           <DialogDescription className="text-xs">
             {locale === "th"
-              ? "กรอกข้อมูลโรงเรียนเพื่อลงทะเบียนเข้าสู่ระบบแพลตฟอร์ม"
-              : "Enter school information to register on the platform"}
+              ? "กรอกข้อมูลองค์กรเพื่อลงทะเบียนเข้าสู่ระบบแพลตฟอร์ม"
+              : "Enter organization information to register on the platform"}
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 pt-3.5">
           <div className="space-y-2">
             <Label htmlFor="school-name" required className="text-xs font-medium">
-              {locale === "th" ? "ชื่อโรงเรียน" : "School Name"}
+              {locale === "th" ? "ชื่อองค์กร" : "Organization Name"}
             </Label>
             <Input
               id="school-name"
-              placeholder={locale === "th" ? "เช่น โรงเรียนอนุบาลสาธิต" : "e.g. Demonstration School"}
+              placeholder={locale === "th" ? "เช่น บริษัทตัวอย่าง" : "e.g. Example Company"}
               className="text-xs h-10"
               {...register("name")}
             />
@@ -127,7 +123,7 @@ export function SchoolFormDialog({
               onValueChange={(val) => setValue("region", val)}
             >
               <SelectTrigger id="school-region" className="text-xs h-10 w-full">
-                <SelectValue placeholder="เลือกภูมิภาค" />
+                <SelectValue placeholder={locale === "th" ? "เลือกภูมิภาค" : "Select a region"} />
               </SelectTrigger>
               <SelectContent>
                 {regions.map((reg) => (

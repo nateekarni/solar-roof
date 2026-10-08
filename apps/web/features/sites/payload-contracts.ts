@@ -10,6 +10,7 @@ export interface PayloadProfile {
 }
 export interface PayloadRevision { id: string; profileId: string; version: string; config: PayloadProfile; createdAt: string }
 export interface PayloadDevice {
+  profileConfig?:PayloadProfile;sourcePresetRevisionId?:string;profileOwnerDeviceId?:string;billingMeter?:boolean;billingSourceTag?:string;
   profileDeviceType?:string;
   sourceProfileId?:string;sourceProfileVersion?:string;
   id: string; name: string; externalDeviceId: string; profileRevisionId: string; profileId: string;

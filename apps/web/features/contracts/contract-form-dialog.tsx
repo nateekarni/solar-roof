@@ -1,4 +1,7 @@
 "use client";
+import {BRAND_NAME} from "../../components/brand/brand-mark";
+import {useFinancialCapabilities} from '../../lib/financial-capabilities';
+import {financialContractInput,nextRateStart,contractRatePayload} from './contract-financial-input';
 
 import { AddButton } from "../../components/ui/add-button";
 
@@ -7,7 +10,9 @@ import { Trash2, Calendar, FileText, Building2, UserCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import * as React from "react";
 import { useForm } from "react-hook-form";
-import { z } from "zod";
+import { providerSignatoryPatch, type ProviderSignatoryField } from './provider-signatory-defaults';
+import { createContractSchema, type ContractFormValues } from "./contract-schema";
+import { createContractIdentityAutofill, type ContractIdentityField } from "./contract-identity-autofill";
 import { notify } from "../../components/feedback/notifications";
 import {Table,TableHeader,TableHead,TableBody,TableRow,TableCell} from "../../components/ui/table";
 import { Button } from "../../components/ui/button";
@@ -34,21 +39,6 @@ import { useLocale, useT } from "../../providers/locale-provider";
 import { useSessionUser } from "../../providers/session-user-provider";
 import { loadContractSites } from "../shared/business-operation-options";
 
-const contractSchema = z.object({
-  siteId: z.string().min(1, "กรุณาเลือกไซต์งาน"),
-  effectiveDate: z.string().min(1, "กรุณาระบุวันที่มีผล"),
-  paymentTerms: z.string().min(1, "กรุณาระบุเงื่อนไขการชำระเงิน"),
-  signerName: z.string().min(1, "กรุณาระบุชื่อผู้ลงนาม"),
-  taxId: z.string().optional(),
-  companyName: z.string().optional(),
-  branch: z.string().optional(),
-  taxAddress: z.string().optional(),
-  billingEmail: z.string().optional(),
-  billingPhone: z.string().optional(),
-});
-
-type ContractFormValues = z.infer<typeof contractSchema>;
-
 interface SiteOption {
   id: string;
   name: string;
@@ -72,8 +62,17 @@ export function ContractFormDialog({
   const t = useT();
   const locale = useLocale();
   const user = useSessionUser();
+  const contractSchema = React.useMemo(() => createContractSchema(locale), [locale]);
+  const capabilities=useFinancialCapabilities();
+  const localTestMode=capabilities.financialScope==='TEST';
+  const [paymentTermDays,setPaymentTermDays]=React.useState('');
+  const [recipientUserId,setRecipientUserId]=React.useState('');
+  const [recipientOptions,setRecipientOptions]=React.useState<Array<{id:string;email:string;displayName:string}>>([]);
   const [loading, setLoading] = React.useState(false);
   const [loadingSites, setLoadingSites] = React.useState(false);
+  const [loadingOrganization,setLoadingOrganization]=React.useState(false);
+  const [loadingIssuer,setLoadingIssuer]=React.useState(false);
+  const editedProviderFields=React.useRef(new Set<ProviderSignatoryField>());
   const [sites, setSites] = React.useState<SiteOption[]>([]);
   const [rateRows, setRateRows] = React.useState<RateRow[]>([
     {
@@ -87,6 +86,7 @@ export function ContractFormDialog({
     register,
     handleSubmit,
     setValue,
+    getValues,
     watch,
     reset,
     formState: { errors },
@@ -97,6 +97,9 @@ export function ContractFormDialog({
 
       paymentTerms: "",
       signerName: "",
+      signerTitle: "",
+      customerSignerName: "",
+      customerSignerTitle: "",
       taxId: "",
       companyName: "",
       branch: "",
@@ -116,15 +119,46 @@ export function ContractFormDialog({
 
           }
         })
-        .catch((error: unknown) => { setSites([]); notify.error(error instanceof Error ? error.message : (locale === "th" ? "ไม่สามารถโหลดรายการโรงเรียนได้" : "Unable to load schools")); })
+        .catch((error: unknown) => { setSites([]); notify.error(error instanceof Error ? error.message : (locale === "th" ? "ไม่สามารถโหลดรายการไซต์งานได้" : "Unable to load sites")); })
         .finally(() => setLoadingSites(false));
     }
   }, [open, setValue, locale]);
 
+  const localeRef=React.useRef(locale);
+  localeRef.current=locale;
+  const identityAutofill=React.useRef<ReturnType<typeof createContractIdentityAutofill>|null>(null);
+  if(!identityAutofill.current)identityAutofill.current=createContractIdentityAutofill({
+    loadDefaults:siteId=>apiClient.get(`/v1/operations/contracts/organization-defaults?siteId=${encodeURIComponent(siteId)}`),
+    setField:(field,value)=>setValue(field,value),
+    setLoading:setLoadingOrganization,
+    onError:error=>notify.error(error instanceof Error?error.message:(localeRef.current==='th'?'โหลดข้อมูลเอกสารองค์กรไม่สำเร็จ':'Unable to load organization document defaults')),
+  });
+  React.useEffect(()=>{
+    let active=true;
+    if(!open)return;
+    setLoadingIssuer(true);
+    void apiClient.get<{signatoryName?:string;signatoryTitle?:string}>('/v1/settings/company').then(profile=>{
+      if(!active)return;
+      const patch=providerSignatoryPatch(profile,getValues(),editedProviderFields.current);
+      for(const field of ['signerName','signerTitle'] as const)if(patch[field]!==undefined)setValue(field,patch[field]);
+    }).catch(error=>{if(active)notify.error(error instanceof Error?error.message:(localeRef.current==='th'?'โหลดข้อมูลผู้ลงนามไม่สำเร็จ':'Unable to load provider signatory defaults'));})
+      .finally(()=>{if(active)setLoadingIssuer(false);});
+    return ()=>{active=false;};
+  },[open,getValues,setValue]);
+  const registerProvider=(field:ProviderSignatoryField)=>register(field,{onChange:()=>editedProviderFields.current.add(field)});
+  const registerIdentity=(field:ContractIdentityField)=>register(field,{onChange:()=>identityAutofill.current!.markEdited(field)});
+  const selectedSiteId=watch('siteId');
+  React.useEffect(()=>identityAutofill.current!.activate({open,siteId:selectedSiteId}),[open,selectedSiteId]);
+
+  React.useEffect(()=>{
+    let active=true;setRecipientUserId('');setRecipientOptions([]);
+    if(open&&selectedSiteId&&localTestMode)apiClient.get<Array<{id:string;email:string;displayName:string}>>(`/v1/operations/contracts/recipient-options?siteId=${encodeURIComponent(selectedSiteId)}`).then(rows=>{if(active)setRecipientOptions(rows);}).catch(()=>{if(active)setRecipientOptions([]);});
+    return ()=>{active=false;};
+  },[open,selectedSiteId,localTestMode]);
   const handleAddRateRow = () => {
     const lastRow = rateRows[rateRows.length - 1];
     const nextStart = lastRow?.endDate
-      ? lastRow.endDate
+      ? nextRateStart(lastRow.endDate)
       : new Date().toISOString().slice(0, 10);
 
     setRateRows((prev) => [
@@ -153,6 +187,7 @@ export function ContractFormDialog({
   };
 
   const onSubmit = async (values: ContractFormValues) => {
+    if(loadingOrganization||loadingIssuer)return;
     setLoading(true);
     try {
       const payload = {
@@ -160,7 +195,11 @@ export function ContractFormDialog({
         siteIds: [values.siteId],
         effectiveDate: values.effectiveDate,
         paymentTerms: values.paymentTerms,
+        ...(localTestMode?financialContractInput(paymentTermDays,recipientUserId):(paymentTermDays?{paymentTermDays:Number(paymentTermDays)}:{})),
         signerName: values.signerName,
+        signerTitle: values.signerTitle,
+        customerSignerName: values.customerSignerName,
+        customerSignerTitle: values.customerSignerTitle,
         taxId: values.taxId?.trim() || null,
         companyName: values.companyName?.trim() || null,
         branch: values.branch?.trim() || null,
@@ -168,11 +207,7 @@ export function ContractFormDialog({
         billingEmail: values.billingEmail?.trim() || null,
         billingPhone: values.billingPhone?.trim() || null,
         ratePerKwh: Number(rateRows[0]?.rate),
-        rates: rateRows.map((r) => ({
-          startDate: r.startDate,
-          endDate: r.endDate.trim() ? r.endDate : null,
-          rate: Number(r.rate),
-        })),
+        rates: contractRatePayload(rateRows),
       };
 
       await apiClient.post("/v1/contracts", payload);
@@ -182,11 +217,11 @@ export function ContractFormDialog({
           ? "สร้างสัญญาและตารางอัตราค่าไฟสำเร็จ"
           : "Created contract and rate schedule successfully"
       );
-      reset();
+      reset();editedProviderFields.current.clear();setPaymentTermDays('');setRecipientUserId('');
       onOpenChange(false);
       router.refresh();
-    } catch (err: any) {
-      notify.error(err.message || "เกิดข้อผิดพลาดในการสร้างสัญญา");
+    } catch (err: unknown) {
+      notify.error(err instanceof Error && err.message ? err.message : (locale === "th" ? "เกิดข้อผิดพลาดในการสร้างสัญญา" : "Unable to create the contract"));
     } finally {
       setLoading(false);
     }
@@ -195,13 +230,13 @@ export function ContractFormDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl sm:rounded-2xl sm:p-6 max-h-[92vh] overflow-y-auto">
-        <DialogHeader className="pb-1">
-          <div className="flex items-center gap-2.5">
-            <div className="grid size-9 place-items-center rounded-lg bg-primary/10 text-primary">
+        <DialogHeader className="min-w-0 pb-1">
+          <div className="flex min-w-0 items-center gap-2.5 pr-6">
+            <div className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
               <FileText className="size-5 text-primary" />
             </div>
-            <div>
-              <DialogTitle className="text-base font-semibold">
+            <div className="min-w-0">
+              <DialogTitle className="block text-base font-semibold break-words">
                 {locale === "th" ? "สร้างสัญญาซื้อขายไฟฟ้าและอัตราค่าไฟ (PPA)" : "Create PPA Contract & Rates"}
               </DialogTitle>
               <DialogDescription className="text-xs">
@@ -213,16 +248,28 @@ export function ContractFormDialog({
           </div>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 pt-2">
+        <form onSubmit={handleSubmit(onSubmit)} className="min-w-0 space-y-4 pt-2">
           {/* Section 1: Site and Signer Information */}
-          <div className="space-y-3 border-t pt-4 first:border-t-0 first:pt-0">
-            <div className="flex items-center gap-2 text-xs font-semibold text-foreground">
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
               <Building2 className="size-4 text-primary" />
-              <span>{locale === "th" ? "1. ข้อมูลไซต์งานและคู่สัญญา" : "1. Site & Signer Details"}</span>
+              <span>{locale === "th" ? "ข้อมูลไซต์งานและคู่สัญญา" : "Site & Signer Details"}</span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-2 sm:col-span-2">
+                            <div className="space-y-2">
+                <Label htmlFor="payment-term-days" required={localTestMode}>{locale==='th'?'จำนวนวันชำระเงิน':'Payment term (calendar days)'}</Label>
+                <Input id="payment-term-days" type="number" min="0" max="3650" step="1" required={localTestMode} value={paymentTermDays} onChange={event=>setPaymentTermDays(event.target.value)}/>
+              </div>
+              <div className="space-y-2">
+                {localTestMode&&<><Label htmlFor="contract-recipient" required>{locale==='th'?'บัญชีผู้รับเอกสาร':'Document recipient account'}</Label>
+                <Select value={recipientUserId} onValueChange={setRecipientUserId} disabled={!selectedSiteId}>
+                  <SelectTrigger id="contract-recipient"><SelectValue placeholder={locale==='th'?'เลือกผู้รับที่ยืนยันอีเมลแล้ว':'Select verified recipient'}/></SelectTrigger>
+                  <SelectContent>{recipientOptions.map(option=><SelectItem key={option.id} value={option.id}>{option.displayName} · {option.email}</SelectItem>)}</SelectContent>
+                </Select>
+                {!recipientOptions.length&&selectedSiteId&&<p className="text-xs text-muted-foreground">{locale==='th'?'ยังไม่มีบัญชีผู้รับที่ยืนยันอีเมลในองค์กรนี้':'No verified recipient account in this organization.'}</p>}</>}
+              </div>
+<div className="space-y-2 sm:col-span-2">
                 <Label htmlFor="c-site" required className="text-xs font-medium">
                   {locale === "th" ? "เลือกไซต์งานติดตั้ง" : "Solar Site"}
                 </Label>
@@ -231,7 +278,7 @@ export function ContractFormDialog({
                   onValueChange={(val: string) => setValue("siteId", val, { shouldValidate: true })}
                 >
                   <SelectTrigger id="c-site" className="text-xs h-10 w-full bg-card">
-                    <SelectValue placeholder={loadingSites ? "กำลังโหลดไซต์..." : "เลือกไซต์งาน"} />
+                    <SelectValue placeholder={loadingSites ? (locale === "th" ? "กำลังโหลดไซต์งาน..." : "Loading sites...") : sites.length === 0 ? (locale === "th" ? "ไม่มีไซต์งานให้เลือก" : "No sites available") : (locale === "th" ? "เลือกไซต์งาน" : "Select a site")} />
                   </SelectTrigger>
                   <SelectContent>
                     {sites.map((s) => (
@@ -256,6 +303,7 @@ export function ContractFormDialog({
                   onValueChange={(val: string) => setValue("effectiveDate", val, { shouldValidate: true })}
                   required
                 />
+                {errors.effectiveDate && <p className="text-[11px] text-destructive">{errors.effectiveDate.message}</p>}
               </div>
 
               <div className="space-y-2">
@@ -264,10 +312,11 @@ export function ContractFormDialog({
                 </Label>
                 <Input
                   id="terms"
-                  placeholder="ชำระภายใน 30 วัน"
+                  placeholder={locale === "th" ? "ชำระภายใน 30 วัน" : "Payment within 30 days"}
                   className="text-xs h-10 bg-card"
                   {...register("paymentTerms")}
                 />
+                {errors.paymentTerms && <p className="text-[11px] text-destructive">{errors.paymentTerms.message}</p>}
               </div>
 
               <div className="space-y-2 sm:col-span-2">
@@ -276,19 +325,32 @@ export function ContractFormDialog({
                 </Label>
                 <Input
                   id="signer"
-                  placeholder="Solar Platform Owner"
+                  placeholder={locale === "th" ? "ชื่อผู้มีอำนาจลงนาม" : "Authorized signatory name"}
                   className="text-xs h-10 bg-card"
-                  {...register("signerName")}
+                  {...registerProvider("signerName")}
                 />
+                {errors.signerName && <p className="text-[11px] text-destructive">{errors.signerName.message}</p>}
+              </div>
+              <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="provider-signer-title">{locale==='th'?'ตำแหน่งผู้ลงนามฝ่ายผู้ให้บริการ':'Provider signatory title'}</Label>
+                <Input id="provider-signer-title" {...registerProvider('signerTitle')}/>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="customer-signer-name">{locale==='th'?'ชื่อผู้ลงนามฝ่ายลูกค้า (ไม่บังคับ)':'Customer signatory name (optional)'}</Label>
+                <Input id="customer-signer-name" {...register('customerSignerName')}/>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="customer-signer-title">{locale==='th'?'ตำแหน่งผู้ลงนามฝ่ายลูกค้า (ไม่บังคับ)':'Customer signatory title (optional)'}</Label>
+                <Input id="customer-signer-title" {...register('customerSignerTitle')}/>
               </div>
             </div>
           </div>
 
           {/* Section 2: Tax Invoice & Customer Details */}
-          <div className="space-y-3 border-t pt-4 first:border-t-0 first:pt-0">
-            <div className="flex items-center gap-2 text-xs font-semibold text-foreground">
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
               <FileText className="size-4 text-primary" />
-              <span>{locale === "th" ? "2. ข้อมูลออกใบกำกับภาษี / ใบเสร็จรับเงิน (Tax Info)" : "2. Tax Invoice Information"}</span>
+              <span>{locale === "th" ? "ข้อมูลออกใบกำกับภาษี / ใบเสร็จรับเงิน" : "Tax Invoice Information"}</span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -300,31 +362,31 @@ export function ContractFormDialog({
                   id="tax-id"
                   placeholder="0105558123456"
                   className="text-xs h-10 font-mono bg-card"
-                  {...register("taxId")}
+                  {...registerIdentity("taxId")}
                 />
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="branch" className="text-xs font-medium">
-                  {locale === "th" ? "สาขา (Branch)" : "Branch"}
+                  {locale === "th" ? "สาขา" : "Branch"}
                 </Label>
                 <Input
                   id="branch"
-                  placeholder="สำนักงานใหญ่ หรือ 00000"
+                  placeholder={locale === "th" ? "สำนักงานใหญ่ หรือ 00000" : "Head office or 00000"}
                   className="text-xs h-10 bg-card"
-                  {...register("branch")}
+                  {...registerIdentity("branch")}
                 />
               </div>
 
               <div className="space-y-2 sm:col-span-2">
                 <Label htmlFor="company-name" className="text-xs font-medium">
-                  {locale === "th" ? "ชื่อนิติบุคคล / สถานศึกษาตาม ภ.พ.20" : "Company / School Entity Name"}
+                  {locale === "th" ? "ชื่อนิติบุคคล / องค์กร" : "Legal Entity / Organization Name"}
                 </Label>
                 <Input
                   id="company-name"
-                  placeholder="โรงเรียนมัธยมดอนทอง หรือ บจก. พลังงานโซลาร์"
+                  placeholder={locale === "th" ? "ชื่อองค์กรตามเอกสารจดทะเบียน" : "Registered organization name"}
                   className="text-xs h-10 bg-card"
-                  {...register("companyName")}
+                  {...registerIdentity("companyName")}
                 />
               </div>
 
@@ -334,9 +396,9 @@ export function ContractFormDialog({
                 </Label>
                 <Input
                   id="tax-address"
-                  placeholder="เลขที่ 123 หมู่ 4 ต.ในเมือง อ.เมือง จ.ขอนแก่น 40000"
+                  placeholder={locale === "th" ? "ที่อยู่ตามเอกสารจดทะเบียน" : "Registered address"}
                   className="text-xs h-10 bg-card"
-                  {...register("taxAddress")}
+                  {...registerIdentity("taxAddress")}
                 />
               </div>
 
@@ -347,9 +409,9 @@ export function ContractFormDialog({
                 <Input
                   id="billing-email"
                   type="email"
-                  placeholder="finance@school.ac.th"
+                  placeholder="finance@example.com"
                   className="text-xs h-10 bg-card"
-                  {...register("billingEmail")}
+                  {...registerIdentity("billingEmail")}
                 />
               </div>
 
@@ -361,18 +423,18 @@ export function ContractFormDialog({
                   id="billing-phone"
                   placeholder="02-123-4567"
                   className="text-xs h-10 bg-card"
-                  {...register("billingPhone")}
+                  {...registerIdentity("billingPhone")}
                 />
               </div>
             </div>
           </div>
 
           {/* Section 3: Dynamic Rate Schedule Table */}
-          <div className="space-y-3 border-t pt-4 first:border-t-0 first:pt-0">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-xs font-semibold text-foreground">
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
                 <Calendar className="size-4 text-primary" />
-                <span>{locale === "th" ? "3. ตารางอัตราค่าไฟตามช่วงเวลา (Dynamic Rate Schedule)" : "3. Rate Schedule"}</span>
+                <span>{locale === "th" ? "ตารางอัตราค่าไฟตามช่วงเวลา" : "Rate Schedule"}</span>
               </div>
               <AddButton
                 type="button"
@@ -386,7 +448,7 @@ export function ContractFormDialog({
               </AddButton>
             </div>
 
-            <div className="overflow-x-auto rounded-lg border border-border">
+            <div className="min-w-0 max-w-full overflow-x-auto rounded-lg border border-border">
               <Table className="w-full text-left text-xs">
                 <TableHeader className="bg-muted/60 text-[11px] font-semibold text-muted-foreground uppercase">
                   <TableRow>
@@ -412,7 +474,7 @@ export function ContractFormDialog({
                           value={row.endDate}
                           onValueChange={(value) => handleRateRowChange(idx, "endDate", value)}
                           aria-label={locale === "th" ? "วันสิ้นสุดอัตราค่าไฟ" : "Rate end date"}
-                          placeholder="ไม่มีกำหนด"
+                          placeholder={locale === "th" ? "ไม่มีกำหนด" : "Ongoing"}
                           className="h-10 text-xs font-mono bg-card"
                         />
                       </TableCell>
@@ -436,8 +498,8 @@ export function ContractFormDialog({
                             type="button"
                             onClick={() => handleRemoveRateRow(idx)}
                             className="h-auto gap-0 px-0 p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
-                            aria-label="ลบแถวนี้"
-                            title="ลบแถวนี้"
+                            aria-label={locale === "th" ? "ลบช่วงเวลานี้" : "Remove this rate period"}
+                            title={locale === "th" ? "ลบช่วงเวลานี้" : "Remove this rate period"}
                           >
                             <Trash2 className="size-3.5" />
                           </Button>
@@ -450,8 +512,8 @@ export function ContractFormDialog({
             </div>
             <p className="text-[11px] text-muted-foreground">
               {locale === "th"
-                ? "* หากเว้นว่างวันสิ้นสุด อัตราค่าไฟนั้นจะมีผลต่อเนื่องจนกว่าจะมีอัตราค่าไฟช่วงถัดไปกำหนดขึ้น"
-                : "* Leaving end date blank marks the rate as open-ended until superseded by a newer version"}
+                ? "* วันสิ้นสุดรวมวันนั้นด้วย หากเว้นว่างจะสิ้นสุดวันก่อนอัตราถัดไป หรือมีผลต่อเนื่องหากเป็นอัตราสุดท้าย"
+                : "* End date includes that day. A blank end stops the day before the next rate, or continues for the final rate."}
             </p>
           </div>
 
@@ -465,7 +527,7 @@ export function ContractFormDialog({
             >
               {t("common.cancel")}
             </Button>
-            <Button type="submit" size="sm" disabled={loading} className="text-xs h-10 px-5 font-semibold">
+            <Button type="submit" size="sm" disabled={loading || loadingOrganization || loadingIssuer} className="text-xs h-10 px-5 font-semibold">
               {loading ? t("common.saving") : locale === "th" ? "บันทึกสัญญาและอัตราค่าไฟ" : "Save Contract"}
             </Button>
           </DialogFooter>
@@ -474,3 +536,8 @@ export function ContractFormDialog({
     </Dialog>
   );
 }
+
+
+
+
+

@@ -1,0 +1,4 @@
+import assert from 'node:assert/strict';import test from 'node:test';
+import {validFinancialDate,normalizeTestRateSchedule} from './local-financial-policy.js';
+test('strict financial calendar validates impossible dates without throwing',()=>{for(const date of ['9999-99-99','2026-02-29','2026-09-31','2026-13-01'])assert.equal(validFinancialDate(date),false);for(const date of ['2024-02-29','2000-01-01','2026-09-30'])assert.equal(validFinancialDate(date),true);});
+test('public multi-rate payload preserves inclusive dates and resolves prior ongoing interval',()=>{assert.deepEqual(normalizeTestRateSchedule([{startDate:'2026-09-01',rate:3.5},{startDate:'2026-09-16',rate:4}]),[{startDate:'2026-09-01',endDate:'2026-09-15',rate:3.5},{startDate:'2026-09-16',endDate:null,rate:4}]);assert.throws(()=>normalizeTestRateSchedule([{startDate:'2026-09-01',endDate:'2026-09-16',rate:3.5},{startDate:'2026-09-16',rate:4}]));});

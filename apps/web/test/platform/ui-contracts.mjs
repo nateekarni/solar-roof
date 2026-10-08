@@ -27,7 +27,7 @@ try {
    await db.query('UPDATE users SET role=$1 WHERE id=$2',[role,user]);
    for(const width of [1440,390]) {
     const business=['owner','school_user'].includes(role),mobileMode=business&&width===390;
-    await page.setViewportSize({width,height:900});await page.goto(web+'/billing');
+    await page.setViewportSize({width,height:900});await page.goto(web+'/billing?search=U1%20Browser');
     await page.getByRole('searchbox').fill('U1 Browser');
     await page.getByRole('status').filter({hasText:/^25 / }).waitFor();
     if(role==='operator')assert.equal(await page.getByText('ชำระเงินและแนบสลิป',{exact:true}).filter({visible:true}).count(),0,'Operator cannot submit evidence');
@@ -39,7 +39,10 @@ try {
     const invoiceAction=menuMode?page.getByRole('menuitem',{name:'ดูใบแจ้งหนี้',exact:true}):page.getByRole('button',{name:'ดูใบแจ้งหนี้',exact:true});
     const response=page.waitForResponse(r=>r.url()===web+'/v1/operations/documents/'+invoice);
     await invoiceAction.click();assert.equal((await response).status(),200);
-    await page.getByRole('dialog').getByRole('alert').waitFor();assert.equal(await page.getByRole('dialog').getByRole('button',{name:/พิมพ์|Print/}).isDisabled(),true,'Metadata-only issued fixture cannot print invented evidence');
+    const preview=page.getByRole('dialog');await preview.getByRole('alert').waitFor();
+    assert.equal(await preview.getByRole('button',{name:/พิมพ์|Print|ดาวน์โหลด|Download/}).count(),0,'Metadata-only original has no print/download buttons');
+    assert.equal(await preview.getByRole('link',{name:/พิมพ์|Print|ดาวน์โหลด|Download/}).count(),0,'Metadata-only original has no print/download links');
+    assert.equal(await preview.locator('iframe').count(),0,'Metadata-only original has no fabricated PDF frame');
     await page.keyboard.press('Escape');
     if(menuMode)await page.getByRole('button',{name:/เมนูการดำเนินการ|Open actions menu/}).click();
     const visibleForbiddenActions=await page.getByText(/ตรวจสอบสลิป|ตรวจสลิป|Verify Payment Slip|Verify Payment/).filter({visible:true}).count();assert.equal(visibleForbiddenActions,0,role);
@@ -48,10 +51,10 @@ try {
    }
   }
   await db.query("UPDATE users SET role='school_user' WHERE id=$1",[user]);
-  await page.setViewportSize({width:390,height:900});await page.goto(web+'/billing');
+  await page.setViewportSize({width:390,height:900});await page.goto(web+'/billing?search=U1%20Browser');
   await page.getByRole('button',{name:'ชำระเงินและแนบสลิป',exact:true}).first().click();
   await page.locator('#slip-upload').setInputFiles({name:'evidence.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jxioAAAAASUVORK5CYII=','base64')});
-  await page.locator('img[alt="Slip Preview"]').waitFor();
+  await page.getByRole('img',{name:'ตัวอย่างหลักฐาน',exact:true}).waitFor();
   let paymentRequests=0;page.on('request',request=>{if(request.method()==='POST'&&request.url().endsWith('/pay'))paymentRequests++;});
   const paid=page.waitForResponse(r=>r.request().method()==='POST'&&r.url().endsWith('/pay'));
   await page.getByRole('dialog').locator('form').evaluate(form=>{form.requestSubmit();form.requestSubmit();});
@@ -60,13 +63,18 @@ try {
   assert.equal(paymentRequests,1,'Two synchronous submit events send exactly one evidence mutation');
   await page.getByRole('dialog').waitFor({state:'hidden'});
   // The database changes scope after the displayed action: server denies the real POST.
-  await page.goto(web+'/billing');await page.getByRole('button',{name:'ชำระเงินและแนบสลิป',exact:true}).first().click();
+  await page.goto(web+'/billing?search=U1%20Browser');await page.getByRole('button',{name:'ชำระเงินและแนบสลิป',exact:true}).first().click();
   await page.locator('#slip-upload').setInputFiles({name:'evidence.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jxioAAAAASUVORK5CYII=','base64')});
-  await page.locator('img[alt="Slip Preview"]').waitFor();await db.query('UPDATE users SET school_id=NULL WHERE id=$1',[user]);
+  await page.getByRole('img',{name:'ตัวอย่างหลักฐาน',exact:true}).waitFor();await db.query('UPDATE users SET school_id=NULL WHERE id=$1',[user]);
   const denied=page.waitForResponse(r=>r.url().endsWith('/pay')),capRefresh=page.waitForResponse(r=>r.url().endsWith('/v1/auth/capabilities'));
   await page.getByRole('button',{name:'ยืนยันการชำระเงิน',exact:true}).click();assert.equal((await denied).status(),403);assert.deepEqual((await (await capRefresh).json()).operationsActions,[]);
-  await page.getByRole('dialog').getByRole('alert').filter({hasText:'สิทธิ์ของคุณเปลี่ยนแล้ว'}).waitFor();
-  await page.getByRole('button',{name:'ยกเลิก',exact:true}).click();assert.equal(await page.getByRole('button',{name:'ชำระเงินและแนบสลิป',exact:true}).count(),0);
+  const deniedDialog=page.getByRole('dialog');
+  await deniedDialog.getByRole('alert').filter({hasText:'เกิดข้อผิดพลาดในการส่งหลักฐานการชำระเงิน'}).waitFor();
+  await deniedDialog.locator('button[type="submit"]:disabled').waitFor();
+  assert.equal(await deniedDialog.getByRole('button',{name:'ยืนยันการชำระเงิน',exact:true}).isDisabled(),true,'Refreshed empty capabilities disable payment submission');
+  await page.getByRole('button',{name:'ยกเลิก',exact:true}).click();await deniedDialog.waitFor({state:'hidden'});
+  await page.getByRole('alert').filter({hasText:'สิทธิ์ของคุณเปลี่ยนแล้ว'}).waitFor();
+  assert.equal(await page.getByRole('button',{name:'ชำระเงินและแนบสลิป',exact:true}).count(),0);
   await db.query('UPDATE users SET school_id=$1 WHERE id=$2',[school,user]);
   const expectedDeniedErrors=errors.filter(message=>message.includes('403 (Forbidden)'));assert.equal(expectedDeniedErrors.length,1,'One deliberate denied HTTP request is reported by Chromium');
   assert.deepEqual(errors.filter(message=>!message.includes('403 (Forbidden)')),[],timezoneId);errors.length=0;
@@ -78,15 +86,17 @@ try {
   await db.query("UPDATE users SET role='admin',preferred_language='en' WHERE id=$1",[user]);
   const context=await browser.newContext({viewport:{width:1440,height:900}});await context.addCookies([{name:'access_token',value:tokens.accessToken,domain:'localhost',path:'/',httpOnly:true},{name:'locale',value:'en',domain:'localhost',path:'/'}]);
   const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
-  await page.goto(web+'/billing');await page.getByRole('status').filter({hasText:/^25 / }).waitFor();
+  await page.goto(web+'/billing?search=U1%20Browser');await page.getByRole('status').filter({hasText:/^25 / }).waitFor();
   const row=page.getByRole('row').filter({has:page.getByText('2025-08',{exact:true})});await row.waitFor();
   await row.evaluate(element=>{window.__u1PersistedRow=element;});
   const reordered=page.waitForResponse(response=>response.url().includes('/v1/operations/billing?')&&new URL(response.url()).searchParams.get('direction')==='asc');
-  await page.getByRole('button',{name:'Billing Period',exact:true}).click();assert.equal((await reordered).status(),200);
+  await page.getByRole('button',{name:'Billing Period',exact:true}).click();const sorted=await reordered;assert.equal(sorted.status(),200);
+  assert.equal(new URL(sorted.url()).searchParams.get('search'),'U1 Browser','Reorder keeps the owned fixture search');
+  assert.equal(new URL(page.url()).searchParams.get('search'),'U1 Browser','Sorting preserves the fixture search in browser history');
   await page.getByRole('row').nth(1).getByText('2024-07',{exact:true}).waitFor();
   assert.equal(await row.evaluate(element=>element===window.__u1PersistedRow),true,'The same persisted billing record retains its DOM row identity after real server reorder');
   for(const width of [1440,390]) {
-   await page.setViewportSize({width,height:900});await page.goto(web+'/billing');await page.getByRole('status').filter({hasText:/^25 / }).waitFor();
+   await page.setViewportSize({width,height:900});await page.goto(web+'/billing?search=U1%20Browser');await page.getByRole('status').filter({hasText:/^25 / }).waitFor();
    await page.getByRole('button',{name:/เมนูการดำเนินการ|Open actions menu/}).first().click();await page.getByRole('menuitem',{name:'View Billing Details',exact:true}).waitFor();await page.getByRole('menuitem',{name:/View Invoice.*No issued document/}).waitFor();await page.keyboard.press('Escape');
   }
   assert.deepEqual(errors,[]);await context.close();console.log('PASS U1 review fix: real server reorder retains persisted DOM row identity; English actions/reasons in desktop/mobile');
@@ -103,5 +113,9 @@ try {
   await page.getByRole('link',{name:'เข้าสู่ระบบใหม่',exact:true}).click();await page.waitForURL(web+'/login?sessionExpired=1');assert.equal(refreshCount,1);
   assert.deepEqual(errors,stalled==='logout'?['Failed to load resource: the server responded with a status of 401 (Unauthorized)']:[],stalled+' timeout retains expected invalid-refresh 401 and no unexpected console/page errors');await context.close();
  }
- console.log('PASS U1: actual ID HTTP preview beyond first page, truthful metadata-only reason/print disabled, 5 roles, UTC/Bangkok, resize and history');
-} finally {await browser.close();await db.query('DELETE FROM audit_events WHERE actor_id=$1',[user]);await db.query('DELETE FROM users WHERE id=$1',[user]);await db.query('DELETE FROM documents WHERE site_id=$1',[site]);await db.query('DELETE FROM payments WHERE billing_cycle_id IN (SELECT id FROM billing_cycles WHERE site_id=$1)',[site]);await db.query('DELETE FROM billing_cycles WHERE site_id=$1',[site]);await db.query('DELETE FROM sites WHERE id=$1',[site]);await db.query('DELETE FROM schools WHERE id=$1',[school]);await db.end();}
+ console.log('PASS U1: actual ID HTTP preview beyond first page, truthful metadata-only reason/no print or download, 5 roles, UTC/Bangkok, resize and history');
+} finally {
+ // Issued originals and their fixture dependencies remain until owned isolated-stack teardown.
+ // The disposable CI database is removed by scripts/ci/isolated-stack.sh; immutability stays enforced.
+ await browser.close();await db.end();
+}

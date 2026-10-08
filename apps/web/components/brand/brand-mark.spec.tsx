@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import React from 'react';
+import {renderToStaticMarkup} from 'react-dom/server';
+import {BrandMark} from './brand-mark';
+import {DocumentBrand} from './document-brand';
+test('adjacent brand text does not produce a second spoken logo label',()=>{const html=renderToStaticMarkup(<BrandMark/>);assert.match(html,/alt=""/);assert.match(html,/aria-hidden="true"/);});
+test('standalone mark exposes its accessible name',()=>{const html=renderToStaticMarkup(<BrandMark label="Solar Roof"/>);assert.match(html,/alt="Solar Roof"/);assert.doesNotMatch(html,/aria-hidden="true"/);});
+test('draft document displays the approved wordmark by default',()=>{assert.match(renderToStaticMarkup(<DocumentBrand issued={false}/>),/src="\/brand\/solar-roof-document.png"/);});
+test('draft document honors a configured issuer logo',()=>{assert.match(renderToStaticMarkup(<DocumentBrand issued={false} company={{logoUrl:'/custom.png'}}/>),/src="\/custom.png"/);});
+test('issued document displays only the saved snapshot logo',()=>{for(const company of [{logoUrl:'/saved.png'},{logo_url:'/saved.png'}])assert.match(renderToStaticMarkup(<DocumentBrand issued company={company}/>),/src="\/saved.png"/);});
+test('historical documents without saved logo never acquire the current wordmark',()=>{assert.equal(renderToStaticMarkup(<DocumentBrand issued company={{}}/>),'');assert.equal(renderToStaticMarkup(<DocumentBrand issued/>),'');});

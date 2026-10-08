@@ -1,4 +1,5 @@
 "use client";
+import {BRAND_NAME} from "../../../components/brand/brand-mark";
 import { canVisitPage } from "@solar/domain";
 import { useSessionUser } from "../../../providers/session-user-provider";
 
@@ -61,7 +62,7 @@ export default function SettingsPage() {
       case "admin":
         return locale === "th" ? "ผู้ดูแลระบบสูงสุด" : "Super Administrator";
       case "school_user":
-        return locale === "th" ? "เจ้าหน้าที่โรงเรียน" : "School Officer";
+        return locale === "th" ? "ผู้ใช้งานองค์กร" : "Organization User";
       default:
         return locale === "th" ? "ผู้ดูแลระบบ" : "Administrator";
     }
@@ -264,7 +265,7 @@ export default function SettingsPage() {
                     </div>
                     <p className="text-[11px] text-muted-foreground truncate">
                       {locale === "th"
-                        ? "จัดการสิทธิ์ เพิ่ม/ลดผู้ดูแลระบบและโรงเรียน"
+                        ? "จัดการสิทธิ์ เพิ่ม/ลดผู้ดูแลระบบและองค์กร"
                         : "Manage users, invitations, and permissions"}
                     </p>
                   </div>
@@ -300,7 +301,7 @@ export default function SettingsPage() {
             </DialogTitle>
             <DialogDescription className="text-xs mt-1">
               {locale === "th"
-                ? "คุณต้องการออกจากระบบ Solar Platform ใช่หรือไม่"
+                ? `คุณต้องการออกจากระบบ ${BRAND_NAME} ใช่หรือไม่`
                 : "Are you sure you want to sign out?"}
             </DialogDescription>
           </div>

@@ -232,9 +232,9 @@ function MonthRangePicker({
 
           let btnClass = "text-foreground hover:bg-accent hover:text-foreground";
           if (isSelectedEndpoint) {
-            btnClass = "bg-primary text-primary-foreground font-bold shadow-xs hover:bg-[#EAB308]";
+            btnClass = "bg-primary text-primary-foreground font-bold shadow-xs hover:bg-primary";
           } else if (isMiddle) {
-            btnClass = "bg-[#FEF08A] dark:bg-[#EAB308]/25 text-[#0F172A] dark:text-[#FEF08A] font-semibold";
+            btnClass = "bg-primary/25 text-foreground dark:text-primary font-semibold";
           }
 
           return (
@@ -442,7 +442,7 @@ export function PeriodPicker() {
                 onClick={() => handlePresetSelect(p)}
                 className={`min-h-11 text-sm justify-center font-medium px-2 transition-all ${
                   isSelected
-                    ? "bg-primary text-primary-foreground font-semibold shadow-xs hover:bg-[#EAB308] hover:text-[#0F172A]"
+                    ? "bg-primary text-primary-foreground font-semibold shadow-xs hover:bg-primary hover:text-primary-foreground"
                     : "text-muted-foreground hover:text-foreground border-border/80"
                 }`}
               >
@@ -516,7 +516,7 @@ export function PeriodPicker() {
               size="sm"
               disabled={!customRange?.from || !customRange?.to || !rangeValid(customRange.from,customRange.to)}
               onClick={handleApplyCustom}
-              className="flex-1 sm:flex-none h-10 text-sm font-semibold bg-primary text-primary-foreground hover:bg-[#EAB308]/90 cursor-pointer shadow-xs"
+              className="flex-1 sm:flex-none h-10 text-sm font-semibold bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer shadow-xs"
             >
               {locale === "th" ? "นำไปใช้" : "Apply"}
             </Button>

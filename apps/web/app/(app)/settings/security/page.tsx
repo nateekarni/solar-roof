@@ -16,6 +16,8 @@ import {
   Smartphone,
 } from "lucide-react";
 import { useLocale, useT } from "../../../../providers/locale-provider";
+import { authStore } from "../../../../stores/auth-store";
+import { submitOwnPasswordChange, validateOrganizationPassword } from "../../../../features/settings/organization-settings-model";
 import { apiClient } from "../../../../lib/api-client";
 import { notify } from "../../../../components/feedback/notifications";
 import { Button } from "../../../../components/ui/button";
@@ -42,40 +44,14 @@ export default function SecuritySettingsPage() {
     e.preventDefault();
     setPasswordError(null);
 
-    if (newPassword.length < 8) {
-      setPasswordError(
-        locale === "th"
-          ? "รหัสผ่านใหม่ต้องมีความยาวอย่างน้อย 8 ตัวอักษร"
-          : "New password must be at least 8 characters long"
-      );
-      return;
-    }
-
-    if (newPassword !== confirmPassword) {
-      setPasswordError(
-        locale === "th"
-          ? "รหัสผ่านใหม่และการยืนยันรหัสผ่านไม่ตรงกัน"
-          : "Passwords do not match"
-      );
-      return;
-    }
-
+    const invalid=validateOrganizationPassword(newPassword,confirmPassword,locale);
+    if(invalid){setPasswordError(invalid);return;}
     setIsChangingPassword(true);
     try {
-      await apiClient.put("/v1/auth/password", {
-        currentPassword,
-        newPassword,
+      await submitOwnPasswordChange(currentPassword,newPassword,confirmPassword,locale,{
+        update:body=>apiClient.put('/v1/auth/password',body),
+        clear:()=>authStore.clear(),redirect:path=>window.location.assign(path),
       });
-      setPasswordSuccess(true);
-      notify.success(
-        locale === "th" ? "เปลี่ยนรหัสผ่านสำเร็จแล้ว" : "Password changed successfully"
-      );
-      setTimeout(() => {
-        setPasswordSuccess(false);
-        setCurrentPassword("");
-        setNewPassword("");
-        setConfirmPassword("");
-      }, 2500);
     } catch (err: any) {
       const msg =
         err?.message ||
@@ -121,8 +97,8 @@ export default function SecuritySettingsPage() {
             </CardTitle>
             <CardDescription className="text-xs">
               {locale === "th"
-                ? "รหัสผ่านต้องมีความยาวอย่างน้อย 8 ตัวอักษร"
-                : "Password must be at least 8 characters"}
+                ? "รหัสผ่านต้องมีความยาว12 ถึง 128 ตัวอักษร"
+                : "Password must be 12 to 128 characters"}
             </CardDescription>
           </CardHeader>
           <CardContent className="p-0 pt-4">
@@ -197,7 +173,7 @@ export default function SecuritySettingsPage() {
                     type="submit"
                     disabled={isChangingPassword}
                     size="sm"
-                    className="h-10 text-xs font-semibold bg-[#EAB308] text-[#0F172A] hover:bg-[#EAB308]/90 gap-1.5 cursor-pointer shadow-xs"
+                    className="h-10 text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90 gap-1.5 cursor-pointer shadow-xs"
                   >
                     <Lock className="size-3.5" />
                     <span>

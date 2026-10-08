@@ -17,7 +17,9 @@ export interface OperationPage<T> {
 
 /** Runtime operation rows share identity; billing artifacts remain nullable. */
 export interface OperationRow { id: string; [key: string]: unknown; }
+import type { PaymentTransferRow } from './payments.js';
 export interface BillingRow extends OperationRow {
+ payments?: PaymentTransferRow[];
  siteId: string; period: string; status: string;
  invoiceId: string | null; receiptId: string | null;
  invoiceNumber: string | null; receiptNumber: string | null;

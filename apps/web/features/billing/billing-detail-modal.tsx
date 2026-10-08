@@ -45,6 +45,12 @@ import { useFinancialCapabilities } from "../../lib/financial-capabilities";
 import { useSessionUser } from "../../providers/session-user-provider";
 import { notify } from "../../components/feedback/notifications";
 import { formatAppDate, formatAppDateTime } from "../../lib/date-format";
+import {normalizePaymentMetadata,type PaymentMetadata} from '@solar/api-contracts';
+import {PaymentMetadataFields} from './payment-dialog';
+import {paymentMetadataCopy} from './payment-metadata-copy';
+import { PaymentHistory,type TransferHistoryRow } from "./payment-history";
+import { formatTransferAmount,transferAmount } from "./payment-input";
+import { billingDetailRequest } from "./billing-detail-request";
 
 export interface BillingDetailData {
   id: string;
@@ -57,8 +63,9 @@ export interface BillingDetailData {
   openingEnergy?: number;
   closingEnergy?: number;
   rate?: number;
-  amount?: number;
+  amount?: number|string;
   status: string;
+  payments?: TransferHistoryRow[];
   paymentId?: string;
   paymentStatus?: string;
   slipUrl?: string;
@@ -92,6 +99,10 @@ export function BillingDetailModal({
   const user = useSessionUser();
   const financial = useFinancialCapabilities();
   const isSchoolUser = user?.role === "school_user";
+  const canSubmitTransfer=(financial.operationsActions??[]).includes("submit_payment");
+  const [payerMetadata,setPayerMetadata]=React.useState({payerName:"",paymentMethod:"",originBank:"",originAccount:""});
+  const [enteredTransferAmount,setEnteredTransferAmount]=React.useState("");
+  React.useEffect(()=>{setEnteredTransferAmount("");setPayerMetadata({payerName:"",paymentMethod:"",originBank:"",originAccount:""});},[open,billingId]);
 
   const [loading, setLoading] = React.useState(false);
   const [data, setData] = React.useState<BillingDetailData | null>(initialData || null);
@@ -133,11 +144,15 @@ export function BillingDetailModal({
   };
 
   const handleFileUpload = async (file: File) => {
-    if (!file || !data?.id) return;
+    if (!file || !data?.id || !canSubmitTransfer || data.status==="paid") return;
+    let actualTransfer:string;
+    try{actualTransfer=transferAmount(enteredTransferAmount);}catch{notify.error(locale==="th"?"กรุณาระบุยอดโอนเป็นเงินบาทที่มากกว่าศูนย์และมีทศนิยมไม่เกิน 2 ตำแหน่ง":"Enter a positive THB transfer amount with at most two decimal places.");return;}
     if (!["image/jpeg", "image/png", "application/pdf"].includes(file.type) || file.size > 10 * 1024 * 1024) {
-      notify.error("Choose a PNG, JPEG or PDF file no larger than 10 MB");
+      notify.error(locale==="th"?"กรุณาเลือกไฟล์ PNG, JPEG หรือ PDF ขนาดไม่เกิน 10 MB":"Choose a PNG, JPEG or PDF file no larger than 10 MB");
       return;
     }
+    let metadata:PaymentMetadata;
+    try{metadata=normalizePaymentMetadata(payerMetadata);}catch{notify.error(paymentMetadataCopy[locale].invalid);return;}
     setIsUploadingSlip(true);
     try {
       const reader = new FileReader();
@@ -145,7 +160,8 @@ export function BillingDetailModal({
         const dataUrl = e.target?.result as string;
         try {
           await apiClient.post(`/v1/billing-cycles/${data.id}/pay`, {
-            amount: data.amount,
+            amount: financial.financialScope==="TEST"?actualTransfer:Number(actualTransfer),
+            ...metadata,
             slipUrl: dataUrl,
             paidAt: new Date().toISOString(),
             note: "Uploaded via Billing Detail Modal",
@@ -156,9 +172,10 @@ export function BillingDetailModal({
               : "Payment slip uploaded successfully"
           );
           setData((prev) => (prev ? { ...prev, slipUrl: dataUrl, status: "pending_verification" } : null));
+          await fetchDetails(data.id);
           onUpdated?.();
         } catch (err: any) {
-          notify.error(err?.message || "เกิดข้อผิดพลาดในการบันทึกสลิป");
+          notify.error(err?.message || (locale==="th"?"เกิดข้อผิดพลาดในการบันทึกสลิป":"Unable to save payment evidence"));
         } finally {
           setIsUploadingSlip(false);
         }
@@ -166,17 +183,17 @@ export function BillingDetailModal({
       reader.readAsDataURL(file);
     } catch (err: any) {
       setIsUploadingSlip(false);
-      notify.error("ไม่สามารถอ่านไฟล์ได้");
+      notify.error(locale==="th"?"ไม่สามารถอ่านไฟล์ได้":"Unable to read the file");
     }
   };
 
   const fetchDetails = React.useCallback(async (id: string) => {
     setLoading(true);
     try {
-      const res = await apiClient.get<BillingDetailData>(`/v1/billing-cycles/${id}`);
+      const res = await billingDetailRequest<BillingDetailData>(id,path=>apiClient.get<{row:BillingDetailData}>(path));
       setData((prev) => ({ ...prev, ...res }));
     } catch (error) {
-      notify.error(error instanceof Error ? error.message : "Unable to load billing details");
+      notify.error(error instanceof Error ? error.message : (locale==="th"?"ไม่สามารถโหลดรายละเอียดรอบบิลได้":"Unable to load billing details"));
     } finally {
       setLoading(false);
     }
@@ -207,6 +224,7 @@ export function BillingDetailModal({
           : "Payment approved and receipt generated"
       );
       setData((prev) => prev ? { ...prev, status: "paid", paymentStatus: "approved" } : null);
+      await fetchDetails(data.id);
       onUpdated?.();
     } catch (err: any) {
       notify.error(err?.message || "เกิดข้อผิดพลาดในการอนุมัติ");
@@ -234,6 +252,7 @@ export function BillingDetailModal({
       );
       setData((prev) => prev ? { ...prev, status: "rejected", paymentStatus: "rejected", rejectionReason: rejectionReason.trim() } : null);
       setShowRejectInput(false);
+      await fetchDetails(data.id);
       onUpdated?.();
     } catch (err: any) {
       notify.error(err?.message || "เกิดข้อผิดพลาดในการปฏิเสธ");
@@ -245,6 +264,8 @@ export function BillingDetailModal({
   const amountNum = Number(data.amount) || 0;
   const isPaid = data.status === "paid" || data.paymentStatus === "approved" || data.paymentStatus === "paid";
   const hasSlip = Boolean(data.slipUrl);
+  const payments=data.payments??[];
+  const hasPendingTransfers=payments.some(payment=>payment.status==="pending_verification");
 
   const formatNumber = (val: any) => {
     if (val === undefined || val === null || val === "") return "—";
@@ -283,7 +304,7 @@ export function BillingDetailModal({
                   </Badge>
                 </div>
                 <DialogDescription className="text-xs text-muted-foreground mt-0.5">
-                  {data.schoolName || "โรงเรียน"} • {locale === "th" ? "รอบบิลประจำเดือน " : "Period "}{data.period || data.periodEnd}
+                  {data.schoolName || "องค์กร"} • {locale === "th" ? "รอบบิลประจำเดือน " : "Period "}{data.period || data.periodEnd}
                 </DialogDescription>
               </div>
             </div>
@@ -401,6 +422,7 @@ export function BillingDetailModal({
           {/* RIGHT COLUMN: Payment Evidence & Verification Action (5 Cols) */}
           {/* ============================================================== */}
           <div className="lg:col-span-5 space-y-4 text-xs">
+            <PaymentHistory payments={payments} locale={locale}/>
             <div className="space-y-3 border-t pt-4">
               <div className="flex items-center justify-between font-semibold text-foreground">
                 <span className="flex items-center gap-1.5">
@@ -420,6 +442,12 @@ export function BillingDetailModal({
                 )}
               </div>
 
+              {canSubmitTransfer&&!isPaid&&<div className="space-y-2">
+                <PaymentMetadataFields locale={locale} value={payerMetadata} onChange={setPayerMetadata} disabled={isUploadingSlip}/>
+                <Label htmlFor="detail-transfer-amount" required>{locale==='th'?'ยอดที่โอนครั้งนี้ (บาท)':'This transfer amount (THB)'}</Label>
+                <Input id="detail-transfer-amount" inputMode="decimal" value={enteredTransferAmount} onChange={event=>setEnteredTransferAmount(event.target.value)} disabled={isUploadingSlip} aria-describedby="detail-transfer-amount-help"/>
+                <p id="detail-transfer-amount-help" className="text-muted-foreground">{locale==='th'?'ระบุยอดโอนของหลักฐานแต่ละรายการก่อนอัปโหลด ระบบเก็บรายการที่โอนแต่ละครั้งแยกกัน':'Enter the amount for this evidence before uploading. Each transfer is retained separately.'}</p>
+              </div>}
               {/* Slip Image Box */}
               {hasSlip ? (
                 <div className="space-y-2">
@@ -445,7 +473,7 @@ export function BillingDetailModal({
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">{locale === "th" ? "ยอดเงินในสลิป:" : "Slip Amount:"}</span>
-                      <span className="font-bold text-emerald-600 dark:text-emerald-400">฿{formatNumber(amountNum)}</span>
+                      <span className="font-bold text-emerald-600 dark:text-emerald-400">฿{payments.some(payment=>payment.id===data.paymentId)?formatTransferAmount(payments.find(payment=>payment.id===data.paymentId)!.amount):formatNumber(data.paidAmount)}</span>
                     </div>
                   </div>
                   <div className="flex justify-end pt-1">
@@ -454,6 +482,7 @@ export function BillingDetailModal({
                       variant="ghost"
                       size="sm"
                       onClick={() => fileInputRef.current?.click()}
+                      disabled={isPaid||isUploadingSlip||!canSubmitTransfer}
                       className="h-10 text-[10px] text-muted-foreground hover:text-foreground gap-1 cursor-pointer"
                     >
                       <UploadCloud className="size-3" />
@@ -512,7 +541,7 @@ export function BillingDetailModal({
                       {locale === "th" ? "ลากสลิปมาวางที่นี่ หรือคลิกเพื่ออัปโหลด" : "Drag and drop slip here, or click to upload"}
                     </p>
                     <p className="text-[11px] text-muted-foreground mt-0.5">
-                      {locale === "th" ? "รองรับไฟล์ภาพ JPG, PNG (สูงสุด 5MB)" : "Supports JPG, PNG images (Max 5MB)"}
+                      {locale === "th" ? "รองรับไฟล์ JPG, PNG หรือ PDF (สูงสุด 10 MB)" : "Supports JPG, PNG or PDF (Max 10 MB)"}
                     </p>
                   </div>
                   {isUploadingSlip && (
@@ -550,7 +579,7 @@ export function BillingDetailModal({
               )}
 
               {/* Admin/Owner Actions: Approve or Reject Inline */}
-              {financial.actions.includes("approve_payment") && !isPaid && hasSlip && (
+              {financial.actions.includes("approve_payment") && !isPaid && (hasPendingTransfers||hasSlip) && (
                 <div className="pt-2 space-y-2 border-t border-border/60">
                   <div className="text-[11px] font-semibold text-foreground uppercase tracking-wider">
                     {locale === "th" ? "การตรวจสอบโดยผู้ดูแลระบบ" : "Administrative Verification"}
@@ -663,7 +692,7 @@ export function BillingDetailModal({
                   type="email"
                   value={recipientEmail}
                   onChange={(e) => setRecipientEmail(e.target.value)}
-                  placeholder="finance@school.ac.th"
+                  placeholder="finance@organization.ac.th"
                   className="h-10 text-xs"
                 />
               </div>

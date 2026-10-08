@@ -18,8 +18,12 @@ export function routeAllowed(role: string, method: string, rawPath: string): boo
   const path = rawPath.split("?")[0]!.replace(/\/$/, "");
   if (/^\/v1\/sites\/[^/]+\/school-users(?:\/|$)/.test(path)) return role === 'admin';
   if (/^\/v1\/mqtt-brokers(?:\/|$)/.test(path)) return role === "admin";
+  if (/^\/v1\/sites\/[^/]+\/billing-source(?:\/|$)/.test(path)) return role === 'admin' && /^\/v1\/sites\/[^/]+\/billing-source$/.test(path) && ['GET','POST'].includes(method);
   const read = method === "GET" || method === "HEAD";
+  if(path === "/v1/operations/contracts/organization-defaults")return read&&["owner","admin"].includes(role);
   if (role === "owner" && ["/v1/dashboard/compare", "/v1/dashboard/power-flow"].includes(path)) return read;
+  if (role === "school_user" && path === "/v1/dashboard/power-flow") return read;
+  if (["/v1/me/profile", "/v1/auth/password"].includes(path)) return method === "PUT";
   if (isBusinessRole(role)) {
     if (/^\/v1\/(?:users|mqtt-brokers|platform|sites|schools|gateways|devices|meter-presets|alerts|reports|history|jobs)(?:\/|$)/.test(path)) return false;
     if (/^\/v1\/operations(?:\/|$)/.test(path) && !/^\/v1\/operations\/(?:contracts|billing|invoices|receipts|documents)(?:\/|$)/.test(path)) return false;
@@ -32,6 +36,8 @@ export function routeAllowed(role: string, method: string, rawPath: string): boo
   if (/^\/v1\/(?:sites|schools|gateways|devices|meter-presets)(?:\/|$)/.test(path)) return read || role === "admin";
   if (path === "/v1/telemetry/ingest") return false; // MQTT is the only provisioned ingestion transport.
   if (/^\/v1\/billing-cycles\/[^/]+\/pay$/.test(path)) return method === "POST" && ["owner", "admin", "accountant", "school_user"].includes(role);
+  if(/^\/v1\/billing-cycles\/[^/]+\/verify-payment$/.test(path))return method==='PATCH'&&['owner','accountant'].includes(role);
+  if (/^\/v1\/contracts\/[^/]+\/send-email$/.test(path)) return method === 'POST' && ['owner','admin'].includes(role);
   if (path === '/v1/contracts' && !read) return method === 'POST' && ['owner','admin'].includes(role);
   if (/^\/v1\/billing-cycles\/[^/]+\/(?:generate-invoice|verify-payment|status|adjust|send-email)$/.test(path) || path === '/v1/documents' && !read) return ['owner','admin','accountant'].includes(role);
   if (/^\/v1\/(?:billing-cycles|contracts|documents)(?:\/|$)/.test(path)) return read || ["owner", "admin", "accountant"].includes(role);

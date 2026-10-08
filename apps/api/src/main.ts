@@ -80,11 +80,14 @@ async function bootstrap() {
   SwaggerModule.setup("docs", app, SwaggerModule.createDocument(app, swaggerConfig));
 
   const port = Number(process.env.API_PORT ?? 3001);
-  await app.listen(port, "0.0.0.0");
-  process.stdout.write(`API listening on http://0.0.0.0:${port}\n`);
+  const host=process.env.API_HOST??'0.0.0.0';
+  if(process.env.LOCAL_FINANCIAL_FIXTURE_MARKER&&host!=='127.0.0.1')throw new Error('Local financial fixture API must bind 127.0.0.1');
+  await app.listen(port, host);
+  process.stdout.write(`API listening on http://${host}:${port}\n`);
 }
 
 bootstrap().catch((error: unknown) => {
   console.error(error);
   process.exitCode = 1;
 });
+

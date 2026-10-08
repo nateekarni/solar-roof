@@ -1,4 +1,5 @@
 "use client";
+import {BillingRecordActions} from "../billing/billing-record-actions";
 import {RecordJobLink} from './record-job-link';
 import {useRouter} from "next/navigation";
 import {useAuth} from "../../stores/auth-store";
@@ -6,8 +7,8 @@ import {useState} from "react";
 import {Button} from "../../components/ui/button";
 import {apiClient} from "../../lib/api-client";
 import {useLocale} from '../../providers/locale-provider';
-import {renderStatusBadge} from '../../lib/status-badge';
-import {formatAppDateTime,isIsoDateLike} from '../../lib/date-format';
+import {renderRecordValue} from './record-value';
+
 export function RecordDetails({resource,row,fields,columns}:{resource:string;row:Record<string,unknown>;fields:string[];columns:string[]}) {
  const locale=useLocale();
  const router=useRouter();
@@ -19,5 +20,5 @@ export function RecordDetails({resource,row,fields,columns}:{resource:string;row
  const extraFields:Record<string,string[]>={audit:["correlationId","beforeJson","afterJson"],contracts:["endDate","companyName","taxId","taxBranch","taxAddress","taxEmail","taxPhone","rates"],billing:["quality","openingEnergy","closingEnergy","paymentStatus","paidAt","rejectionReason"],users:["createdAt"]};
  const extraLabels:Record<string,string>={correlationId:"รหัสเชื่อมโยง",beforeJson:"ข้อมูลก่อนเปลี่ยนแปลง",afterJson:"ข้อมูลหลังเปลี่ยนแปลง",endDate:"วันสิ้นสุด",companyName:"ชื่อบริษัท",taxId:"เลขประจำตัวผู้เสียภาษี",taxBranch:"สาขาภาษี",taxAddress:"ที่อยู่ภาษี",taxEmail:"อีเมลการเงิน",taxPhone:"โทรศัพท์การเงิน",rates:"อัตราค่าไฟ",quality:"คุณภาพข้อมูล",openingEnergy:"พลังงานเริ่มต้น",closingEnergy:"พลังงานสิ้นสุด",paymentStatus:"สถานะการชำระ",paidAt:"วันที่ชำระ",rejectionReason:"เหตุผลที่ไม่อนุมัติ",createdAt:"วันที่สร้างบัญชี"};
  const detailFields=[...fields,...(extraFields[resource]||[])];
- return <div className="space-y-5"><RecordJobLink resource={resource} jobId={row.jobId} locale={locale}/>{resource === "alerts" && row.status === "open" && ["owner","admin","operator"].includes(user?.role || "") && <Button disabled={downloading} onClick={acknowledge}>{locale === "th" ? "รับทราบการแจ้งเตือนนี้" : "Acknowledge this alert"}</Button>}{resource === "reports" && <Button disabled={downloading || !!row.jobId} onClick={download}>{locale === "th" ? "ดาวน์โหลดรายงาน" : "Download report"}</Button>}{error && <p role="alert">{error}</p>}<dl className={resource === "sites" ? "grid grid-cols-1 gap-x-8 gap-y-6 sm:grid-cols-2 xl:grid-cols-3" : "space-y-5"}>{detailFields.map((key,index)=>{const value=row[key];return <div key={key} className="space-y-1"><dt className="text-sm text-muted-foreground">{columns[index]||(locale === "th" ? extraLabels[key] : key)||key}</dt><dd className="text-sm font-medium break-words whitespace-pre-wrap">{value===null||value===undefined?'—':key==='status'||key==='severity'?renderStatusBadge(String(value),locale):isIsoDateLike(String(value))?formatAppDateTime(String(value),locale):typeof value==='object'?JSON.stringify(value,null,2):String(value)}</dd></div>;})}</dl></div>;
+ return <div className="space-y-5">{resource==="billing"&&<BillingRecordActions key={String(row.id)} row={row}/>}<RecordJobLink resource={resource} jobId={row.jobId} locale={locale}/>{resource === "alerts" && row.status === "open" && ["owner","admin","operator"].includes(user?.role || "") && <Button disabled={downloading} onClick={acknowledge}>{locale === "th" ? "รับทราบการแจ้งเตือนนี้" : "Acknowledge this alert"}</Button>}{resource === "reports" && <Button disabled={downloading || !!row.jobId} onClick={download}>{locale === "th" ? "ดาวน์โหลดรายงาน" : "Download report"}</Button>}{error && <p role="alert">{error}</p>}<dl className={resource === "sites" ? "grid grid-cols-1 gap-x-8 gap-y-6 sm:grid-cols-2 xl:grid-cols-3" : "space-y-5"}>{detailFields.map((key,index)=>{const value=row[key];return <div key={key} className="space-y-1"><dt className="text-sm text-muted-foreground">{columns[index]||(locale === "th" ? extraLabels[key] : key)||key}</dt><dd className="text-sm font-medium break-words whitespace-pre-wrap">{renderRecordValue(value,key,locale)}</dd></div>;})}</dl></div>;
 }

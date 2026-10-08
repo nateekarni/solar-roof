@@ -38,7 +38,12 @@ try {
   const created=await request('admin','/v1/sites','POST',{name,schoolName:`School ${suffix}`,gatewayName:name,protocol:'mqtt',endpoint:`energy/${name}/#`,deviceSerial:`meter-${suffix}`,capacityMwp:0.1,pollingIntervalSeconds:10});
   assert.equal(created.status,201,JSON.stringify(created.body));
   const site=created.body;
-  assert.equal((await request('admin','/v1/sites','POST',{name:'Duplicate',schoolId:site.schoolId,gatewayName:`duplicate-${suffix}`,deviceSerial:`duplicate-${suffix}`})).status,400);
+  // Organizations may own multiple sites; only an existing meter serial is a conflict.
+  const duplicate=await request('admin','/v1/sites','POST',{name:'Duplicate serial',schoolId:site.schoolId,gatewayName:`duplicate-${suffix}`,deviceSerial:`meter-${suffix}`});
+  assert.equal(duplicate.status,400,JSON.stringify(duplicate.body));
+  assert.match(duplicate.body.message,/ซีเรียล.*มีอยู่ในระบบแล้ว/);
+  assert.ok(duplicate.body.message.includes(`meter-${suffix}`));
+  assert.equal((await db.query('SELECT count(*)::int AS count FROM sites WHERE school_id=$1',[site.schoolId])).rows[0].count,1,'Rejected duplicate serial must not create another site');
   const userId=randomUUID();
   await db.query("INSERT INTO users(id,email,display_name,role,status,school_id,password_hash) VALUES($1,$2,'School user','school_user','active',$3,$4)",[userId,`school-${suffix}@example.test`,site.schoolId,auth.hashPassword('Local-test-only-123!')]);
   users.school={id:userId,token:await loginToken(`school-${suffix}@example.test`,'school_user')};
@@ -47,10 +52,19 @@ try {
   assert.equal((await request('school',`/v1/sites/${other.body.id}`)).status,403);
   assert.equal((await request('school','/v1/operations/users')).status,403);
   assert.equal((await request('school',`/v1/dashboard/summary?site_id=${other.body.id}`)).status,403);
-  const summary=await request('school','/v1/dashboard/summary');
+  // A fixed historical range avoids dependence on the CI runner's current month.
+  const summary=await request('school','/v1/dashboard/summary?start_date=2026-01-01&end_date=2026-01-03');
   assert.equal(summary.status,200,JSON.stringify(summary.body));
-  assert.equal(summary.body.sites.length,1);assert.equal(summary.body.stats.currentMw,null);
-  assert.deepEqual(summary.body.production,[]);
+  assert.deepEqual(summary.body.range,{start:'2026-01-01',end:'2026-01-03'});
+  assert.deepEqual(summary.body.sites.map((row:{id:string})=>row.id),[site.id]);
+  assert.deepEqual(summary.body.availableSites.map((row:{id:string})=>row.id),[site.id]);
+  assert.equal(summary.body.stats.currentMw,null);assert.equal(summary.body.stats.periodKwh,null);
+  assert.equal(summary.body.sites[0].productionKwh,null);assert.deepEqual(summary.body.rankings,[]);
+  // This fixture has a billing meter and no Solar Logger: preserve unknown PV, never zero.
+  assert.deepEqual(summary.body.production,['2026-01-01','2026-01-02','2026-01-03'].map(date=>({
+    date,value:null,quality:'missing',watermark:null,
+    reason:'solar_logger_unavailable_or_ambiguous',reasons:['solar_logger_unavailable_or_ambiguous'],
+  })));
   assert.equal((await request('school',`/v1/sites/${site.id}/live-telemetry`)).status,403);
   assert.equal((await request('admin',`/v1/sites/${site.id}/live-telemetry`)).body,null);
   for(const role of ['school','owner']) assert.equal((await request(role,'/v1/reports','POST',{type:'energy',format:'csv'})).status,403);
@@ -113,7 +127,7 @@ try {
   assert.equal(live.body.status,'online');
   const schoolLive=await request('school','/v1/dashboard/summary');
   assert.equal(schoolLive.status,200);assert.equal(schoolLive.body.sites.length,1);assert.equal(schoolLive.body.stats.currentMw,0.0012);
-  console.log('PASS: real HTTP authorization, school isolation, cardinality, empty dashboard, periods, persisted report and MQTT durability/replay/ACK checks');
+  console.log('PASS: real HTTP authorization, school isolation, cardinality, truthful missing generation, periods, persisted report and MQTT durability/replay/ACK checks');
   if(process.env.READINESS_ACCOUNTS_FILE)await writeFile(process.env.READINESS_ACCOUNTS_FILE,JSON.stringify({password:'Local-test-only-123!',accounts:Object.fromEntries(['owner','admin','operator','accountant','school'].map(role=>[role,role+'-'+suffix+'@example.test'])),siteId:site.id,otherSiteId:other.body.id,siteName:name,device,payload,ingestionId:`test-${suffix}`,reportJobId:report.body.jobId,reportChecksum:manifest.checksum}));
   console.log('Browser accounts written for isolated E2E run');
 } finally {await broker?.endAsync();await db.end();}

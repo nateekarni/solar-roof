@@ -1,4 +1,5 @@
 "use client";
+import {BrandMark, BRAND_NAME} from "../brand/brand-mark";
 import {ProfilePreferences} from "./profile-preferences";
 import {acknowledgeAlertScope} from './acknowledge-alert-scope';
 import {useSiteSelection} from '../../features/dashboard/site-selection-provider';
@@ -208,7 +209,7 @@ export function AppHeader() {
       case "/billing":
         return t("navigation.billing");
       case "/contracts":
-        return t("navigation.contracts");
+        return user.role === "school_user" ? (locale === "th" ? "เอกสาร" : "Documents") : t("navigation.contracts");
       case "/receipts":
         return t("navigation.receipts");
       case "/reports":
@@ -263,7 +264,7 @@ export function AppHeader() {
                 href="/"
                 className="text-xs text-muted-foreground hover:text-foreground"
               >
-                Solar Platform
+                {BRAND_NAME}
               </BreadcrumbLink>
             </BreadcrumbItem>
             <BreadcrumbSeparator>
@@ -280,12 +281,10 @@ export function AppHeader() {
 
       {/* Mobile Left: Brand Logo & Title */}
       <div className="flex md:hidden items-center gap-2 min-w-0">
-        <div className="grid size-7.5 shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground shadow-xs">
-          <Sun className="size-4" />
-        </div>
+        <BrandMark className="size-7.5" />
         <div className="flex flex-col min-w-0">
           <span className="font-bold text-[13px] leading-tight text-foreground truncate">
-            Solar Platform
+            {BRAND_NAME}
           </span>
           <span className="text-[10px] text-muted-foreground font-medium truncate max-w-[140px]">
             {pageTitle}

@@ -1,0 +1,69 @@
+import 'reflect-metadata';
+import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { DatabaseService } from '../src/database/database.service.js';
+import { FinancialReadinessService } from '../src/modules/billing/financial-readiness.service.js';
+import { LocalFinancialApplicationService } from '../src/modules/billing/local-financial-application.service.js';
+import { localFinancialBinding } from '../src/modules/billing/local-financial-policy.js';
+if(!localFinancialBinding())throw new Error('Exact local TEST binding required');
+const api='http://127.0.0.1:13059',mail='http://127.0.0.1:18049';
+const id=(key:string)=>createHash('sha256').update(`solar-financial-flow-review-v1:${key}`).digest('hex').slice(0,32).replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/,'$1-$2-$3-$4-$5');
+const db=new DatabaseService();const readiness=new FinancialReadinessService(db),application=new LocalFinancialApplicationService(db,readiness);
+async function login(email:string){const response=await fetch(`${api}/v1/auth/login`,{method:'POST',headers:{'Content-Type':'application/json',Origin:'http://localhost:13049'},body:JSON.stringify({email,password:process.env.LOCAL_FINANCIAL_TEST_PASSWORD??'LocalFinancial2026!'})});if(response.status!==200)throw new Error(await response.text());return (await response.json()).accessToken as string;}
+async function request(token:string,path:string,method='GET',body?:unknown,expected=200){const response=await fetch(`${api}${path}`,{method,headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json',Origin:'http://localhost:13049'},...(body===undefined?{}:{body:JSON.stringify(body)})});const value=await response.text();assert.equal(response.status,expected,`${method} ${path}: ${value}`);return value?JSON.parse(value):null;}
+async function attachment(document:any,token:string){const response=await fetch(`${api}/v1/operations/documents/${document.id}/pdf`,{headers:{Authorization:`Bearer ${token}`}});assert.equal(response.status,200);const bytes=Buffer.from(await response.arrayBuffer());assert.equal(bytes.subarray(0,5).toString(),'%PDF-');const hash=createHash('sha256').update(bytes).digest('hex');assert.equal(hash,document.content_hash);
+ const messages=await (await fetch(`${mail}/api/v1/messages`)).json();const item=messages.messages.find((m:any)=>m.Subject.includes(document.document_number));assert.ok(item,'Captured actual SMTP message required');const detail=await (await fetch(`${mail}/api/v1/message/${item.ID}`)).json();assert.equal(detail.Attachments.length,1);const captured=Buffer.from(await (await fetch(`${mail}/api/v1/message/${item.ID}/part/${detail.Attachments[0].PartID}`)).arrayBuffer());assert.equal(createHash('sha256').update(captured).digest('hex'),hash);return hash;}
+try {
+ const owner=await login('owner@example.test'),accountant=await login('accountant@example.test'),userA=await login('finance-a@example.test'),userB=await login('finance-b@example.test');
+ const capabilities=await request(owner,'/v1/auth/capabilities');assert.ok(capabilities.actions.includes('calculate'));assert.ok(!capabilities.actions.includes('adjust'));
+ // Real monthly business operation with selected simulated scheduler time; issuer dates use actual approval time.
+ const jobs=await application.monthly(new Date('2026-10-01T01:00:00+07:00'));const done=jobs.find(j=>j.site_id===id('site-a-main')),blocked=jobs.find(j=>j.site_id===id('site-b-missing'));assert.ok(done);assert.ok(blocked);assert.equal(done.state,'done');assert.equal(blocked.state,'blocked');assert.match(blocked.last_error,/Missing actual cumulative reading/);
+ const replay=await application.monthly(new Date('2026-10-01T01:00:00+07:00'));assert.equal(replay.find(j=>j.id===blocked.id).attempts,blocked.attempts,'hourly recheck gate');
+ const september=(await db.query('SELECT * FROM billing_cycles WHERE site_id=$1 AND period_start=$2',[id('site-a-main'),'2026-09-01'])).rows[0];assert.equal(Number(september.amount),4623.45);
+ const invoice=(await db.query("SELECT * FROM documents WHERE billing_cycle_id=$1 AND document_type='invoice'",[september.id])).rows[0];assert.equal(invoice.snapshot.customer.id,september.contract_id);const invoiceHash=await attachment(invoice,owner);
+ await request(userB,`/v1/billing-cycles/${september.id}/pay`,'POST',{amount:4623.45,evidenceKey:'cross-org'},403);
+ await request(userB,`/v1/operations/documents/${invoice.id}/pdf`,'GET',undefined,404);
+ await request(userA,`/v1/billing-cycles/${september.id}/pay`,'POST',{amount:4623.45,evidenceKey:'synthetic-rejected-transfer'},201);
+ await request(accountant,`/v1/billing-cycles/${september.id}/verify-payment`,'PATCH',{status:'rejected',rejectionReason:'Synthetic rejection scenario'});
+ await request(userA,`/v1/billing-cycles/${september.id}/pay`,'POST',{amount:2000,evidenceKey:'synthetic-resubmit-transfer-1'},201);
+ await request(accountant,`/v1/billing-cycles/${september.id}/verify-payment`,'PATCH',{status:'approved'},409);
+ await request(userA,`/v1/billing-cycles/${september.id}/pay`,'POST',{amount:2623.45,evidenceKey:'synthetic-resubmit-transfer-2'},201);
+ await request(userA,`/v1/billing-cycles/${september.id}/pay`,'POST',{amount:2623.45,evidenceKey:'synthetic-resubmit-transfer-2'},409);
+ const approval=await request(accountant,`/v1/billing-cycles/${september.id}/verify-payment`,'PATCH',{status:'approved'});const receipt=approval.receipt;assert.equal(receipt.snapshot.payments.length,2);const receiptHash=await attachment(receipt,owner);
+ const counts=(await db.query('SELECT (SELECT count(*) FROM documents) AS docs,(SELECT count(*) FROM document_artifacts) AS artifacts,(SELECT count(*) FROM financial_delivery_outbox WHERE state=$1) AS sent',['sent'])).rows[0];
+ await request(owner,`/v1/billing-cycles/${september.id}/verify-payment`,'PATCH',{status:'approved'});await application.monthly(new Date('2026-10-01T01:00:00+07:00'));
+ const after=(await db.query('SELECT (SELECT count(*) FROM documents) AS docs,(SELECT count(*) FROM document_artifacts) AS artifacts,(SELECT count(*) FROM financial_delivery_outbox WHERE state=$1) AS sent',['sent'])).rows[0];assert.deepEqual(after,counts);
+ await assert.rejects(db.query('UPDATE document_artifacts SET sha256=$2 WHERE document_id=$1',[invoice.id,'0'.repeat(64)]),/immutable/);
+ const admin=await login('admin@example.test'),operator=await login('operator@example.test');
+ for(const token of [admin,operator,userA])await request(token,`/v1/billing-cycles/${september.id}/verify-payment`,'PATCH',{status:'approved'},403);
+ await request(owner,'/v1/billing-cycles','POST',{siteId:id('site-a-new'),periodStart:'9999-99-99',periodEnd:'9999-99-99'},400);
+ const contract=await request(owner,'/v1/contracts','POST',{siteId:id('site-a-new'),effectiveDate:'2026-09-01',paymentTerms:'30 calendar days; selected TEST term',paymentTermDays:30,recipientUserIds:[id('organization-user-a')],signerName:'Synthetic authorized signatory',companyName:'[TEST] New contract organization',taxId:'0999999999999',taxAddress:'[TEST] Bangkok synthetic address',billingEmail:'finance-a@example.test',rates:[{startDate:'2026-09-01',endDate:'2026-09-15',rate:3.5},{startDate:'2026-09-16',rate:4}]},201);
+ const newCycle=await request(owner,'/v1/billing-cycles','POST',{siteId:id('site-a-new'),periodStart:'2026-09-01',periodEnd:'2026-09-30'},201);
+ assert.equal(newCycle.contract_id,contract.id);assert.equal(Number(newCycle.amount),4953.70);assert.equal(Number(newCycle.subtotal),4629.63);assert.equal(Number(newCycle.simulated_tax),324.07);assert.equal(newCycle.meter_snapshot.length,2);assert.equal(newCycle.meter_snapshot[0].to,'2026-09-16');
+ const banks=(await db.query('SELECT id,is_configured FROM company_bank_accounts')).rows;
+ try{await db.query('UPDATE company_bank_accounts SET is_configured=false');await request(owner,`/v1/billing-cycles/${newCycle.id}/generate-invoice`,'POST',{},409);assert.equal((await db.query('SELECT count(*)::int AS n FROM documents WHERE billing_cycle_id=$1',[newCycle.id])).rows[0].n,0);}finally{for(const bank of banks)await db.query('UPDATE company_bank_accounts SET is_configured=$2 WHERE id=$1',[bank.id,bank.is_configured]);}
+ const newInvoice=(await request(owner,`/v1/billing-cycles/${newCycle.id}/generate-invoice`,'POST',{},201)).document;
+ await request(owner,`/v1/billing-cycles/${newCycle.id}/send-email`,'POST',{},201);const newInvoiceHash=await attachment(newInvoice,owner);
+ await request(userA,`/v1/billing-cycles/${newCycle.id}/pay`,'POST',{amount:4953.70,evidenceKey:'new-contract-full-payment'},201);
+ const newReceipt=(await request(owner,`/v1/billing-cycles/${newCycle.id}/verify-payment`,'PATCH',{status:'approved'})).receipt;const newReceiptHash=await attachment(newReceipt,owner);
+ const earlier=[];
+ for(const [periodStart,periodEnd]of [['2026-07-01','2026-07-31'],['2026-08-01','2026-08-31']]){const cycle=await request(owner,'/v1/billing-cycles','POST',{siteId:id('site-a-main'),periodStart,periodEnd},201);const doc=(await request(owner,`/v1/billing-cycles/${cycle.id}/generate-invoice`,'POST',{},201)).document;await request(owner,`/v1/billing-cycles/${cycle.id}/send-email`,'POST',{},201);await attachment(doc,owner);earlier.push(cycle);}
+ const race=await Promise.all(earlier.map(cycle=>fetch(`${api}/v1/billing-cycles/${cycle.id}/pay`,{method:'POST',headers:{Authorization:`Bearer ${userA}`,'Content-Type':'application/json',Origin:'http://localhost:13049'},body:JSON.stringify({amount:Number(cycle.amount),evidenceKey:'concurrent-cross-cycle-evidence'})})));
+ assert.deepEqual(race.map(response=>response.status).sort(),[201,409]);for(const response of race)await response.text();
+ const winner=earlier[race.findIndex(response=>response.status===201)];await request(accountant,`/v1/billing-cycles/${winner.id}/verify-payment`,'PATCH',{status:'rejected',rejectionReason:'Reject retained evidence for resubmission test'});
+ await request(userA,`/v1/billing-cycles/${winner.id}/pay`,'POST',{amount:Number(winner.amount)+1,evidenceKey:'concurrent-cross-cycle-evidence'},201);await request(accountant,`/v1/billing-cycles/${winner.id}/verify-payment`,'PATCH',{status:'approved'},409);await request(accountant,`/v1/billing-cycles/${winner.id}/verify-payment`,'PATCH',{status:'rejected',rejectionReason:'Overpayment rejected; retained historical evidence'});
+ // Repair only source telemetry, carrying an explicit synthetic test provenance marker.
+ await db.query(`INSERT INTO telemetry_raw(id,device_id,site_id,source_time,received_time,raw_payload,normalized_value,unit,quality,ingestion_id,semantic_field,total_energy_kwh,active_power_w,payload_profile_revision_id,mapping_version_id) SELECT $1,device_id,site_id,'2026-10-01T00:00:00+07:00',now(),jsonb_build_object('synthetic',true,'fixtureMarker','solar-financial-flow-review-v1','purpose','missing_boundary_repair'),'13786.00546667',unit,quality,'solar-financial-flow-review-v1-repair-boundary',semantic_field,'13786.00546667',active_power_w,payload_profile_revision_id,mapping_version_id FROM telemetry_raw WHERE site_id=$2 AND device_id=$3 ORDER BY source_time DESC LIMIT 1`,[id('repaired-b-boundary'),id('site-b-missing'),id('meter-2')]);
+ assert.equal((await application.monthly(new Date('2026-10-01T01:00:00+07:00'))).find(job=>job.id===blocked.id).state,'blocked');
+ await db.query('UPDATE financial_month_jobs SET next_attempt_at=now() WHERE id=$1',[blocked.id]);
+ const repaired=(await application.monthly(new Date('2026-10-01T02:00:00+07:00'))).find(job=>job.id===blocked.id);assert.ok(repaired);assert.equal(repaired.state,'done');
+ const bCycle=(await db.query("SELECT * FROM billing_cycles WHERE site_id=$1 AND period_start='2026-09-01'",[id('site-b-missing')])).rows[0];const bInvoice=(await db.query("SELECT * FROM documents WHERE billing_cycle_id=$1 AND document_type='invoice'",[bCycle.id])).rows[0];await attachment(bInvoice,userB);
+ await request(userA,`/v1/billing-cycles/${bCycle.id}/pay`,'POST',{amount:Number(bCycle.amount),evidenceKey:'cross-org-b-attempt'},403);await request(userB,`/v1/billing-cycles/${bCycle.id}/pay`,'POST',{amount:Number(bCycle.amount),evidenceKey:'b-pending-retained'},201);
+ const company=(await db.query('SELECT id,company_name FROM company_profile ORDER BY updated_at DESC LIMIT 1')).rows[0];
+ try{await db.query('UPDATE company_profile SET company_name=$2 WHERE id=$1',[company.id,'[TEST] Edited current issuer after issuance']);assert.equal(await attachment(invoice,owner),invoiceHash);assert.equal(await attachment(receipt,owner),receiptHash);}finally{await db.query('UPDATE company_profile SET company_name=$2 WHERE id=$1',[company.id,company.company_name]);}
+ const checks=['real_monthly_job','sample_decimal_total','actual_download_smtp_hash_equality','rejection_resubmit','multiple_transfers_exact','underpayment_block','overpayment_block','concurrent_cross_cycle_duplicate','cross_org_scope','idempotent_replay','immutable_artifact','hourly_missing_data_recheck_gate','missing_boundary_repair','new_contract_http_multirate','required_payment_account_block','owner_accountant_approval_only','strict_invalid_date','original_bytes_after_config_edit'];
+ const evidence={completedAt:new Date().toISOString(),checks,invoiceId:invoice.id,receiptId:receipt.id,invoiceHash,receiptHash,newInvoiceHash,newReceiptHash,repairedJobId:repaired.id};
+ const verification=await db.query(`UPDATE local_financial_test_policy SET workflow_state='verified',workflow_evidence=workflow_evidence||$1::jsonb WHERE fixture_marker=$2 AND environment_binding=$3 AND workflow_state='verification_in_progress' RETURNING id`,[JSON.stringify(evidence),process.env.LOCAL_FINANCIAL_FIXTURE_MARKER,localFinancialBinding()]);assert.equal(verification.rowCount,1);assert.ok(await readiness.isLocalTestReady());
+ console.log(JSON.stringify({...evidence,policyState:'verified',testPolicyId:verification.rows[0].id},null,2));
+}finally{await db.onModuleDestroy();}
+

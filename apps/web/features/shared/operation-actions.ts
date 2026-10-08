@@ -5,7 +5,7 @@ export function getOperationActions(resource:string,row:OperationRow,capabilitie
  const actions:OperationAction[]=[];
  if(resource==='billing') {
   actions.push({id:'detail',label:'ดูรายละเอียดรอบบิล',enabled:true});
-  if(capabilities.operationsActions?.includes('submit_payment')&&['approved','pending_review','rejected'].includes(String(row.status)))actions.push({id:'pay',label:'ชำระเงินและแนบสลิป',enabled:true});
+  if(capabilities.operationsActions?.includes('submit_payment')&&(['approved','pending_review','rejected'].includes(String(row.status))||(capabilities.financialScope==='TEST'&&row.status==='pending_verification')))actions.push({id:'pay',label:'ชำระเงินและแนบสลิป',enabled:true});
   if(capabilities.actions.includes('approve_payment')&&(row.status==='pending_verification'||row.paymentStatus==='pending_verification'))actions.push({id:'verify',label:'ตรวจสอบสลิปการโอน',enabled:true});
  }
  for(const type of ['invoice','receipt'] as const) {

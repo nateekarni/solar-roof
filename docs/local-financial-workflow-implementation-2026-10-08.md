@@ -1,0 +1,23 @@
+# Local financial workflow implementation and verification
+
+The local workflow issues persisted invoices, combined TEST receipts/tax invoices, immutable PDF bytes and snapshots, and captures actual SMTP deliveries in loopback Mailpit. It calculates from mapped cumulative meter readings within five minutes of each rate boundary, using exact decimal subtraction before kWh rounding. Charge rounding precedes the selected simulated 7% tax; withholding is disabled. Only active Owner and Accountant accounts approve or reject pending payment batches.
+
+## Scope and prerequisites
+
+This implementation requires the exact development/test database at `127.0.0.1:15449/solar_financial_flow_review`, marker `solar-financial-flow-review-v1`, SMTP `127.0.0.1:11049`, persisted user-selected policy hash and matching execution evidence, plus the prerequisite seed ownership audit. API_HOST must be loopback for this fixture. Flag-only and production enablement remain denied. Migrations 029–032 add local policy/artifact/outbox state, hourly blocked-job retry and scoped staff notices, multi-site support, and active new-transfer evidence uniqueness. The PDF embeds the approved document logo and uses a configured local Thai font.
+
+## Real execution evidence
+
+The parent integration run completed the actual 18-check HTTP/database/PDF/SMTP harness at `2026-10-08T03:40:12Z` and marked only the environment-bound TEST policy verified. Coverage includes invoice issuance, exact sample total, rejection/resubmission, multiple transfers, underpayment/overpayment blocks, concurrent cross-cycle evidence reuse, organization isolation, immutable original bytes, hourly missing-boundary repair, new-contract two-rate calculation, missing payment-account issuance block, and Owner/Accountant-only approval. The executable runner is `apps/api/test/local-financial-workflow.integration.ts`. No fixture reset or acceptance rerun was performed by the financial agent after this successful run.
+
+## Transfer UI follow-up
+
+The primary payment dialog now accepts an explicit positive whole-satang THB amount, initially the full bill. TEST requests send an exact decimal string; existing numeric API callers remain accepted. Plain decimals are limited to the persisted numeric(24,8) range, and exponential, zero, negative and sub-satang amounts are rejected. Legacy payment routes retain their numeric body behavior.
+
+Authorized operations billing detail reads individual persisted transfers only after its scoped cycle lookup succeeds. Detail displays each transfer's exact amount, status, transfer date and retained rejection reason, plus the exact sum of pending transfers. Approval requires the pending total to equal the bill; rejection affects the pending batch and retains history. The dialog refreshes persisted data after uploads and verification. Submission waits for the current session's submit-payment capability.
+
+The follow-up is covered by focused exact decimal/persistence, pending-sum/history-rendering, and denied cross-organization history tests. It does not issue adjustment documents or enable production accounting.
+The detail loader uses the existing /v1/operations/billing/records/:id route and unwraps its persisted row. Detail dropzone uploads require an explicit transfer amount before reading/uploading evidence; TEST amounts stay exact decimal strings. The request-path regression and transfer/history tests pass with web type checks. Live network verification of this follow-up belongs to the parent integration run.
+
+Billing record pages reached from Home and organization document links now mount a dedicated scoped financial actions component. It displays persisted transfer history, opens the explicit PaymentDialog for capability-authorized submissions, and opens BillingDetailModal for capability-authorized verification. Paid bills suppress payment/verification actions, and opening verification hides duplicate background history. The server-authorized record row is reused; refresh after a mutation requests the normal scoped record again. Three focused rendering regressions and the full 115-test web suite pass with type checks. No runtime writes were performed for this UI follow-up.
+Transfer date input now initializes from the current instant as explicit Bangkok wall time and converts submitted wall time using the +07:00 offset, independently of the browser/host timezone. Strict calendar and time roundtrip checks reject impossible dates and rollover. Focused tests cover UTC, Asia/Bangkok and America/New_York, midnight date crossing, leap day, invalid dates, and PostgreSQL timestamp text with +07. Previously submitted proof rows remain retained; no timestamp correction or fixture mutation was performed by this follow-up.

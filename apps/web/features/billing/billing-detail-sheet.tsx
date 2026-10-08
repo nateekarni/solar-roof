@@ -248,7 +248,7 @@ export function BillingDetailSheet({
                   </div>
                   <div className="grid grid-cols-2 gap-3 pt-1 border-t border-border/40">
                     <div>
-                      <span className="text-muted-foreground">{locale === "th" ? "โรงเรียน" : "School"}:</span>
+                      <span className="text-muted-foreground">{locale === "th" ? "องค์กร" : "Organization"}:</span>
                       <p className="font-semibold text-foreground text-sm mt-0.5">{data.schoolName}</p>
                     </div>
                     <div>
@@ -290,7 +290,7 @@ export function BillingDetailSheet({
                 <div className="space-y-3 border-t pt-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2 font-semibold text-foreground text-xs">
-                      <Zap className="size-4 text-[#EAB308]" />
+                      <Zap className="size-4 text-solar" />
                       <span>{locale === "th" ? "ข้อมูลมิเตอร์และพลังงาน" : "Energy & Consumption"}</span>
                     </div>
                     <Button
@@ -333,7 +333,7 @@ export function BillingDetailSheet({
                     </div>
                     <div className="flex justify-between items-center pt-2 border-t border-border/40">
                       <span className="font-bold text-sm text-foreground">{locale === "th" ? "ยอดเงินที่ต้องเรียกเก็บ:" : "Total Billing Amount:"}</span>
-                      <strong className="font-mono font-bold text-base text-[#EAB308] dark:text-[#FACC15]">
+                      <strong className="font-mono font-bold text-base text-primary">
                         ฿{formatNumber(data.amount)}
                       </strong>
                     </div>
@@ -518,7 +518,7 @@ export function BillingDetailSheet({
 
             <div className="flex items-center justify-between gap-2 border-t pt-3">
               <span className="font-semibold text-muted-foreground">{locale === "th" ? "ยอดรวมที่คำนวณใหม่:" : "Recalculated Total:"}</span>
-              <strong className="font-mono text-sm text-[#EAB308] dark:text-[#FACC15]">
+              <strong className="font-mono text-sm text-primary">
                 ฿{formatNumber(adjustKwh * adjustRate)}
               </strong>
             </div>
@@ -550,7 +550,7 @@ export function BillingDetailSheet({
               size="sm"
               disabled={actionLoading || adjustKwh <= 0}
               onClick={handleSaveAdjustment}
-              className="h-10 text-xs font-semibold bg-[#EAB308] text-[#0F172A] hover:bg-[#EAB308]/90 cursor-pointer"
+              className="h-10 text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer"
             >
               {actionLoading ? "กำลังบันทึก..." : (locale === "th" ? "บันทึกการปรับปรุง" : "Save Adjustment")}
             </Button>

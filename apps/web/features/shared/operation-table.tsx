@@ -1,4 +1,5 @@
 "use client";
+import { originalSourceFromRow } from './original-document-loader';
 
 import * as React from "react";
 import type {OperationRow} from "@solar/api-contracts";
@@ -78,14 +79,14 @@ export interface OperationTableProps {
 }
 
 const COLUMN_TRANSLATIONS: Record<string, string> = {
-  "ชื่อโรงเรียน": "School Name",
+  "ชื่อองค์กร": "Organization Name",
   "ภูมิภาค": "Region",
   "กำลังติดตั้ง (MWp)": "Capacity (MWp)",
   "จำนวนไซต์": "Sites Count",
   "Gateway": "Gateway",
   "สถานะ": "Status",
   "ชื่อไซต์": "Site Name",
-  "โรงเรียน": "School",
+  "องค์กร": "Organization",
   "โพรโทคอล": "Protocol",
   "ผลิตสะสม (kWh)": "Production (kWh)",
   "รอบบิล": "Billing Period",
@@ -181,8 +182,8 @@ export function OperationTable({
     row: Record<string, any>
   ) => {
     setPreviewData({
+      ...originalSourceFromRow(type,row,resource),
       type,
-      documentId: type === "invoice" ? row.invoiceId || (resource === "documents" ? row.id : undefined) : type === "receipt" ? row.receiptId || (["receipts","documents"].includes(resource) ? row.id : undefined) : undefined,
       siteId: row.siteId,
       billingCycleId: row.billingCycleId,
       documentNumber: row.documentNumber || (type === "receipt" ? row.receiptNumber : row.invoiceNumber),
@@ -320,7 +321,7 @@ export function OperationTable({
     const keys = operationKeys(resource,firstRow,idKey);
 
     const cols: ColumnDef<OperationRow, any>[] = keys.map((key, idx) => {
-      const rawTitle = rawColumns[idx] ?? key;
+      const rawTitle = (rawColumns[idx] ?? key).replaceAll("โรงเรียน", "องค์กร");
       const headerTitle =
         locale === "en" && COLUMN_TRANSLATIONS[rawTitle]
           ? COLUMN_TRANSLATIONS[rawTitle]

@@ -135,7 +135,7 @@ try {
   const defaultPasswordHash = auth.hashPassword("Password1234");
   const users = [
     [id("user-admin-main"), "admin@solar-roof.com", "Admin User", "owner", "active", null, defaultPasswordHash, "th", "system"],
-    [id("user-owner"), "owner@solar.local", "Solar Platform Owner", "owner", "active", null, defaultPasswordHash, "th", "system"],
+    [id("user-owner"), "owner@solar.local", "Solar Roof Owner", "owner", "active", null, defaultPasswordHash, "th", "system"],
     ...schoolNames.slice(0, 3).map((_, i) => [
       id(`user-admin-${i}`),
       `admin${i + 1}@solar.local`,
@@ -277,7 +277,7 @@ try {
       null,
       "active",
       "ชำระภายใน 30 วัน",
-      "Solar Platform Owner",
+      "Solar Roof Owner",
       `contracts/CTR-2024-${String(i + 1).padStart(4, "0")}.pdf`,
     ]);
 

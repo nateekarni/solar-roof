@@ -1,4 +1,6 @@
 "use client";
+import { OrganizationPicker, useOrganizationCatalog } from "../organization/organization-picker";
+import { organizationSitePayload, type OrganizationSelection } from "../organization/organization-selection";
 import { BrokerSelect } from "./broker-select";
 import { siteControlsClassName, siteFormClassName, siteTabsListClassName, siteTabsTriggerClassName } from "./site-form-layout";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "../../components/ui/tabs";
@@ -7,6 +9,8 @@ import { AddButton } from "../../components/ui/add-button";
 import { AppLoading } from "../../components/feedback/app-loading";
 import { optionalNumber } from "./site-form-values";
 import type { PayloadConfig } from "./payload-contracts";
+import {createSitePayloadLoader} from "./site-payload-loader";
+import {SiteBillingSource} from "./site-billing-source";
 import { PayloadConnectionCard } from "./payload-connection-card";
 import { ChoiceSelect } from '../../components/ui/choice-select';
 
@@ -50,7 +54,7 @@ import { useLocale, useT } from "../../providers/locale-provider";
 
 const editSiteSchema = z.object({
   name: z.string().min(2, "ชื่อไซต์งานต้องมีอย่างน้อย 2 ตัวอักษร"),
-  schoolName: z.string().min(1, "กรุณาเลือกโรงเรียนสังกัด"),
+  schoolName: z.string().min(1, "กรุณาเลือกองค์กรสังกัด"),
   capacityMwp: z.number().min(0.01, "กำลังติดตั้งต้องมากกว่า 0"),
   latitude: z.number().optional(),
   longitude: z.number().optional(),
@@ -76,17 +80,37 @@ export function SiteEditDialog({
   open,
   onOpenChange,
   siteId,
+  billingSetupPending = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   siteId: string | null;
+  billingSetupPending?: boolean;
 }) {
   const router = useRouter();
   const { user } = useAuth();
   const t = useT();
   const locale = useLocale();
-  const [payloadConfig, setPayloadConfig] = React.useState<PayloadConfig | null>(null);
-  const refreshPayload = React.useCallback(() => { if(siteId) apiClient.get<PayloadConfig | null>(`/v1/sites/${siteId}/payload-config`).then(config => setPayloadConfig(config?.externalSiteId && config.externalGatewayId ? config : null)).catch(() => setPayloadConfig(null)); }, [siteId]);
+  const [organization,setOrganization]=React.useState<OrganizationSelection|null>(null);
+  const organizationCatalog=useOrganizationCatalog(open);
+  const [tab,setTab]=React.useState("settings");
+  React.useEffect(()=>{if(open)setTab(billingSetupPending?"payload":"settings");},[open,siteId,billingSetupPending]);
+  const [storedPayloadConfig,setPayloadConfig]=React.useState<PayloadConfig|null>(null);
+  const payloadScope=React.useRef({open,siteId});
+  payloadScope.current={open,siteId};
+  const [payloadLoader]=React.useState(()=>createSitePayloadLoader(
+    requestedSiteId=>apiClient.get<PayloadConfig|null>(`/v1/sites/${encodeURIComponent(requestedSiteId)}/payload-config`),
+    ()=>payloadScope.current,
+    setPayloadConfig,
+  ));
+  const refreshPayload=React.useCallback(()=>{void payloadLoader.refresh();},[payloadLoader]);
+  React.useEffect(()=>{
+    payloadLoader.activate(open?siteId:null);
+    setPayloadConfig(null);
+    if(open&&siteId)refreshPayload();
+    return()=>payloadLoader.invalidate();
+  },[open,siteId,payloadLoader,refreshPayload]);
+  const payloadConfig=open&&storedPayloadConfig?.siteId===siteId?storedPayloadConfig:null;
   const [meterPresets, setMeterPresets] = React.useState<Array<{ id: string; model: string; registers: unknown[] }>>([]);
   const [devices, setDevices] = React.useState<Array<{ id: string; name: string; model: string; serialNumber: string }>>([]);
   const [newDevice, setNewDevice] = React.useState({ name: "", model: "", serialNumber: "", slaveId: 2, meterPresetId: "" });
@@ -120,20 +144,23 @@ export function SiteEditDialog({
   });
 
   const formValues = watch();
+  const selectOrganization=React.useCallback((selection:OrganizationSelection|null)=>{setOrganization(selection);setValue("schoolName",selection?.organization.name??"",{shouldValidate:true});},[setValue]);
 
   React.useEffect(() => {
+    let active=true;
+    const current=()=>active&&payloadScope.current.open&&payloadScope.current.siteId===siteId;
     if (open && siteId) {
       setFetching(true);
-      setPayloadConfig(null); refreshPayload();
-      apiClient.get<typeof meterPresets>("/v1/meter-presets").then(setMeterPresets).catch(() => setMeterPresets([]));
-      apiClient.get<typeof devices>(`/v1/sites/${siteId}/devices`).then(setDevices).catch(() => setDevices([]));
+      apiClient.get<typeof meterPresets>("/v1/meter-presets").then(rows=>{if(current())setMeterPresets(rows);}).catch(()=>{if(current())setMeterPresets([]);});
+      apiClient.get<typeof devices>(`/v1/sites/${siteId}/devices`).then(rows=>{if(current())setDevices(rows);}).catch(()=>{if(current())setDevices([]);});
       setPingStatus("idle");
       setPingMessage("");
       setPingLatency(null);
 
       apiClient.get<any>(`/v1/sites/${siteId}`)
         .then((siteData) => {
-          if (siteData) {
+          if (current() && siteData) {
+            setOrganization({kind:"existing",organization:{id:siteData.schoolId,name:siteData.schoolName||"",code:siteData.schoolCode||""}});
             reset({
               name: siteData.name || "",
               deviceId: siteData.deviceId,
@@ -152,13 +179,15 @@ export function SiteEditDialog({
           }
         })
         .catch((err: any) => {
+          if(!current())return;
           notify.error(err.message || "ไม่สามารถโหลดข้อมูลไซต์งานได้");
           onOpenChange(false);
         })
         .finally(() => {
-          setFetching(false);
+          if(current())setFetching(false);
         });
     }
+    return()=>{active=false;};
   }, [open, siteId, reset, onOpenChange, refreshPayload]);
 
   const handleTestPing = async () => {
@@ -194,7 +223,8 @@ export function SiteEditDialog({
     if (!siteId) return;
     setLoading(true);
     try {
-      const result = await apiClient.patch<{ configDelivery: string }>(`/v1/sites/${siteId}`, { ...values,
+      const {schoolName:_displayName,deviceId,deviceModel,deviceSerial,...siteValues}=values;
+      const result = await apiClient.patch<{ configDelivery: string }>(`/v1/sites/${siteId}`, { ...siteValues,...(!payloadConfig?{deviceId,deviceModel,deviceSerial}:{}),...organizationSitePayload(organization),
 
       });
       if (result.configDelivery === "pending") notify.error("บันทึกแล้ว แต่ MQTT config ยังส่งไม่สำเร็จ กรุณาลองอีกครั้ง");
@@ -248,8 +278,8 @@ export function SiteEditDialog({
         {fetching ? (
           <AppLoading fullPage={false} />
         ) : (
-          <Tabs defaultValue="settings" className={`min-h-0 gap-4 overflow-hidden ${siteControlsClassName}`}>
-            {payloadConfig && <TabsList className={siteTabsListClassName}><TabsTrigger value="settings" className={siteTabsTriggerClassName}>{locale === "th" ? "ข้อมูลไซต์และ Gateway" : "Site & Gateway"}</TabsTrigger><TabsTrigger value="payload" className={siteTabsTriggerClassName}>{locale === "th" ? "การรับข้อมูลและอุปกรณ์" : "Data & devices"}</TabsTrigger></TabsList>}
+          <Tabs value={payloadConfig?tab:"settings"} onValueChange={setTab} className={`min-h-0 gap-4 overflow-hidden ${siteControlsClassName}`}>
+            {payloadConfig && <TabsList className={siteTabsListClassName}><TabsTrigger value="settings" className={siteTabsTriggerClassName}>{locale === "th" ? "ข้อมูลไซต์และ Gateway" : "Site & Gateway"}</TabsTrigger><TabsTrigger value="payload" className={siteTabsTriggerClassName}>{locale === "th" ? "การเชื่อมต่อและ Preset" : "Connection & Preset"}</TabsTrigger></TabsList>}
             <TabsContent value="settings" className="min-h-0 overflow-y-auto px-1">
           <form onSubmit={handleSubmit(onSubmit)} className={siteFormClassName}>
             {/* Section 1: Site Info */}
@@ -273,13 +303,11 @@ export function SiteEditDialog({
                 )}
               </div>
 
+              {payloadConfig&&<div className="flex flex-col gap-2"><Label htmlFor="edit-site-id">Site ID</Label><Input id="edit-site-id" value={payloadConfig.externalSiteId??''} readOnly/></div>}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <Label htmlFor="edit-school-select" required className="text-sm font-medium">
-                    {locale === "th" ? "โรงเรียนต้นสังกัด" : "Associated School"}
-                  </Label>
-                  <Input id="edit-school-select" {...register("schoolName")} />
-                </div>
+                <OrganizationPicker {...organizationCatalog} value={organization} onChange={selectOrganization} locale={locale} canEdit={user?.role==="admin"} disabled={loading}/>
+                {organizationCatalog.error&&<p role="alert" className="text-sm text-destructive">{organizationCatalog.error}</p>}
+                {errors.schoolName&&<p className="text-sm text-destructive">{errors.schoolName.message}</p>}
 
                 <div className="space-y-2">
                   <Label htmlFor="edit-capacity" required className="text-sm font-medium">
@@ -347,7 +375,7 @@ export function SiteEditDialog({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-2">
                   <Label htmlFor="edit-gw-name" required className="text-sm font-medium">
-                    {locale === "th" ? "ชื่อ/รหัส Gateway" : "Gateway Name"}
+                    {locale === "th" ? "ชื่อ Gateway" : "Gateway Name"}
                   </Label>
                   <Input
                     id="edit-gw-name"
@@ -356,6 +384,7 @@ export function SiteEditDialog({
                   />
                 </div>
 
+                {payloadConfig&&<div className="flex flex-col gap-2"><Label htmlFor="edit-gateway-id">Gateway ID</Label><Input id="edit-gateway-id" value={payloadConfig.externalGatewayId??''} readOnly/></div>}
                 <div className="space-y-2">
                   <Label htmlFor="edit-gw-proto" required className="text-sm font-medium">
                     {locale === "th" ? "โปรโตคอล" : "Protocol"}
@@ -386,7 +415,7 @@ export function SiteEditDialog({
                 />
               </div>
 
-              <div className="space-y-2"><Label htmlFor="edit-device">Meter Device</Label><ChoiceSelect id="edit-device" value={formValues.deviceId ?? ""} className="h-10 w-full rounded-md border bg-card" onChange={event => {
+              {!payloadConfig&&<><div className="space-y-2"><Label htmlFor="edit-device">Meter Device</Label><ChoiceSelect id="edit-device" value={formValues.deviceId ?? ""} className="h-10 w-full rounded-md border bg-card" onChange={event => {
                 const device = devices.find(item => item.id === event.target.value);
                 if (device) { setValue("deviceId", device.id); setValue("deviceModel", device.model); setValue("deviceSerial", device.serialNumber); }
               }}>{devices.map(device => <option key={device.id} value={device.id}>{device.name} · {device.serialNumber}</option>)}</ChoiceSelect></div>
@@ -414,7 +443,7 @@ export function SiteEditDialog({
                     <p className="text-[11px] text-destructive">{errors.deviceSerial.message}</p>
                   )}
                 </div>
-              </div>
+              </div></>}
             </section>
 
             {!payloadConfig && <div className="space-y-2 border-t pt-4">
@@ -507,9 +536,9 @@ export function SiteEditDialog({
                 {loading ? t("common.saving") : locale === "th" ? "บันทึกการแก้ไข" : "Save Changes"}
               </Button>
             </DialogFooter>
-          </form>
+          </form>{billingSetupPending&&!payloadConfig&&siteId&&<SiteBillingSource siteId={siteId} locale={locale} setupPending focusOnLoad/>}
             </TabsContent>
-            {payloadConfig && <TabsContent value="payload" className="min-h-0 overflow-y-auto p-1"><PayloadConnectionCard config={payloadConfig} onRefresh={refreshPayload} editable/></TabsContent>}
+            {payloadConfig && <TabsContent value="payload" className="min-h-0 overflow-y-auto p-1"><PayloadConnectionCard config={payloadConfig} onRefresh={refreshPayload} editable focusBilling={billingSetupPending} billingSetupPending={billingSetupPending}/></TabsContent>}
           </Tabs>
         )}
       </DialogContent>

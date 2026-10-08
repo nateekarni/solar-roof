@@ -24,7 +24,7 @@ try {
  await page.getByRole('button',{name:'เข้าสู่ระบบ',exact:true}).click();
  await page.waitForURL(base+'/',{timeout:15000});
  await page.getByRole('main').first().waitFor(); await page.getByRole('heading',{level:1}).waitFor();
- assert.equal(await page.getByRole('link',{name:'โรงเรียน',exact:true}).count(),0);
+ assert.equal(await page.getByRole('link',{name:'องค์กร',exact:true}).count(),0);
  assert.equal(await page.getByRole('button',{name:'รายปี',exact:true}).count(),0);
  await mkdir('test/artifacts',{recursive:true});
  await page.screenshot({path:'test/artifacts/dashboard-desktop.png',fullPage:true});

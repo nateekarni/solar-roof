@@ -1,3 +1,4 @@
+export { BRAND_PRIMARY } from "./brand.js";
 export { envSchema, loadEnv, workerEnvSchema, loadWorkerEnv } from "./config/env.js";
 export type { AppEnv, WorkerEnv } from "./config/env.js";
 export { buildDependencyHealth } from "./health/dependency-health.js";

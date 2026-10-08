@@ -5,6 +5,7 @@ export interface Payment {
   id: string;
   invoiceId?: string;
   billingCycleId?: string;
+  siteId?: string;
   amount: number;
   status: "pending" | "paid" | "rejected";
   paidAt?: Date;
@@ -56,8 +57,8 @@ export class PaymentService {
 
   async get(id: string): Promise<Payment> {
     const res = await this.db.query(
-      `SELECT id, billing_cycle_id AS "billingCycleId", status, paid_at AS "paidAt", evidence_key AS "evidenceFileId"
-       FROM payments WHERE id = $1`,
+      `SELECT p.id,p.billing_cycle_id AS "billingCycleId",b.site_id AS "siteId",p.status,p.paid_at AS "paidAt",p.evidence_key AS "evidenceFileId"
+       FROM payments p JOIN billing_cycles b ON b.id=p.billing_cycle_id WHERE p.id=$1`,
       [id]
     );
     const row = res.rows[0];
@@ -67,6 +68,7 @@ export class PaymentService {
     return {
       id: row.id,
       billingCycleId: row.billingCycleId,
+      siteId: row.siteId,
       amount: 0,
       status: row.status,
       paidAt: row.paidAt,

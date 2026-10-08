@@ -77,29 +77,48 @@ test('late readings replace both days, duplicates stay idempotent, resets unknow
     while(await job.runBatch(10)) {}
     const over=(await reader.daily([sites[0]!],'2026-01-10','2026-01-10'))[0]!;
     assert.equal(over.kwh,null);assert.equal(over.reason,'sample_limit');
-    // HTTP authorization uses the current persisted school scope, including forbidden selection.
-    const user=randomUUID(),email=`q3-${user}@example.test`,password='Q3-fixture-password-123!';
+    // Organization generation and owner billing-meter energy have separate contracts.
+    // HTTP authorization must still use the current persisted organization scope.
+    const user=randomUUID(),owner=randomUUID(),email=`q3-${user}@example.test`,ownerEmail=`q3-owner-${owner}@example.test`,password='Q3-fixture-password-123!';
     const { AuthService }=await import('../../src/modules/identity/auth.service.js');
     const auth=new AuthService('readiness-test-access-secret-000000000000','readiness-test-refresh-secret-000000000000');
     await db.query("INSERT INTO users(id,email,display_name,role,status,password_hash,school_id) VALUES($1,$2,'Q3 actor','school_user','active',$3,$4)",[user,email,auth.hashPassword(password),schools[0]]);
+    await db.query("INSERT INTO users(id,email,display_name,role,status,password_hash) VALUES($1,$2,'Q3 owner','owner','active',$3)",[owner,ownerEmail,auth.hashPassword(password)]);
     try {
       const base=process.env.READINESS_API_URL!,origin=process.env.READINESS_WEB_URL!;
-      const login=await fetch(base+'/v1/auth/login',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify({email,password})});
-      assert.equal(login.status,200);const token=(await login.json()).accessToken;
+      const login=async(actorEmail:string)=>{
+        const response=await fetch(base+'/v1/auth/login',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify({email:actorEmail,password})});
+        assert.equal(response.status,200);return (await response.json()).accessToken as string;
+      };
+      const token=await login(email),ownerToken=await login(ownerEmail);
       const get=(path:string)=>fetch(base+path,{headers:{Authorization:`Bearer ${token}`}});
+      const getOwner=(path:string)=>fetch(base+path,{headers:{Authorization:`Bearer ${ownerToken}`}});
+      const missing={value:null,quality:'missing',watermark:null,reason:'solar_logger_unavailable_or_ambiguous',reasons:['solar_logger_unavailable_or_ambiguous']};
       const summary=await get('/v1/dashboard/summary?start_date=2026-01-02&end_date=2026-01-02');
       assert.equal(summary.status,200);const json=await summary.json();
-      assert.deepEqual(json.sites.map((s:any)=>s.id),[sites[0]]);assert.equal(json.stats.periodKwh,35);assert.equal(json.energyReadModel.enabled,true);
-      const production=await (await get('/v1/dashboard/production?start_date=2026-01-02&end_date=2026-01-02')).json();
-      assert.equal(production[0].quality,'complete');assert.ok(production[0].watermark);
-      const limited=await (await get('/v1/dashboard/production?start_date=2026-01-10&end_date=2026-01-10')).json();
-      assert.equal(limited[0].reason,'sample_limit');
+      assert.deepEqual(json.sites.map((s:any)=>s.id),[sites[0]]);assert.equal(json.stats.periodKwh,null);assert.equal(json.sites[0].productionKwh,null);
+      assert.deepEqual(json.production,[{date:'2026-01-02',...missing}]);assert.deepEqual(json.rankings,[]);
+      const production=await get('/v1/dashboard/production?start_date=2026-01-02&end_date=2026-01-02');
+      assert.equal(production.status,200);assert.deepEqual(await production.json(),[{label:'2026-01-02',unit:'kWh',...missing}]);
+      const meterSummary=await getOwner(`/v1/dashboard/summary?site_id=${sites[0]}&start_date=2026-01-02&end_date=2026-01-02`);
+      assert.equal(meterSummary.status,200);const meterJson=await meterSummary.json();
+      assert.deepEqual(meterJson.sites.map((s:any)=>s.id),[sites[0]]);assert.equal(meterJson.stats.periodKwh,35);assert.equal(meterJson.energyReadModel.enabled,true);
+      const meterProduction=await getOwner(`/v1/dashboard/production?site_id=${sites[0]}&start_date=2026-01-02&end_date=2026-01-02`);
+      assert.equal(meterProduction.status,200);const measured=await meterProduction.json();
+      assert.equal(measured[0].value,35);assert.equal(measured[0].quality,'complete');assert.ok(measured[0].watermark);
+      const limited=await getOwner(`/v1/dashboard/production?site_id=${sites[0]}&start_date=2026-01-10&end_date=2026-01-10`);
+      assert.equal(limited.status,200);const unavailable=await limited.json();assert.equal(unavailable[0].value,null);assert.equal(unavailable[0].reason,'sample_limit');
       assert.equal((await get(`/v1/dashboard/summary?site_id=${sites[1]}&start_date=2026-01-02&end_date=2026-01-02`)).status,403);
       assert.equal((await get(`/v1/dashboard/compare?metric=periodKwh&site_ids=${sites[1]}&start_date=2026-01-02&end_date=2026-01-02`)).status,403);
       await db.query('UPDATE users SET school_id=$1 WHERE id=$2',[schools[1],user]);
-      const other=await (await get('/v1/dashboard/summary?start_date=2026-01-02&end_date=2026-01-02')).json();
-      assert.equal(other.stats.periodKwh,99);assert.deepEqual(other.sites.map((s:any)=>s.id),[sites[1]]);
-    } finally {await db.query('DELETE FROM auth_sessions WHERE user_id=$1',[user]);await db.query('DELETE FROM users WHERE id=$1',[user]);}
+      const changed=await get('/v1/dashboard/summary?start_date=2026-01-02&end_date=2026-01-02');
+      assert.equal(changed.status,200);const other=await changed.json();
+      assert.equal(other.stats.periodKwh,null);assert.deepEqual(other.sites.map((s:any)=>s.id),[sites[1]]);assert.deepEqual(other.production,[{date:'2026-01-02',...missing}]);
+      assert.equal((await get(`/v1/dashboard/summary?site_id=${sites[0]}&start_date=2026-01-02&end_date=2026-01-02`)).status,403);
+      const otherMeter=await getOwner(`/v1/dashboard/summary?site_id=${sites[1]}&start_date=2026-01-02&end_date=2026-01-02`);
+      assert.equal(otherMeter.status,200);const otherMeasured=await otherMeter.json();
+      assert.equal(otherMeasured.stats.periodKwh,99);assert.deepEqual(otherMeasured.sites.map((s:any)=>s.id),[sites[1]]);
+    } finally {await db.query('DELETE FROM auth_sessions WHERE user_id=ANY($1::uuid[])',[[user,owner]]);await db.query('DELETE FROM users WHERE id=ANY($1::uuid[])',[[user,owner]]);}
     // Checkpoint survives a new worker instance; coverage is gated until refresh.
     const checkpoint='q3-'+randomUUID();let queued=0,result;
     do {result=await job.backfill(checkpoint,'2026-01-02','2026-01-05',3);queued+=result.queued;}while(!result.complete);

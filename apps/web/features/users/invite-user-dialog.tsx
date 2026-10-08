@@ -151,7 +151,7 @@ export function InviteUserDialog({
               </DialogTitle>
               <DialogDescription className="text-xs">
                 {locale === "th"
-                  ? "สร้างบัญชีผู้ใช้งานและกำหนดสิทธิ์การเข้าถึงโรงเรียน"
+                  ? "สร้างบัญชีผู้ใช้งานและกำหนดสิทธิ์การเข้าถึงองค์กร"
                   : "Create user account and assign platform permission scope"}
               </DialogDescription>
             </div>
@@ -194,7 +194,7 @@ export function InviteUserDialog({
               <Input
                 id="u-email"
                 type="email"
-                placeholder="officer@school.local"
+                placeholder="officer@organization.local"
                 className="text-xs h-10"
                 {...register("email", {onBlur:()=>void checkExistingInvitation(),onChange:()=>{lookupSequence.current++;setCheckingInvitation(false);setLookupMessage("");}})}
               />
@@ -250,12 +250,12 @@ export function InviteUserDialog({
 
             {selectedRole === "school_user" && (
               <div className="space-y-2">
-                <Label htmlFor="u-school" required className="text-xs font-medium">
-                  {locale === "th" ? "โรงเรียนสังกัด" : "School Access"}
+                <Label htmlFor="u-organization" required className="text-xs font-medium">
+                  {locale === "th" ? "องค์กรสังกัด" : "Organization Access"}
                 </Label>
                 <Select onValueChange={(val) => setValue("schoolId", val)}>
-                  <SelectTrigger id="u-school" className="text-xs h-10 w-full">
-                    <SelectValue placeholder="เลือกโรงเรียน" />
+                  <SelectTrigger id="u-organization" className="text-xs h-10 w-full">
+                    <SelectValue placeholder="เลือกองค์กร" />
                   </SelectTrigger>
                   <SelectContent>
                     {schools.map((s) => (
