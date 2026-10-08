@@ -52,6 +52,12 @@ export class OperationsController {
     res.send("\uFEFF" + csv);
   }
 
+  @Get('documents/:id/pdf')
+  async documentPdf(@Param('id') id:string,@Req() req:any,@Res() res:Response) {
+    const artifact=await this.operations.documentPdf(id,req?.user);
+    res.setHeader('Content-Type','application/pdf');res.setHeader('Content-Disposition',`inline; filename="${id}.pdf"`);
+    res.setHeader('ETag',`"${artifact.sha256}"`);res.setHeader('Cache-Control','private, no-store');res.send(artifact.pdf_bytes);
+  }
   @Get("documents/:id")
   document(@Param("id") id:string,@Req() req:any) {return this.operations.document(id,req?.user);}
 
@@ -65,3 +71,4 @@ export class OperationsController {
     return this.operations.list(resource, req?.user, req?.query);
   }
 }
+

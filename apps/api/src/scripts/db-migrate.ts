@@ -35,6 +35,7 @@ try {
     "infra/migrations/026_payload_receive.sql",
     "infra/migrations/027_payload_subscription.sql",
     "infra/migrations/028_preset_catalog.sql",
+    "infra/migrations/029_local_financial_workflow.sql",
   ];
   for (const file of migrationFiles) {
     const sql = await readFile(new URL(`../../../../${file}`, import.meta.url), "utf8");
@@ -57,3 +58,4 @@ try {
   client.release();
   await pool.end();
 }
+
