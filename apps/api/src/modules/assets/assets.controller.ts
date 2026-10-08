@@ -19,6 +19,7 @@ import { siteHistoryFilter } from "./site-history.js";
 import { randomUUID } from "node:crypto";
 
 import mqtt from "mqtt";
+import type {PoolClient} from "pg";
 import { brokerSettings, brokerUrl, encryptBrokerPassword, decryptBrokerPassword } from '../telemetry/broker-settings.js';
 import { validatePayloadProfile } from "../telemetry/payload-profile.js";
 import { payloadTopic, gatewayPrefix } from "../telemetry/payload-ingestion.js";
@@ -273,11 +274,11 @@ export class AssetsController {
   }
 
   @Post('sites/payload-preview')
-  async previewPlannedPayload(@Body() body:{externalSiteId:string;externalGatewayId:string;devices:{externalDeviceId:string;payloadProfileRevisionId:string}[];config:unknown;input:unknown;topic:string}) {
+  async previewPlannedPayload(@Body() body:{externalSiteId:string;externalGatewayId:string;devices:{externalDeviceId:string;payloadProfileRevisionId?:string;localOverrideConfig?:unknown;sourcePresetRevisionId?:string}[];config:unknown;input:unknown;topic:string}) {
     try {
       externalIdentifier(body.externalSiteId); externalIdentifier(body.externalGatewayId);
       if (!Array.isArray(body.devices) || !body.devices.length || body.devices.length>32) throw new Error('Specify 1 to 32 devices');
-      const devices=await Promise.all(body.devices.map(async device=>{externalIdentifier(device.externalDeviceId);return {externalDeviceId:device.externalDeviceId,config:(await this.getPayloadRevision(device.payloadProfileRevisionId)).config};}));
+      const devices=await Promise.all(body.devices.map(async device=>{externalIdentifier(device.externalDeviceId);const profile=await this.prepareDeviceProfile(device);if(!profile)throw new BadRequestException("Device profile required");return {externalDeviceId:device.externalDeviceId,config:profile.config};}));
       return new PayloadReceptionSettings(this.db).previewContext({externalSiteId:body.externalSiteId,externalGatewayId:body.externalGatewayId,devices},body);
     } catch(error) {throw new BadRequestException(error instanceof Error?error.message:'Invalid preview');}
   }
@@ -297,12 +298,15 @@ export class AssetsController {
       gatewayName?: string;
       protocol?: string;
       endpoint?: string;
+      deviceName?: string;
       deviceModel?: string;
       deviceSerial?: string;
       meterPresetId?: string;
       payloadProfileRevisionId?: string;
+      localOverrideConfig?: unknown;
+      sourcePresetRevisionId?: string;
       receiveConfig?: unknown;
-      additionalDevices?: {name:string;model:string;serialNumber:string;externalDeviceId:string;payloadProfileRevisionId:string}[];
+      additionalDevices?: {name:string;model:string;serialNumber:string;externalDeviceId:string;payloadProfileRevisionId?:string;localOverrideConfig?:unknown;sourcePresetRevisionId?:string}[];
       externalSiteId?: string;
       externalGatewayId?: string;
       externalDeviceId?: string;
@@ -343,16 +347,16 @@ export class AssetsController {
     const gwId = randomUUID();
     const gwName = body.gatewayName?.trim() || `GW-${String(gwCount + 1).padStart(3, "0")}`;
     const protocol = "mqtt";
-    const payloadRevision = body.payloadProfileRevisionId ? await this.getPayloadRevision(body.payloadProfileRevisionId) : null;
+    const payloadRevision = await this.prepareDeviceProfile(body);
     if (payloadRevision && body.meterPresetId) throw new BadRequestException("Choose payload or register preset");
     if (payloadRevision && (payloadRevision.config.deviceType === "solar-logger" || !payloadRevision.config.fields.some(f => f.role === "billing-import"))) throw new BadRequestException("Site billing meter requires a billing-import profile");
     if (payloadRevision) { externalIdentifier(body.externalSiteId); externalIdentifier(body.externalGatewayId); externalIdentifier(body.externalDeviceId); }
     if (!payloadRevision && (body.receiveConfig || body.additionalDevices?.length)) throw new BadRequestException('Reception settings require a payload profile');
     if (body.additionalDevices && (!Array.isArray(body.additionalDevices) || body.additionalDevices.length > 31)) throw new BadRequestException('At most 31 additional devices');
     const additionalDevices = await Promise.all((body.additionalDevices ?? []).map(async device => {
-      if (!device?.name?.trim() || !device.model?.trim() || !device.serialNumber?.trim() || !device.payloadProfileRevisionId) throw new BadRequestException('Complete every additional device');
+      if (!device?.name?.trim() || !device.model?.trim() || !device.serialNumber?.trim() || (!device.payloadProfileRevisionId && !device.localOverrideConfig)) throw new BadRequestException('Complete every additional device');
       externalIdentifier(device.externalDeviceId);
-      return {...device, revision: await this.getPayloadRevision(device.payloadProfileRevisionId)};
+      return {...device, id:randomUUID(), revision: (await this.prepareDeviceProfile(device))!};
     }));
     const identifiers = [body.externalDeviceId, ...additionalDevices.map(d => d.externalDeviceId)];
     if (new Set(identifiers).size !== identifiers.length) throw new BadRequestException('Device IDs must be unique');
@@ -369,7 +373,7 @@ export class AssetsController {
 
     const deviceId = randomUUID();
     const devModel = body.deviceModel?.trim() || (payloadRevision ? payloadRevision.config.displayName : "PM5350");
-    const devName = `Meter - ${devModel}`;
+    const devName = body.deviceName?.trim() || `Meter - ${devModel}`;
 
     const client = await this.db.pool.connect();
     try {
@@ -393,6 +397,7 @@ export class AssetsController {
 
       if(body.mqttBrokerId)await client.query("UPDATE gateways SET mqtt_broker_id=$1 WHERE id=$2",[body.mqttBrokerId,gwId]);
 
+      if(payloadRevision) await this.persistDeviceProfile(client,payloadRevision,deviceId);
       // 3. Create Device
       await client.query(
         `INSERT INTO devices (id, gateway_id, site_id, name, device_type, model, serial_number, slave_id, status, external_device_id, payload_profile_revision_id)
@@ -402,7 +407,8 @@ export class AssetsController {
 
       // 4. Assign Billing Meter
       for (const device of additionalDevices) {
-        await client.query(`INSERT INTO devices(id,gateway_id,site_id,name,device_type,model,serial_number,slave_id,status,external_device_id,payload_profile_revision_id) VALUES($1,$2,$3,$4,$5,$6,$7,1,'offline',$8,$9)`,[randomUUID(),gwId,siteId,device.name.trim(),device.revision.config.deviceType.includes('logger')?'logger':'meter',device.model.trim(),device.serialNumber.trim(),device.externalDeviceId,device.revision.id]);
+        await this.persistDeviceProfile(client,device.revision,device.id);
+        await client.query(`INSERT INTO devices(id,gateway_id,site_id,name,device_type,model,serial_number,slave_id,status,external_device_id,payload_profile_revision_id) VALUES($1,$2,$3,$4,$5,$6,$7,1,'offline',$8,$9)`,[device.id,gwId,siteId,device.name.trim(),device.revision.config.deviceType.includes('logger')?'logger':'meter',device.model.trim(),device.serialNumber.trim(),device.externalDeviceId,device.revision.id]);
       }
       if (receiveConfig) await client.query('INSERT INTO gateway_payload_receive_revisions(id,gateway_id,version,config) VALUES($1,$2,1,$3::jsonb)',[randomUUID(),gwId,JSON.stringify(receiveConfig)]);
 
@@ -739,9 +745,9 @@ export class AssetsController {
   }
 
   @Post("sites/:id/devices")
-  async addDevice(@Param("id") siteId: string, @Body() body: { name?: string; model?: string; serialNumber?: string; slaveId?: number; meterPresetId?: string; payloadProfileRevisionId?: string; externalDeviceId?: string }) {
+  async addDevice(@Param("id") siteId: string, @Body() body: { name?: string; model?: string; serialNumber?: string; slaveId?: number; meterPresetId?: string; payloadProfileRevisionId?: string; localOverrideConfig?: unknown; sourcePresetRevisionId?:string; externalDeviceId?: string }) {
     if (!body.name?.trim() || !body.model?.trim() || !body.serialNumber?.trim()) throw new BadRequestException("Device name, model and meter serial are required");
-    const revision = body.payloadProfileRevisionId ? await this.getPayloadRevision(body.payloadProfileRevisionId) : null;
+    const revision = await this.prepareDeviceProfile(body);
     if (revision && body.meterPresetId) throw new BadRequestException("Choose payload or register preset");
     if (revision) externalIdentifier(body.externalDeviceId);
     const slaveId = Number(body.slaveId ?? 1);
@@ -754,6 +760,7 @@ export class AssetsController {
       if (!revision && gateway.rows[0].externalSiteId && gateway.rows[0].externalGatewayId) throw new BadRequestException("Standard gateway devices require a payload profile");
       if (revision && (!gateway.rows[0].externalSiteId || !gateway.rows[0].externalGatewayId)) throw new BadRequestException("Gateway lacks external payload identities");
       const deviceId = randomUUID();
+      if(revision) await this.persistDeviceProfile(client,revision,deviceId);
       await client.query(`INSERT INTO devices (id,gateway_id,site_id,name,model,serial_number,device_type,slave_id,status,external_device_id,payload_profile_revision_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'offline',$9,$10)`, [deviceId,gateway.rows[0].id,siteId,body.name.trim(),body.model.trim(),body.serialNumber.trim(),revision && revision.config.deviceType === 'solar-logger' ? 'logger' : 'meter',slaveId,revision ? body.externalDeviceId : null,revision?.id ?? null]);
       if (body.meterPresetId) {
         const preset = await client.query("SELECT registers FROM meter_presets WHERE id = $1", [body.meterPresetId]);
@@ -767,25 +774,51 @@ export class AssetsController {
     } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
   }
 
-  private async getPayloadRevision(id: string) {
-    const row=(await this.db.query("SELECT id,config FROM payload_profile_revisions WHERE id=$1 AND NOT EXISTS(SELECT 1 FROM payload_preset_archives a WHERE a.profile_id=payload_profile_revisions.profile_id)",[id])).rows[0];
-    if(!row)throw new BadRequestException("Payload revision not found");
+  private async getPayloadRevision(id: string, deviceId?:string, sharedOnly=false) {
+    const row=(await this.db.query(`SELECT p.id,p.config,p.owner_device_id,
+      EXISTS(SELECT 1 FROM payload_preset_archives a WHERE a.profile_id=p.profile_id) AS archived,
+      EXISTS(SELECT 1 FROM devices d JOIN payload_profile_revisions active ON active.id=d.payload_profile_revision_id WHERE d.id=$2 AND (active.id=p.id OR active.source_preset_revision_id=p.id)) AS available_to_device
+      FROM payload_profile_revisions p WHERE p.id=$1 AND (p.owner_device_id IS NULL OR p.owner_device_id=$2)`,[id,deviceId??null])).rows[0];
+    if(!row || row.owner_device_id && (sharedOnly||row.owner_device_id!==deviceId) || row.archived && !row.available_to_device)throw new BadRequestException("Payload revision not found");
     return {id:row.id as string,config:validatePayloadProfile(row.config)};
   }
 
+  private async prepareDeviceProfile(body:{payloadProfileRevisionId?:string;localOverrideConfig?:unknown;sourcePresetRevisionId?:string},deviceId?:string) {
+    if(body.localOverrideConfig===undefined) {
+      if(body.sourcePresetRevisionId)throw new BadRequestException('Source preset requires local override config');
+      return body.payloadProfileRevisionId?this.getPayloadRevision(body.payloadProfileRevisionId,deviceId):null;
+    }
+    if(body.payloadProfileRevisionId)throw new BadRequestException('Choose revision or local override');
+    const source=body.sourcePresetRevisionId?await this.getPayloadRevision(body.sourcePresetRevisionId,deviceId,true):null;
+    try {
+      const draft=validatePayloadProfile(body.localOverrideConfig);
+      if(source && source.config.deviceType!==draft.deviceType)throw Error('Profile device type cannot change');
+      const id=randomUUID();
+      const config=validatePayloadProfile({...draft,id:'local-'+id,version:'1.0.0',sourceProfile:source?(source.config.sourceProfile??{id:source.config.id,version:source.config.version}):(draft.sourceProfile??{id:draft.id,version:draft.version})});
+      return {id,config,local:true as const,sourcePresetRevisionId:body.sourcePresetRevisionId??null};
+    }catch(error){throw new BadRequestException(error instanceof Error?error.message:'Invalid device profile');}
+  }
+
+  private async persistDeviceProfile(client:Pick<PoolClient,"query">,revision:NonNullable<Awaited<ReturnType<AssetsController['prepareDeviceProfile']>>>,deviceId:string) {
+    if('local' in revision)await client.query('INSERT INTO payload_profile_revisions(id,profile_id,version,config,owner_device_id,source_preset_revision_id) VALUES($1,$2,$3,$4::jsonb,$5,$6)',[revision.id,revision.config.id,revision.config.version,JSON.stringify(revision.config),deviceId,revision.sourcePresetRevisionId]);
+  }
+
   @Patch("devices/:id/payload-profile")
-  async upgradePayloadProfile(@Param("id") id:string,@Body() body:{payloadProfileRevisionId?:string}) {
-    if(!body.payloadProfileRevisionId)throw new BadRequestException("Payload revision is required");
-    const revision=await this.getPayloadRevision(body.payloadProfileRevisionId);
+  async upgradePayloadProfile(@Param("id") id:string,@Body() body:{payloadProfileRevisionId?:string;localOverrideConfig?:unknown;sourcePresetRevisionId?:string;name?:string;model?:string;serialNumber?:string}) {
+    const revision=await this.prepareDeviceProfile(body,id);
+    if(!revision)throw new BadRequestException("Payload revision or local configuration is required");
+    for(const key of ["name","model","serialNumber"] as const)if(body[key]!==undefined&&!body[key]?.trim())throw new BadRequestException("Device name, model and serial are required");
     const client=await this.db.pool.connect();
     try {
       await client.query('BEGIN');
-      const device=(await client.query(`SELECT d.*,EXISTS(SELECT 1 FROM billing_meters b WHERE b.device_id=d.id AND b.active) AS billing FROM devices d WHERE d.id=$1 FOR UPDATE`,[id])).rows[0];
+      const device=(await client.query(`SELECT d.*,(SELECT p.config->>'deviceType' FROM payload_profile_revisions p WHERE p.id=d.payload_profile_revision_id) AS profile_device_type,EXISTS(SELECT 1 FROM billing_meters b WHERE b.device_id=d.id AND b.active) AS billing FROM devices d WHERE d.id=$1 FOR UPDATE`,[id])).rows[0];
       if(!device)throw new NotFoundException("Device not found");
       if(device.billing && !revision.config.fields.some(f=>f.role==='billing-import'))throw new BadRequestException("Billing meter requires billing-import profile");
       if(!device.external_device_id)throw new BadRequestException("Device has no payload identity");
+      if(device.profile_device_type&&device.profile_device_type!==revision.config.deviceType)throw new BadRequestException('Profile device type cannot change');
       if((device.device_type==='logger') !== (revision.config.deviceType==='solar-logger'))throw new BadRequestException("Profile device type cannot change");
-      await client.query("UPDATE devices SET payload_profile_revision_id=$2 WHERE id=$1",[id,revision.id]);
+      await this.persistDeviceProfile(client,revision,id);
+      await client.query("UPDATE devices SET payload_profile_revision_id=$2,name=coalesce($3,name),model=coalesce($4,model),serial_number=coalesce($5,serial_number) WHERE id=$1",[id,revision.id,body.name?.trim()??null,body.model?.trim()??null,body.serialNumber?.trim()??null]);
       await client.query('COMMIT');return {id,payloadProfileRevisionId:revision.id,profileId:revision.config.id,profileVersion:revision.config.version};
     }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
   }
@@ -810,10 +843,10 @@ export class AssetsController {
     const gateway=(await this.db.query(`SELECT g.id AS "gatewayId",s.external_site_id AS "externalSiteId",g.external_gateway_id AS "externalGatewayId",g.endpoint AS "subscriptionTopic",g.mqtt_broker_id AS "mqttBrokerId",b.name AS "brokerName",b.url AS "brokerUrl",b.username AS "brokerUsername",s.latitude,s.longitude,g.polling_interval_seconds AS "pollingIntervalSeconds",g.alert_rules AS "alertRules" FROM sites s JOIN gateways g ON g.site_id=s.id LEFT JOIN mqtt_brokers b ON b.id=g.mqtt_broker_id WHERE s.id=$1`,[siteId])).rows[0];
     if(!gateway)throw new NotFoundException("Site gateway not found");
     if(!gateway.mqttBrokerId){const url=new URL(process.env.MQTT_URL || 'mqtt://localhost:1883');url.username='';url.password='';gateway.brokerName='Broker เริ่มต้นของระบบ';gateway.brokerUrl=url.toString();gateway.brokerUsername=process.env.MQTT_USERNAME||'';}
-    const devices=(await this.db.query(`SELECT d.id,d.name,d.model,d.serial_number AS "serialNumber",d.device_type AS "deviceType",d.external_device_id AS "externalDeviceId",p.id AS "profileRevisionId",p.profile_id AS "profileId",p.version AS "profileVersion",p.config FROM devices d JOIN payload_profile_revisions p ON p.id=d.payload_profile_revision_id WHERE d.site_id=$1 ORDER BY d.name,d.id`,[siteId])).rows.map(d=>{
+    const devices=(await this.db.query(`SELECT d.id,d.name,d.model,d.serial_number AS "serialNumber",d.device_type AS "deviceType",d.external_device_id AS "externalDeviceId",p.id AS "profileRevisionId",p.profile_id AS "profileId",p.version AS "profileVersion",p.source_preset_revision_id AS "sourcePresetRevisionId",p.owner_device_id AS "profileOwnerDeviceId",p.config,EXISTS(SELECT 1 FROM billing_meters b WHERE b.device_id=d.id AND b.active) AS "billingMeter",(SELECT bs.source_tag FROM billing_meters b JOIN billing_source_bindings bs ON bs.id=b.billing_source_binding_id WHERE b.device_id=d.id AND b.active LIMIT 1) AS "billingSourceTag" FROM devices d JOIN payload_profile_revisions p ON p.id=d.payload_profile_revision_id WHERE d.site_id=$1 ORDER BY d.name,d.id`,[siteId])).rows.map(d=>{
       const config=validatePayloadProfile(d.config),polledAt=new Date().toISOString(),field=config.fields[0]!;
       const {config:_config,...info}=d;
-      return {...info,profileDeviceType:config.deviceType,sourceProfileId:config.sourceProfile?.id??config.id,sourceProfileVersion:config.sourceProfile?.version??config.version,fields:config.fields,telemetryTopic:payloadTopic(gateway.externalSiteId,gateway.externalGatewayId,d.externalDeviceId),fixture:{schemaVersion:'1.1',messageType:'telemetry',messageId:randomUUID(),sequence:1,lotNumber:1,siteId:gateway.externalSiteId,gatewayId:gateway.externalGatewayId,device:{deviceId:d.externalDeviceId,deviceType:config.deviceType,profileId:config.sourceProfile?.id??config.id,profileVersion:config.sourceProfile?.version??config.version},pollGroup:field.pollGroup,timestamps:{polledAt,sentAt:polledAt},data:{values:Object.fromEntries(config.fields.filter(f=>f.pollGroup===field.pollGroup).map(f=>[f.sourceTag??f.tag,1])),units:Object.fromEntries(config.fields.filter(f=>f.pollGroup===field.pollGroup).map(f=>[f.sourceTag??f.tag,f.sourceUnit]))},quality:{status:'good',communication:'online'}}};
+      return {...info,profileConfig:config,profileDeviceType:config.deviceType,sourceProfileId:config.sourceProfile?.id??config.id,sourceProfileVersion:config.sourceProfile?.version??config.version,fields:config.fields,telemetryTopic:payloadTopic(gateway.externalSiteId,gateway.externalGatewayId,d.externalDeviceId),fixture:{schemaVersion:'1.1',messageType:'telemetry',messageId:randomUUID(),sequence:1,lotNumber:1,siteId:gateway.externalSiteId,gatewayId:gateway.externalGatewayId,device:{deviceId:d.externalDeviceId,deviceType:config.deviceType,profileId:config.sourceProfile?.id??config.id,profileVersion:config.sourceProfile?.version??config.version},pollGroup:field.pollGroup,timestamps:{polledAt,sentAt:polledAt},data:{values:Object.fromEntries(config.fields.filter(f=>f.pollGroup===field.pollGroup).map(f=>[f.sourceTag??f.tag,1])),units:Object.fromEntries(config.fields.filter(f=>f.pollGroup===field.pollGroup).map(f=>[f.sourceTag??f.tag,f.sourceUnit]))},quality:{status:'good',communication:'online'}}};
     });
     const rejections=(await this.db.query(`SELECT topic,reason,received_at AS "receivedAt" FROM payload_rejections WHERE site_id=$1 ORDER BY received_at DESC,id DESC LIMIT 100`,[siteId])).rows;
     const unmappedMessages=(await this.db.query(`SELECT device_id AS "deviceId",message_id AS "messageId",unmapped,accepted_at AS "receivedAt" FROM payload_messages WHERE gateway_id=$1 AND unmapped<>'[]'::jsonb ORDER BY accepted_at DESC,id DESC LIMIT 20`,[gateway.gatewayId])).rows;
@@ -827,7 +860,7 @@ export class AssetsController {
   async importPayloadConfiguration(@Param('id') siteId:string,@Body() body:{baseVersion:number;devices:{name:string;model:string;serialNumber:string;externalDeviceId:string;payloadProfileRevisionId:string}[];config:unknown}) {
     if(!Number.isInteger(body.baseVersion)||body.baseVersion<0||!Array.isArray(body.devices)||body.devices.length>32)throw new BadRequestException('Invalid import configuration');
     const config=validateReceiveConfig(body.config);
-    const planned=await Promise.all(body.devices.map(async d=>{externalIdentifier(d.externalDeviceId);if(!d.name?.trim()||!d.model?.trim()||!d.serialNumber?.trim())throw new BadRequestException('Device name, model and serial required');return {...d,revision:await this.getPayloadRevision(d.payloadProfileRevisionId)};}));
+    const planned=await Promise.all(body.devices.map(async d=>{externalIdentifier(d.externalDeviceId);if(!d.name?.trim()||!d.model?.trim()||!d.serialNumber?.trim())throw new BadRequestException('Device name, model and serial required');const registered=(await this.db.query('SELECT id FROM devices WHERE site_id=$1 AND external_device_id=$2 AND payload_profile_revision_id=$3',[siteId,d.externalDeviceId,d.payloadProfileRevisionId])).rows[0];return {...d,revision:await this.getPayloadRevision(d.payloadProfileRevisionId,registered?.id)};}));
     if(new Set(planned.map(d=>d.externalDeviceId)).size!==planned.length)throw new BadRequestException('Duplicate imported device ID');
     const client=await this.db.pool.connect();
     try {

@@ -14,7 +14,7 @@ import { Table, TableHeader, TableHead, TableRow, TableBody, TableCell } from ".
 import { useLocale } from "../../providers/locale-provider";
 import type { PayloadField } from "../sites/payload-contracts";
 
-export function PayloadFieldsEditor({fields,onChange,onAdd}:{fields:PayloadField[];onChange:(fields:PayloadField[])=>void;onAdd:()=>void}) {
+export function PayloadFieldsEditor({fields,onChange,onAdd,singleField=false}:{fields:PayloadField[];onChange:(fields:PayloadField[])=>void;onAdd:()=>void;singleField?:boolean}) {
   const th=useLocale()==="th";
   const [view,setView]=React.useState("cards");
   const keys=["tag","displayName","pollGroup","sourceUnit","targetUnit"] as const;
@@ -34,6 +34,7 @@ export function PayloadFieldsEditor({fields,onChange,onAdd}:{fields:PayloadField
     if(f.sourceUnit&&f.targetUnit){try{const converted=convertUnit(1000,f.sourceUnit,f.targetUnit);preview=f.sourceUnit===f.targetUnit?(th?"ไม่แปลงค่า (หน่วยเดิม)":"Keep value (same unit)"):`1,000 ${f.sourceUnit} → ${converted.toLocaleString(th?"th":"en",{maximumFractionDigits:6})} ${f.targetUnit}`;}catch{preview=th?"หน่วยไม่สามารถแปลงกันได้":"Incompatible units";}}
     return <p id={`field-${index}-conversion`} className="flex min-h-10 items-center rounded-md bg-muted/50 px-3 py-2 text-sm" role="status">{preview}</p>;
   };
+if(singleField&&fields[0]){const f=fields[0];return <FieldGroup className="grid gap-3 sm:grid-cols-2">{keys.map((key,k)=><Field key={key}><FieldLabel htmlFor={`field-0-${key}`}>{labels[k]}</FieldLabel>{key==='sourceUnit'||key==='targetUnit'?units(f,0,key):<Input id={`field-0-${key}`} value={f[key]} onChange={e=>update(0,{[key]:e.target.value})}/>}</Field>)}<Field><FieldLabel>{th?'การแปลง':'Conversion'}</FieldLabel>{conversion(f,0)}</Field></FieldGroup>;}
 if (fields.length === 0) return <section className="space-y-3" aria-labelledby="field-settings-heading"><h3 id="field-settings-heading" className="text-base font-semibold">{th?"การตั้งค่าฟิลด์":"Field settings"}</h3><div className="flex flex-col items-center gap-3 rounded-lg bg-muted/50 px-6 py-8 text-center"><ListPlus aria-hidden="true" className="size-8 text-muted-foreground"/><p className="text-sm text-muted-foreground">{th?"ยังไม่มีฟิลด์ เพิ่มฟิลด์เพื่อกำหนดการรับข้อมูล":"No fields yet. Add a field to configure incoming data."}</p><AddButton onClick={onAdd}>{th?"เพิ่มฟิลด์":"Add field"}</AddButton></div></section>;
   return <Tabs value={view} onValueChange={setView}><section className="min-w-0 space-y-3" aria-labelledby="field-settings-heading">
     <div className="flex flex-wrap items-center justify-between gap-3"><h3 id="field-settings-heading" className="text-base font-semibold">{th?"การตั้งค่าฟิลด์":"Field settings"}</h3><TabsList className="h-10 group-data-horizontal/tabs:h-10" aria-label={th?"มุมมองรายการฟิลด์":"Field view"}><TabsTrigger value="cards" className="w-10" aria-label={th?"มุมมองการ์ด":"Card view"} title={th?"การ์ด":"Cards"}><Grid2X2 aria-hidden="true" className="size-4" /></TabsTrigger><TabsTrigger value="table" className="w-10" aria-label={th?"มุมมองตาราง":"Table view"} title={th?"ตาราง":"Table"}><Table2 aria-hidden="true" className="size-4" /></TabsTrigger></TabsList></div>
