@@ -54,3 +54,15 @@ test('Organization power-flow rejects a site outside its server-assigned organiz
  await assert.rejects(()=>service.getPowerFlow({role:'school_user',schoolId:id},other),/outside assigned scope/);
  assert.equal(calls.length,1);assert.deepEqual(calls[0]!.params,[[id],null,other]);
 });
+
+test('Organization summary and comparison use independent logger energy, with missing site boundaries blocking aggregate',async()=>{
+ const other='22222222-2222-4222-8222-222222222222',first=Date.parse('2026-08-31T17:00:00Z');
+ const sites=[id,other].map(site_id=>({id:site_id,name:site_id,school_name:'Organization',capacity_mwp:'1'}));
+ let missing=false;const calls:string[]=[];
+ const db={query:async(sql:string)=>{calls.push(sql);return {rows:sql.includes('FROM sites s JOIN schools')?sites:sql.includes("ps.tag='solar.total_yield'")?[id,other].flatMap(site_id=>Array.from({length:721},(_,hour)=>({site_id,device_id:site_id,polled_at:new Date(first+hour*3600000).toISOString(),value:String(100000+hour*52100/24)}))).filter(row=>!missing||row.site_id!==other||Date.parse(row.polled_at)!==first+86400000):sql.includes('WITH samples AS')?[{site_id:id,day:'2026-09-01',value:'2465.7'}]:[]};}};
+ const service=new DashboardService(db as any),user={role:'school_user',schoolId:id};
+ const summary=await service.getSummary(user,'2026-09-01','2026-09-30');assert.ok(Math.abs(summary.stats.periodKwh!-3126)<1e-8);
+ assert.ok(!calls.some(sql=>sql.includes('WITH samples AS')));assert.ok(summary.production.every(row=>row.quality==='complete'));
+ const comparison=await service.compare(user,'periodKwh',[],'2026-09-01','2026-09-30');assert.ok(comparison.every(row=>Math.abs(row.value!-1563)<1e-8));
+ missing=true;const incomplete=await service.getSummary(user,'2026-09-01','2026-09-30');assert.equal(incomplete.stats.periodKwh,null);assert.equal(incomplete.sites.find(site=>site.id===other)?.productionKwh,null);assert.ok(incomplete.production.some(row=>row.value===null&&row.quality==='missing'));
+});

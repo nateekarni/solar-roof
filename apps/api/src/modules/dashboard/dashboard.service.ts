@@ -1,3 +1,4 @@
+import { generationEnergy } from './generation-energy.js';
 import { EnergyReadService } from './energy-read.service.js';
 import { BadRequestException, ForbiddenException, Inject, Injectable } from '@nestjs/common';
 import { schoolScope } from '../../common/auth/resource-scope.js';
@@ -68,7 +69,7 @@ export class DashboardService {
     const sites=siteId ? await this.sites(user,siteId) : availableSites;
     const ids=sites.map(s=>s.id);
     const [energy,power,billing,alerts]=await Promise.all([
-      this.energy(ids,start,end),this.power(ids),
+      (user.role==='school_user'?generationEnergy(this.db,ids,start,end):this.energy(ids,start,end)),this.power(ids),
       this.db.query<{site_id:string;day:string;amount:string;consumed_kwh:string;paid:boolean}>(`SELECT b.site_id,b.period_end::text AS day,b.amount::text,b.consumed_kwh::text,
         EXISTS(SELECT 1 FROM payments p WHERE p.billing_cycle_id=b.id AND p.status='paid') paid
         FROM billing_cycles b WHERE b.site_id=ANY($1::uuid[]) AND b.period_start >= $2::date AND b.period_start <= $3::date ORDER BY b.period_end`,[ids,start,end]),
@@ -114,7 +115,7 @@ export class DashboardService {
     const selected=allowed.filter(site=>ids.includes(site.id));
     const values=new Map<string,number>();
     if (metric==='periodKwh') {
-      const result=await this.energy(ids,start,end);
+      const result=await (user.role==='school_user'?generationEnergy(this.db,ids,start,end):this.energy(ids,start,end));
       const unknown=new Set(result.rows.filter(r=>r.value===null).map(r=>r.site_id));
       for (const row of result.rows) if(!unknown.has(row.site_id))values.set(row.site_id,(values.get(row.site_id)||0)+Number(row.value));
     } else if (metric==='currentMw') {
