@@ -1,4 +1,5 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {allocateDocumentNumber,type DocumentNumberClient,type HumanDocumentType} from './document-number.js';
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { createHash, randomUUID } from "node:crypto";
 import { DatabaseService } from "../../database/database.service.js";
 
@@ -21,18 +22,11 @@ export interface FinalDocument {
 export class NumberSeriesService {
   constructor(@Inject(DatabaseService) private readonly db: DatabaseService) {}
 
-  async next(type: DocumentType, year: number): Promise<string> {
-    const prefix = type === "receipt" ? "RCT" : type === "billing_statement" ? "STM" : "INV";
-    const res = await this.db.query(
-      `SELECT count(*)::int AS count 
-       FROM documents 
-       WHERE document_type = $1 
-         AND EXTRACT(year FROM coalesce(issue_date, created_at)) = $2`,
-      [type, year]
-    );
-    const count = (res.rows[0]?.count ?? 0) + 1;
-    return `${prefix}-${year}-${String(count).padStart(6, "0")}`;
+  async next(client:DocumentNumberClient,type:DocumentType):Promise<{number:string;issueDate:string}> {
+    if(!['invoice','receipt'].includes(type))throw new BadRequestException('Unsupported human document family');
+    return allocateDocumentNumber(client,type as HumanDocumentType);
   }
+
 }
 
 @Injectable()
@@ -57,32 +51,20 @@ export class DocumentService {
       throw new ConflictException("Document is already finalized");
     }
 
-    const number = await this.series.next(input.type, input.year);
-    const contentHash = createHash("sha256").update(JSON.stringify(input.snapshot)).digest("hex");
-    const now = new Date();
-
-    const doc: FinalDocument = {
-      id,
-      publicId: randomUUID(),
-      type: input.type,
-      year: input.year,
-      number,
-      contentHash,
-      status: "finalized",
-      snapshot: structuredClone(input.snapshot),
-      issuedAt: now,
-    };
-
-    this.docs.set(id, doc);
-
     const siteId = input.siteId || (input.snapshot?.siteId as string);
-    if (siteId && this.db) {
-      await this.db.query(
-        `INSERT INTO documents (id, site_id, document_type, document_number, status, issue_date, amount, file_key, created_at)
-         VALUES ($1, $2, $3, $4, 'draft', $5, $6, $7, $5)`,
-        [id, siteId, input.type, number, now, input.amount ?? 0, `docs/${input.type}-${number}.pdf`]
-      );
-    }
+    if(!siteId)throw new BadRequestException('siteId is required');
+    const doc=await this.db.transaction(async client=>{
+      const {number,issueDate}=await this.series.next(client,input.type);
+      const contentHash=createHash('sha256').update(JSON.stringify(input.snapshot)).digest('hex');
+      const now=new Date();
+      const result:FinalDocument={id,publicId:randomUUID(),type:input.type,year:Number(issueDate.slice(0,4)),number,contentHash,status:'finalized',snapshot:structuredClone(input.snapshot),issuedAt:now};
+      await client.query(
+        `INSERT INTO documents(id,site_id,document_type,document_number,status,issue_date,amount,file_key,created_at)
+         VALUES($1,$2,$3,$4,'draft',$5,$6,$7,$8)`,
+        [id,siteId,input.type,number,issueDate,input.amount??0,`docs/${number}.pdf`,now]);
+      return result;
+    });
+    this.docs.set(id,doc);
 
     return doc;
   }

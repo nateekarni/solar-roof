@@ -29,7 +29,7 @@ test('TEST payment persistence keeps an exact large string amount',async()=>{
 test('future financial originals freeze protocol site identity and persist the renderer template version',async()=>{
  let persisted:any;let insertedVersion:unknown;
  const cycle={id:'cycle',site_id:'site-a',contract_id:'contract-a',quality:'complete',policy_hash:TEST_FINANCIAL_POLICY_HASH,amount:'107.00',subtotal:'100.00',simulated_tax:'7.00',meter_snapshot:[{from:'2026-09-01',to:'2026-10-01',consumedKwh:'25.000',rate:'4.0000',subtotal:'100.00'}]};
- const customer={id:'contract-a',company_name:'ลูกค้าทดสอบ',tax_id:'1111111111111',tax_address:'ที่อยู่ลูกค้า',site_name:'ไซต์ทดสอบ',external_site_id:'PROTOCOL-002',payment_term_days:30,recipient_user_ids:['recipient']};
+ const customer={contract_number:'PPA261000001',id:'contract-a',company_name:'ลูกค้าทดสอบ',tax_id:'1111111111111',tax_address:'ที่อยู่ลูกค้า',site_name:'ไซต์ทดสอบ',external_site_id:'PROTOCOL-002',payment_term_days:30,recipient_user_ids:['recipient']};
  const db={transaction:async(run:any)=>run({query:async(sql:string,params:any[]=[])=>{
  if(sql.includes('SELECT * FROM billing_cycles'))return {rows:[cycle]};if(sql.includes('SELECT * FROM documents'))return {rows:[]};
  if(sql.includes('FROM contracts c JOIN sites')){const {external_site_id,...legacy}=customer;return {rows:[sql.includes('s.external_site_id')?customer:legacy]};}

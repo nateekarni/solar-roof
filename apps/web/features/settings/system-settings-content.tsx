@@ -48,8 +48,8 @@ export function SystemSettingsContent({ showBackLink = false }: SystemSettingsCo
   const locale = useLocale();
 
   const [form, setForm] = React.useState<SettingsForm>({
-    invoicePrefix: "INV{year}{month}",
-    receiptPrefix: "RCT{year}{month}",
+    invoicePrefix: "INV{YY}{MM}",
+    receiptPrefix: "RCP{YY}{MM}",
     defaultUnitPriceThb: 4.5,
     defaultFetchFrequencySec: 60,
     rawTelemetryRetentionYears: 2,
@@ -263,113 +263,17 @@ export function SystemSettingsContent({ showBackLink = false }: SystemSettingsCo
 
         {/* Card 2: Document Series */}
         <Card className="panel h-full flex flex-col justify-between">
-          <div>
-            <CardHeader className="p-0 pb-1.5 flex flex-row items-start justify-between gap-3">
-              <div className="min-w-0 flex-1 space-y-1">
-                <CardTitle className="text-sm font-semibold text-foreground">
-                  {t("settings.documentSeries")}
-                </CardTitle>
-                <CardDescription className="text-xs leading-relaxed">
-                  {locale === "th"
-                    ? "กำหนดคำนำหน้าเลขที่ใบแจ้งหนี้และใบเสร็จ"
-                    : "Configure invoice and receipt number prefixes."}
-                </CardDescription>
-              </div>
-              {editingCard !== "documents" && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleStartEdit("documents")}
-                  className="h-10 shrink-0 gap-1.5 text-xs"
-                >
-                  <Edit2 className="size-3.5" />
-                  <span>{locale === "th" ? "แก้ไข" : "Edit"}</span>
-                </Button>
-              )}
-            </CardHeader>
-
-            <CardContent className="flex flex-col p-0 pt-1">
-              {editingCard === "documents" ? (
-                <div className="flex flex-col gap-2.5 pt-1">
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="invoice-prefix" className="text-xs">
-                      {(locale === "th" ? "คำนำหน้าเลขที่ใบแจ้งหนี้" : t("settings.invoicePrefix"))}
-                    </Label>
-                    <Input
-                      id="invoice-prefix"
-                      value={cardDraft.invoicePrefix}
-                      onChange={(e) =>
-                        setCardDraft({ ...cardDraft, invoicePrefix: e.target.value })
-                      }
-                      className="h-10 text-xs"
-                    />
-                    <span className="text-[10px] text-muted-foreground">
-                      {locale === "th"
-                        ? "ใช้ {year} แทนปี ค.ศ. (เช่น 2026) และ {month} แทนเดือน 2 หลัก (เช่น 08, 09) ต่อด้วยเลขรัน 4 หลัก 0001-9999 เช่น INV2026080001"
-                        : "Use {year} for year (e.g. 2026) and {month} for month (e.g. 08), followed by 4-digit sequence 0001-9999"}
-                    </span>
-                  </div>
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="receipt-prefix" className="text-xs">
-                      {(locale === "th" ? "คำนำหน้าเลขที่ใบเสร็จ" : t("settings.receiptPrefix"))}
-                    </Label>
-                    <Input
-                      id="receipt-prefix"
-                      value={cardDraft.receiptPrefix}
-                      onChange={(e) =>
-                        setCardDraft({ ...cardDraft, receiptPrefix: e.target.value })
-                      }
-                      className="h-10 text-xs"
-                    />
-                    <span className="text-[10px] text-muted-foreground">
-                      {locale === "th"
-                        ? "ใช้ {year} แทนปี ค.ศ. (เช่น 2026) และ {month} แทนเดือน 2 หลัก (เช่น 08, 09) ต่อด้วยเลขรัน 4 หลัก 0001-9999 เช่น RCT2026080001"
-                        : "Use {year} for year (e.g. 2026) and {month} for month (e.g. 08), followed by 4-digit sequence 0001-9999"}
-                    </span>
-                  </div>
-                </div>
-              ) : (
-                <div className="text-xs">
-                  <div className="flex flex-col gap-1 py-2">
-                    <span className="text-muted-foreground">{(locale === "th" ? "คำนำหน้าเลขที่ใบแจ้งหนี้" : t("settings.invoicePrefix"))}</span>
-                    <strong className="text-foreground font-mono font-semibold">
-                      {form.invoicePrefix}
-                    </strong>
-                  </div>
-                  <div className="flex flex-col gap-1 py-2">
-                    <span className="text-muted-foreground">{(locale === "th" ? "คำนำหน้าเลขที่ใบเสร็จ" : t("settings.receiptPrefix"))}</span>
-                    <strong className="text-foreground font-mono font-semibold">
-                      {form.receiptPrefix}
-                    </strong>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </div>
-
-          {editingCard === "documents" && (
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-border/60 mt-3">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={handleCancel}
-                className="h-10 text-xs"
-              >
-                {locale === "th" ? "ยกเลิก" : "Cancel"}
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                disabled={saving}
-                onClick={handleSaveCard}
-                className="h-10 text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90"
-              >
-                {saving ? (locale === "th" ? "กำลังบันทึก..." : "Saving...") : (locale === "th" ? "บันทึก" : "Save")}
-              </Button>
-            </div>
-          )}
+          <CardHeader className="p-0 pb-1.5">
+            <CardTitle className="text-sm font-semibold text-foreground">{t("settings.documentSeries")}</CardTitle>
+            <CardDescription className="text-xs leading-relaxed">
+              {locale === "th" ? "เลขที่เอกสารแยกประเภทและเดือนที่ออกตามเวลากรุงเทพ ปี ค.ศ. 2 หลัก เดือน 2 หลัก และเลขรัน 5 หลัก" : "Numbers use the Bangkok issue month: two-digit Gregorian year, two-digit month, and a separate five-digit sequence per type."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col p-0 pt-1 text-xs">
+            <p className="py-2">{locale === "th" ? "ใบแจ้งหนี้" : "Invoice"}: <strong className="font-mono">INV261000001</strong></p>
+            <p className="py-2">{locale === "th" ? "ใบเสร็จ" : "Receipt"}: <strong className="font-mono">RCP261000001</strong></p>
+            <p className="py-2">{locale === "th" ? "สัญญา" : "Contract"}: <strong className="font-mono">PPA261000001</strong></p>
+          </CardContent>
         </Card>
 
         {/* Card 3: Retention */}

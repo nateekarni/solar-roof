@@ -1,3 +1,4 @@
+import {allocateDocumentNumber,type HumanDocumentType} from './document-number.js';
 import { BadRequestException, Body, Controller, Inject, Post } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { DatabaseService } from "../../database/database.service.js";
@@ -21,19 +22,16 @@ export class DocumentsController {
     const siteId = body.siteId;
     const type = (body.type || "invoice").toLowerCase();
     const amount = Number(body.amount ?? 15000);
-    const issueDate = body.issueDate || new Date().toISOString().slice(0, 10);
     const fileKey = body.fileKey || `docs/${type}-${Date.now()}.pdf`;
 
     if (!siteId) {
       throw new BadRequestException("siteId is required");
     }
 
-    const countRes = await this.db.query("SELECT count(*)::int AS count FROM documents WHERE document_type = $1", [type]);
-    const count = (countRes.rows[0]?.count ?? 0) + 1;
-    const prefix = type === "receipt" ? "RCT" : type === "billing_statement" ? "STM" : "INV";
-    const documentNumber = `${prefix}-${new Date().getFullYear()}-${String(count).padStart(4, "0")}`;
-    const id = randomUUID();
-
+    if(!['invoice','receipt'].includes(type))throw new BadRequestException('Unsupported human document family');
+    return this.db.transaction(async client=>{
+    const {number:documentNumber,issueDate}=await allocateDocumentNumber(client,type as HumanDocumentType);
+    const id=randomUUID();
     const sql = `
       INSERT INTO documents (
         id, site_id, document_type, document_number, status, issue_date, amount, file_key
@@ -41,7 +39,8 @@ export class DocumentsController {
       VALUES ($1, $2, $3, $4, 'draft', $5, $6, $7)
       RETURNING id, site_id AS "siteId", document_type AS "documentType", document_number AS "documentNumber", status, issue_date AS "issueDate", amount
     `;
-    const res = await this.db.query(sql, [id, siteId, type, documentNumber, issueDate, amount, fileKey]);
+    const res = await client.query(sql, [id, siteId, type, documentNumber, issueDate, amount, fileKey]);
     return res.rows[0];
+    });
   }
 }

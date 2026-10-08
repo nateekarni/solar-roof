@@ -12,6 +12,7 @@ interface SavedFinancialParty {
   tax_phone?: string;
   tax_email?: string;
   id?: string;
+  contract_number?: string;
   site_name?: string;
   external_site_id?: string | null;
   payment_terms?: string;
@@ -53,7 +54,7 @@ export function localTestDocumentSnapshot(document: SavedFinancialDocument): Doc
   return {
     type: document.document_type, documentNumber: document.document_number, issueDate: s.issueDate,
     issuer: partySnapshot(s.company, false), customer: partySnapshot(s.customer, true),
-    ...(s.customer.site_name ? { siteName: s.customer.site_name } : {}), ...(s.customer.id ? { contractNumber: s.customer.id } : {}),
+    ...(s.customer.site_name ? { siteName: s.customer.site_name } : {}), ...(s.customer.contract_number ? { contractNumber: s.customer.contract_number } : {}),
     ...(s.customer.external_site_id ? { siteExternalId: s.customer.external_site_id } : {}),
     ...(s.customer.payment_terms ? { paymentTerms: s.customer.payment_terms } : {}),
     period: `${s.cycle.period_start.slice(0, 10)} - ${s.cycle.period_end.slice(0, 10)}`,

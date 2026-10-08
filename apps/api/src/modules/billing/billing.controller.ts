@@ -1,3 +1,4 @@
+import {allocateDocumentNumber} from '../documents/document-number.js';
 import { ContractPdfService, type ScopedActor } from '../documents/contract-pdf.service.js';
 import { readOrganizationDefaults, contractIdentity } from "./organization-defaults.js";
 import { schoolScope } from "../../common/auth/route-policy.js";
@@ -256,7 +257,7 @@ export class BillingController {
 
         await client.query('UPDATE contracts SET payment_term_days=$2,recipient_user_ids=$3 WHERE id=$1',[contractId,body.paymentTermDays??null,body.recipientUserIds??[]]);
         const original=await this.contractPdfs.ensureInTransaction(client,contractId,actor);
-        createdContracts.push({...res.rows[0],documentId:original.documentId,contentHash:original.sha256,paymentTermDays:body.paymentTermDays??null,recipientUserIds:body.recipientUserIds??[]});
+        createdContracts.push({...res.rows[0],documentId:original.documentId,contractNumber:original.documentNumber,documentNumber:original.documentNumber,contentHash:original.sha256,paymentTermDays:body.paymentTermDays??null,recipientUserIds:body.recipientUserIds??[]});
       }
 
       await client.query("COMMIT");
@@ -288,74 +289,19 @@ export class BillingController {
   async generateInvoiceForBillingCycle(@Param("id") id: string) {
     await this.readiness.assertEnabled('issue');
     if(await this.readiness.isLocalTestReady())return this.financial.issueInvoice(id);
-    // Check if billing cycle exists
-    const cycleRes = await this.db.query(
-      `SELECT b.id, b.site_id AS "siteId", b.period_end AS "periodEnd", b.amount, b.consumed_kwh AS "consumedKwh"
-       FROM billing_cycles b
-       WHERE b.id = $1`,
-      [id]
-    );
-    const cycle = cycleRes.rows[0];
-    if (!cycle) {
-      throw new NotFoundException("Billing cycle not found");
-    }
-
-    // Check if invoice already exists
-    const docCheck = await this.db.query(
-      `SELECT id, document_number AS "documentNumber", status, amount, issue_date AS "issueDate"
-       FROM documents
-       WHERE billing_cycle_id = $1 AND document_type = 'invoice'`,
-      [id]
-    );
-    if (docCheck.rows.length > 0) {
-      return {
-        created: false,
-        message: "ใบแจ้งหนี้สำหรับรอบบิลนี้ถูกสร้างไว้แล้ว",
-        document: docCheck.rows[0],
-      };
-    }
-
-    // 1. Fetch prefix template from system_settings or default INV{year}{month}
-    const settingsRes = await this.db.query<{ value: string }>(
-      `SELECT value FROM system_settings WHERE key = 'invoicePrefix'`
-    );
-    const prefixTemplate = settingsRes.rows[0]?.value || "INV{year}{month}";
-
-    const periodDate = cycle.periodEnd ? new Date(cycle.periodEnd) : new Date();
-    const yr = String(periodDate.getUTCFullYear() || periodDate.getFullYear());
-    const m = periodDate.getUTCMonth() !== undefined ? periodDate.getUTCMonth() : periodDate.getMonth();
-    const mo = String(m + 1).padStart(2, "0");
-    const prefix = prefixTemplate.replace("{year}", yr).replace("{month}", mo);
-
-    // Count existing invoices starting with this prefix
-    const countRes = await this.db.query(
-      `SELECT count(*)::int AS count FROM documents WHERE document_number LIKE $1`,
-      [`${prefix}%`]
-    );
-    const seq = (countRes.rows[0]?.count ?? 0) + 1;
-    const documentNumber = `${prefix}${String(seq).padStart(4, "0")}`;
-    const docId = randomUUID();
-    const fileKey = `invoices/${yr}/${documentNumber}.pdf`;
-
-    const insertSql = `
-      INSERT INTO documents (
-        id, site_id, billing_cycle_id, document_type, document_number,
-        status, issue_date, amount, file_key
-      )
-      VALUES ($1, $2, $3, 'invoice', $4, 'draft', NOW(), $5, $6)
-      ON CONFLICT (billing_cycle_id, document_type) DO UPDATE SET document_number = EXCLUDED.document_number
-      RETURNING id, site_id AS "siteId", billing_cycle_id AS "billingCycleId", document_type AS "documentType",
-                document_number AS "documentNumber", status, issue_date AS "issueDate", amount
-    `;
-    const res = await this.db.query(insertSql, [
-      docId, cycle.siteId, cycle.id, documentNumber, cycle.amount, fileKey
-    ]);
-
-    return {
-      created: true,
-      message: "สร้างใบแจ้งหนี้เรียบร้อยแล้ว",
-      document: res.rows[0],
-    };
+    return this.db.transaction(async client=>{
+      const cycle=(await client.query('SELECT * FROM billing_cycles WHERE id=$1 FOR UPDATE',[id])).rows[0];
+      if(!cycle)throw new NotFoundException('Billing cycle not found');
+      const existing=(await client.query(`SELECT id,document_number AS "documentNumber",status,amount,issue_date AS "issueDate" FROM documents WHERE billing_cycle_id=$1 AND document_type='invoice'`,[id])).rows[0];
+      if(existing)return {created:false,message:'ใบแจ้งหนี้สำหรับรอบบิลนี้ถูกสร้างไว้แล้ว',document:existing};
+      const {number,issueDate}=await allocateDocumentNumber(client,'invoice');
+      const document=(await client.query(
+        `INSERT INTO documents(id,site_id,billing_cycle_id,document_type,document_number,status,issue_date,amount,file_key)
+         VALUES($1,$2,$3,'invoice',$4,'draft',$5,$6,$7)
+         RETURNING id,site_id AS "siteId",billing_cycle_id AS "billingCycleId",document_type AS "documentType",document_number AS "documentNumber",status,issue_date AS "issueDate",amount`,
+        [randomUUID(),cycle.site_id,id,number,issueDate,cycle.amount,`invoices/${issueDate.slice(0,4)}/${number}.pdf`])).rows[0];
+      return {created:true,message:'สร้างใบแจ้งหนี้เรียบร้อยแล้ว',document};
+    });
   }
 
   @Get("billing-cycles/:id")
@@ -510,11 +456,12 @@ export class BillingController {
       throw new BadRequestException("status must be either 'approved' or 'rejected'");
     }
 
-    const cycleRes = await this.db.query(
+    return this.db.transaction(async client=>{
+    const cycleRes = await client.query(
       `SELECT b.*, si.school_id AS "schoolId" 
        FROM billing_cycles b 
        JOIN sites si ON si.id = b.site_id 
-       WHERE b.id = $1`,
+       WHERE b.id = $1 FOR UPDATE OF b`,
       [id]
     );
     const cycle = cycleRes.rows[0];
@@ -522,7 +469,12 @@ export class BillingController {
       throw new NotFoundException("Billing cycle not found");
     }
 
-    const paymentRes = await this.db.query(
+    if(status==='approved'){
+      const existing=(await client.query(`SELECT id,document_number AS "documentNumber" FROM documents WHERE billing_cycle_id=$1 AND document_type='receipt'`,[id])).rows[0];
+      if(existing)return {success:true,message:'อนุมัติการชำระเงินและออกใบเสร็จรับเงินเรียบร้อยแล้ว',billingCycleStatus:'paid',receipt:existing};
+    }
+
+    const paymentRes = await client.query(
       "SELECT * FROM payments WHERE billing_cycle_id = $1 ORDER BY paid_at DESC NULLS LAST LIMIT 1",
       [id]
     );
@@ -535,7 +487,7 @@ export class BillingController {
 
     if (status === "approved") {
       // 1. Mark payment as paid
-      await this.db.query(
+      await client.query(
         `UPDATE payments 
          SET status = 'paid', verified_at = NOW(), verified_by = $1, rejection_reason = NULL, note = coalesce($2, note)
          WHERE id = $3`,
@@ -543,59 +495,44 @@ export class BillingController {
       );
 
       // 2. Mark billing cycle as paid
-      await this.db.query(
+      await client.query(
         "UPDATE billing_cycles SET status = 'paid' WHERE id = $1",
         [id]
       );
 
       // 3. Issue receipt document if not exists
-      const docCheck = await this.db.query(
+      const docCheck = await client.query(
         "SELECT id, document_number AS \"documentNumber\" FROM documents WHERE billing_cycle_id = $1 AND document_type = 'receipt'",
         [id]
       );
 
       let receiptDoc = docCheck.rows[0];
       if (!receiptDoc) {
-        const settingsRes = await this.db.query<{ value: string }>(
-          `SELECT value FROM system_settings WHERE key = 'receiptPrefix'`
-        );
-        const prefixTemplate = settingsRes.rows[0]?.value || "REC{year}{month}";
-        const periodDate = cycle.period_end ? new Date(cycle.period_end) : new Date();
-        const yr = String(periodDate.getUTCFullYear() || periodDate.getFullYear());
-        const m = periodDate.getUTCMonth() !== undefined ? periodDate.getUTCMonth() : periodDate.getMonth();
-        const mo = String(m + 1).padStart(2, "0");
-        const prefix = prefixTemplate.replace("{year}", yr).replace("{month}", mo);
+        const {number:documentNumber,issueDate}=await allocateDocumentNumber(client,'receipt');
+        const docId=randomUUID();
+        const fileKey=`receipts/${issueDate.slice(0,4)}/${documentNumber}.pdf`;
 
-        const countRes = await this.db.query(
-          `SELECT count(*)::int AS count FROM documents WHERE document_number LIKE $1`,
-          [`${prefix}%`]
-        );
-        const seq = (countRes.rows[0]?.count ?? 0) + 1;
-        const documentNumber = `${prefix}${String(seq).padStart(4, "0")}`;
-        const docId = randomUUID();
-        const fileKey = `receipts/${yr}/${documentNumber}.pdf`;
-
-        const insertReceipt = await this.db.query(
+        const insertReceipt = await client.query(
           `INSERT INTO documents (
              id, site_id, billing_cycle_id, document_type, document_number, status, issue_date, amount, file_key
            )
-           VALUES ($1, $2, $3, 'receipt', $4, 'issued', NOW(), $5, $6)
+           VALUES ($1, $2, $3, 'receipt', $4, 'issued', $5, $6, $7)
            RETURNING id, document_number AS "documentNumber", status, issue_date AS "issueDate", amount`,
-          [docId, cycle.site_id, id, documentNumber, cycle.amount, fileKey]
+          [docId, cycle.site_id, id, documentNumber, issueDate, cycle.amount, fileKey]
         );
         receiptDoc = insertReceipt.rows[0];
       }
 
       // 4. Audit event
-      try {
-        await this.db.query(
+      {
+        await client.query(
           `INSERT INTO audit_events (
              id, actor_id, action, entity_type, entity_id, before_json, after_json, reason, correlation_id, occurred_at
            )
            VALUES (gen_random_uuid(), $1, 'payment.verify_approved', 'billing_cycle', $2, $3, $4, 'Payment verified and approved by admin', gen_random_uuid()::text, NOW())`,
           [actorId, id, JSON.stringify({ cycleStatus: cycle.status, paymentStatus: payment.status }), JSON.stringify({ cycleStatus: "paid", paymentStatus: "paid" })]
         );
-      } catch {}
+      }
 
       return {
         success: true,
@@ -609,7 +546,7 @@ export class BillingController {
       }
 
       // Update payment
-      await this.db.query(
+      await client.query(
         `UPDATE payments 
          SET status = 'rejected', rejection_reason = $1, verified_at = NOW(), verified_by = $2, note = coalesce($3, note)
          WHERE id = $4`,
@@ -617,21 +554,21 @@ export class BillingController {
       );
 
       // Return cycle status to 'approved'
-      await this.db.query(
+      await client.query(
         "UPDATE billing_cycles SET status = 'approved' WHERE id = $1",
         [id]
       );
 
       // Audit event
-      try {
-        await this.db.query(
+      {
+        await client.query(
           `INSERT INTO audit_events (
              id, actor_id, action, entity_type, entity_id, before_json, after_json, reason, correlation_id, occurred_at
            )
            VALUES (gen_random_uuid(), $1, 'payment.verify_rejected', 'billing_cycle', $2, $3, $4, $5, gen_random_uuid()::text, NOW())`,
           [actorId, id, JSON.stringify({ cycleStatus: cycle.status, paymentStatus: payment.status }), JSON.stringify({ cycleStatus: "approved", paymentStatus: "rejected" }), rejectionReason]
         );
-      } catch {}
+      }
 
       return {
         success: true,
@@ -639,6 +576,7 @@ export class BillingController {
         billingCycleStatus: "approved",
       };
     }
+    });
   }
 
   @Roles("owner", "accountant")
@@ -765,6 +703,7 @@ export class BillingController {
     if (!cycle) {
       throw new NotFoundException("Billing cycle not found");
     }
+    if(!cycle.invoiceNumber)throw new BadRequestException('Issued invoice number required before sending');
     const recipient = body.recipientEmail?.trim() || cycle.contractEmail || "school@solar-platform.org";
 
     const compRes = await this.db.query(
@@ -789,7 +728,7 @@ export class BillingController {
       await transporter.sendMail({
         from: `"${company.company_name}" <${company.email || "billing@solarenergy.co.th"}>`,
         to: recipient,
-        subject: `[Solar Roof] ใบวางบิล/ใบแจ้งหนี้ #${cycle.invoiceNumber || id.slice(0, 8)} - ${cycle.siteName}`,
+        subject: `[Solar Roof] ใบวางบิล/ใบแจ้งหนี้ #${cycle.invoiceNumber} - ${cycle.siteName}`,
         html: `
           <div style="font-family: sans-serif; color: #1e293b; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px;">
             <h2 style="color: #0f172a; margin-top: 0;">ใบวางบิล / ใบแจ้งหนี้ค่าไฟฟ้าโซลาร์เซลล์</h2>
@@ -798,7 +737,7 @@ export class BillingController {
             <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
               <tr style="background: #f8fafc;">
                 <td style="padding: 10px; border: 1px solid #e2e8f0;">เลขที่ใบแจ้งหนี้</td>
-                <td style="padding: 10px; border: 1px solid #e2e8f0; font-weight: bold;">${cycle.invoiceNumber || "INV-" + id.slice(0, 8)}</td>
+                <td style="padding: 10px; border: 1px solid #e2e8f0; font-weight: bold;">${cycle.invoiceNumber}</td>
               </tr>
               <tr>
                 <td style="padding: 10px; border: 1px solid #e2e8f0;">พลังงานที่ใช้จริง</td>

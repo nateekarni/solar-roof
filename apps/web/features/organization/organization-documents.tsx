@@ -113,7 +113,7 @@ const documents = (rows: Document[]) =>
                   {row.documentNumber ||
                     row.invoiceNumber ||
                     row.receiptNumber ||
-                    row.id}
+                    text("ยังไม่ออกเลขที่เอกสาร", "Document number unavailable")}
                 </p>
                 <p className="text-sm text-muted-foreground">
                   {row.siteName ||
@@ -220,7 +220,7 @@ const documents = (rows: Document[]) =>
                 className={`min-w-0 rounded-xl border bg-card p-4 text-left ${selected === contract.id ? "ring-2 ring-primary" : ""}`}
               >
                 <p className="font-semibold break-all">
-                  {contract.contractNumber || contract.id}
+                  {contract.contractNumber || text("ยังไม่ออกเลขที่สัญญา", "Contract number unavailable")}
                 </p>
                 <p className="mt-1 text-sm">
                   {contract.siteName || "—"} · {label(contract.status)}

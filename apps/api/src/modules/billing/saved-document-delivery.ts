@@ -1,3 +1,4 @@
+import {documentPdfFilename} from '../documents/document-number.js';
 import { ConflictException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import nodemailer from 'nodemailer';
@@ -34,7 +35,7 @@ export async function deliverSavedArtifacts(client:PoolClient,jobs:any[]):Promis
    await client.query('UPDATE financial_delivery_outbox SET message_id=$2 WHERE id=$1',[job.id,messageId]);
    const transport=nodemailer.createTransport({host:'127.0.0.1',port:11049,secure:false,connectionTimeout:5000,socketTimeout:10000});
    try{
-    const result=await transport.sendMail({from:process.env.SMTP_FROM??'local-financial@solar-platform.invalid',to:recipient.email,messageId,subject:`TEST ${job.document_number}`,text:'Synthetic local document workflow test. Saved original attached.',attachments:[{filename:`${job.document_number}.pdf`,content:job.pdf_bytes,contentType:'application/pdf'}]});
+    const result=await transport.sendMail({from:process.env.SMTP_FROM??'local-financial@solar-platform.invalid',to:recipient.email,messageId,subject:`TEST ${job.document_number}`,text:'Synthetic local document workflow test. Saved original attached.',attachments:[{filename:documentPdfFilename(job.document_number),content:job.pdf_bytes,contentType:'application/pdf'}]});
     if(!result.accepted?.map((email:string)=>email.toLowerCase()).includes(recipient.email.toLowerCase()))throw Object.assign(new Error('SMTP recipient rejected'),{code:'ERECIPIENT'});
    }catch(error){
     const e=error as Error&{code?:string;responseCode?:number};const safe=['ECONNREFUSED','ERECIPIENT','EAUTH','EDNS'].includes(e.code??'')||Boolean(e.responseCode&&e.responseCode>=400);
