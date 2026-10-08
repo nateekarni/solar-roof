@@ -13,3 +13,10 @@ test('local financial binding rejects production, remote and wrong local databas
 import {actualEnergyDifference} from './local-financial-policy.js';
 test('round cumulative difference after subtraction rather than each meter boundary',()=>{assert.equal(actualEnergyDifference('13168.72196667','13786.00546667'),'617.284');});
 test('consumption rounds exact delta and detects subprecision resets',()=>{assert.equal(actualEnergyDifference('10000.0004','10000.0006'),'0.000');assert.equal(actualEnergyDifference('10000.0000','10000.0005'),'0.001');assert.throws(()=>actualEnergyDifference('10000.000000001','10000.000000000'),/reset/);});
+
+import {requireTestTransferAmount} from './local-financial-policy.js';
+test('TEST transfer accepts exact money strings within numeric24,8 and rejects non-satang inputs',()=>{
+ assert.equal(requireTestTransferAmount('90071992547409.91'),'90071992547409.91');
+ assert.equal(requireTestTransferAmount(2623.45),'2623.45');
+ for(const value of ['','0','-1','0.001','1e3','10000000000000000.00'])assert.throws(()=>requireTestTransferAmount(value));
+});

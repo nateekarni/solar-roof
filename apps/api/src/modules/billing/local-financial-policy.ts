@@ -45,3 +45,9 @@ export function normalizeTestRateSchedule(rows:Array<{startDate:string;endDate?:
 
 
 
+
+export function requireTestTransferAmount(value:unknown):string {
+ if(typeof value!=='string'&&typeof value!=='number')throw new Error('Positive whole-satang transfer amount required');
+ const raw=String(value);if(!/^\d+(\.\d{1,2})?$/.test(raw))throw new Error('Positive whole-satang transfer amount required');
+ const [whole,fraction='']=raw.split('.');const normalized=BigInt(whole!).toString();if(normalized.length>16||BigInt(normalized+fraction.padEnd(2,'0'))<=0n)throw new Error('Positive transfer within numeric(24,8) required');return `${normalized}.${fraction.padEnd(2,'0')}`;
+}

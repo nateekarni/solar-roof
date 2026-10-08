@@ -36,3 +36,11 @@ test("record detail rejects missing records and admin-only resources", async () 
  await assert.rejects(()=>service.detail("sites","00000000-0000-4000-8000-000000000001",{role:"school_user"}));
  await assert.rejects(()=>service.detail("users","00000000-0000-4000-8000-000000000001",{role:"school_user"}));
 });
+
+test('billing history is read only after scoped cycle lookup succeeds',async()=>{
+ const id='00000000-0000-4000-8000-000000000001';let calls=0;
+ const rows=[{id:'payment-a',amount:'2000.00000000',status:'pending_verification',transferDate:'2026-10-08T01:00:00Z'},{id:'payment-b',amount:'2623.45000000',status:'pending_verification'}];
+ const db={query:async(sql:string,params:unknown[])=>{calls++;if(calls===1){assert.ok(sql.includes('s.id=ANY($1::uuid[])'));assert.deepEqual(params,[['school-a'],id]);return {rows:[{id}]};}assert.ok(sql.includes('billing_cycle_id=$1'));assert.deepEqual(params,[id]);return {rows};}};
+ const result=await new OperationsService(db as unknown as DatabaseService).detail('billing',id,{role:'school_user',schoolId:'school-a'});assert.deepEqual(result.row.payments,rows);assert.equal(calls,2);
+ let deniedCalls=0;const denied=new OperationsService({query:async()=>{deniedCalls++;return {rows:[]};}} as unknown as DatabaseService);await assert.rejects(()=>denied.detail('billing',id,{role:'school_user',schoolId:'school-b'}));assert.equal(deniedCalls,1);
+});

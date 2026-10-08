@@ -34,7 +34,7 @@ export class OperationsService {
           WHERE ${where} ORDER BY si.name`;
         columns=["ชื่อไซต์","โรงเรียน","กำลังติดตั้ง (MWp)","Gateway","โพรโทคอล","พลังงานวันนี้ (kWh)","อัปเดตล่าสุด","สถานะ"];break;
       case "billing":
-        sql=`SELECT b.id,b.site_id AS "siteId",b.contract_id AS "contractId",to_char(b.period_end,'YYYY-MM') AS period,s.name AS "schoolName",si.name AS "siteName",
+        sql=`SELECT b.id,b.site_id AS "siteId",b.contract_id AS "contractId",to_char(b.period_start,'YYYY-MM-DD') AS "periodStart",to_char(b.period_end,'YYYY-MM-DD') AS "periodEnd",to_char(b.period_end,'YYYY-MM') AS period,s.name AS "schoolName",si.name AS "siteName",
           b.consumed_kwh AS "consumedKwh",b.rate,b.amount,b.status,b.quality,b.opening_energy AS "openingEnergy",b.closing_energy AS "closingEnergy",
           p.id AS "paymentId",p.status AS "paymentStatus",p.slip_url AS "slipUrl",p.slip_url AS "หลักฐานการชำระ",p.paid_at AS "paidAt",
           p.rejection_reason AS "rejectionReason",d.id AS "invoiceId",r.id AS "receiptId",d.document_number AS "invoiceNumber",r.document_number AS "receiptNumber"
@@ -110,6 +110,7 @@ export class OperationsService {
     params.push(id);
     const result=await this.db.query<OperationRow>(`SELECT q.* FROM (${sql}) q WHERE q.id=$${params.length}::uuid`,params);
     if(!result.rows[0]) throw new NotFoundException('Record not found');
+    if(resource==='billing')result.rows[0].payments=(await this.db.query(`SELECT id,amount::text AS amount,status,paid_at AS "transferDate",submitted_at AS "submittedAt",verified_at AS "verifiedAt",rejection_reason AS "rejectionReason",evidence_key AS "evidenceKey" FROM payments WHERE billing_cycle_id=$1 ORDER BY submitted_at,id`,[id])).rows;
     return {columns,row:result.rows[0]};
   }
   async document(id:string,user?:ScopePrincipal) {
