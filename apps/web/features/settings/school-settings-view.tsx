@@ -193,7 +193,7 @@ export function SchoolSettingsView() {
           ))
         )}
         <Link
-          className="inline-flex min-h-11 items-center text-primary"
+          className="inline-flex min-h-11 items-center text-foreground underline underline-offset-4"
           href="/contracts"
         >
           {text("เปิดเอกสาร", "Open documents")}
@@ -398,3 +398,4 @@ export function SchoolSettingsView() {
     </div>
   );
 }
+
