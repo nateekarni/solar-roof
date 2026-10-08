@@ -32,4 +32,3 @@ Issuer data availability is being checked read-only before any question about ad
 ## Confirmation
 
 The user confirmed the consolidated design, including equal 10% gaps; implementation is authorized. No new company fact or legal-document classification is taken from the reference image.
-
