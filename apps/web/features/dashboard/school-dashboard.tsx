@@ -179,7 +179,7 @@ export function SchoolDashboard({
                   THB
                 </p>
                 <Link
-                  className="inline-flex min-h-11 items-center text-primary"
+                  className="inline-flex min-h-11 items-center text-foreground underline underline-offset-4"
                   href={`/records/billing/${encodeURIComponent(bill.id)}`}
                 >
                   {text(
@@ -200,7 +200,7 @@ export function SchoolDashboard({
           </p>
         )}
         <Link
-          className="inline-flex min-h-11 items-center text-primary"
+          className="inline-flex min-h-11 items-center text-foreground underline underline-offset-4"
           href="/contracts"
         >
           {text("ดูเอกสารทั้งหมด", "See all documents")} →
@@ -209,3 +209,4 @@ export function SchoolDashboard({
     </div>
   );
 }
+

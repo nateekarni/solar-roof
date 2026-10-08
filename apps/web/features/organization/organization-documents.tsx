@@ -169,7 +169,7 @@ export function OrganizationDocuments() {
                   {text("เปิดเอกสาร", "Preview document")}
                 </Button>
                 <Link
-                  className="inline-flex min-h-11 items-center text-primary"
+                  className="inline-flex min-h-11 items-center text-foreground underline underline-offset-4"
                   href={`/records/${type === "invoice" ? "billing" : "receipts"}/${encodeURIComponent(row.id)}`}
                 >
                   {type === "invoice"
@@ -311,7 +311,7 @@ export function OrganizationDocuments() {
           </div>
           {selected && (
             <Link
-              className="inline-flex min-h-11 items-center text-primary"
+              className="inline-flex min-h-11 items-center text-foreground underline underline-offset-4"
               href={`/records/contracts/${encodeURIComponent(selected)}`}
             >
               {text("รายละเอียดสัญญา", "Contract details")}
@@ -331,3 +331,4 @@ export function OrganizationDocuments() {
     </div>
   );
 }
+
