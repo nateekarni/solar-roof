@@ -377,7 +377,7 @@ export class BillingController {
   async payBillingCycle(
     @Param("id") id: string,
     @Body() body: {
-      amount?: number;
+      amount?: number|string;
       paidAt?: string;
       slipUrl?: string;
       evidenceKey?: string;

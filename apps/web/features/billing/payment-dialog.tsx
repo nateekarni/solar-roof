@@ -32,6 +32,8 @@ import { Label } from "../../components/ui/label";
 import { Badge } from "../../components/ui/badge";
 import { useLocale } from "../../providers/locale-provider";
 import { apiClient } from "../../lib/api-client";
+import { useFinancialCapabilities } from "../../lib/financial-capabilities";
+import { transferAmount } from "./payment-input";
 
 interface PaymentDialogProps {
   open: boolean;
@@ -43,7 +45,7 @@ interface PaymentDialogProps {
     siteName?: string;
     consumedKwh?: number;
     rate?: number;
-    amount?: number;
+    amount?: number|string;
     invoiceNumber?: string;
   } | null;
   onSuccess?: () => void;
@@ -55,8 +57,12 @@ export function PaymentDialog({
   billingCycle,
   onSuccess,
 }: PaymentDialogProps) {
-  const locale = useLocale();
+  const locale=useLocale();
   const text = (th: string, en: string) => (locale === "th" ? th : en);
+  const capabilities=useFinancialCapabilities();
+  const canSubmit=(capabilities.operationsActions??[]).includes("submit_payment");
+  const [enteredAmount,setEnteredAmount]=React.useState("");
+  React.useEffect(()=>{if(open)setEnteredAmount(String(billingCycle?.amount??"").replace(/(\.\d{2})0+$/, "$1"));},[open,billingCycle?.id]);
   const [slipFile, setSlipFile] = React.useState<File | null>(null);
   const [slipPreviewUrl, setSlipPreviewUrl] = React.useState<string | null>(
     null,
@@ -143,7 +149,7 @@ export function PaymentDialog({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!billingCycle?.id || submitting.current) return;
+    if (!billingCycle?.id || submitting.current || !canSubmit) return;
 
     if (!slipPreviewUrl) {
       setErrorMsg(
@@ -155,13 +161,15 @@ export function PaymentDialog({
       return;
     }
 
-    submitting.current = true;
+    let actualTransfer:string;
+    try{actualTransfer=transferAmount(enteredAmount);}catch{setErrorMsg(locale==="th"?"กรุณาระบุยอดโอนเป็นเงินบาทที่มากกว่าศูนย์และมีทศนิยมไม่เกิน 2 ตำแหน่ง":"Enter a positive THB transfer amount with at most two decimal places.");return;}
+    submitting.current=true;
     setIsSubmitting(true);
     setErrorMsg(null);
 
     try {
       await apiClient.post(`/v1/billing-cycles/${billingCycle.id}/pay`, {
-        amount: Number(billingCycle.amount),
+        amount: capabilities.financialScope==="TEST"?actualTransfer:Number(actualTransfer),
         paidAt: new Date(paidAt).toISOString(),
         slipUrl: slipPreviewUrl,
         note: note.trim() || undefined,
@@ -289,6 +297,11 @@ export function PaymentDialog({
               </div>
             </div>
 
+            <div className="space-y-2">
+              <Label htmlFor="transfer-amount" required>{locale==='th'?'ยอดที่โอนครั้งนี้ (บาท)':'This transfer amount (THB)'}</Label>
+              <Input id="transfer-amount" inputMode="decimal" value={enteredAmount} onChange={event=>setEnteredAmount(event.target.value)} required aria-describedby="transfer-amount-help" disabled={isSubmitting}/>
+              <p id="transfer-amount-help" className="text-xs text-muted-foreground">{locale==='th'?'ส่งหลักฐานแยกสำหรับแต่ละครั้งที่โอน ยอดโอนที่รอตรวจสอบรวมกันต้องเท่ากับยอดบิลก่อนอนุมัติ':'Submit separate evidence for each transfer. Pending transfers must add up to the bill total before approval.'}</p>
+            </div>
             {/* Slip Upload & Transfer Information */}
             <div className="space-y-3 pt-1">
               <div className="space-y-2">
@@ -414,7 +427,7 @@ export function PaymentDialog({
               </Button>
               <Button
                 type="submit"
-                disabled={isSubmitting}
+                disabled={isSubmitting||!canSubmit}
                 className="w-full sm:w-auto h-10 text-xs bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5"
               >
                 {isSubmitting && <Loader2 className="size-3.5 animate-spin" />}

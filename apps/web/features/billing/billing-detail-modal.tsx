@@ -45,6 +45,8 @@ import { useFinancialCapabilities } from "../../lib/financial-capabilities";
 import { useSessionUser } from "../../providers/session-user-provider";
 import { notify } from "../../components/feedback/notifications";
 import { formatAppDate, formatAppDateTime } from "../../lib/date-format";
+import { PaymentHistory,type TransferHistoryRow } from "./payment-history";
+import { formatTransferAmount } from "./payment-input";
 
 export interface BillingDetailData {
   id: string;
@@ -59,6 +61,7 @@ export interface BillingDetailData {
   rate?: number;
   amount?: number;
   status: string;
+  payments?: TransferHistoryRow[];
   paymentId?: string;
   paymentStatus?: string;
   slipUrl?: string;
@@ -156,6 +159,7 @@ export function BillingDetailModal({
               : "Payment slip uploaded successfully"
           );
           setData((prev) => (prev ? { ...prev, slipUrl: dataUrl, status: "pending_verification" } : null));
+          await fetchDetails(data.id);
           onUpdated?.();
         } catch (err: any) {
           notify.error(err?.message || "เกิดข้อผิดพลาดในการบันทึกสลิป");
@@ -173,7 +177,7 @@ export function BillingDetailModal({
   const fetchDetails = React.useCallback(async (id: string) => {
     setLoading(true);
     try {
-      const res = await apiClient.get<BillingDetailData>(`/v1/billing-cycles/${id}`);
+      const {row:res} = await apiClient.get<{row:BillingDetailData}>(`/v1/operations/billing/${id}`);
       setData((prev) => ({ ...prev, ...res }));
     } catch (error) {
       notify.error(error instanceof Error ? error.message : "Unable to load billing details");
@@ -207,6 +211,7 @@ export function BillingDetailModal({
           : "Payment approved and receipt generated"
       );
       setData((prev) => prev ? { ...prev, status: "paid", paymentStatus: "approved" } : null);
+      await fetchDetails(data.id);
       onUpdated?.();
     } catch (err: any) {
       notify.error(err?.message || "เกิดข้อผิดพลาดในการอนุมัติ");
@@ -234,6 +239,7 @@ export function BillingDetailModal({
       );
       setData((prev) => prev ? { ...prev, status: "rejected", paymentStatus: "rejected", rejectionReason: rejectionReason.trim() } : null);
       setShowRejectInput(false);
+      await fetchDetails(data.id);
       onUpdated?.();
     } catch (err: any) {
       notify.error(err?.message || "เกิดข้อผิดพลาดในการปฏิเสธ");
@@ -245,6 +251,8 @@ export function BillingDetailModal({
   const amountNum = Number(data.amount) || 0;
   const isPaid = data.status === "paid" || data.paymentStatus === "approved" || data.paymentStatus === "paid";
   const hasSlip = Boolean(data.slipUrl);
+  const payments=data.payments??[];
+  const hasPendingTransfers=payments.some(payment=>payment.status==="pending_verification");
 
   const formatNumber = (val: any) => {
     if (val === undefined || val === null || val === "") return "—";
@@ -401,6 +409,7 @@ export function BillingDetailModal({
           {/* RIGHT COLUMN: Payment Evidence & Verification Action (5 Cols) */}
           {/* ============================================================== */}
           <div className="lg:col-span-5 space-y-4 text-xs">
+            <PaymentHistory payments={payments} locale={locale}/>
             <div className="space-y-3 border-t pt-4">
               <div className="flex items-center justify-between font-semibold text-foreground">
                 <span className="flex items-center gap-1.5">
@@ -445,7 +454,7 @@ export function BillingDetailModal({
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">{locale === "th" ? "ยอดเงินในสลิป:" : "Slip Amount:"}</span>
-                      <span className="font-bold text-emerald-600 dark:text-emerald-400">฿{formatNumber(amountNum)}</span>
+                      <span className="font-bold text-emerald-600 dark:text-emerald-400">฿{payments.some(payment=>payment.id===data.paymentId)?formatTransferAmount(payments.find(payment=>payment.id===data.paymentId)!.amount):formatNumber(data.paidAmount)}</span>
                     </div>
                   </div>
                   <div className="flex justify-end pt-1">
@@ -550,7 +559,7 @@ export function BillingDetailModal({
               )}
 
               {/* Admin/Owner Actions: Approve or Reject Inline */}
-              {financial.actions.includes("approve_payment") && !isPaid && hasSlip && (
+              {financial.actions.includes("approve_payment") && !isPaid && (hasPendingTransfers||hasSlip) && (
                 <div className="pt-2 space-y-2 border-t border-border/60">
                   <div className="text-[11px] font-semibold text-foreground uppercase tracking-wider">
                     {locale === "th" ? "การตรวจสอบโดยผู้ดูแลระบบ" : "Administrative Verification"}
