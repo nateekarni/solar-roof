@@ -15,7 +15,7 @@ export function calculateTestTotals(kwh:unknown,rate:unknown) {
  return {consumedKwh:decimal(energy,3),rate:decimal(price,4),subtotal:decimal(subtotal,2),tax:decimal(tax,2),total:decimal(subtotal+tax,2)};
 }
 export function requireTestSettlement(amounts:unknown[],total:unknown):void {
- const minor=(value:unknown)=>{if(!/^\d+(\.\d{1,2})?$/.test(String(value)))throw new Error('Amounts require whole satang');return scaled(value,2);};
+ const minor=(value:unknown)=>{if(!/^\d+(\.\d{1,2}0*)?$/.test(String(value)))throw new Error('Amounts require whole satang');return scaled(value,2);};
  if(!amounts.length||amounts.some(value=>minor(value)<=0n)||amounts.reduce<bigint>((sum,value)=>sum+minor(value),0n)!==minor(total))throw new Error('Transfers must sum to the full invoice amount');
 }
 export function actualEnergyDifference(opening:unknown,closing:unknown):string { const start=scaled(opening,3),end=scaled(closing,3);if(end<start)throw new Error('Meter reset requires review');return decimal(end-start,3); }
@@ -23,5 +23,6 @@ export function actualEnergyDifference(opening:unknown,closing:unknown):string {
 export function sqlCalendarPeriod(row:{starts?:string;ends?:string;period_start?:unknown;period_end?:unknown}) {
  if(!row.starts||!row.ends||!/^\d{4}-\d{2}-\d{2}$/.test(row.starts)||!/^\d{4}-\d{2}-\d{2}$/.test(row.ends)||row.starts>row.ends)throw new Error('SQL calendar strings required');return {start:row.starts,end:row.ends};
 }
+
 
 
