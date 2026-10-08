@@ -26,9 +26,9 @@ test('document layout prints shared A4 pages with the required Thai font and bla
   assert.match(JSON.stringify(footer), /INV2026100001/);
   assert.match(JSON.stringify(footer), /2 \/ 3/);
   const table = definition.content.find((node: any) => node.table?.headerRows === 1);
-  assert.equal(table.table.dontBreakRows, true);
-  assert.equal(table.table.keepWithHeaderRows, 1);
-  assert.ok(definition.content.some((node: any) => node.unbreakable && node.table));
+  assert.equal(table.table.dontBreakRows, false);
+  assert.equal(table.table.keepWithHeaderRows, 0);
+  assert.match(visibleText(definition.footer(1, 1)), /Prepared by/);
 });
 
 test('invoice uses exact saved rate rows and totals without changing the snapshot', () => {
@@ -48,12 +48,12 @@ test('invoice uses exact saved rate rows and totals without changing the snapsho
 test('contract retains the existing rate schedule and signer body without fabricated financial charges', () => {
   const { totals, ...contractFixture } = fixture;
   const definition = documentDefinition({ ...contractFixture, type: 'contract', items: [], rates: [{ startDate: '2026-01-01', endDate: '2026-12-31', rate: '4.1234' }], signatories: { customer: { name: 'ผู้ลงนามจริง', title: 'ผู้อำนวยการ' } } });
-  const text = serialized(definition);
+  const text = visibleText(definition.content);
   assert.match(text, /สัญญาซื้อขายไฟฟ้า/);
-  assert.match(text, /ผู้ลงนาม:/);
+  assert.match(visibleText(definition.footer(1, 1)), /ผู้ลงนามจริง/);
   assert.match(text, /วันสิ้นสุด \(รวมวันนั้น\)/);
   assert.match(text, /4.1234/);
-  assert.match(text, /ผู้ลงนามจริง/);
+
   assert.doesNotMatch(text, /ภาษีทดสอบ|4,412.58|Approved transfers/);
 });
 
@@ -78,9 +78,9 @@ test('real PDF rendering embeds the bundled Sarabun family without a runtime fon
 
 test('long Thai identity cells stay within the printable A4 width', () => {
   const definition = documentDefinition({ ...fixture, issuer: { ...fixture.issuer, name: 'บริษัทโซลาร์รูฟทดสอบชื่อภาษาไทยที่ยาวมากและไม่มีเว้นวรรคเพื่อทดสอบการตัดบรรทัด', address: 'ที่อยู่ภาษาไทยที่ยาวมากและไม่มีเว้นวรรคเพื่อยืนยันว่าข้อมูลไม่ล้นออกนอกหน้ากระดาษ' } });
-  const identity = definition.content.find((node: any) => node.table?.body?.[0]?.[0]?.stack);
-  assert.ok(identity.table.widths.every((width: unknown) => typeof width === 'number'));
-  assert.ok(identity.table.widths.reduce((sum: number, width: number) => sum + width, 0) <= 483);
+  const identity = definition.content[0].columns[0];
+  assert.ok(identity.width >= 270 && identity.width <= 310);
+  assert.ok(definition.content.some((node: any) => node.stack && visibleText(node).includes('Customer')));
 });
 
 test('receipt transfer caption repeats with its table header instead of being orphaned before a page break', () => {
@@ -98,8 +98,7 @@ test('a non-TEST receipt does not claim tax-invoice status', () => {
 test('long Thai identities expose word boundaries for wrapping without altering saved input', () => {
   const name = 'บริษัทโซลาร์รูฟทดสอบชื่อภาษาไทยที่ยาวมากและไม่มีเว้นวรรค';
   const definition = documentDefinition({ ...fixture, issuer: { ...fixture.issuer, name } });
-  const identity = definition.content.find((node: any) => node.table?.body?.[0]?.[0]?.stack);
-  const renderedName = identity.table.body[0][0].stack[1].text;
+  const renderedName = definition.content[0].columns[0].stack.find((node: any) => node.bold).text;
   assert.ok(Array.isArray(renderedName));
   assert.ok(renderedName.some((part: any) => part.text === '\u200b' && part.fontSize === 0 && part.opacity === 0));
   assert.equal(renderedName.map((part: any) => part.text).join('').replaceAll('\u200b', ''), name);
@@ -183,6 +182,26 @@ test('long financial documents paginate instead of shrinking or dropping saved r
  const snapshot={...financialFixture,items};const saved=JSON.stringify(snapshot);const bytes=await renderDocumentPdf(snapshot);
  assert.ok(pdfPageCount(bytes)>1);assert.equal(JSON.stringify(snapshot),saved);
  const definition=documentDefinition(snapshot);const rows=definition.content.find((node:any)=>node.table?.headerRows===1).table;
- assert.equal(rows.body.length,46);assert.equal(rows.dontBreakRows,true);assert.equal(rows.keepWithHeaderRows,1);
- assert.ok(definition.content.at(-1).unbreakable);
+ assert.equal(rows.body.length,46);assert.equal(rows.dontBreakRows,false);assert.equal(rows.keepWithHeaderRows,0);
+ assert.match(visibleText(definition.footer(2,2)), /Prepared by/);
+});
+
+
+test('PPA presents frozen effective dates, every dated rate and payment days as factual prose', () => {
+ const snapshot = {...fixture, type:'contract' as const, siteName:'ไซต์หนึ่ง',siteExternalId:'SCHOOL-001',contractNumber:'contract-record', startDate:'2026-01-01',endDate:'2046-12-31',paymentTermDays:30,paymentTerms:'ชำระตามข้อมูลสัญญาที่บันทึกไว้',rates:[{startDate:'2026-01-01',endDate:'2026-12-31',rate:'4.1234'},{startDate:'2027-01-01',rate:'3.9876'}]};
+ const saved=JSON.stringify(snapshot);const d=documentDefinition(snapshot);const text=visibleText(d.content);
+ assert.match(text,/ไซต์งาน: ไซต์หนึ่ง \(SCHOOL-001\)/);assert.match(text,/1 มกราคม 2569/);assert.match(text,/31 ธันวาคม 2589/);
+ assert.match(text,/1\. .*4\.1234/);assert.match(text,/2\. .*3\.9876/);assert.match(text,/30 วัน/);assert.match(text,/ชำระตามข้อมูลสัญญาที่บันทึกไว้/);
+ assert.equal(d.content.some((node:any)=>node.table),false);assert.equal(JSON.stringify(snapshot),saved);
+ const footer=visibleText(d.footer(1,1));assert.equal((footer.match(/วันที่ลงนาม: ____________________/g)??[]).length,2);assert.doesNotMatch(footer,/8 ตุลาคม 2569/);
+});
+test('legacy site identity stays name-only and continuation signatures occur only on final page',()=>{
+ const d=documentDefinition({...fixture,siteName:'ไซต์เก่า',contractNumber:'internal-contract',...{siteId:'internal-uuid'}});
+ assert.match(visibleText(d.content),/ไซต์งาน: ไซต์เก่า/);assert.doesNotMatch(visibleText(d.content),/internal-uuid/);
+ assert.doesNotMatch(visibleText(d.footer(1,2)),/Prepared by/);assert.match(visibleText(d.footer(2,2)),/Prepared by/);
+ const header=(d as any).header;assert.ok(header);assert.equal(header(1),null);assert.match(visibleText(header(2)),/INV2026100001/);assert.match(visibleText(header(2)),/Invoice/);assert.ok(header(2).columns.some((n:any)=>n.image));
+});
+
+test('a signatory block taller than A4 fails explicitly instead of producing negative body space or clipping facts',()=>{
+ assert.throws(()=>documentDefinition({...fixture,type:'contract',signatories:{issuer:{name:Array.from({length:80},()=> 'ผู้ลงนามทดสอบ').join('\n')}}}),/Signature block exceeds A4 capacity/);
 });

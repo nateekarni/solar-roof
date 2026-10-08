@@ -1,5 +1,6 @@
 import { formatDocumentMoney, renderDocumentPdf, type DocumentParty, type DocumentSnapshot } from './document-layout.js';
 
+export const FINANCIAL_TEMPLATE_VERSION = 'sarabun-a4-v3';
 interface SavedFinancialParty {
   company_name: string;
   tax_id: string;
@@ -12,6 +13,8 @@ interface SavedFinancialParty {
   tax_email?: string;
   id?: string;
   site_name?: string;
+  external_site_id?: string | null;
+  payment_terms?: string;
 }
 interface SavedFinancialDocument {
   document_type: string;
@@ -28,6 +31,7 @@ interface SavedFinancialDocument {
       meter_snapshot: { from: string; to: string; consumedKwh: string; rate: string; subtotal: string }[];
     };
     issueDate: string;
+    templateVersion?: string;
     dueDate?: string;
     logo: string;
     banks: { bank_name: string; account_name: string; account_number: string }[];
@@ -50,6 +54,8 @@ export function localTestDocumentSnapshot(document: SavedFinancialDocument): Doc
     type: document.document_type, documentNumber: document.document_number, issueDate: s.issueDate,
     issuer: partySnapshot(s.company, false), customer: partySnapshot(s.customer, true),
     ...(s.customer.site_name ? { siteName: s.customer.site_name } : {}), ...(s.customer.id ? { contractNumber: s.customer.id } : {}),
+    ...(s.customer.external_site_id ? { siteExternalId: s.customer.external_site_id } : {}),
+    ...(s.customer.payment_terms ? { paymentTerms: s.customer.payment_terms } : {}),
     period: `${s.cycle.period_start.slice(0, 10)} - ${s.cycle.period_end.slice(0, 10)}`,
     signatories: {}, rates: [],
     items: s.cycle.meter_snapshot.map(line => ({
@@ -63,7 +69,7 @@ export function localTestDocumentSnapshot(document: SavedFinancialDocument): Doc
       ...(p.evidence_key || p.slip_url ? { evidence: p.evidence_key || p.slip_url } : {}),
     })),
     paymentAccounts: s.banks.map(bank => ({ bankName: bank.bank_name, accountName: bank.account_name, accountNumber: bank.account_number })),
-    ...(s.dueDate ? { dueDate: s.dueDate } : {}), logoDataUri: s.logo, templateVersion: 'sarabun-a4-v2', syntheticTest: true,
+    ...(s.dueDate ? { dueDate: s.dueDate } : {}), logoDataUri: s.logo, templateVersion: s.templateVersion ?? FINANCIAL_TEMPLATE_VERSION, syntheticTest: true,
   };
 }
 export async function renderLocalTestPdf(document: SavedFinancialDocument): Promise<Buffer> {

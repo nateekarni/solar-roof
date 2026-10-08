@@ -8,9 +8,9 @@ import type { FrozenRecipient } from '../billing/saved-document-delivery.js';
 import { renderDocumentPdf, type DocumentSnapshot } from './document-layout.js';
 
 export type ScopedActor = ScopePrincipal;
-export const CONTRACT_TEMPLATE_VERSION = 'ppa-th-sarabun-new-v1';
+export const CONTRACT_TEMPLATE_VERSION = 'ppa-th-sarabun-new-v2';
 interface ContractSource {
- id:string; site_id:string; site_name:string; school_id:string; version?:number;
+ id:string; site_id:string; site_name:string; external_site_id?:string|null; school_id:string; version?:number;
  start_date:string; end_date:string|null; issue_date?:string;
  company_name:string; tax_id:string; tax_address:string; branch?:string; billing_phone?:string; billing_email?:string;
  payment_terms:string; payment_term_days?:number|null; recipient_user_ids?:string[];
@@ -38,7 +38,7 @@ export function buildContractSnapshot(contract:ContractSource,issuer:IssuerSourc
  return {
   deliveryRecipients:[],
   type:'contract',documentNumber:contract.id,contractNumber:contract.id,contractId:contract.id,
-  siteId:contract.site_id,schoolId:contract.school_id,siteName:contract.site_name,contractVersion:contract.version,
+  siteId:contract.site_id,schoolId:contract.school_id,siteName:contract.site_name,siteExternalId:contract.external_site_id??undefined,contractVersion:contract.version,
   startDate:contract.start_date,endDate:contract.end_date??undefined,issueDate:contract.issue_date??contract.start_date,
   issuer:{name:text(issuer!.company_name),taxId:text(issuer!.tax_id),address:text(issuer!.address),branch:text(issuer!.branch),phone:text(issuer!.phone),email:text(issuer!.email)},
   customer:{name:text(contract.company_name),taxId:text(contract.tax_id),address:text(contract.tax_address),branch:text(contract.branch),phone:text(contract.billing_phone),email:text(contract.billing_email)},
@@ -78,7 +78,7 @@ export class ContractPdfService {
   const scope=this.scope(actor);
   const params:unknown[]=[contractId];if(scope!==null)params.push(scope);
   // Scope is part of the lookup; no unscoped identity/artifact/settings read precedes it.
-  const contract=(await client.query<ContractSource>(`SELECT c.*,s.name AS site_name,s.school_id,
+  const contract=(await client.query<ContractSource>(`SELECT c.*,s.name AS site_name,s.external_site_id,s.school_id,
    to_char(c.start_date,'YYYY-MM-DD') AS start_date,to_char(c.end_date,'YYYY-MM-DD') AS end_date,
    to_char(now() AT TIME ZONE 'Asia/Bangkok','YYYY-MM-DD') AS issue_date
    FROM contracts c JOIN sites s ON s.id=c.site_id WHERE c.id=$1 ${scope===null?'':'AND s.school_id=ANY($2::uuid[])'}`,params)).rows[0];
