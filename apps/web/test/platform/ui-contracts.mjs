@@ -54,7 +54,7 @@ try {
   await page.setViewportSize({width:390,height:900});await page.goto(web+'/billing?search=U1%20Browser');
   await page.getByRole('button',{name:'ชำระเงินและแนบสลิป',exact:true}).first().click();
   await page.locator('#slip-upload').setInputFiles({name:'evidence.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jxioAAAAASUVORK5CYII=','base64')});
-  await page.locator('img[alt="Slip Preview"]').waitFor();
+  await page.getByRole('img',{name:'ตัวอย่างหลักฐาน',exact:true}).waitFor();
   let paymentRequests=0;page.on('request',request=>{if(request.method()==='POST'&&request.url().endsWith('/pay'))paymentRequests++;});
   const paid=page.waitForResponse(r=>r.request().method()==='POST'&&r.url().endsWith('/pay'));
   await page.getByRole('dialog').locator('form').evaluate(form=>{form.requestSubmit();form.requestSubmit();});
@@ -65,7 +65,7 @@ try {
   // The database changes scope after the displayed action: server denies the real POST.
   await page.goto(web+'/billing?search=U1%20Browser');await page.getByRole('button',{name:'ชำระเงินและแนบสลิป',exact:true}).first().click();
   await page.locator('#slip-upload').setInputFiles({name:'evidence.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jxioAAAAASUVORK5CYII=','base64')});
-  await page.locator('img[alt="Slip Preview"]').waitFor();await db.query('UPDATE users SET school_id=NULL WHERE id=$1',[user]);
+  await page.getByRole('img',{name:'ตัวอย่างหลักฐาน',exact:true}).waitFor();await db.query('UPDATE users SET school_id=NULL WHERE id=$1',[user]);
   const denied=page.waitForResponse(r=>r.url().endsWith('/pay')),capRefresh=page.waitForResponse(r=>r.url().endsWith('/v1/auth/capabilities'));
   await page.getByRole('button',{name:'ยืนยันการชำระเงิน',exact:true}).click();assert.equal((await denied).status(),403);assert.deepEqual((await (await capRefresh).json()).operationsActions,[]);
   const deniedDialog=page.getByRole('dialog');
