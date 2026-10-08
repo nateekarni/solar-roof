@@ -26,3 +26,10 @@ Organization/contract entry: `apps/web/features/contracts/contract-form-dialog.t
 Legacy deep link: `apps/web/app/(app)/settings/security/page.tsx` still uses the old 8-character validation and expects password-change success without login redirect. Organization users now have the complete password control on `/settings`; Resolved: both screens now use the same tested12–128 validation and redirect after server session revocation.
 
 Final automated evidence at handoff: web 115/115 passed; API 142 passed, 2 skipped (144 total); both typechecks passed; git diff whitespace check passed. Live visual review remains for parent coordination. Payment-dialog labels/errors and preview labels are now localized; both Settings password screens share the tested12–128 workflow and login redirect. Reviewer P2 raw billing periods are localized using the common Buddhist/Gregorian month formatter. Contract form locale integration remains with the completed copy/layout branch. Checkpoint commit authorized; push and draft PR are handled by the parent task.
+
+## Contrast review follow-up
+
+Replaced bare primary-colored Documents preview/retry/clear actions with shared outline Buttons using foreground text. Settings save-name/save-notification/change-password actions use shared filled primary Buttons. Signout uses destructive fill and its foreground token in both themes, explicitly overriding the shared variant's inherited dark translucent surface.
+
+Actual Edge headless + axe color-contrast recheck used the real OrganizationDocuments and SchoolSettingsView components in a temporary provider/API fixture route (no production auth/API changes). Results: Documents 8/8 and Settings 8/8 combinations passed, zero color-contrast violations across desktop 1280×900 / mobile 390×844, Thai/English and light/dark. Temporary route/script/server and generated next-env changes were removed. Tests preserve filled foreground/surface pairing and prevent dark destructive tint regression.
+Final contrast-fix verification: full web suite117/117 and typecheck passed; API behavior is unchanged by this follow-up.

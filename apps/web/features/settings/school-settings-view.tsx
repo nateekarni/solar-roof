@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { Button } from "../../components/ui/button";
 import { useTheme } from "next-themes";
 import { useAuth, authStore } from "../../stores/auth-store";
 import { useLocale, useSetLocale } from "../../providers/locale-provider";
@@ -139,12 +140,13 @@ export function SchoolSettingsView() {
               "Contact an administrator to change your account email.",
             )}
           </p>
-          <button
+          <Button
             disabled={busy || !name.trim()}
-            className="min-h-11 text-primary"
+            type="submit"
+            className="min-h-11"
           >
             {text("บันทึกชื่อ", "Save display name")}
-          </button>
+          </Button>
         </form>
       </section>
       <section className="space-y-4 rounded-xl border bg-card p-5">
@@ -300,9 +302,9 @@ export function SchoolSettingsView() {
                 className={inputClass}
               />
             </label>
-            <button disabled={busy} className="min-h-11 text-primary">
+            <Button disabled={busy} type="submit" className="min-h-11">
               {text("บันทึกการแจ้งเตือน", "Save notifications")}
-            </button>
+            </Button>
           </form>
         )}
       </section>
@@ -368,9 +370,9 @@ export function SchoolSettingsView() {
               />
             </label>
           ))}
-          <button disabled={busy} className="min-h-11 text-primary">
+          <Button disabled={busy} type="submit" className="min-h-11">
             {text("เปลี่ยนรหัสผ่าน", "Change password")}
-          </button>
+          </Button>
         </form>
       </section>
       {error && (
@@ -379,8 +381,10 @@ export function SchoolSettingsView() {
         </p>
       )}
       {saved && <p role="status">{saved}</p>}
-      <button
-        className="min-h-11 text-destructive"
+      <Button
+        type="button"
+        variant="destructive"
+        className="min-h-11 bg-destructive dark:bg-destructive text-destructive-foreground hover:bg-destructive/90 dark:hover:bg-destructive/90"
         onClick={() =>
           void save(async () => {
             await apiClient.post("/v1/auth/logout");
@@ -390,7 +394,7 @@ export function SchoolSettingsView() {
         }
       >
         {text("ออกจากระบบ", "Sign out")}
-      </button>
+      </Button>
     </div>
   );
 }
