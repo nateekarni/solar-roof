@@ -1,4 +1,5 @@
 "use client";
+import {BrandMark, BRAND_NAME} from "../brand/brand-mark";
 import { useSessionUser } from "../../providers/session-user-provider";
 
 import {
@@ -143,11 +144,9 @@ export function MobileMenuSheet({ open, onOpenChange }: MobileMenuSheetProps) {
       {/* Top Header of Mobile Menu */}
       <div className="flex h-14 shrink-0 items-center justify-between border-b border-sidebar-border px-4">
         <div className="flex items-center gap-2.5">
-          <div className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground shadow-xs">
-            <Sun className="size-4.5" />
-          </div>
+          <BrandMark className="size-8" />
           <span className="font-bold text-base text-sidebar-foreground tracking-tight">
-            Solar Platform
+            {BRAND_NAME}
           </span>
         </div>
 

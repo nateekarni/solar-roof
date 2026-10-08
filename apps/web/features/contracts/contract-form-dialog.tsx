@@ -1,4 +1,5 @@
 "use client";
+import {BRAND_NAME} from "../../components/brand/brand-mark";
 
 import { AddButton } from "../../components/ui/add-button";
 
@@ -463,3 +464,4 @@ export function ContractFormDialog({
     </Dialog>
   );
 }
+

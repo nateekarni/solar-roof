@@ -145,7 +145,7 @@ export const en = {
     statSites: "Solar Sites",
     statCapacity: "Installed Capacity",
     statSecurity: "Security Grade",
-    copyright: "© 2026 Solar Platform. All rights reserved.",
+    copyright: "© 2026 Solar Roof. All rights reserved.",
     securedBy: "JWT & Refresh Token Rotation Secured",
     badge: "Smart Solar Energy Management System",
   },

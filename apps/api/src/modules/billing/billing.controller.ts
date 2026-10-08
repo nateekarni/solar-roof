@@ -724,7 +724,7 @@ export class BillingController {
       await transporter.sendMail({
         from: `"${company.company_name}" <${company.email || "billing@solarenergy.co.th"}>`,
         to: recipient,
-        subject: `[Solar Platform] ใบวางบิล/ใบแจ้งหนี้ #${cycle.invoiceNumber || id.slice(0, 8)} - ${cycle.siteName}`,
+        subject: `[Solar Roof] ใบวางบิล/ใบแจ้งหนี้ #${cycle.invoiceNumber || id.slice(0, 8)} - ${cycle.siteName}`,
         html: `
           <div style="font-family: sans-serif; color: #1e293b; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px;">
             <h2 style="color: #0f172a; margin-top: 0;">ใบวางบิล / ใบแจ้งหนี้ค่าไฟฟ้าโซลาร์เซลล์</h2>
@@ -748,9 +748,9 @@ export class BillingController {
                 <td style="padding: 10px; border: 1px solid #e2e8f0; color: #0284c7; font-size: 16px;">฿${Number(cycle.amount).toLocaleString("th-TH", { minimumFractionDigits: 2 })} บาท</td>
               </tr>
             </table>
-            <p>สามารถดูเอกสารฉบับเต็มและชำระเงินผ่านระบบ Solar Platform หรือติดต่อฝ่ายบัญชีได้ที่ ${company.phone || "02-999-8888"}</p>
+            <p>สามารถดูเอกสารฉบับเต็มและชำระเงินผ่านระบบ Solar Roof หรือติดต่อฝ่ายบัญชีได้ที่ ${company.phone || "02-999-8888"}</p>
             <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
-            <small style="color: #64748b;">อีเมลนี้สร้างโดยระบบอัตโนมัติ Solar Platform</small>
+            <small style="color: #64748b;">อีเมลนี้สร้างโดยระบบอัตโนมัติ Solar Roof</small>
           </div>
         `,
       });

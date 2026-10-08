@@ -60,8 +60,10 @@
 }
 
 :root {
-  --tabs-background: var(--color-amber-50);
-  --tabs-foreground: var(--color-amber-950);
+  --brand-primary: oklch(0.75 0.18 72);
+  --brand-primary-foreground: oklch(0.145 0 0);
+  --tabs-background: color-mix(in oklab, var(--primary) 12%, var(--card));
+  --tabs-foreground: var(--foreground);
   --font-sans:
     "Noto Sans Thai Looped", "Sarabun", ui-sans-serif, system-ui, -apple-system,
     BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -71,8 +73,8 @@
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.75 0.18 72);
-  --primary-foreground: oklch(0.145 0 0);
+  --primary: var(--brand-primary);
+  --primary-foreground: var(--brand-primary-foreground);
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.97 0 0);
@@ -91,7 +93,7 @@
   --degraded: oklch(0.75 0.17 72);
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
-  --ring: oklch(0.75 0.18 72);
+  --ring: var(--primary);
   --chart-1: oklch(0.75 0.18 72);
   --chart-2: oklch(0.55 0.17 152);
   --chart-3: oklch(0.65 0.16 230);
@@ -101,25 +103,26 @@
 
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.75 0.18 72);
-  --sidebar-primary-foreground: oklch(0.145 0 0);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
   --sidebar-accent: oklch(0.94 0 0);
   --sidebar-accent-foreground: oklch(0.145 0 0);
   --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.75 0.18 72);
+  --sidebar-ring: var(--primary);
 }
 
 .dark {
-  --tabs-background: color-mix(in oklab, var(--color-amber-950) 40%, transparent);
-  --tabs-foreground: var(--color-amber-100);
+  --tabs-background: color-mix(in oklab, var(--primary) 12%, var(--card));
+  --tabs-foreground: var(--foreground);
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.205 0 0);
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.205 0 0);
   --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.82 0.17 72);
-  --primary-foreground: oklch(0.145 0 0);
+  /* Brighten the same brand color for dark surfaces; hue remains centrally owned. */
+  --primary: color-mix(in oklab, var(--brand-primary) 80%, white);
+  --primary-foreground: var(--brand-primary-foreground);
   --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.269 0 0);
@@ -138,7 +141,7 @@
   --degraded: oklch(0.8 0.16 72);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.82 0.17 72);
+  --ring: var(--primary);
   --chart-1: oklch(0.82 0.17 72);
   --chart-2: oklch(0.67 0.16 152);
   --chart-3: oklch(0.72 0.15 230);
@@ -147,12 +150,12 @@
 
   --sidebar: oklch(0.12 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.82 0.17 72);
-  --sidebar-primary-foreground: oklch(0.145 0 0);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
   --sidebar-accent: oklch(0.22 0 0);
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.82 0.17 72);
+  --sidebar-ring: var(--primary);
 }
 
 @layer base {
@@ -938,10 +941,10 @@ td.rdp-outside .rdp-day_button {
 
 /* Range Middle Cell (Continuous Subtle Yellow Brand Band - Opacity 5%) */
 td.rdp-range_middle {
-  background-color: rgba(234, 179, 8, 0.05) !important;
+  background-color: color-mix(in oklab, var(--primary) 5%, transparent) !important;
 }
 .dark td.rdp-range_middle {
-  background-color: rgba(234, 179, 8, 0.08) !important;
+  background-color: color-mix(in oklab, var(--primary) 8%, transparent) !important;
 }
 
 td.rdp-range_middle .rdp-day_button {
@@ -955,30 +958,30 @@ td.rdp-range_middle .rdp-day_button {
 }
 
 td.rdp-range_middle .rdp-day_button:hover {
-  background-color: rgba(234, 179, 8, 0.12) !important;
+  background-color: color-mix(in oklab, var(--primary) 12%, transparent) !important;
 }
 
 /* Range Start & Range End Connecting Bar */
 td.rdp-range_start:not(.rdp-range_end) {
-  background: linear-gradient(to right, transparent 50%, rgba(234, 179, 8, 0.05) 50%) !important;
+  background: linear-gradient(to right, transparent 50%, color-mix(in oklab, var(--primary) 5%, transparent) 50%) !important;
 }
 .dark td.rdp-range_start:not(.rdp-range_end) {
-  background: linear-gradient(to right, transparent 50%, rgba(234, 179, 8, 0.08) 50%) !important;
+  background: linear-gradient(to right, transparent 50%, color-mix(in oklab, var(--primary) 8%, transparent) 50%) !important;
 }
 
 td.rdp-range_end:not(.rdp-range_start) {
-  background: linear-gradient(to right, rgba(234, 179, 8, 0.05) 50%, transparent 50%) !important;
+  background: linear-gradient(to right, color-mix(in oklab, var(--primary) 5%, transparent) 50%, transparent 50%) !important;
 }
 .dark td.rdp-range_end:not(.rdp-range_start) {
-  background: linear-gradient(to right, rgba(234, 179, 8, 0.08) 50%, transparent 50%) !important;
+  background: linear-gradient(to right, color-mix(in oklab, var(--primary) 8%, transparent) 50%, transparent 50%) !important;
 }
 
 /* Range Start & Range End Buttons (Solid Yellow Pill) */
 td.rdp-range_start .rdp-day_button,
 td.rdp-range_end .rdp-day_button,
 td.rdp-selected:not(.rdp-range_middle) .rdp-day_button {
-  background-color: #EAB308 !important;
-  color: #0F172A !important;
+  background-color: var(--primary) !important;
+  color: var(--primary-foreground) !important;
   font-weight: 700 !important;
   border-radius: 0.5rem !important;
   box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.15) !important;

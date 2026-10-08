@@ -1,9 +1,10 @@
 "use client";
+import {BrandMark, BRAND_NAME} from "../brand/brand-mark";
 import { useSessionUser } from "../../providers/session-user-provider";
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { ChevronDown, Sun } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import * as React from "react";
 import {
   Sidebar,
@@ -51,12 +52,10 @@ export function AppSidebar() {
     <Sidebar collapsible="icon" variant="sidebar">
       <SidebarHeader>
         <div className="flex items-center gap-2.5 px-3 py-2.5 group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:py-2 group-data-[collapsible=icon]:justify-center">
-          <div className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground shadow-xs">
-            <Sun className="size-4.5" />
-          </div>
+          <BrandMark className="size-8" label={isCollapsed ? BRAND_NAME : undefined}/>
           <div className="flex flex-col min-w-0 group-data-[collapsible=icon]:hidden">
             <span className="font-bold text-[15px] leading-tight text-sidebar-foreground">
-              Solar Platform
+              {BRAND_NAME}
             </span>
           </div>
         </div>
@@ -106,7 +105,7 @@ export function AppSidebar() {
                                     href={sub.href}
                                     className={`flex items-center w-full px-2.5 py-2 text-xs rounded-md cursor-pointer transition-colors ${
                                       isSubActive
-                                        ? "bg-[#EAB308] text-[#0F172A] font-semibold dark:bg-amber-500/20 dark:text-amber-300"
+                                        ? "bg-primary text-primary-foreground font-semibold dark:bg-primary/20 dark:text-primary"
                                         : "text-foreground hover:bg-muted"
                                     }`}
                                   >

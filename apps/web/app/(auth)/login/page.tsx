@@ -1,8 +1,9 @@
 "use client";
+import {BrandMark, BRAND_NAME} from "../../../components/brand/brand-mark";
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { createTranslator, type Locale } from "@solar/i18n";
-import { AlertCircle, Eye, EyeOff, Lock, Mail, Sun, LoaderCircle } from "lucide-react";
+import { AlertCircle, Eye, EyeOff, Lock, Mail, LoaderCircle } from "lucide-react";
 
 import * as React from "react";
 import { useForm } from "react-hook-form";
@@ -127,7 +128,7 @@ export default function LoginPage() {
       <div className="flex justify-end"><Tabs value={locale} onValueChange={handleLocaleChange}><TabsList className="h-10 group-data-horizontal/tabs:h-10 bg-muted" aria-label={th ? "ภาษา" : "Language"}><TabsTrigger value="th" className="px-4">ไทย</TabsTrigger><TabsTrigger value="en" className="px-4">EN</TabsTrigger></TabsList></Tabs></div>
       <div className="flex flex-1 items-start justify-center py-8 sm:items-center sm:py-10">
         <Card className="w-full max-w-[420px] rounded-2xl shadow-sm"><CardContent className="space-y-7 p-6 sm:p-8">
-          <div className="flex items-center gap-3"><div className="flex size-10 items-center justify-center rounded-xl bg-primary text-primary-foreground"><Sun aria-hidden="true" className="size-6"/></div><div><p className="text-lg font-semibold">Solar Platform</p><p className="text-xs text-muted-foreground">{th ? "ระบบบริหารพลังงานแสงอาทิตย์" : "Solar energy management"}</p></div></div>
+          <div className="flex items-center gap-3"><BrandMark className="size-10"/><div><p className="text-lg font-semibold">{BRAND_NAME}</p><p className="text-xs text-muted-foreground">{th ? "ระบบบริหารพลังงานแสงอาทิตย์" : "Solar energy management"}</p></div></div>
           <div className="space-y-2"><h1 className="text-2xl font-semibold tracking-tight">{t("auth.login")}</h1><p className="text-sm leading-relaxed text-muted-foreground">{t("auth.subtitle")}</p></div>
           {errorKey && <div role="alert" className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"><AlertCircle aria-hidden="true" className="mt-0.5 size-4 shrink-0"/><span>{t(errorKey)}</span></div>}
           <form noValidate onSubmit={handleSubmit(onSubmit)} className="space-y-5" aria-busy={isLoading}>
