@@ -2,6 +2,7 @@
 import {DocumentBrand} from "../../components/brand/document-brand";
 import {embeddedImageSource} from "./document-export";
 import {snapshotCompany} from "./snapshot-company";
+import {OriginalDocumentPreview} from "./original-document-preview";
 import { ChoiceSelect } from '../../components/ui/choice-select';
 
 import * as React from "react";
@@ -25,7 +26,7 @@ export interface DocumentPreviewData {
   gridSavingsThb?: number; peakPowerKw?: number; codDate?: string; gatewaySerial?: string;
   meterSerial?: string; inverterModel?: string; inverterSerial?: string; panelModel?: string;
 }
-interface PersistedDocument { id:string; documentNumber:string; documentType:string; status:string; issueDate:string|null; amount:string; snapshot?: {cycle:any;company:any;customer:any;banks:any[];payment?:any}; }
+interface PersistedDocument { id:string; documentNumber:string; documentType:string; status:string; issueDate:string|null; amount:string; previewUrl?:string;contentHash?:string;snapshot?: {cycle:any;company:any;customer:any;banks:any[];payment?:any}; }
 interface Period { id:string; documentNumber:string; periodStart:string; periodEnd:string; }
 const emptyCompany=snapshotCompany(undefined);
 const printCss=`@page{size:A4;margin:14mm}body{font-family:Arial,sans-serif;color:#172b39;margin:0;font-size:12px}.document-brand{display:block;height:64px;width:auto;max-width:256px;object-fit:contain;margin-bottom:16px}article{width:100%;max-width:182mm;margin:auto}header{display:flex;justify-content:space-between;border-bottom:3px solid #14718a;padding-bottom:24px}h1{font-size:24px;color:#14718a}h2{font-size:17px}table{width:100%;border-collapse:collapse;margin:24px 0}th,td{padding:12px 8px;border-bottom:1px solid #dce5e9;text-align:left}th{background:#edf4f6}.right{text-align:right}.grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin:24px 0}.muted{color:#607481}.total{font-size:20px;text-align:right;border-top:2px solid #14718a;padding:20px 0}.signatures{display:flex;justify-content:space-between;margin-top:70px}.notice{padding:12px;background:#fff5dc}p{line-height:1.6;margin:4px 0}`;
@@ -65,6 +66,7 @@ export function DocumentPreviewModal({open,onOpenChange,data}:{open:boolean;onOp
   return()=>{active=false;};
  },[open,selectedId,locale]);
  if(!data)return null;
+ if(isFinancial&&document?.previewUrl&&document.contentHash)return <OriginalDocumentPreview key={`${document.id}:${document.contentHash}`} open={open} onOpenChange={onOpenChange} id={document.id} hash={document.contentHash} number={document.documentNumber}/>;
  const snapshot=document?.snapshot;
  const issuerCompany=isFinancial ? snapshotCompany(snapshot?.company) : company;
  const issuerBanks=isFinancial ? snapshot?.banks ?? [] : banks;
@@ -89,4 +91,5 @@ export function DocumentPreviewModal({open,onOpenChange,data}:{open:boolean;onOp
  <div className="signatures mt-20 flex justify-between gap-8"><p>________________________<br/>{text("ผู้จัดทำ / Prepared by","Prepared by")}</p><p>________________________<br/>{data.type==='receipt'?text('ผู้รับเงิน','Received by'):text('ผู้รับเอกสาร','Document received by')}</p></div>
  </article></div>}</DialogContent></Dialog>;
 }
+
 
