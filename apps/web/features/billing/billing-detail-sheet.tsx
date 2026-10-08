@@ -248,7 +248,7 @@ export function BillingDetailSheet({
                   </div>
                   <div className="grid grid-cols-2 gap-3 pt-1 border-t border-border/40">
                     <div>
-                      <span className="text-muted-foreground">{locale === "th" ? "โรงเรียน" : "School"}:</span>
+                      <span className="text-muted-foreground">{locale === "th" ? "องค์กร" : "Organization"}:</span>
                       <p className="font-semibold text-foreground text-sm mt-0.5">{data.schoolName}</p>
                     </div>
                     <div>

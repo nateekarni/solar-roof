@@ -50,7 +50,7 @@ import { useLocale, useT } from "../../providers/locale-provider";
 
 const editSiteSchema = z.object({
   name: z.string().min(2, "ชื่อไซต์งานต้องมีอย่างน้อย 2 ตัวอักษร"),
-  schoolName: z.string().min(1, "กรุณาเลือกโรงเรียนสังกัด"),
+  schoolName: z.string().min(1, "กรุณาเลือกองค์กรสังกัด"),
   capacityMwp: z.number().min(0.01, "กำลังติดตั้งต้องมากกว่า 0"),
   latitude: z.number().optional(),
   longitude: z.number().optional(),
@@ -275,10 +275,10 @@ export function SiteEditDialog({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-2">
-                  <Label htmlFor="edit-school-select" required className="text-sm font-medium">
-                    {locale === "th" ? "โรงเรียนต้นสังกัด" : "Associated School"}
+                  <Label htmlFor="edit-organization-select" required className="text-sm font-medium">
+                    {locale === "th" ? "องค์กรต้นสังกัด" : "Associated Organization"}
                   </Label>
-                  <Input id="edit-school-select" {...register("schoolName")} />
+                  <Input id="edit-organization-select" {...register("schoolName")} />
                 </div>
 
                 <div className="space-y-2">

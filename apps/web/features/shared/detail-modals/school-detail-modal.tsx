@@ -82,7 +82,7 @@ export function SchoolDetailModal({
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 flex-wrap">
                 <DialogTitle className="text-lg font-bold truncate">
-                  {school.name || "รายละเอียดสถานศึกษา"}
+                  {school.name || "รายละเอียดองค์กร"}
                 </DialogTitle>
                 <Badge
                   variant={isWarning ? "destructive" : "default"}
@@ -94,7 +94,7 @@ export function SchoolDetailModal({
               <DialogDescription className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1.5 truncate">
                 <MapPin className="size-3 shrink-0" />
                 <span>{school.region || "—"}</span>
-                {school.code && <span>• รหัสสถานศึกษา: {school.code}</span>}
+                {school.code && <span>• รหัสองค์กร: {school.code}</span>}
               </DialogDescription>
             </div>
           </div>
@@ -141,11 +141,11 @@ export function SchoolDetailModal({
           {/* Attributes List */}
           <div className="space-y-2">
             <div className="text-xs font-semibold text-foreground uppercase tracking-wider px-1">
-              {locale === "th" ? "ข้อมูลทั่วไปของสถานศึกษา" : "School Attributes"}
+              {locale === "th" ? "ข้อมูลทั่วไปขององค์กร" : "Organization details"}
             </div>
             <div className="space-y-2.5 text-xs border-t pt-4">
               <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">{locale === "th" ? "รหัสสถานศึกษา (Code)" : "School Code"}</span>
+                <span className="text-muted-foreground">{locale === "th" ? "รหัสองค์กร (Code)" : "Organization Code"}</span>
                 <span className="font-mono font-medium text-foreground">{school.code || "-"}</span>
               </div>
               <div className="flex items-center justify-between">

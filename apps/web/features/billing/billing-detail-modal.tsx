@@ -283,7 +283,7 @@ export function BillingDetailModal({
                   </Badge>
                 </div>
                 <DialogDescription className="text-xs text-muted-foreground mt-0.5">
-                  {data.schoolName || "โรงเรียน"} • {locale === "th" ? "รอบบิลประจำเดือน " : "Period "}{data.period || data.periodEnd}
+                  {data.schoolName || "องค์กร"} • {locale === "th" ? "รอบบิลประจำเดือน " : "Period "}{data.period || data.periodEnd}
                 </DialogDescription>
               </div>
             </div>
@@ -663,7 +663,7 @@ export function BillingDetailModal({
                   type="email"
                   value={recipientEmail}
                   onChange={(e) => setRecipientEmail(e.target.value)}
-                  placeholder="finance@school.ac.th"
+                  placeholder="finance@organization.ac.th"
                   className="h-10 text-xs"
                 />
               </div>

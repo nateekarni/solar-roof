@@ -1,6 +1,19 @@
 import { FinancialReadinessService } from "../billing/financial-readiness.service.js";
 import { schoolScope } from "../../common/auth/route-policy.js";
-import { Body, Controller, Get, HttpCode, HttpStatus, Inject, Post, Req, Res, UnauthorizedException } from "@nestjs/common";
+import {
+  BadRequestException,
+  Put,
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Inject,
+  Post,
+  Req,
+  Res,
+  UnauthorizedException,
+} from "@nestjs/common";
 import { type Request, type Response } from "express";
 import { createHash, randomUUID } from "node:crypto";
 import { DatabaseService } from "../../database/database.service.js";
@@ -12,9 +25,16 @@ function extractCookie(req: Request, name: string): string | undefined {
   if (req.cookies && req.cookies[name]) return req.cookies[name];
   const cookieHeader = req.headers.cookie;
   if (!cookieHeader) return undefined;
-  const match = cookieHeader.split(";").map(c => c.trim()).find(c => c.startsWith(`${name}=`));
+  const match = cookieHeader
+    .split(";")
+    .map((c) => c.trim())
+    .find((c) => c.startsWith(`${name}=`));
   if (!match) return undefined;
-  try { return decodeURIComponent(match.substring(name.length + 1)); } catch { return "invalid-cookie"; }
+  try {
+    return decodeURIComponent(match.substring(name.length + 1));
+  } catch {
+    return "invalid-cookie";
+  }
 }
 
 @Controller("v1/auth")
@@ -23,13 +43,19 @@ export class AuthController {
     @Inject(AuthService) private readonly authService: AuthService,
     @Inject(DatabaseService) private readonly db: DatabaseService,
     @Inject(SessionService) private readonly sessions: SessionService,
-    @Inject(FinancialReadinessService) private readonly readiness: FinancialReadinessService
+    @Inject(FinancialReadinessService)
+    private readonly readiness: FinancialReadinessService,
   ) {}
 
-  @Get('capabilities')
-  async capabilities(@Req() req: Request & {user?: {role: string; schoolId?: string}}) {
-    const scope=schoolScope(req.user);
-    return this.readiness.capabilities(req.user?.role ?? '',scope === null || scope.length > 0);
+  @Get("capabilities")
+  async capabilities(
+    @Req() req: Request & { user?: { role: string; schoolId?: string } },
+  ) {
+    const scope = schoolScope(req.user);
+    return this.readiness.capabilities(
+      req.user?.role ?? "",
+      scope === null || scope.length > 0,
+    );
   }
 
   @Public()
@@ -37,7 +63,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async login(
     @Body() body: { email?: string; password?: string },
-    @Res({ passthrough: true }) res: Response
+    @Res({ passthrough: true }) res: Response,
   ) {
     const email = body.email?.trim().toLowerCase();
     const password = body.password;
@@ -60,7 +86,10 @@ export class AuthController {
       throw new UnauthorizedException("User account is inactive");
     }
 
-    if (!user.password_hash || !this.authService.verifyPassword(password, user.password_hash)) {
+    if (
+      !user.password_hash ||
+      !this.authService.verifyPassword(password, user.password_hash)
+    ) {
       throw new UnauthorizedException("Invalid email or password");
     }
 
@@ -72,11 +101,18 @@ export class AuthController {
         role: user.role,
         schoolId: user.school_id || undefined,
       },
-      sessionId
+      sessionId,
     );
 
-    const refreshTokenHash = createHash("sha256").update(tokens.refreshToken).digest("hex");
-    await this.sessions.initialize(sessionId, user.id, refreshTokenHash, this.authService.verifyRefreshToken(tokens.refreshToken).expiresAt);
+    const refreshTokenHash = createHash("sha256")
+      .update(tokens.refreshToken)
+      .digest("hex");
+    await this.sessions.initialize(
+      sessionId,
+      user.id,
+      refreshTokenHash,
+      this.authService.verifyRefreshToken(tokens.refreshToken).expiresAt,
+    );
 
     const isProd = process.env.NODE_ENV === "production";
     res.cookie("refresh_token", tokens.refreshToken, {
@@ -105,7 +141,7 @@ export class AuthController {
     await this.db.query(
       `INSERT INTO audit_events (id, actor_id, action, entity_type, entity_id, correlation_id, occurred_at)
        VALUES ($1, $2, 'user.login', 'user', $3, $4, NOW())`,
-      [auditId, user.id, user.id, sessionId]
+      [auditId, user.id, user.id, sessionId],
     );
 
     return {
@@ -130,9 +166,10 @@ export class AuthController {
   async refresh(
     @Req() req: Request,
     @Body() body: { refreshToken?: string },
-    @Res({ passthrough: true }) res: Response
+    @Res({ passthrough: true }) res: Response,
   ) {
-    const refreshToken = extractCookie(req, "refresh_token") || body?.refreshToken;
+    const refreshToken =
+      extractCookie(req, "refresh_token") || body?.refreshToken;
     if (!refreshToken) {
       throw new UnauthorizedException("Refresh token is required");
     }
@@ -159,7 +196,9 @@ export class AuthController {
       throw new UnauthorizedException("User account is inactive");
     }
 
-    const expectedHash = createHash("sha256").update(refreshToken).digest("hex");
+    const expectedHash = createHash("sha256")
+      .update(refreshToken)
+      .digest("hex");
     if (!(await this.sessions.isActive(decoded.sessionId, decoded.id))) {
       throw new UnauthorizedException("Refresh token revoked or reused");
     }
@@ -172,11 +211,19 @@ export class AuthController {
         role: user.role,
         schoolId: user.school_id || undefined,
       },
-      newSessionId
+      newSessionId,
     );
 
-    const newRefreshTokenHash = createHash("sha256").update(tokens.refreshToken).digest("hex");
-    if (!(await this.sessions.rotate(decoded.sessionId, expectedHash, newRefreshTokenHash))) {
+    const newRefreshTokenHash = createHash("sha256")
+      .update(tokens.refreshToken)
+      .digest("hex");
+    if (
+      !(await this.sessions.rotate(
+        decoded.sessionId,
+        expectedHash,
+        newRefreshTokenHash,
+      ))
+    ) {
       throw new UnauthorizedException("Refresh token revoked or reused");
     }
 
@@ -215,17 +262,29 @@ export class AuthController {
   @Public()
   @Post("logout")
   @HttpCode(HttpStatus.OK)
-  async logout(
-    @Req() req: Request,
-    @Res({ passthrough: true }) res: Response
-  ) {
+  async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     // Access identifies the verified device even if its refresh cookie is stale.
-    const accessToken = extractCookie(req, "access_token") || (req.headers.authorization?.startsWith("Bearer ") ? req.headers.authorization.slice(7).trim() : undefined);
+    const accessToken =
+      extractCookie(req, "access_token") ||
+      (req.headers.authorization?.startsWith("Bearer ")
+        ? req.headers.authorization.slice(7).trim()
+        : undefined);
     const refreshToken = extractCookie(req, "refresh_token");
     let verified;
-    try { if (accessToken) verified = this.authService.verifyAccessToken(accessToken); } catch {}
-    if (!verified) { try { if (refreshToken) verified = this.authService.verifyRefreshToken(refreshToken); } catch {} }
-    if (verified && await this.sessions.isActive(verified.sessionId, verified.id)) {
+    try {
+      if (accessToken)
+        verified = this.authService.verifyAccessToken(accessToken);
+    } catch {}
+    if (!verified) {
+      try {
+        if (refreshToken)
+          verified = this.authService.verifyRefreshToken(refreshToken);
+      } catch {}
+    }
+    if (
+      verified &&
+      (await this.sessions.isActive(verified.sessionId, verified.id))
+    ) {
       await this.sessions.revoke(verified.sessionId);
     } else if (!req.headers.origin && !req.headers.cookie) {
       // The nonbrowser origin exception still requires a verified active JWT.
@@ -235,6 +294,64 @@ export class AuthController {
     res.clearCookie("refresh_token", { path: "/" });
     res.clearCookie("access_token", { path: "/" });
 
+    return { success: true };
+  }
+
+  @Put("password")
+  async changePassword(
+    @Req() req: Request & { user?: { id: string } },
+    @Body() body: unknown,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const userId = req.user?.id;
+    if (!userId) throw new UnauthorizedException("Not authenticated");
+    if (
+      !body ||
+      typeof body !== "object" ||
+      Array.isArray(body) ||
+      Object.keys(body).some(
+        (key) => !["currentPassword", "newPassword"].includes(key),
+      )
+    )
+      throw new BadRequestException("Invalid password fields");
+    const { currentPassword, newPassword } = body as {
+      currentPassword?: unknown;
+      newPassword?: unknown;
+    };
+    if (
+      typeof currentPassword !== "string" ||
+      currentPassword.length > 128 ||
+      typeof newPassword !== "string" ||
+      newPassword.length < 12 ||
+      newPassword.length > 128
+    )
+      throw new BadRequestException(
+        "Password must be between 12 and 128 characters",
+      );
+    await this.db.transaction(async (client) => {
+      const result = await client.query(
+        "SELECT password_hash FROM users WHERE id=$1 AND status='active' FOR UPDATE",
+        [userId],
+      );
+      const hash = result.rows[0]?.password_hash;
+      if (!hash || !this.authService.verifyPassword(currentPassword, hash))
+        throw new UnauthorizedException("Current password is incorrect");
+      const updated = this.authService.hashPassword(newPassword);
+      await client.query(
+        "UPDATE users SET password_hash=$1,updated_at=NOW() WHERE id=$2",
+        [updated, userId],
+      );
+      await client.query(
+        "UPDATE auth_sessions SET revoked_at=NOW(),refresh_hash=NULL WHERE user_id=$1 AND revoked_at IS NULL",
+        [userId],
+      );
+      await client.query(
+        `INSERT INTO audit_events(id,actor_id,action,entity_type,entity_id,correlation_id) VALUES($1,$2,'user.password_changed','user',$2,$3)`,
+        [randomUUID(), userId, randomUUID()],
+      );
+    });
+    res.clearCookie("access_token", { path: "/" });
+    res.clearCookie("refresh_token", { path: "/" });
     return { success: true };
   }
 

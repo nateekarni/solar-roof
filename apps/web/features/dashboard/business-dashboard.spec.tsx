@@ -11,11 +11,11 @@ test('owner home presents production, billed revenue and documents without opera
 });
 test('school home identifies own school and charges with no company revenue or school selector',()=>{
  const html=renderToStaticMarkup(<BusinessDashboard data={data} role="school_user" locale="en"/>);
- assert.match(html,/School A/);assert.match(html,/Electricity charges/);assert.doesNotMatch(html,/revenue|Gateway|Compare|<select/);assert.match(html,/href="\/production"/);
+ assert.match(html,/School A/);assert.match(html,/Billed amount in period/);assert.doesNotMatch(html,/revenue|Gateway|Compare|<select/);assert.match(html,/href="\/contracts"/);
 });
 test('missing financial records remain unavailable rather than zero revenue',()=>{
  const html=renderToStaticMarkup(<BusinessDashboard data={{...data,sites:[],stats:{...data.stats,periodAmount:0,billCount:0}}} role="school_user" locale="en"/>);
- assert.match(html,/School assignment unavailable/);assert.doesNotMatch(html,/>0 THB</);assert.match(html,/No billing records/);
+ assert.match(html,/Organization assignment unavailable/);assert.doesNotMatch(html,/>0 THB</);assert.match(html,/No outstanding invoices in the loaded records/);
 });
 test('unknown production samples cannot corrupt valid trend bars or imply measured zero',()=>{
  const points=JSON.parse('[{"date":"2026-10-01","value":null},{"date":"2026-10-02","value":50}]');
@@ -30,4 +30,3 @@ test('long production and billing histories expose a named keyboard scroll regio
   assert.match(html,/<div[^>]*tabindex="0"[^>]*role="region"[^>]*aria-label="(?:Production over time|Billed amounts over time)"/);
  }
 });
-

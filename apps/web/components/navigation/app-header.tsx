@@ -209,7 +209,7 @@ export function AppHeader() {
       case "/billing":
         return t("navigation.billing");
       case "/contracts":
-        return t("navigation.contracts");
+        return user.role === "school_user" ? (locale === "th" ? "เอกสาร" : "Documents") : t("navigation.contracts");
       case "/receipts":
         return t("navigation.receipts");
       case "/reports":

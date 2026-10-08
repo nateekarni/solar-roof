@@ -70,7 +70,7 @@ export function UserDetailModal({
     if (!role) return locale === "th" ? "ไม่มีข้อมูลบทบาท" : "Role unavailable";
     if (isOwner) return locale === "th" ? "เจ้าของระบบ (Owner)" : "System Owner";
     if (isAdmin) return locale === "th" ? "ผู้ดูแลระบบ (Admin)" : "Administrator";
-    if (isSchoolUser) return locale === "th" ? "ผู้ดูแลโรงเรียน (School Staff)" : "School User";
+    if (isSchoolUser) return locale === "th" ? "ผู้ใช้งานองค์กร" : "Organization User";
     return role;
   };
 
@@ -87,8 +87,8 @@ export function UserDetailModal({
         : "Manage records and equipment within the scope assigned to this account.";
     }
     return locale === "th"
-      ? `เข้าถึงและจัดการข้อมูลเฉพาะ ${user.schoolName || "โรงเรียนต้นสังกัด"} ดูยอดบิล และอัปโหลดสลิป`
-      : `Access restricted to ${user.schoolName || "assigned school"} dashboards and payment submissions.`;
+      ? `เข้าถึงและจัดการข้อมูลเฉพาะ ${user.schoolName || "องค์กรต้นสังกัด"} ดูยอดบิล และอัปโหลดสลิป`
+      : `Access restricted to ${user.schoolName || "assigned organization"} dashboards and payment submissions.`;
   };
 
   const isActive = user.status === "active" || user.status === "ใช้งานปกติ";
@@ -179,7 +179,7 @@ export function UserDetailModal({
             <div className="space-y-1 border-t pt-4">
               <div className="text-xs text-muted-foreground flex items-center gap-1.5">
                 <School className="size-3.5" />
-                <span>{locale === "th" ? "สังกัดโรงเรียน" : "School Assignment"}</span>
+                <span>{locale === "th" ? "สังกัดองค์กร" : "Organization Assignment"}</span>
               </div>
               <div className="font-medium text-xs text-foreground truncate">
                 {user.schoolName || "—"}
