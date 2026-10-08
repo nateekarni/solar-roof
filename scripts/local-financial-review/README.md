@@ -10,7 +10,7 @@ node scripts/local-financial-review/seed.mjs
 node --test scripts/local-financial-review/guard.test.mjs
 ```
 
-Requires migration 029 from financial implementation. Six login identities are listed in docs/financial-local-fixture-inputs-2026-10-08.json. Default local-only password: `LocalFinancial2026!`; optionally set `LOCAL_FINANCIAL_TEST_PASSWORD` before seed. The seed never prints passwords/hashes or creates financial outputs. Credentials are never sourced from .env.
+Requires migrations 029–032 from the financial implementation branch. Six login identities are listed in docs/financial-local-fixture-inputs-2026-10-08.json. Default local-only password: `LocalFinancial2026!`; optionally set `LOCAL_FINANCIAL_TEST_PASSWORD` before seed. The seed never prints passwords/hashes or creates financial outputs. Credentials are never sourced from .env.
 
 Database 127.0.0.1:15449/solar_financial_flow_review; Redis16449; SMTP11049; Mailpit UI18049; storage19049. All Compose published ports bind loopback. App API13059/web13049. Canonical local fixture marker solar-financial-flow-review-v1.
 
@@ -29,3 +29,11 @@ The old dataset deletion completed after rechecking Compose labels, its audit ma
 The canonical history provides cumulative meter import and independent logger total yield. It provides no current solar active-power sample, so current generation remains unavailable until supported ingestion supplies it.
 
 Canonical sample values and units are derived from each pinned profile before insertion: Wh identity stores value × 1000; Wh-to-kWh stores kWh. Unsupported or inconsistent mappings stop the seed. The inspected pinned Schneider/Huawei profiles currently target kWh; raw source values remain Wh and billing telemetry remains kWh.
+
+## Launch and acceptance
+
+After migration and seed, source `environment.ps1` in each terminal and run `pnpm --filter @solar/api start:dev` and `pnpm --filter @solar/web dev --port 13049`. The API binds 127.0.0.1; open http://localhost:13049. Organization account: finance-a@example.test. Owner account: owner@example.test. Consult the fixture manifest for all six identities.
+
+On a fresh fixture only, run `pnpm --filter @solar/api exec tsx --tsconfig tsconfig.json test/local-financial-workflow.integration.ts`. The runner performs real writes, so reset and reseed before repeating it; preserve the completed fixture for manual review.
+
+The complete runner passed 18 checks on 2026-10-08: monthly issue, exact decimal totals, downloaded/SMTP PDF equality, rejection/resubmission, multiple transfers, underpayment and overpayment blocks, concurrent duplicate evidence, cross-organization scope, replay safety, immutable artifacts, hourly missing-data gate and repair, HTTP contract creation with inclusive multi-rate periods, required bank data, Owner/Accountant approval authority, invalid dates and unchanged original bytes after settings edits. The persisted TEST policy was marked verified only after all checks passed. Full adjustment/cancellation and production accounting rules remain deferred.
