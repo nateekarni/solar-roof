@@ -6,7 +6,7 @@ import type { PoolClient } from 'pg';
 import nodemailer from 'nodemailer';
 import { DatabaseService } from '../../database/database.service.js';
 import { FinancialReadinessService } from './financial-readiness.service.js';
-import { calculateTestTotals, actualEnergyDifference, requireTestSettlement, TEST_FINANCIAL_POLICY, TEST_FINANCIAL_POLICY_HASH, localFinancialBinding } from './local-financial-policy.js';
+import { calculateTestTotals, sqlCalendarPeriod, actualEnergyDifference, requireTestSettlement, TEST_FINANCIAL_POLICY, TEST_FINANCIAL_POLICY_HASH, localFinancialBinding } from './local-financial-policy.js';
 import { renderLocalTestPdf } from '../documents/local-test-pdf.js';
 const validDate=(value:string)=>/^\d{4}-\d{2}-\d{2}$/.test(value)&&new Date(value).toISOString().slice(0,10)===value;
 @Injectable()
@@ -19,9 +19,9 @@ export class LocalFinancialApplicationService {
    const site=(await client.query('SELECT * FROM sites WHERE id=$1 FOR UPDATE',[siteId])).rows[0];if(!site)throw new NotFoundException('Site not found');
    const prior=(await client.query(`SELECT *,to_char(period_start,'YYYY-MM-DD') AS starts,to_char(period_end,'YYYY-MM-DD') AS ends FROM billing_cycles WHERE site_id=$1 AND period_start<=$3::date AND period_end>=$2::date`,[siteId,start,end])).rows;
    if(prior.length) {if(prior.length===1&&prior[0].policy_hash===TEST_FINANCIAL_POLICY_HASH&&prior[0].starts===start&&prior[0].ends===end)return {cycles:prior};throw new ConflictException('Billing period overlaps an existing cycle');}
-   const contracts=(await client.query(`SELECT * FROM contracts WHERE site_id=$1 AND status='active' AND start_date<=$3::date AND (end_date IS NULL OR end_date>=$2::date) ORDER BY start_date`,[siteId,start,end])).rows;
+   const contracts=(await client.query(`SELECT *, (start_date<=$2::date AND (end_date IS NULL OR end_date>=$3::date)) AS covers_period FROM contracts WHERE site_id=$1 AND status='active' AND start_date<=$3::date AND (end_date IS NULL OR end_date>=$2::date) ORDER BY start_date`,[siteId,start,end])).rows;
    if(contracts.length!==1)throw new ConflictException('Exactly one unambiguous active contract required for this period');
-   const contract=contracts[0];if(new Date(contract.start_date)>new Date(start)||(contract.end_date&&new Date(contract.end_date)<new Date(end)))throw new ConflictException('Contract must cover complete requested period');
+   const contract=contracts[0];if(!contract.covers_period)throw new ConflictException('Contract must cover complete requested period');
    const rates=(await client.query(`SELECT *,to_char(greatest(effective_from,$2::date),'YYYY-MM-DD') AS starts,to_char(least(coalesce(effective_to+1,'infinity'::date),$3::date+1),'YYYY-MM-DD') AS ends FROM rate_versions WHERE contract_id=$1 AND effective_from<=$3::date AND (effective_to IS NULL OR effective_to>=$2::date) ORDER BY effective_from`,[contract.id,start,end])).rows;
    const meters=(await client.query('SELECT * FROM billing_meters WHERE site_id=$1 AND active=true ORDER BY id',[siteId])).rows;
    if(!meters.length||!rates.length)throw new ConflictException('Billing meters and effective rate required');
@@ -50,7 +50,7 @@ export class LocalFinancialApplicationService {
   const existing=(await client.query('SELECT * FROM documents WHERE billing_cycle_id=$1 AND document_type=$2',[cycle.id,type])).rows;
   if(existing.length){if(existing.length!==1||!existing[0].snapshot?.policy||!['issued','finalized'].includes(existing[0].status))throw new ConflictException('Legacy document requires explicit reconciliation');return existing[0];}
   if(cycle.quality!=='complete'||!cycle.meter_snapshot||cycle.policy_hash!==TEST_FINANCIAL_POLICY_HASH)throw new ConflictException('Verified actual TEST calculation required');
-  const customer=(await client.query(`SELECT c.*,s.name AS site_name,sc.name AS school_name FROM contracts c JOIN sites s ON s.id=c.site_id JOIN schools sc ON sc.id=s.school_id WHERE c.id=$1 AND c.site_id=$2`,[cycle.contract_id,cycle.site_id])).rows[0];
+  const customer=(await client.query(`SELECT c.*,to_char(c.start_date,'YYYY-MM-DD') AS start_date,to_char(c.end_date,'YYYY-MM-DD') AS end_date,s.name AS site_name,sc.name AS school_name FROM contracts c JOIN sites s ON s.id=c.site_id JOIN schools sc ON sc.id=s.school_id WHERE c.id=$1 AND c.site_id=$2`,[cycle.contract_id,cycle.site_id])).rows[0];
   const company=(await client.query('SELECT * FROM company_profile WHERE is_configured=true ORDER BY updated_at DESC LIMIT 1')).rows[0];
   if(!company?.company_name||!company.tax_id||!company.address||!customer?.company_name||!customer.tax_id||!customer.tax_address)throw new ConflictException('Complete issuer and customer tax identity required');
   if(!Number.isInteger(customer.payment_term_days))throw new ConflictException('Explicit paymentTermDays required');
@@ -122,13 +122,14 @@ export class LocalFinancialApplicationService {
   await this.db.query(`INSERT INTO financial_month_jobs(id,site_id,period_start,period_end) SELECT gen_random_uuid(),s.id,$1,$2 FROM sites s WHERE EXISTS(SELECT 1 FROM contracts c WHERE c.site_id=s.id AND c.status='active' AND c.start_date<=$2::date AND (c.end_date IS NULL OR c.end_date>=$1::date)) ON CONFLICT(site_id,period_start) DO NOTHING`,[start,end]);
   const jobs=(await this.db.query("SELECT *,to_char(period_start,'YYYY-MM-DD') AS starts,to_char(period_end,'YYYY-MM-DD') AS ends FROM financial_month_jobs WHERE state IN('pending','blocked') AND next_attempt_at<=now() ORDER BY period_start,site_id")).rows;
   for(const job of jobs){try{let cycles=(await this.db.query('SELECT * FROM billing_cycles WHERE site_id=$1 AND period_start=$2 AND period_end=$3',[job.site_id,job.period_start,job.period_end])).rows;
-    if(!cycles.length)cycles=(await this.calculate(job.site_id,job.starts,job.ends)).cycles;
+    if(!cycles.length)cycles=(await this.calculate(job.site_id,sqlCalendarPeriod(job).start,sqlCalendarPeriod(job).end)).cycles;
     for(const cycle of cycles){await this.issueInvoice(cycle.id);await this.send(cycle.id);}await this.db.query("UPDATE financial_month_jobs SET state='done',completed_at=now(),last_error=NULL,last_attempt_at=now() WHERE id=$1",[job.id]);
    }catch(error){await this.db.query("UPDATE financial_month_jobs SET state='blocked',attempts=attempts+1,last_error=$2,last_attempt_at=now(),next_attempt_at=now()+interval '1 hour' WHERE id=$1",[job.id,(error as Error).message]);
     await this.db.query(`WITH notice AS (INSERT INTO financial_staff_notices(id,job_id,site_id,kind,detail) VALUES($1,$2,$3,'monthly_billing_blocked',$4) ON CONFLICT(job_id,kind) DO NOTHING RETURNING id) INSERT INTO notification_deliveries(id,user_id,title,channel,recipient,status) SELECT gen_random_uuid(),u.id,'TEST monthly billing blocked: '||s.name||' · '||($4::jsonb->>'error'),'system',u.email,'delivered' FROM notice CROSS JOIN users u JOIN sites s ON s.id=$3 WHERE u.status='active' AND u.role IN('owner','admin','accountant','operator') AND (u.school_id IS NULL OR u.school_id=s.school_id)`,[randomUUID(),job.id,job.site_id,JSON.stringify({error:(error as Error).message,periodStart:job.period_start,periodEnd:job.period_end})]);}
   }return (await this.db.query('SELECT * FROM financial_month_jobs ORDER BY period_start,site_id')).rows;
  }
 }
+
 
 
 
