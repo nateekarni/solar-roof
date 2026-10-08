@@ -46,7 +46,8 @@ import { useSessionUser } from "../../providers/session-user-provider";
 import { notify } from "../../components/feedback/notifications";
 import { formatAppDate, formatAppDateTime } from "../../lib/date-format";
 import { PaymentHistory,type TransferHistoryRow } from "./payment-history";
-import { formatTransferAmount } from "./payment-input";
+import { formatTransferAmount,transferAmount } from "./payment-input";
+import { billingDetailRequest } from "./billing-detail-request";
 
 export interface BillingDetailData {
   id: string;
@@ -59,7 +60,7 @@ export interface BillingDetailData {
   openingEnergy?: number;
   closingEnergy?: number;
   rate?: number;
-  amount?: number;
+  amount?: number|string;
   status: string;
   payments?: TransferHistoryRow[];
   paymentId?: string;
@@ -95,6 +96,9 @@ export function BillingDetailModal({
   const user = useSessionUser();
   const financial = useFinancialCapabilities();
   const isSchoolUser = user?.role === "school_user";
+  const canSubmitTransfer=(financial.operationsActions??[]).includes("submit_payment");
+  const [enteredTransferAmount,setEnteredTransferAmount]=React.useState("");
+  React.useEffect(()=>{setEnteredTransferAmount("");},[open,billingId]);
 
   const [loading, setLoading] = React.useState(false);
   const [data, setData] = React.useState<BillingDetailData | null>(initialData || null);
@@ -136,9 +140,11 @@ export function BillingDetailModal({
   };
 
   const handleFileUpload = async (file: File) => {
-    if (!file || !data?.id) return;
+    if (!file || !data?.id || !canSubmitTransfer || data.status==="paid") return;
+    let actualTransfer:string;
+    try{actualTransfer=transferAmount(enteredTransferAmount);}catch{notify.error(locale==="th"?"กรุณาระบุยอดโอนเป็นเงินบาทที่มากกว่าศูนย์และมีทศนิยมไม่เกิน 2 ตำแหน่ง":"Enter a positive THB transfer amount with at most two decimal places.");return;}
     if (!["image/jpeg", "image/png", "application/pdf"].includes(file.type) || file.size > 10 * 1024 * 1024) {
-      notify.error("Choose a PNG, JPEG or PDF file no larger than 10 MB");
+      notify.error(locale==="th"?"กรุณาเลือกไฟล์ PNG, JPEG หรือ PDF ขนาดไม่เกิน 10 MB":"Choose a PNG, JPEG or PDF file no larger than 10 MB");
       return;
     }
     setIsUploadingSlip(true);
@@ -148,7 +154,7 @@ export function BillingDetailModal({
         const dataUrl = e.target?.result as string;
         try {
           await apiClient.post(`/v1/billing-cycles/${data.id}/pay`, {
-            amount: data.amount,
+            amount: financial.financialScope==="TEST"?actualTransfer:Number(actualTransfer),
             slipUrl: dataUrl,
             paidAt: new Date().toISOString(),
             note: "Uploaded via Billing Detail Modal",
@@ -162,7 +168,7 @@ export function BillingDetailModal({
           await fetchDetails(data.id);
           onUpdated?.();
         } catch (err: any) {
-          notify.error(err?.message || "เกิดข้อผิดพลาดในการบันทึกสลิป");
+          notify.error(err?.message || (locale==="th"?"เกิดข้อผิดพลาดในการบันทึกสลิป":"Unable to save payment evidence"));
         } finally {
           setIsUploadingSlip(false);
         }
@@ -170,17 +176,17 @@ export function BillingDetailModal({
       reader.readAsDataURL(file);
     } catch (err: any) {
       setIsUploadingSlip(false);
-      notify.error("ไม่สามารถอ่านไฟล์ได้");
+      notify.error(locale==="th"?"ไม่สามารถอ่านไฟล์ได้":"Unable to read the file");
     }
   };
 
   const fetchDetails = React.useCallback(async (id: string) => {
     setLoading(true);
     try {
-      const {row:res} = await apiClient.get<{row:BillingDetailData}>(`/v1/operations/billing/${id}`);
+      const res = await billingDetailRequest<BillingDetailData>(id,path=>apiClient.get<{row:BillingDetailData}>(path));
       setData((prev) => ({ ...prev, ...res }));
     } catch (error) {
-      notify.error(error instanceof Error ? error.message : "Unable to load billing details");
+      notify.error(error instanceof Error ? error.message : (locale==="th"?"ไม่สามารถโหลดรายละเอียดรอบบิลได้":"Unable to load billing details"));
     } finally {
       setLoading(false);
     }
@@ -429,6 +435,11 @@ export function BillingDetailModal({
                 )}
               </div>
 
+              {canSubmitTransfer&&!isPaid&&<div className="space-y-2">
+                <Label htmlFor="detail-transfer-amount" required>{locale==='th'?'ยอดที่โอนครั้งนี้ (บาท)':'This transfer amount (THB)'}</Label>
+                <Input id="detail-transfer-amount" inputMode="decimal" value={enteredTransferAmount} onChange={event=>setEnteredTransferAmount(event.target.value)} disabled={isUploadingSlip} aria-describedby="detail-transfer-amount-help"/>
+                <p id="detail-transfer-amount-help" className="text-muted-foreground">{locale==='th'?'ระบุยอดโอนของหลักฐานแต่ละรายการก่อนอัปโหลด ระบบเก็บรายการที่โอนแต่ละครั้งแยกกัน':'Enter the amount for this evidence before uploading. Each transfer is retained separately.'}</p>
+              </div>}
               {/* Slip Image Box */}
               {hasSlip ? (
                 <div className="space-y-2">
@@ -463,6 +474,7 @@ export function BillingDetailModal({
                       variant="ghost"
                       size="sm"
                       onClick={() => fileInputRef.current?.click()}
+                      disabled={isPaid||isUploadingSlip||!canSubmitTransfer}
                       className="h-10 text-[10px] text-muted-foreground hover:text-foreground gap-1 cursor-pointer"
                     >
                       <UploadCloud className="size-3" />
@@ -521,7 +533,7 @@ export function BillingDetailModal({
                       {locale === "th" ? "ลากสลิปมาวางที่นี่ หรือคลิกเพื่ออัปโหลด" : "Drag and drop slip here, or click to upload"}
                     </p>
                     <p className="text-[11px] text-muted-foreground mt-0.5">
-                      {locale === "th" ? "รองรับไฟล์ภาพ JPG, PNG (สูงสุด 5MB)" : "Supports JPG, PNG images (Max 5MB)"}
+                      {locale === "th" ? "รองรับไฟล์ JPG, PNG หรือ PDF (สูงสุด 10 MB)" : "Supports JPG, PNG or PDF (Max 10 MB)"}
                     </p>
                   </div>
                   {isUploadingSlip && (
