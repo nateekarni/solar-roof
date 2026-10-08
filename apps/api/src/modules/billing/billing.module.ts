@@ -1,3 +1,5 @@
+import { LocalFinancialApplicationService } from './local-financial-application.service.js';
+import { LocalFinancialScheduler } from './local-financial-scheduler.js';
 import { FinancialReadinessService } from "./financial-readiness.service.js";
 import { Module } from "@nestjs/common";
 import { DatabaseModule } from "../../database/database.module.js";
@@ -10,7 +12,8 @@ import { RateService } from "./rate.service.js";
 @Module({
   imports: [DatabaseModule],
   controllers: [BillingController],
-  providers: [FinancialReadinessService, ContractService, RateService, BillingCalculationService, BillingCycleService],
+  providers: [LocalFinancialApplicationService, LocalFinancialScheduler, FinancialReadinessService, ContractService, RateService, BillingCalculationService, BillingCycleService],
   exports: [ContractService, RateService, BillingCalculationService, BillingCycleService],
 })
 export class BillingModule {}
+

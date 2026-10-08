@@ -34,7 +34,7 @@ export class OperationsService {
           WHERE ${where} ORDER BY si.name`;
         columns=["ชื่อไซต์","โรงเรียน","กำลังติดตั้ง (MWp)","Gateway","โพรโทคอล","พลังงานวันนี้ (kWh)","อัปเดตล่าสุด","สถานะ"];break;
       case "billing":
-        sql=`SELECT b.id,b.site_id AS "siteId",to_char(b.period_end,'YYYY-MM') AS period,s.name AS "schoolName",si.name AS "siteName",
+        sql=`SELECT b.id,b.site_id AS "siteId",b.contract_id AS "contractId",to_char(b.period_end,'YYYY-MM') AS period,s.name AS "schoolName",si.name AS "siteName",
           b.consumed_kwh AS "consumedKwh",b.rate,b.amount,b.status,b.quality,b.opening_energy AS "openingEnergy",b.closing_energy AS "closingEnergy",
           p.id AS "paymentId",p.status AS "paymentStatus",p.slip_url AS "slipUrl",p.slip_url AS "หลักฐานการชำระ",p.paid_at AS "paidAt",
           p.rejection_reason AS "rejectionReason",d.id AS "invoiceId",r.id AS "receiptId",d.document_number AS "invoiceNumber",r.document_number AS "receiptNumber"
@@ -55,8 +55,8 @@ export class OperationsService {
           WHERE ${where} ORDER BY c.start_date DESC`;
         columns=["เลขที่สัญญา","โรงเรียน","เวอร์ชัน","วันเริ่มต้น","อัตราค่าไฟ (฿)","คู่สัญญา","สถานะ"];break;
       case "documents":case "receipts":
-        sql=`SELECT d.id,d.site_id AS "siteId",d.billing_cycle_id AS "billingCycleId",d.document_number AS "documentNumber",
-          d.document_number AS "receiptNumber",NULL AS "taxInvoiceNumber",d.document_type AS type,s.name AS "schoolName",si.name AS "siteName",
+        sql=`SELECT d.id,d.site_id AS "siteId",d.billing_cycle_id AS "billingCycleId",(SELECT contract_id FROM billing_cycles WHERE id=d.billing_cycle_id) AS "contractId",d.document_number AS "documentNumber",
+          d.document_number AS "receiptNumber",CASE WHEN d.document_type='receipt' AND d.snapshot->'policy'->>'scope'='TEST' THEN d.document_number ELSE NULL END AS "taxInvoiceNumber",d.document_type AS type,s.name AS "schoolName",si.name AS "siteName",
           to_char(d.issue_date,'YYYY-MM-DD') AS "issueDate",d.amount,d.amount AS "totalAmount",d.status
           FROM documents d JOIN sites si ON si.id=d.site_id JOIN schools s ON s.id=si.school_id
           WHERE ${where} ${resource==="receipts"?"AND d.document_type='receipt'":""} ORDER BY d.issue_date DESC`;
@@ -117,12 +117,18 @@ export class OperationsService {
     const scope=schoolScope(user);
     const params:unknown[]=[id];
     if(scope!==null)params.push(scope);
-    const result=await this.db.query(`SELECT d.id,d.site_id AS "siteId",d.billing_cycle_id AS "billingCycleId",d.document_number AS "documentNumber",d.document_type AS "documentType",d.status,to_char(d.issue_date,'YYYY-MM-DD') AS "issueDate",d.amount,d.file_key AS "fileKey" FROM documents d JOIN sites si ON si.id=d.site_id WHERE d.id=$1 ${scope===null?'':'AND si.school_id=ANY($2::uuid[])'}`,params);
+    const result=await this.db.query(`SELECT d.id,d.site_id AS "siteId",d.billing_cycle_id AS "billingCycleId",(SELECT contract_id FROM billing_cycles WHERE id=d.billing_cycle_id) AS "contractId",d.document_number AS "documentNumber",d.document_type AS "documentType",d.status,to_char(d.issue_date,'YYYY-MM-DD') AS "issueDate",d.amount,d.file_key AS "fileKey" FROM documents d JOIN sites si ON si.id=d.site_id WHERE d.id=$1 ${scope===null?'':'AND si.school_id=ANY($2::uuid[])'}`,params);
     if(!result.rows[0])throw new NotFoundException('Document not found');
-    // Existing file keys are retained. No authorized persisted snapshot/file-read route exists yet.
-    return {...result.rows[0],previewUnavailableReason:'เอกสารนี้มีข้อมูลที่บันทึกไว้ แต่ยังไม่มีหลักฐานเอกสารต้นฉบับที่ตรวจสอบและเปิดอ่านได้ จึงไม่สามารถแสดงหรือพิมพ์เอกสารได้'};
+    const artifact=(await this.db.query('SELECT sha256 FROM document_artifacts WHERE document_id=$1',[id])).rows[0];
+    if(artifact)return {...result.rows[0],downloadUrl:`/v1/operations/documents/${id}/pdf`,previewUrl:`/v1/operations/documents/${id}/pdf`,contentHash:artifact.sha256};
+    return {...result.rows[0],previewUnavailableReason:'เอกสารต้นฉบับที่ตรวจสอบยังไม่พร้อมใช้งาน'};
   }
-  async summary(resource:string,user?:ScopePrincipal,raw:Record<string,unknown>={}) {
+  async documentPdf(id:string,user?:ScopePrincipal) {
+    await this.document(id,user);
+    const artifact=(await this.db.query('SELECT pdf_bytes,sha256 FROM document_artifacts WHERE document_id=$1',[id])).rows[0];
+    if(!artifact)throw new NotFoundException('Original issued PDF unavailable');return artifact;
+  }
+async summary(resource:string,user?:ScopePrincipal,raw:Record<string,unknown>={}) {
     const query=parseOperationQuery(resource,raw);
     // Independent aggregate statement; never calls list or transfers history rows.
     const {scope}=this.source(resource,user);
@@ -154,3 +160,6 @@ export class OperationsService {
     return [item('รายการทั้งหมด',r.count,'รายการ')];
   }
 }
+
+
+

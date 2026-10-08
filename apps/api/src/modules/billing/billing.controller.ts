@@ -17,10 +17,11 @@ import { DatabaseService } from "../../database/database.service.js";
 import { Roles } from "../../common/roles.decorator.js";
 
 import { FinancialReadinessService } from "./financial-readiness.service.js";
+import { LocalFinancialApplicationService } from './local-financial-application.service.js';
 
 @Controller("v1")
 export class BillingController {
-  constructor(@Inject(DatabaseService) private readonly db: DatabaseService, @Inject(FinancialReadinessService) private readonly readiness: FinancialReadinessService) {}
+  constructor(@Inject(DatabaseService) private readonly db: DatabaseService, @Inject(FinancialReadinessService) private readonly readiness: FinancialReadinessService, @Inject(LocalFinancialApplicationService) private readonly financial: LocalFinancialApplicationService) {}
 
   @Roles("owner", "admin", "accountant")
   @Post("billing-cycles")
@@ -30,6 +31,10 @@ export class BillingController {
     periodEnd?: string;
   }) {
     await this.readiness.assertEnabled('calculate');
+    if(await this.readiness.isLocalTestReady()) {
+      if(!body.siteId||!body.periodStart||!body.periodEnd)throw new BadRequestException('siteId, periodStart, periodEnd required');
+      return (await this.financial.calculate(body.siteId,body.periodStart,body.periodEnd)).cycles[0];
+    }
     const siteId = body.siteId;
     const periodStart = body.periodStart;
     const periodEnd = body.periodEnd;
@@ -136,6 +141,8 @@ export class BillingController {
     siteIds?: string[];
     effectiveDate?: string;
     ratePerKwh?: number;
+    paymentTermDays?: number;
+    recipientUserIds?: string[];
     paymentTerms?: string;
     signerName?: string;
     taxId?: string;
@@ -151,6 +158,7 @@ export class BillingController {
     const effectiveDate = body.effectiveDate || new Date().toISOString().slice(0, 10);
     const ratePerKwh = Number(body.ratePerKwh);
     const paymentTerms = body.paymentTerms?.trim();
+    if(body.paymentTermDays!==undefined&&(!Number.isInteger(body.paymentTermDays)||body.paymentTermDays<0||body.paymentTermDays>3650))throw new BadRequestException('paymentTermDays must be 0–3650');
     const signerName = body.signerName?.trim();
     const taxId = body.taxId?.trim() || null;
     const companyName = body.companyName?.trim() || null;
@@ -216,7 +224,8 @@ export class BillingController {
           );
         }
 
-        createdContracts.push(res.rows[0]);
+        await client.query('UPDATE contracts SET payment_term_days=$2,recipient_user_ids=$3 WHERE id=$1',[contractId,body.paymentTermDays??null,body.recipientUserIds??[]]);
+        createdContracts.push({...res.rows[0],paymentTermDays:body.paymentTermDays??null,recipientUserIds:body.recipientUserIds??[]});
       }
 
       await client.query("COMMIT");
@@ -233,6 +242,7 @@ export class BillingController {
   @Post("billing-cycles/:id/generate-invoice")
   async generateInvoiceForBillingCycle(@Param("id") id: string) {
     await this.readiness.assertEnabled('issue');
+    if(await this.readiness.isLocalTestReady())return this.financial.issueInvoice(id);
     // Check if billing cycle exists
     const cycleRes = await this.db.query(
       `SELECT b.id, b.site_id AS "siteId", b.period_end AS "periodEnd", b.amount, b.consumed_kwh AS "consumedKwh"
@@ -363,6 +373,7 @@ export class BillingController {
     },
     @Req() req: Request & { user?: { id: string; role: string } }
   ) {
+    if(await this.readiness.isLocalTestReady())return this.financial.submitPayment(id,body,req.user?.id);
     return this.db.transaction(async client=>{
     const cycleRes = await client.query("SELECT * FROM billing_cycles WHERE id = $1 FOR UPDATE", [id]);
     const cycle = cycleRes.rows[0];
@@ -444,6 +455,11 @@ export class BillingController {
     @Req() req: Request & { user?: { id: string } }
   ) {
     await this.readiness.assertEnabled('approve_payment');
+    if(await this.readiness.isLocalTestReady()) {
+      const result=await this.financial.verifyPayment(id,body.status,body.rejectionReason,req.user?.id);
+      if(body.status==='approved')await this.financial.send(id);
+      return result;
+    }
     const { status, rejectionReason, note } = body;
     if (!status || !["approved", "rejected"].includes(status)) {
       throw new BadRequestException("status must be either 'approved' or 'rejected'");
@@ -684,6 +700,10 @@ export class BillingController {
     @Body() body: { recipientEmail?: string; note?: string }
   ) {
     await this.readiness.assertEnabled('send');
+    if(await this.readiness.isLocalTestReady()) {
+      if(body.recipientEmail)throw new BadRequestException('Local TEST delivery uses persisted contract recipient');
+      return this.financial.send(id);
+    }
     const cycleRes = await this.db.query(
       `SELECT b.*, si.name AS "siteName", s.name AS "schoolName",
               c.billing_email AS "contractEmail", c.company_name AS "clientCompanyName",
@@ -766,3 +786,6 @@ export class BillingController {
     };
   }
 }
+
+
+
