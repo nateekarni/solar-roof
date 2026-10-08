@@ -1,0 +1,31 @@
+name: solar-financial-flow-review
+services:
+  postgres:
+    image: timescale/timescaledb:2.18.2-pg16
+    environment:
+      POSTGRES_DB: solar_financial_flow_review
+      POSTGRES_USER: review
+      POSTGRES_PASSWORD: local-financial-only
+    ports: ['127.0.0.1:15449:5432']
+    volumes: ['financial-postgres:/var/lib/postgresql/data']
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U review -d solar_financial_flow_review']
+      interval: 2s
+      retries: 30
+  redis:
+    image: redis:7.4-alpine
+    ports: ['127.0.0.1:16449:6379']
+  mail:
+    image: axllent/mailpit:v1.27
+    ports: ['127.0.0.1:11049:1025', '127.0.0.1:18049:8025']
+  storage:
+    image: aglowthai-minio-local-test:latest
+    command: ['server', '/data']
+    environment:
+      MINIO_ROOT_USER: localfinancial
+      MINIO_ROOT_PASSWORD: local-financial-storage-only
+    ports: ['127.0.0.1:19049:9000']
+    volumes: ['financial-storage:/data']
+volumes:
+  financial-postgres:
+  financial-storage:
