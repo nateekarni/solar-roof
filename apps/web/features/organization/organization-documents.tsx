@@ -14,6 +14,7 @@ import {
   filterDocuments,
   type OrganizationDocument,
 } from "./organization-document-model";
+import { organizationDocumentStatus } from './organization-document-status';
 import { formatOrganizationMonth } from "./organization-month-format";
 import { loadOrganizationRows } from "./organization-document-loader";
 interface Contract extends OrganizationDocument {
@@ -86,20 +87,8 @@ export function OrganizationDocuments() {
         .filter((value): value is string => !!value),
     ),
   );
-  const labels: Record<string, [string, string]> = {
-    issued: ["ออกเอกสารแล้ว", "Issued"],
-    paid: ["ชำระแล้ว", "Paid"],
-    draft: ["ฉบับร่าง", "Draft"],
-    cancelled: ["ยกเลิก", "Cancelled"],
-    pending_verification: ["รอตรวจสอบ", "Awaiting verification"],
-    rejected: ["หลักฐานถูกปฏิเสธ", "Proof rejected"],
-    active: ["ใช้งาน", "Active"],
-    expired: ["หมดอายุ", "Expired"],
-    unpaid: ["รอชำระ", "Awaiting payment"],
-  };
-  const label = (value?: string) =>
-    value ? (labels[value]?.[locale === "th" ? 0 : 1] ?? value) : "—";
-  const documents = (rows: Document[]) =>
+    const label = (value?: string) => organizationDocumentStatus(value, locale);
+const documents = (rows: Document[]) =>
     filterDocuments(documentsForContract(rows, selected), month, status);
   const renderList = (rows: Document[], type: "invoice" | "receipt") => (
     <section className="rounded-xl border bg-card p-4">
