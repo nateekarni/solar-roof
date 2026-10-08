@@ -25,10 +25,12 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = React.useState(false);
   const [errorKey, setErrorKey] = React.useState<string | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
+  const [passwordChanged, setPasswordChanged] = React.useState(false);
   const [locale, setLocaleState] = React.useState<Locale>("th");
 
   React.useEffect(() => {
     setLocaleState(getInitialLocale());
+    setPasswordChanged(new URLSearchParams(window.location.search).get("password_changed") === "1");
 
     // Security: Immediately sanitize and remove any leaked credentials from URL query string
     if (typeof window !== "undefined" && window.location.search) {
@@ -129,6 +131,7 @@ export default function LoginPage() {
         <Card className="w-full max-w-[420px] rounded-2xl shadow-sm"><CardContent className="space-y-7 p-6 sm:p-8">
           <div className="flex items-center gap-3"><div className="flex size-10 items-center justify-center rounded-xl bg-primary text-primary-foreground"><Sun aria-hidden="true" className="size-6"/></div><div><p className="text-lg font-semibold">Solar Platform</p><p className="text-xs text-muted-foreground">{th ? "ระบบบริหารพลังงานแสงอาทิตย์" : "Solar energy management"}</p></div></div>
           <div className="space-y-2"><h1 className="text-2xl font-semibold tracking-tight">{t("auth.login")}</h1><p className="text-sm leading-relaxed text-muted-foreground">{t("auth.subtitle")}</p></div>
+          {passwordChanged && <p role="status" className="rounded-lg border bg-muted p-3 text-sm">{th ? "เปลี่ยนรหัสผ่านแล้ว กรุณาเข้าสู่ระบบอีกครั้ง อุปกรณ์อื่นออกจากระบบแล้ว" : "Password changed. Sign in again. Your other sessions have been signed out."}</p>}
           {errorKey && <div role="alert" className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"><AlertCircle aria-hidden="true" className="mt-0.5 size-4 shrink-0"/><span>{t(errorKey)}</span></div>}
           <form noValidate onSubmit={handleSubmit(onSubmit)} className="space-y-5" aria-busy={isLoading}>
             <div className="space-y-2"><Label htmlFor="email" className="text-sm">{t("auth.email")}</Label><div className="relative"><Mail aria-hidden="true" className="pointer-events-none absolute left-[calc(0.75rem+1px)] top-1/2 size-4 -translate-y-1/2 text-muted-foreground"/><Input id="email" type="email" autoComplete="username" placeholder={t("auth.enterEmail")} className="h-10 pl-10 text-sm" aria-invalid={!!errors.email} aria-describedby={errors.email ? "email-error" : undefined} {...register("email")}/></div>{errors.email && <p id="email-error" role="alert" className="text-sm text-destructive">{errors.email.message}</p>}</div>

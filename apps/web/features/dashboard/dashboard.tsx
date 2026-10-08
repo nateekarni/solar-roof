@@ -81,7 +81,7 @@ export async function Dashboard({
     resolvedParams?.end_date,
     resolvedParams?.month,
     resolvedParams?.year,
-    user.role === "school_user" ? undefined : resolvedParams?.site_id,
+    resolvedParams?.site_id,
   );
 
   if (user.role === "school_user") {
@@ -90,13 +90,13 @@ export async function Dashboard({
     const today = `${part("year")}-${part("month")}-${part("day")}`;
     const monthStart = `${part("year")}-${part("month")}-01`;
     const [daily, monthly, billResponse] = await Promise.all([
-      data.range.start===today&&data.range.end===today ? Promise.resolve(data) : getDashboardData(today,today),
-      data.range.start===monthStart&&data.range.end===today ? Promise.resolve(data) : getDashboardData(monthStart,today),
-      serverFetch(`${getApiBaseUrl()}/v1/operations/billing?limit=1&sort=period&direction=desc`,{cache:"no-store"}),
+      data.range.start===today&&data.range.end===today ? Promise.resolve(data) : getDashboardData(today,today,undefined,undefined,resolvedParams?.site_id),
+      data.range.start===monthStart&&data.range.end===today ? Promise.resolve(data) : getDashboardData(monthStart,today,undefined,undefined,resolvedParams?.site_id),
+      serverFetch(`${getApiBaseUrl()}/v1/operations/billing?limit=100&sort=period&direction=desc`,{cache:"no-store"}),
     ]);
     if(billResponse.status===401) redirect("/login");
-    const bills = billResponse.ok ? await billResponse.json() as {rows:SchoolInvoice[]} : null;
-    return <><DashboardAutoRefresh/><BusinessDashboard data={data} role={user.role} locale={locale} todayKwh={daily.energyReadModel?.status==='preparing'?null:daily.stats.periodKwh} monthKwh={monthly.energyReadModel?.status==='preparing'?null:monthly.stats.periodKwh} invoice={bills?.rows[0] ?? null} billingUnavailable={!billResponse.ok} periodControl={<PeriodPicker/>}/></>;
+    const bills = billResponse.ok ? await billResponse.json() as {rows:SchoolInvoice[];page?:{hasMore:boolean}} : null;
+    return <><DashboardAutoRefresh/><BusinessDashboard data={data} role={user.role} locale={locale} todayKwh={daily.energyReadModel?.status==='preparing'?null:daily.stats.periodKwh} monthKwh={monthly.energyReadModel?.status==='preparing'?null:monthly.stats.periodKwh} invoices={(bills?.rows??[]).filter(bill=>!resolvedParams?.site_id||bill.siteId===resolvedParams.site_id)} billingHasMore={bills?.page?.hasMore??false} siteId={resolvedParams?.site_id} siteControl={<SiteFilter sites={data.availableSites}/>} billingUnavailable={!billResponse.ok} periodControl={<PeriodPicker/>}/></>;
   }
 
   const presentation=dashboardLayout(user.role);

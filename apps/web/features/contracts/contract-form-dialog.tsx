@@ -116,7 +116,7 @@ export function ContractFormDialog({
 
           }
         })
-        .catch((error: unknown) => { setSites([]); notify.error(error instanceof Error ? error.message : (locale === "th" ? "ไม่สามารถโหลดรายการโรงเรียนได้" : "Unable to load schools")); })
+        .catch((error: unknown) => { setSites([]); notify.error(error instanceof Error ? error.message : (locale === "th" ? "ไม่สามารถโหลดรายการองค์กรได้" : "Unable to load organizations")); })
         .finally(() => setLoadingSites(false));
     }
   }, [open, setValue, locale]);
@@ -318,11 +318,11 @@ export function ContractFormDialog({
 
               <div className="space-y-2 sm:col-span-2">
                 <Label htmlFor="company-name" className="text-xs font-medium">
-                  {locale === "th" ? "ชื่อนิติบุคคล / สถานศึกษาตาม ภ.พ.20" : "Company / School Entity Name"}
+                  {locale === "th" ? "ชื่อนิติบุคคล / องค์กรตาม ภ.พ.20" : "Company / Organization Entity Name"}
                 </Label>
                 <Input
                   id="company-name"
-                  placeholder="โรงเรียนมัธยมดอนทอง หรือ บจก. พลังงานโซลาร์"
+                  placeholder={locale === "th" ? "เช่น บริษัทตัวอย่าง จำกัด" : "e.g. Example Company Limited"}
                   className="text-xs h-10 bg-card"
                   {...register("companyName")}
                 />
@@ -347,7 +347,7 @@ export function ContractFormDialog({
                 <Input
                   id="billing-email"
                   type="email"
-                  placeholder="finance@school.ac.th"
+                  placeholder="finance@example.test"
                   className="text-xs h-10 bg-card"
                   {...register("billingEmail")}
                 />

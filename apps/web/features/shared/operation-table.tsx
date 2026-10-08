@@ -78,14 +78,14 @@ export interface OperationTableProps {
 }
 
 const COLUMN_TRANSLATIONS: Record<string, string> = {
-  "ชื่อโรงเรียน": "School Name",
+  "ชื่อองค์กร": "Organization Name",
   "ภูมิภาค": "Region",
   "กำลังติดตั้ง (MWp)": "Capacity (MWp)",
   "จำนวนไซต์": "Sites Count",
   "Gateway": "Gateway",
   "สถานะ": "Status",
   "ชื่อไซต์": "Site Name",
-  "โรงเรียน": "School",
+  "องค์กร": "Organization",
   "โพรโทคอล": "Protocol",
   "ผลิตสะสม (kWh)": "Production (kWh)",
   "รอบบิล": "Billing Period",
@@ -320,7 +320,7 @@ export function OperationTable({
     const keys = operationKeys(resource,firstRow,idKey);
 
     const cols: ColumnDef<OperationRow, any>[] = keys.map((key, idx) => {
-      const rawTitle = rawColumns[idx] ?? key;
+      const rawTitle = (rawColumns[idx] ?? key).replaceAll("โรงเรียน", "องค์กร");
       const headerTitle =
         locale === "en" && COLUMN_TRANSLATIONS[rawTitle]
           ? COLUMN_TRANSLATIONS[rawTitle]

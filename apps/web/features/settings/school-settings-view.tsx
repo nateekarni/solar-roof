@@ -1,438 +1,396 @@
 "use client";
-
-import * as React from "react";
-import {
-  Building2,
-  Check,
-  CheckCircle2,
-  FileText,
-  Globe,
-  KeyRound,
-  Laptop,
-  Lock,
-  LogOut,
-  Moon,
-  Palette,
-  RotateCcw,
-  School,
-  Shield,
-  ShieldCheck,
-  Sun,
-  User,
-} from "lucide-react";
+import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useTheme } from "next-themes";
-import { useRouter } from "next/navigation";
-import { Avatar, AvatarFallback } from "../../components/ui/avatar";
-import { Badge } from "../../components/ui/badge";
-import { Button } from "../../components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "../../components/ui/dialog";
-import { Input } from "../../components/ui/input";
-import { Label } from "../../components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "../../components/ui/select";
-import { apiClient } from "../../lib/api-client";
+import { useAuth, authStore } from "../../stores/auth-store";
 import { useLocale, useSetLocale } from "../../providers/locale-provider";
-import { useAuth } from "../../stores/auth-store";
-
-interface ContractInfo {
-  id: string;
-  contractNumber: string;
-  startDate: string;
-  rate: number;
-  signers: string;
-  status: string;
+import { apiClient } from "../../lib/api-client";
+import { loadOrganizationRows } from "../organization/organization-document-loader";
+import type { OrganizationDocument } from "../organization/organization-document-model";
+import {
+  submitOwnPasswordChange,
+  validateOrganizationPassword,
+} from "./organization-settings-model";
+interface LegalContract extends OrganizationDocument {
+  companyName?: string;
   schoolName?: string;
+  taxId?: string;
+  taxAddress?: string;
+  taxBranch?: string;
 }
-
+interface Notifications {
+  criticalEmailAlert: boolean;
+  inAppNotification: boolean;
+  emailAddress: string;
+}
 export function SchoolSettingsView() {
-  const router = useRouter();
-  const { user, clear, updatePreferences } = useAuth();
+  const locale = useLocale(),
+    setLocale = useSetLocale();
   const { theme, setTheme } = useTheme();
-  const locale = useLocale();
-  const setLocale = useSetLocale();
-  const [editingPreferences,setEditingPreferences] = React.useState(false);
-  const [mounted,setMounted] = React.useState(false);
-  React.useEffect(() => setMounted(true),[]);
-
-  const [contract, setContract] = React.useState<ContractInfo | null>(null);
-  const [loadingContract, setLoadingContract] = React.useState(true);
-
-  // Change password dialog state
-  const [passwordDialogOpen, setPasswordDialogOpen] = React.useState(false);
-  const [currentPassword, setCurrentPassword] = React.useState("");
-  const [newPassword, setNewPassword] = React.useState("");
-  const [confirmPassword, setConfirmPassword] = React.useState("");
-  const [passwordError, setPasswordError] = React.useState<string | null>(null);
-  const [passwordSuccess, setPasswordSuccess] = React.useState(false);
-  const [isChangingPassword, setIsChangingPassword] = React.useState(false);
-
-  // Logout confirmation state
-  const [logoutDialogOpen, setLogoutDialogOpen] = React.useState(false);
-
-  // Fetch school PPA contract
-  React.useEffect(() => {
-    apiClient
-      .get<{ rows: ContractInfo[] }>("/v1/operations/contracts")
-      .then((res) => {
-        if (res?.rows && res.rows.length > 0 && res.rows[0]) {
-          setContract(res.rows[0]);
+  const { user, clear, updatePreferences } = useAuth();
+  const text = (th: string, en: string) => (locale === "th" ? th : en);
+  const [name, setName] = useState(user?.displayName ?? "");
+  const [legal, setLegal] = useState<LegalContract[] | null>(null);
+  const [notifications, setNotifications] = useState<Notifications | null>(
+    null,
+  );
+  const [loadError, setLoadError] = useState("");
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState(""),
+    [password, setPassword] = useState(""),
+    [confirmation, setConfirmation] = useState("");
+  useEffect(() => {
+    setName(user?.displayName ?? "");
+  }, [user?.displayName]);
+  useEffect(() => {
+    let active = true;
+    setMounted(true);
+    Promise.all([
+      loadOrganizationRows<LegalContract>("contracts", apiClient.get),
+      apiClient.get<Notifications>("/v1/notifications/settings"),
+    ])
+      .then(([rows, prefs]) => {
+        if (active) {
+          setLegal(rows);
+          setNotifications(prefs);
         }
       })
-      .catch(() => {})
-      .finally(() => setLoadingContract(false));
-  }, []);
-
-  const handlePasswordChange = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setPasswordError(null);
-
-    if (newPassword.length < 8) {
-      setPasswordError("รหัสผ่านใหม่ต้องมีความยาวอย่างน้อย 8 ตัวอักษร");
-      return;
-    }
-
-    if (newPassword !== confirmPassword) {
-      setPasswordError("รหัสผ่านใหม่และการยืนยันรหัสผ่านไม่ตรงกัน");
-      return;
-    }
-
-    setIsChangingPassword(true);
-    try {
-      await apiClient.put("/v1/auth/password", {
-        currentPassword,
-        newPassword,
+      .catch(() => {
+        if (active) setLoadError("load");
       });
-      setPasswordSuccess(true);
-      setTimeout(() => {
-        setPasswordDialogOpen(false);
-        setPasswordSuccess(false);
-        setCurrentPassword("");
-        setNewPassword("");
-        setConfirmPassword("");
-      }, 1500);
-    } catch (err: any) {
-      setPasswordError(err?.message || "ไม่สามารถเปลี่ยนรหัสผ่านได้ กรุณาตรวจสอบรหัสผ่านปัจจุบัน");
-    } finally {
-      setIsChangingPassword(false);
-    }
-  };
-
-  const handleLogout = async () => {
+    return () => {
+      active = false;
+    };
+  }, []);
+  async function save(action: () => Promise<unknown>) {
+    setBusy(true);
+    setError("");
+    setSaved("");
     try {
-      await fetch("/v1/auth/logout", { method: "POST", credentials: "include" });
-    } catch {}
-    clear();
-    router.push("/login");
-  };
-
-  const initials = (user?.displayName || "SU")
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-
+      await action();
+      setSaved(text("บันทึกแล้ว", "Saved"));
+    } catch {
+      setError(
+        text(
+          "บันทึกไม่สำเร็จ กรุณาลองใหม่",
+          "Could not save. Please try again.",
+        ),
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+  const inputClass = "min-h-11 w-full max-w-md rounded-md border bg-card px-3";
   return (
-    <div className="space-y-4 w-full pb-10">
-      {/* 1. Profile Card */}
-      <Card className="border-border/80 shadow-xs bg-card">
-        <CardHeader className="pb-3 order/40">
-          <CardTitle className="text-base font-bold flex items-center gap-2">
-            ข้อมูลผู้ใช้งานและโรงเรียน
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="pt-4 flex flex-col sm:flex-row items-center sm:items-start gap-4">
-          <Avatar className="size-16 ring-2 ring-primary/20 shadow-xs">
-            <AvatarFallback className="bg-primary/10 text-primary font-bold text-lg">
-              {initials}
-            </AvatarFallback>
-          </Avatar>
-          <div className="flex-1 text-center sm:text-left space-y-1">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-1.5">
-              <h3 className="text-base font-bold text-foreground">{user?.displayName || "ผู้ดูแลโรงเรียน"}</h3>
-              <Badge variant="outline" className="w-fit mx-auto sm:mx-0 text-[10px] bg-primary/10 text-primary border-primary/20">
-                {locale === "th" ? "เจ้าหน้าที่โรงเรียน" : "School Officer"}
-              </Badge>
-            </div>
-            <p className="text-xs text-muted-foreground">{user?.email || "—"}</p>
-            <div className="flex items-center justify-center sm:justify-start gap-1.5 text-xs text-foreground font-medium pt-1">
-              <School className="size-3.5 text-muted-foreground" />
-              <span>{contract?.schoolName || "ยังไม่มีข้อมูลโรงเรียน"}</span>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* 2. Contract Information Card */}
-      <Card className="border-border/80 shadow-xs bg-card">
-        <CardHeader className="pb-3 order/40">
-          <CardTitle className="text-base font-bold flex items-center gap-2">
-            ข้อมูลสัญญาซื้อขายไฟฟ้า (PPA Agreement)
-          </CardTitle>
-          <CardDescription className="text-xs">
-            รายละเอียดสัญญาและอัตราค่าไฟฟ้าที่ตกลงไว้กับโครงการ
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="pt-4 space-y-3">
-          <div className="grid grid-cols-2 gap-3 text-xs">
-            <div className="space-y-2">
-              <span className="text-[11px] text-muted-foreground block">เลขที่สัญญา</span>
-              <span className="font-bold text-foreground">{contract?.contractNumber || "—"}</span>
-            </div>
-            <div className="space-y-2">
-              <span className="text-[11px] text-muted-foreground block">อัตราค่าไฟฟ้า PPA</span>
-              <span className="font-bold text-emerald-600 dark:text-emerald-400">
-                {contract?.rate ?? "—"} บาท/kWh
-              </span>
-            </div>
-            <div className="space-y-2">
-              <span className="text-[11px] text-muted-foreground block">วันเริ่มต้นสัญญา</span>
-              <span className="font-medium text-foreground">{contract?.startDate || "—"}</span>
-            </div>
-            <div className="space-y-2">
-              <span className="text-[11px] text-muted-foreground block">สถานะสัญญา</span>
-              <span className="font-medium text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                <span className="size-1.5 rounded-full bg-emerald-500" />
-                {contract?.status || "ยังไม่มีสัญญา"}
-              </span>
-            </div>
-          </div>
-          <div className="text-[11px] text-muted-foreground pt-1 flex items-center justify-between">
-            <span>คู่สัญญา: {contract?.signers || "—"}</span>
-            {contract && <Button variant="link" size="sm" onClick={() => router.push(`/records/contracts/${contract.id}`)}>ดูรายละเอียดสัญญา</Button>}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* 3. Preferences Card */}
-      <Card className="border-border/80 shadow-xs bg-card">
-        <CardHeader className="pb-3 order/40">
-          <CardTitle className="text-base font-bold flex items-center gap-2">
-            การตั้งค่าทั่วไป (Preferences)
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="pt-4 space-y-4">
-          {!editingPreferences ? <div className="space-y-4"><dl className="space-y-4"><div><dt className="text-sm text-muted-foreground">ภาษา</dt><dd>{locale === 'th' ? 'ภาษาไทย' : 'English'}</dd></div><div><dt className="text-sm text-muted-foreground">ธีม</dt><dd>{mounted ? theme === 'dark' ? 'มืด' : theme === 'light' ? 'สว่าง' : 'ตามระบบ' : '—'}</dd></div></dl><Button variant="outline" onClick={() => setEditingPreferences(true)}>แก้ไขการแสดงผล</Button></div> : <>
-          {/* Language */}
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label className="text-xs font-semibold flex items-center gap-1.5">
-                <Globe className="size-3.5 text-muted-foreground" />
-                ภาษา (Language)
-              </Label>
-              <p className="text-[11px] text-muted-foreground">เลือกภาษาที่แสดงในระบบ</p>
-            </div>
-            <Select value={locale} onValueChange={(val) => setLocale(val as "th" | "en")}>
-              <SelectTrigger className="w-32 h-10 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="th">ไทย (TH)</SelectItem>
-                <SelectItem value="en">English (EN)</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Theme */}
-          <div className="flex items-center justify-between pt-2 border-t border-border/40">
-            <div className="space-y-0.5">
-              <Label className="text-xs font-semibold flex items-center gap-1.5">
-                <Sun className="size-3.5 text-muted-foreground" />
-                ธีมการแสดงผล (Theme)
-              </Label>
-              <p className="text-[11px] text-muted-foreground">โหมดสว่าง, โหมดมืด หรือตามระบบ</p>
-            </div>
-            <div className="flex items-center gap-1 p-0.5 rounded-lg bg-muted border border-border/60">
-              <Button
-                variant={theme === "light" ? "secondary" : "ghost"}
-                size="icon"
-                className="size-10 rounded-md"
-                onClick={() => setTheme("light")}
-              >
-                <Sun className="size-3.5" />
-              </Button>
-              <Button
-                variant={theme === "dark" ? "secondary" : "ghost"}
-                size="icon"
-                className="size-10 rounded-md"
-                onClick={() => setTheme("dark")}
-              >
-                <Moon className="size-3.5" />
-              </Button>
-              <Button
-                variant={theme === "system" ? "secondary" : "ghost"}
-                size="icon"
-                className="size-10 rounded-md"
-                onClick={() => setTheme("system")}
-              >
-                <Laptop className="size-3.5" />
-              </Button>
-            </div>
-          </div><Button variant="outline" onClick={() => setEditingPreferences(false)}>เสร็จสิ้น</Button></>}
-
-        </CardContent>
-      </Card>
-
-      {/* 4. Security & Password Card */}
-      <Card className="border-border/80 shadow-xs bg-card">
-        <CardHeader className="pb-3 order/40">
-          <CardTitle className="text-base font-bold flex items-center gap-2">
-            ความปลอดภัย (Security)
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="pt-4 flex items-center justify-between">
-          <div className="space-y-0.5">
-            <Label className="text-xs font-semibold flex items-center gap-1.5">
-              <KeyRound className="size-3.5 text-muted-foreground" />
-              รหัสผ่านบัญชีผู้ใช้
-            </Label>
-            <p className="text-[11px] text-muted-foreground">เปลี่ยนรหัสผ่านเพื่อความปลอดภัยของระบบ</p>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-10 text-xs font-medium"
-            onClick={() => setPasswordDialogOpen(true)}
-          >
-            เปลี่ยนรหัสผ่าน
-          </Button>
-        </CardContent>
-      </Card>
-
-      {/* 5. Logout Section */}
-      <div className="pt-2">
-        <Button
-          variant="outline"
-          className="w-full h-10 text-xs font-medium text-destructive border-destructive/30 hover:bg-destructive/10 gap-2"
-          onClick={() => setLogoutDialogOpen(true)}
-        >
-          <LogOut className="size-4" />
-          ออกจากระบบ (Sign Out)
-        </Button>
-      </div>
-
-      {/* Change Password Dialog */}
-      <Dialog open={passwordDialogOpen} onOpenChange={setPasswordDialogOpen}>
-        <DialogContent className="sm:max-w-md p-5 sm:p-6 rounded-2xl">
-          <DialogHeader>
-            <DialogTitle className="text-base font-bold">เปลี่ยนรหัสผ่าน</DialogTitle>
-            <DialogDescription className="text-xs">
-              กรุณากรอกรหัสผ่านเดิมและรหัสผ่านใหม่ที่มีความยาวอย่างน้อย 8 ตัวอักษร
-            </DialogDescription>
-          </DialogHeader>
-
-          {passwordSuccess ? (
-            <div className="py-6 flex flex-col items-center text-center space-y-2">
-              <CheckCircle2 className="size-10 text-emerald-500" />
-              <h4 className="text-sm font-bold text-foreground">เปลี่ยนรหัสผ่านสำเร็จ!</h4>
-            </div>
-          ) : (
-            <form onSubmit={handlePasswordChange} className="space-y-3 pt-2">
-              <div className="space-y-2">
-                <Label className="text-xs">รหัสผ่านปัจจุบัน</Label>
-                <Input
-                  type="password"
-                  value={currentPassword}
-                  onChange={(e) => setCurrentPassword(e.target.value)}
-                  className="h-10 text-xs"
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-xs">รหัสผ่านใหม่</Label>
-                <Input
-                  type="password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  className="h-10 text-xs"
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-xs">ยืนยันรหัสผ่านใหม่</Label>
-                <Input
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="h-10 text-xs"
-                  required
-                />
-              </div>
-
-              {passwordError && (
-                <p className="text-xs text-destructive font-medium">{passwordError}</p>
-              )}
-
-              <DialogFooter className="pt-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPasswordDialogOpen(false)}
-                  disabled={isChangingPassword}
-                  className="h-10 text-xs"
-                >
-                  ยกเลิก
-                </Button>
-                <Button
-                  type="submit"
-                  size="sm"
-                  disabled={isChangingPassword}
-                  className="h-10 text-xs"
-                >
-                  บันทึกรหัสผ่านใหม่
-                </Button>
-              </DialogFooter>
-            </form>
+    <div className="w-full space-y-5 pb-8">
+      <h1 className="text-2xl font-semibold">
+        {text("การตั้งค่า", "Settings")}
+      </h1>
+      {loadError && (
+        <p role="alert" className="text-destructive">
+          {text(
+            "โหลดข้อมูลองค์กรหรือการแจ้งเตือนไม่สำเร็จ กรุณาโหลดหน้าใหม่",
+            "Unable to load organization or notification settings. Reload this page.",
           )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Logout Dialog */}
-      <Dialog open={logoutDialogOpen} onOpenChange={setLogoutDialogOpen}>
-        <DialogContent className="sm:max-w-xs p-5 rounded-2xl text-center space-y-3">
-          <div className="size-12 rounded-full bg-destructive/10 text-destructive flex items-center justify-center mx-auto">
-            <LogOut className="size-6" />
-          </div>
-          <div>
-            <DialogTitle className="text-base font-bold">ออกจากระบบ?</DialogTitle>
-            <DialogDescription className="text-xs mt-1">
-              คุณต้องการออกจากระบบ Solar Platform ใช่หรือไม่
-            </DialogDescription>
-          </div>
-          <DialogFooter className="flex-row justify-center gap-2 pt-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setLogoutDialogOpen(false)}
-              className="flex-1 h-10 text-xs"
+        </p>
+      )}
+      <section className="space-y-4 rounded-xl border bg-card p-5">
+        <h2 className="font-semibold">
+          {text("บัญชีผู้ใช้งานองค์กร", "Organization account")}
+        </h2>
+        <form
+          className="space-y-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void save(async () => {
+              const result = await apiClient.put<{ displayName: string }>(
+                "/v1/me/profile",
+                { displayName: name },
+              );
+              if (user)
+                authStore.setAuth(
+                  { ...user, displayName: result.displayName },
+                  authStore.getState().accessToken ?? undefined,
+                );
+            });
+          }}
+        >
+          <label className="block space-y-1">
+            <span className="block text-sm">
+              {text("ชื่อที่แสดง", "Display name")}
+            </span>
+            <input
+              required
+              maxLength={120}
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              className={inputClass}
+            />
+          </label>
+          <p className="text-sm">
+            {text("อีเมล", "Email")}: {user?.email || "—"}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {text(
+              "ติดต่อผู้ดูแลระบบเพื่อเปลี่ยนอีเมลบัญชี",
+              "Contact an administrator to change your account email.",
+            )}
+          </p>
+          <button
+            disabled={busy || !name.trim()}
+            className="min-h-11 text-primary"
+          >
+            {text("บันทึกชื่อ", "Save display name")}
+          </button>
+        </form>
+      </section>
+      <section className="space-y-4 rounded-xl border bg-card p-5">
+        <h2 className="font-semibold">
+          {text("ข้อมูลนิติบุคคล", "Legal organization information")}
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          {text(
+            "ข้อมูลตามสัญญา อ่านได้อย่างเดียว ติดต่อเจ้าหน้าที่ภายในเพื่อแก้ไข",
+            "Contract legal records are read-only. Contact internal staff to update them.",
+          )}
+        </p>
+        {legal === null ? (
+          <p>{text("กำลังโหลด", "Loading")}</p>
+        ) : legal.length === 0 ? (
+          <p>
+            {text(
+              "ยังไม่มีข้อมูลนิติบุคคล",
+              "No legal organization records available",
+            )}
+          </p>
+        ) : (
+          legal.map((row) => (
+            <dl
+              key={row.id}
+              className="grid gap-3 rounded-lg bg-muted/40 p-4 sm:grid-cols-2"
             >
-              ยกเลิก
-            </Button>
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={handleLogout}
-              className="flex-1 h-10 text-xs"
-            >
-              ออกจากระบบ
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+              {[
+                [
+                  text("องค์กร", "Organization"),
+                  row.companyName || row.schoolName,
+                ],
+                [text("ไซต์งาน", "Site"), row.siteName],
+                [text("เลขประจำตัวผู้เสียภาษี", "Tax ID"), row.taxId],
+                [text("สาขาภาษี", "Tax branch"), row.taxBranch],
+                [text("ที่อยู่", "Address"), row.taxAddress],
+              ].map(([label, value]) => (
+                <div key={label}>
+                  <dt className="text-xs text-muted-foreground">{label}</dt>
+                  <dd className="mt-1 break-words text-sm">{value || "—"}</dd>
+                </div>
+              ))}
+            </dl>
+          ))
+        )}
+        <Link
+          className="inline-flex min-h-11 items-center text-primary"
+          href="/contracts"
+        >
+          {text("เปิดเอกสาร", "Open documents")}
+        </Link>
+      </section>
+      <section className="space-y-4 rounded-xl border bg-card p-5">
+        <h2 className="font-semibold">
+          {text("การแสดงผล", "Display preferences")}
+        </h2>
+        <label className="block space-y-1">
+          <span className="block text-sm">{text("ภาษา", "Language")}</span>
+          <select
+            disabled={busy}
+            value={locale}
+            className={inputClass}
+            onChange={(event) => {
+              const value = event.target.value as "th" | "en";
+              void save(async () => {
+                await apiClient.put("/v1/me/preferences", {
+                  preferredLanguage: value,
+                });
+                await setLocale(value);
+              });
+            }}
+          >
+            <option value="th">ภาษาไทย</option>
+            <option value="en">English</option>
+          </select>
+        </label>
+        <label className="block space-y-1">
+          <span className="block text-sm">{text("ธีม", "Theme")}</span>
+          <select
+            disabled={!mounted || busy}
+            value={mounted ? (theme ?? "system") : "system"}
+            className={inputClass}
+            onChange={(event) => {
+              const value = event.target.value as "light" | "dark" | "system";
+              void save(async () => {
+                await apiClient.put("/v1/me/preferences", {
+                  preferredTheme: value,
+                });
+                updatePreferences({ preferredTheme: value });
+                setTheme(value);
+              });
+            }}
+          >
+            <option value="system">{text("ตามระบบ", "System")}</option>
+            <option value="light">{text("สว่าง", "Light")}</option>
+            <option value="dark">{text("มืด", "Dark")}</option>
+          </select>
+        </label>
+      </section>
+      <section className="space-y-4 rounded-xl border bg-card p-5">
+        <h2 className="font-semibold">
+          {text("การแจ้งเตือน", "Notifications")}
+        </h2>
+        {notifications && (
+          <form
+            className="space-y-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void save(() =>
+                apiClient.put("/v1/notifications/settings", notifications),
+              );
+            }}
+          >
+            <label className="flex min-h-11 items-center gap-3">
+              <input
+                type="checkbox"
+                checked={notifications.criticalEmailAlert}
+                onChange={(event) =>
+                  setNotifications({
+                    ...notifications,
+                    criticalEmailAlert: event.target.checked,
+                  })
+                }
+              />
+              {text("อีเมลแจ้งเตือนสำคัญ", "Critical email alerts")}
+            </label>
+            <label className="flex min-h-11 items-center gap-3">
+              <input
+                type="checkbox"
+                checked={notifications.inAppNotification}
+                onChange={(event) =>
+                  setNotifications({
+                    ...notifications,
+                    inAppNotification: event.target.checked,
+                  })
+                }
+              />
+              {text("การแจ้งเตือนในระบบ", "In-app notifications")}
+            </label>
+            <label className="block space-y-1">
+              <span className="block text-sm">
+                {text("อีเมลรับการแจ้งเตือน", "Notification email")}
+              </span>
+              <input
+                type="email"
+                value={notifications.emailAddress}
+                onChange={(event) =>
+                  setNotifications({
+                    ...notifications,
+                    emailAddress: event.target.value,
+                  })
+                }
+                className={inputClass}
+              />
+            </label>
+            <button disabled={busy} className="min-h-11 text-primary">
+              {text("บันทึกการแจ้งเตือน", "Save notifications")}
+            </button>
+          </form>
+        )}
+      </section>
+      <section className="space-y-4 rounded-xl border bg-card p-5">
+        <h2 className="font-semibold">{text("รหัสผ่าน", "Password")}</h2>
+        <form
+          className="space-y-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const invalid = validateOrganizationPassword(
+              password,
+              confirmation,
+              locale,
+            );
+            if (invalid) {
+              setError(invalid);
+              return;
+            }
+            void save(async () => {
+              await submitOwnPasswordChange(
+                currentPassword,
+                password,
+                confirmation,
+                locale,
+                {
+                  update: (body) => apiClient.put("/v1/auth/password", body),
+                  clear,
+                  redirect: (path) => window.location.assign(path),
+                },
+              );
+            });
+          }}
+        >
+          {[
+            {
+              label: text("รหัสผ่านปัจจุบัน", "Current password"),
+              value: currentPassword,
+              set: setCurrentPassword,
+              auto: "current-password",
+            },
+            {
+              label: text("รหัสผ่านใหม่", "New password"),
+              value: password,
+              set: setPassword,
+              auto: "new-password",
+            },
+            {
+              label: text("ยืนยันรหัสผ่านใหม่", "Confirm new password"),
+              value: confirmation,
+              set: setConfirmation,
+              auto: "new-password",
+            },
+          ].map((field) => (
+            <label key={field.auto + field.label} className="block space-y-1">
+              <span className="block text-sm">{field.label}</span>
+              <input
+                className={inputClass}
+                type="password"
+                autoComplete={field.auto}
+                required
+                value={field.value}
+                onChange={(event) => field.set(event.target.value)}
+              />
+            </label>
+          ))}
+          <button disabled={busy} className="min-h-11 text-primary">
+            {text("เปลี่ยนรหัสผ่าน", "Change password")}
+          </button>
+        </form>
+      </section>
+      {error && (
+        <p role="alert" className="text-destructive">
+          {error}
+        </p>
+      )}
+      {saved && <p role="status">{saved}</p>}
+      <button
+        className="min-h-11 text-destructive"
+        onClick={() =>
+          void save(async () => {
+            await apiClient.post("/v1/auth/logout");
+            clear();
+            window.location.assign("/login");
+          })
+        }
+      >
+        {text("ออกจากระบบ", "Sign out")}
+      </button>
     </div>
   );
 }

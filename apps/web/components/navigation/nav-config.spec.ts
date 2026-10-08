@@ -8,7 +8,7 @@ test('Owner destinations omit equipment and user management', () => {
   for (const path of ['/','/contracts','/billing','/receipts','/settings/company','/settings/account']) assert.ok(paths('owner').includes(path));
 });
 test('School has scoped documents and account destinations without configuration', () => {
-  for (const path of ['/contracts','/billing','/receipts','/settings/account','/settings/security']) assert.ok(paths('school_user').includes(path));
+  assert.deepEqual(getNavItems('school_user').map(item => item.href), ['/', '/contracts', '/settings']); assert.deepEqual(getBottomNavItems('school_user').map(item => item.href), ['/', '/contracts', '/settings']);
   assert.equal(paths('school_user').includes('/settings/company'), false);
   assert.equal(getBottomNavItems('school_user').some(item => item.href === '/production'),false);
 });

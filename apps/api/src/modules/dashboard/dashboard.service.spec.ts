@@ -48,3 +48,9 @@ test('admin dashboard ignores every legacy assignment',async()=>{
 });
 
 test('generic billing meter power is never returned as verified PV',async()=>{const calls:string[]=[];const db={query:async(sql:string)=>{calls.push(sql);return {rows:sql.includes('FROM sites s JOIN schools')?[{id,name:'A',gateway_id:null,gateway_name:null,last_seen_at:null}]:sql.includes('sum(active_power_w)')?[{site_id:id,power_kw:'42',source_time:'2026-10-07T00:00:00Z',received_time:'2026-10-07T00:00:00Z'}]:[]};}};const result=await new DashboardService(db as any).getPowerFlow({role:'owner'});assert.equal(result.sites[0]?.meterPowerKw,42);assert.equal(result.sites[0]?.generationKw,null);assert.equal(result.sites[0]?.schoolLoadKw,null);assert.equal(result.sites[0]?.gridImportKw,null);const pv=calls.find(sql=>sql.includes('WITH loggers'));assert.ok(pv?.includes("p.config->>'deviceType'='solar-logger'"));assert.ok(pv?.includes("ps.tag='solar.active_power'"));assert.ok(pv?.includes("quality='good'"));assert.ok(pv?.includes('120 seconds'));});
+
+test('Organization power-flow rejects a site outside its server-assigned organization before telemetry lookup',async()=>{
+ const {service,calls}=fixture();const other='22222222-2222-4222-8222-222222222222';
+ await assert.rejects(()=>service.getPowerFlow({role:'school_user',schoolId:id},other),/outside assigned scope/);
+ assert.equal(calls.length,1);assert.deepEqual(calls[0]!.params,[[id],null,other]);
+});

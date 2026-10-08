@@ -59,7 +59,7 @@ import { useLocale, useT } from "../../providers/locale-provider";
 const siteSchema = z.object({
   // Step 1: Site Info
   name: z.string().min(2, "ชื่อไซต์งานต้องมีอย่างน้อย 2 ตัวอักษร"),
-  schoolName: z.string().min(1, "กรุณากรอกชื่อโรงเรียน"),
+  schoolName: z.string().min(1, "กรุณากรอกชื่อองค์กร"),
   capacityMwp: z.number().min(0.01, "กำลังติดตั้งต้องมากกว่า 0"),
   latitude: z.number().optional(),
   longitude: z.number().optional(),
@@ -339,12 +339,12 @@ export function SiteFormDialog({
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="school-name" required className="text-sm font-medium">
-                  {locale === "th" ? "ชื่อโรงเรียน" : "School Name"}
+                <Label htmlFor="organization-name" required className="text-sm font-medium">
+                  {locale === "th" ? "ชื่อองค์กร" : "Organization Name"}
                 </Label>
                 <Input
-                  id="school-name"
-                  placeholder={locale === "th" ? "ระบุชื่อโรงเรียน เช่น โรงเรียนบ้านดอนสำราญ" : "e.g. Demonstration School"}
+                  id="organization-name"
+                  placeholder={locale === "th" ? "ระบุชื่อองค์กร เช่น องค์กรบ้านดอนสำราญ" : "e.g. Demonstration Organization"}
                   className="text-sm h-10"
                   {...register("schoolName")}
                 />
@@ -609,7 +609,7 @@ export function SiteFormDialog({
                     <strong className="text-foreground">{formValues.name}</strong>
                   </div>
                   <div>
-                    <span className="text-muted-foreground">{locale === "th" ? "โรงเรียน:" : "School:"}</span>{" "}
+                    <span className="text-muted-foreground">{locale === "th" ? "องค์กร:" : "Organization:"}</span>{" "}
                     <strong className="text-foreground">{formValues.schoolName}</strong>
                   </div>
                   <div>
