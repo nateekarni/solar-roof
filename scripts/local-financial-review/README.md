@@ -19,3 +19,11 @@ Seed creates two organizations, three sites, six scoped users, meter/logger devi
 Reset defaults to dry-run. `node scripts/local-financial-review/reset.mjs --apply` checks exact URL, connected database, marker for nonempty fixture and exact Docker project/volume labels before deleting only this stack's volumes. Old dashboard dataset deletion is deliberately separate: verify both exact old volume labels, old database fixture audit `solar-dashboard-review-v1` and no running unrelated users before removing solar-dashboard-review_review-postgres and solar-dashboard-review_review-storage. Never use global Docker prune.
 
 Workflow acceptance must capture issued downloadable PDF and Mailpit attachment bytes, compare SHA256, and record invoice contract IDs, document numbers, receipts, rejected/resubmitted transfers, exact settlement, idempotent replays and cross-organization denials. Persist local policy state verification_in_progress before runner; mark verified only after real API/job checks pass. Production readiness remains unchanged.
+
+## Verified execution on 2026-10-08
+
+The real guarded seed transaction passed after migrations 029 and 031. Database evidence showed 2 organizations, 3 sites, 6 users, 2 contracts, 13,252 raw readings and 13,252 canonical payload samples, all `good/online`. Documents and payments remained zero. Exact fixture marker `solar-financial-flow-review-v1` persisted with policy state `verification_in_progress` and purpose `real_api_workflow_verification`.
+
+The old dataset deletion completed after rechecking Compose labels, its audit marker `solar-dashboard-review-v1`, 18 synthetic REVIEW schools, 5 review.local users and no client application sessions. Only owned old project containers and exact volumes `solar-dashboard-review_review-postgres` and `solar-dashboard-review_review-storage` were removed. Other volumes and networks were preserved.
+
+The canonical history provides cumulative meter import and independent logger total yield. It provides no current solar active-power sample, so current generation remains unavailable until supported ingestion supplies it.

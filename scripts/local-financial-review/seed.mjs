@@ -51,7 +51,3 @@ const bank=issuer.bankAccounts[0];await c.query('UPDATE company_bank_accounts SE
 await insert('audit_events',{id:id('seed-marker'),actor_id:id('admin'),action:'LOCAL_FINANCIAL_PREREQUISITE_SEED',entity_type:'platform',entity_id:id('site-a-main'),after_json:JSON.stringify({synthetic:true,fixtureMarker:marker,organizations:2,sites:3,users:6,policy:'7% test tax exclusive half up; API workflow pending'}),reason:'User-selected isolated synthetic workflow prerequisites',correlation_id:marker});
 await c.query('COMMIT');console.log(JSON.stringify({marker,runId:randomUUID(),sites:fixture.sites.map(s=>({key:s.key,id:id(s.key)})),users:fixture.users.map(u=>({email:u.email,id:id(u.key),role:u.role})),issuedDocuments:0}));
 }catch(e){await c.query('ROLLBACK');throw e;}finally{c.release();await pool.end();}
-
-
-
-
