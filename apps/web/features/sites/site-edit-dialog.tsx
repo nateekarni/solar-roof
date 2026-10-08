@@ -200,8 +200,8 @@ export function SiteEditDialog({
     if (!siteId) return;
     setLoading(true);
     try {
-      const {schoolName:_displayName,...siteValues}=values;
-      const result = await apiClient.patch<{ configDelivery: string }>(`/v1/sites/${siteId}`, { ...siteValues,...organizationSitePayload(organization),
+      const {schoolName:_displayName,deviceId,deviceModel,deviceSerial,...siteValues}=values;
+      const result = await apiClient.patch<{ configDelivery: string }>(`/v1/sites/${siteId}`, { ...siteValues,...(!payloadConfig?{deviceId,deviceModel,deviceSerial}:{}),...organizationSitePayload(organization),
 
       });
       if (result.configDelivery === "pending") notify.error("บันทึกแล้ว แต่ MQTT config ยังส่งไม่สำเร็จ กรุณาลองอีกครั้ง");
@@ -256,7 +256,7 @@ export function SiteEditDialog({
           <AppLoading fullPage={false} />
         ) : (
           <Tabs defaultValue="settings" className={`min-h-0 gap-4 overflow-hidden ${siteControlsClassName}`}>
-            {payloadConfig && <TabsList className={siteTabsListClassName}><TabsTrigger value="settings" className={siteTabsTriggerClassName}>{locale === "th" ? "ข้อมูลไซต์และ Gateway" : "Site & Gateway"}</TabsTrigger><TabsTrigger value="payload" className={siteTabsTriggerClassName}>{locale === "th" ? "การรับข้อมูลและอุปกรณ์" : "Data & devices"}</TabsTrigger></TabsList>}
+            {payloadConfig && <TabsList className={siteTabsListClassName}><TabsTrigger value="settings" className={siteTabsTriggerClassName}>{locale === "th" ? "ข้อมูลไซต์และ Gateway" : "Site & Gateway"}</TabsTrigger><TabsTrigger value="payload" className={siteTabsTriggerClassName}>{locale === "th" ? "การเชื่อมต่อและ Preset" : "Connection & Preset"}</TabsTrigger></TabsList>}
             <TabsContent value="settings" className="min-h-0 overflow-y-auto px-1">
           <form onSubmit={handleSubmit(onSubmit)} className={siteFormClassName}>
             {/* Section 1: Site Info */}
@@ -280,6 +280,7 @@ export function SiteEditDialog({
                 )}
               </div>
 
+              {payloadConfig&&<div className="flex flex-col gap-2"><Label htmlFor="edit-site-id">Site ID</Label><Input id="edit-site-id" value={payloadConfig.externalSiteId??''} readOnly/></div>}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <OrganizationPicker {...organizationCatalog} value={organization} onChange={selectOrganization} locale={locale} canEdit={user?.role==="admin"} disabled={loading}/>
                 {organizationCatalog.error&&<p role="alert" className="text-sm text-destructive">{organizationCatalog.error}</p>}
@@ -351,7 +352,7 @@ export function SiteEditDialog({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-2">
                   <Label htmlFor="edit-gw-name" required className="text-sm font-medium">
-                    {locale === "th" ? "ชื่อ/รหัส Gateway" : "Gateway Name"}
+                    {locale === "th" ? "ชื่อ Gateway" : "Gateway Name"}
                   </Label>
                   <Input
                     id="edit-gw-name"
@@ -360,6 +361,7 @@ export function SiteEditDialog({
                   />
                 </div>
 
+                {payloadConfig&&<div className="flex flex-col gap-2"><Label htmlFor="edit-gateway-id">Gateway ID</Label><Input id="edit-gateway-id" value={payloadConfig.externalGatewayId??''} readOnly/></div>}
                 <div className="space-y-2">
                   <Label htmlFor="edit-gw-proto" required className="text-sm font-medium">
                     {locale === "th" ? "โปรโตคอล" : "Protocol"}
@@ -390,7 +392,7 @@ export function SiteEditDialog({
                 />
               </div>
 
-              <div className="space-y-2"><Label htmlFor="edit-device">Meter Device</Label><ChoiceSelect id="edit-device" value={formValues.deviceId ?? ""} className="h-10 w-full rounded-md border bg-card" onChange={event => {
+              {!payloadConfig&&<><div className="space-y-2"><Label htmlFor="edit-device">Meter Device</Label><ChoiceSelect id="edit-device" value={formValues.deviceId ?? ""} className="h-10 w-full rounded-md border bg-card" onChange={event => {
                 const device = devices.find(item => item.id === event.target.value);
                 if (device) { setValue("deviceId", device.id); setValue("deviceModel", device.model); setValue("deviceSerial", device.serialNumber); }
               }}>{devices.map(device => <option key={device.id} value={device.id}>{device.name} · {device.serialNumber}</option>)}</ChoiceSelect></div>
@@ -418,7 +420,7 @@ export function SiteEditDialog({
                     <p className="text-[11px] text-destructive">{errors.deviceSerial.message}</p>
                   )}
                 </div>
-              </div>
+              </div></>}
             </section>
 
             {!payloadConfig && <div className="space-y-2 border-t pt-4">

@@ -43,7 +43,7 @@ export function PayloadReceiveSettings({ config, onRefresh, draft, onDraftChange
   };
   const test=async()=>{
     setBusy(true);setError('');setPreview(null);
-    try {setPreview(await apiClient.post<Preview>(draft ? '/v1/sites/payload-preview' : `/v1/sites/${config.siteId}/payload-preview`,{config:testOnly?config.receiveRevision.config:build(),input:JSON.parse(input),topic,...(draft?{externalSiteId:config.externalSiteId,externalGatewayId:config.externalGatewayId,devices:config.devices.map(d=>({externalDeviceId:d.externalDeviceId,payloadProfileRevisionId:d.profileRevisionId}))}:{})}));}
+    try {setPreview(await apiClient.post<Preview>(draft ? '/v1/sites/payload-preview' : `/v1/sites/${config.siteId}/payload-preview`,{config:testOnly?config.receiveRevision.config:build(),input:JSON.parse(input),topic,...(draft?{externalSiteId:config.externalSiteId,externalGatewayId:config.externalGatewayId,devices:config.devices.map(d=>({externalDeviceId:d.externalDeviceId,...(d.profileConfig?{localOverrideConfig:d.profileConfig}:{payloadProfileRevisionId:d.profileRevisionId})}))}:{})}));}
     catch(e){setError(e instanceof Error?e.message:'ทดสอบไม่สำเร็จ');}finally{setBusy(false);}
   };
   const changeAlias=(index:number,patch:Partial<PayloadReceiveConfig['deviceAliases'][number]>)=>{

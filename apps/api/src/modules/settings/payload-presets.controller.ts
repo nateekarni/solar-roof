@@ -8,15 +8,15 @@ import {decodePayloadMessages,validateReceiveConfig} from '../telemetry/payload-
 @Controller('v1/settings/payload-presets')
 export class PayloadPresetsController {
  constructor(@Inject(DatabaseService) private readonly db:DatabaseService){}
- @Get() async list(){return (await this.db.query(`SELECT p.id,p.profile_id AS "profileId",p.version,p.config,p.created_at AS "createdAt" FROM payload_profile_revisions p WHERE NOT EXISTS(SELECT 1 FROM payload_preset_archives a WHERE a.profile_id=p.profile_id) ORDER BY p.profile_id,p.created_at DESC,p.id`)).rows;}
+ @Get() async list(){return (await this.db.query(`SELECT p.id,p.profile_id AS "profileId",p.version,p.config,p.created_at AS "createdAt" FROM payload_profile_revisions p WHERE p.owner_device_id IS NULL AND NOT EXISTS(SELECT 1 FROM payload_preset_archives a WHERE a.profile_id=p.profile_id) ORDER BY p.profile_id,p.created_at DESC,p.id`)).rows;}
  @Roles('admin') @Post() async create(@Body() body:{config?:unknown}) {
-  let config;try{config=validatePayloadProfile(body.config);}catch(error){throw new BadRequestException(error instanceof Error?error.message:'Invalid profile');}
+  let config;try{config=validatePayloadProfile(body.config);if(config.id.startsWith('local-'))throw Error('Local profile IDs are reserved');}catch(error){throw new BadRequestException(error instanceof Error?error.message:'Invalid profile');}
   try{const row=(await this.db.query(`INSERT INTO payload_profile_revisions(id,profile_id,version,config) SELECT $1,$2,$3,$4::jsonb WHERE NOT EXISTS(SELECT 1 FROM payload_preset_archives WHERE profile_id=$2) RETURNING id,profile_id AS "profileId",version,config,created_at AS "createdAt"`,[randomUUID(),config.id,config.version,JSON.stringify(config)])).rows[0];if(!row)throw new ConflictException('Preset was deleted; save with a new Preset ID');return row;}
   catch(error){if((error as {code?:string}).code==='23505')throw new ConflictException('Profile version already exists; use a new version');throw error;}
  }
  @Roles('admin') @Delete(':id') async remove(@Param('id') id:string){
   if(!/^[0-9a-f-]{36}$/i.test(id))throw new BadRequestException('Invalid revision ID');
-  const row=(await this.db.query(`INSERT INTO payload_preset_archives(profile_id) SELECT profile_id FROM payload_profile_revisions WHERE id=$1 ON CONFLICT(profile_id) DO UPDATE SET archived_at=now() RETURNING profile_id AS "profileId"`,[id])).rows[0];
+  const row=(await this.db.query(`INSERT INTO payload_preset_archives(profile_id) SELECT profile_id FROM payload_profile_revisions WHERE id=$1 AND owner_device_id IS NULL ON CONFLICT(profile_id) DO UPDATE SET archived_at=now() RETURNING profile_id AS "profileId"`,[id])).rows[0];
   if(!row)throw new NotFoundException('Preset not found');return {archived:true,...row};
  }
  @Roles('admin') @Post('preview') preview(@Body() body:{config:unknown;input:unknown}){
