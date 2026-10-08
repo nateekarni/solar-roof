@@ -91,3 +91,9 @@ UI and branding can proceed before accounting selection. Financial plans and fix
 ## Final confirmation
 
 User explicitly confirmed the consolidated scope. Proceed with UI/branding and financial preparation, retaining the deferred accounting-policy checkpoint.
+
+## Accepted local financial policy checkpoint
+
+User selected all three recommended test-policy options: tax-exclusive synthetic7% tax without withholding; energy3/rate4/money2 decimals, half-up charge then tax (1234.567 ×3.5000 ->4320.98 +302.47 =4623.45 THB). Issue monthly invoices and combined receipt/test-tax document on full payment approval, retain original transfer dates, use Gregorian INV/RCT year+month+four-digit sequence. Include rejection/resubmission, multiple transfers, duplicates and organization isolation. Full adjustment/cancellation document issuance remains deferred. These policies apply only to the environment-bound local synthetic fixture; production accounting readiness is not approved.
+
+Approved logo refinement: document wordmark is Solar Roof without hyphen; platform uses the separate roof/sun symbol only. Old synthetic dashboard dataset ownership and audit marker were verified; exactly its postgres/storage volumes have been removed and the new loopback financial stack is running.
