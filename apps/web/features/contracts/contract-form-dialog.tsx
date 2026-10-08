@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation";
 import * as React from "react";
 import { useForm } from "react-hook-form";
 import { createContractSchema, type ContractFormValues } from "./contract-schema";
+import { createContractIdentityAutofill, type ContractIdentityField } from "./contract-identity-autofill";
 import { notify } from "../../components/feedback/notifications";
 import {Table,TableHeader,TableHead,TableBody,TableRow,TableCell} from "../../components/ui/table";
 import { Button } from "../../components/ui/button";
@@ -116,17 +117,18 @@ export function ContractFormDialog({
     }
   }, [open, setValue, locale]);
 
+  const localeRef=React.useRef(locale);
+  localeRef.current=locale;
+  const identityAutofill=React.useRef<ReturnType<typeof createContractIdentityAutofill>|null>(null);
+  if(!identityAutofill.current)identityAutofill.current=createContractIdentityAutofill({
+    loadDefaults:siteId=>apiClient.get(`/v1/operations/contracts/organization-defaults?siteId=${encodeURIComponent(siteId)}`),
+    setField:(field,value)=>setValue(field,value),
+    setLoading:setLoadingOrganization,
+    onError:error=>notify.error(error instanceof Error?error.message:(localeRef.current==='th'?'โหลดข้อมูลเอกสารองค์กรไม่สำเร็จ':'Unable to load organization document defaults')),
+  });
+  const registerIdentity=(field:ContractIdentityField)=>register(field,{onChange:()=>identityAutofill.current!.markEdited(field)});
   const selectedSiteId=watch('siteId');
-  React.useEffect(()=>{
-    let active=true;
-    const keys=['companyName','taxId','branch','taxAddress','billingEmail','billingPhone'] as const;
-    for(const key of keys)setValue(key,'');
-    setLoadingOrganization(Boolean(open&&selectedSiteId));
-    if(open&&selectedSiteId)apiClient.get<Pick<ContractFormValues,typeof keys[number]>>(`/v1/operations/contracts/organization-defaults?siteId=${encodeURIComponent(selectedSiteId)}`).then(defaults=>{
-      if(active)for(const key of keys)setValue(key,defaults[key]??'');
-    }).catch(error=>{if(active)notify.error(error instanceof Error?error.message:(locale==='th'?'โหลดข้อมูลเอกสารองค์กรไม่สำเร็จ':'Unable to load organization document defaults'));}).finally(()=>{if(active)setLoadingOrganization(false);});
-    return()=>{active=false;};
-  },[open,selectedSiteId,setValue,locale]);
+  React.useEffect(()=>identityAutofill.current!.activate({open,siteId:selectedSiteId}),[open,selectedSiteId]);
 
   React.useEffect(()=>{
     let active=true;setRecipientUserId('');setRecipientOptions([]);
@@ -325,7 +327,7 @@ export function ContractFormDialog({
                   id="tax-id"
                   placeholder="0105558123456"
                   className="text-xs h-10 font-mono bg-card"
-                  {...register("taxId")}
+                  {...registerIdentity("taxId")}
                 />
               </div>
 
@@ -337,7 +339,7 @@ export function ContractFormDialog({
                   id="branch"
                   placeholder={locale === "th" ? "สำนักงานใหญ่ หรือ 00000" : "Head office or 00000"}
                   className="text-xs h-10 bg-card"
-                  {...register("branch")}
+                  {...registerIdentity("branch")}
                 />
               </div>
 
@@ -349,7 +351,7 @@ export function ContractFormDialog({
                   id="company-name"
                   placeholder={locale === "th" ? "ชื่อองค์กรตามเอกสารจดทะเบียน" : "Registered organization name"}
                   className="text-xs h-10 bg-card"
-                  {...register("companyName")}
+                  {...registerIdentity("companyName")}
                 />
               </div>
 
@@ -361,7 +363,7 @@ export function ContractFormDialog({
                   id="tax-address"
                   placeholder={locale === "th" ? "ที่อยู่ตามเอกสารจดทะเบียน" : "Registered address"}
                   className="text-xs h-10 bg-card"
-                  {...register("taxAddress")}
+                  {...registerIdentity("taxAddress")}
                 />
               </div>
 
@@ -374,7 +376,7 @@ export function ContractFormDialog({
                   type="email"
                   placeholder="finance@example.com"
                   className="text-xs h-10 bg-card"
-                  {...register("billingEmail")}
+                  {...registerIdentity("billingEmail")}
                 />
               </div>
 
@@ -386,7 +388,7 @@ export function ContractFormDialog({
                   id="billing-phone"
                   placeholder="02-123-4567"
                   className="text-xs h-10 bg-card"
-                  {...register("billingPhone")}
+                  {...registerIdentity("billingPhone")}
                 />
               </div>
             </div>
