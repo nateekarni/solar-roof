@@ -32,7 +32,7 @@ Canonical sample values and units are derived from each pinned profile before in
 
 ## Launch and acceptance
 
-After migration and seed, source `environment.ps1` in each terminal and run `pnpm --filter @solar/api start:dev` and `pnpm --filter @solar/web dev --port 13049`. The API binds 127.0.0.1; open http://localhost:13049. Organization account: finance-a@example.test. Owner account: owner@example.test. Consult the fixture manifest for all six identities.
+After migration and seed, source `environment.ps1` in each terminal and run `pnpm --filter @solar/api exec tsx --tsconfig tsconfig.json src/main.ts` and `pnpm --filter @solar/web exec next dev -H 127.0.0.1 -p 13049`. The API binds 127.0.0.1; open http://localhost:13049. Organization account: finance-a@example.test. Owner account: owner@example.test. Consult the fixture manifest for all six identities.
 
 On a fresh fixture only, run `pnpm --filter @solar/api exec tsx --tsconfig tsconfig.json test/local-financial-workflow.integration.ts`. The runner performs real writes, so reset and reseed before repeating it; preserve the completed fixture for manual review.
 
