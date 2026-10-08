@@ -27,7 +27,7 @@ try {
    await db.query('UPDATE users SET role=$1 WHERE id=$2',[role,user]);
    for(const width of [1440,390]) {
     const business=['owner','school_user'].includes(role),mobileMode=business&&width===390;
-    await page.setViewportSize({width,height:900});await page.goto(web+'/billing');
+    await page.setViewportSize({width,height:900});await page.goto(web+'/billing?search=U1%20Browser');
     await page.getByRole('searchbox').fill('U1 Browser');
     await page.getByRole('status').filter({hasText:/^25 / }).waitFor();
     if(role==='operator')assert.equal(await page.getByText('ชำระเงินและแนบสลิป',{exact:true}).filter({visible:true}).count(),0,'Operator cannot submit evidence');
@@ -51,7 +51,7 @@ try {
    }
   }
   await db.query("UPDATE users SET role='school_user' WHERE id=$1",[user]);
-  await page.setViewportSize({width:390,height:900});await page.goto(web+'/billing');
+  await page.setViewportSize({width:390,height:900});await page.goto(web+'/billing?search=U1%20Browser');
   await page.getByRole('button',{name:'ชำระเงินและแนบสลิป',exact:true}).first().click();
   await page.locator('#slip-upload').setInputFiles({name:'evidence.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jxioAAAAASUVORK5CYII=','base64')});
   await page.locator('img[alt="Slip Preview"]').waitFor();
@@ -63,7 +63,7 @@ try {
   assert.equal(paymentRequests,1,'Two synchronous submit events send exactly one evidence mutation');
   await page.getByRole('dialog').waitFor({state:'hidden'});
   // The database changes scope after the displayed action: server denies the real POST.
-  await page.goto(web+'/billing');await page.getByRole('button',{name:'ชำระเงินและแนบสลิป',exact:true}).first().click();
+  await page.goto(web+'/billing?search=U1%20Browser');await page.getByRole('button',{name:'ชำระเงินและแนบสลิป',exact:true}).first().click();
   await page.locator('#slip-upload').setInputFiles({name:'evidence.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jxioAAAAASUVORK5CYII=','base64')});
   await page.locator('img[alt="Slip Preview"]').waitFor();await db.query('UPDATE users SET school_id=NULL WHERE id=$1',[user]);
   const denied=page.waitForResponse(r=>r.url().endsWith('/pay')),capRefresh=page.waitForResponse(r=>r.url().endsWith('/v1/auth/capabilities'));
@@ -86,15 +86,17 @@ try {
   await db.query("UPDATE users SET role='admin',preferred_language='en' WHERE id=$1",[user]);
   const context=await browser.newContext({viewport:{width:1440,height:900}});await context.addCookies([{name:'access_token',value:tokens.accessToken,domain:'localhost',path:'/',httpOnly:true},{name:'locale',value:'en',domain:'localhost',path:'/'}]);
   const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
-  await page.goto(web+'/billing');await page.getByRole('status').filter({hasText:/^25 / }).waitFor();
+  await page.goto(web+'/billing?search=U1%20Browser');await page.getByRole('status').filter({hasText:/^25 / }).waitFor();
   const row=page.getByRole('row').filter({has:page.getByText('2025-08',{exact:true})});await row.waitFor();
   await row.evaluate(element=>{window.__u1PersistedRow=element;});
   const reordered=page.waitForResponse(response=>response.url().includes('/v1/operations/billing?')&&new URL(response.url()).searchParams.get('direction')==='asc');
-  await page.getByRole('button',{name:'Billing Period',exact:true}).click();assert.equal((await reordered).status(),200);
+  await page.getByRole('button',{name:'Billing Period',exact:true}).click();const sorted=await reordered;assert.equal(sorted.status(),200);
+  assert.equal(new URL(sorted.url()).searchParams.get('search'),'U1 Browser','Reorder keeps the owned fixture search');
+  assert.equal(new URL(page.url()).searchParams.get('search'),'U1 Browser','Sorting preserves the fixture search in browser history');
   await page.getByRole('row').nth(1).getByText('2024-07',{exact:true}).waitFor();
   assert.equal(await row.evaluate(element=>element===window.__u1PersistedRow),true,'The same persisted billing record retains its DOM row identity after real server reorder');
   for(const width of [1440,390]) {
-   await page.setViewportSize({width,height:900});await page.goto(web+'/billing');await page.getByRole('status').filter({hasText:/^25 / }).waitFor();
+   await page.setViewportSize({width,height:900});await page.goto(web+'/billing?search=U1%20Browser');await page.getByRole('status').filter({hasText:/^25 / }).waitFor();
    await page.getByRole('button',{name:/เมนูการดำเนินการ|Open actions menu/}).first().click();await page.getByRole('menuitem',{name:'View Billing Details',exact:true}).waitFor();await page.getByRole('menuitem',{name:/View Invoice.*No issued document/}).waitFor();await page.keyboard.press('Escape');
   }
   assert.deepEqual(errors,[]);await context.close();console.log('PASS U1 review fix: real server reorder retains persisted DOM row identity; English actions/reasons in desktop/mobile');
