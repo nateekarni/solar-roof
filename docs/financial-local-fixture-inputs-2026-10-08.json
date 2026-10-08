@@ -1,6 +1,6 @@
 {
   "synthetic": true,
-  "status": "prerequisite-fixture-design; financial policy selection pending",
+  "status": "approved isolated local TEST fixture; real workflow verified 2026-10-08",
   "timezone": "Asia/Bangkok",
   "history": {"start": "2026-07-01", "end": "2026-09-30", "jobTime": "2026-10-01T01:00:00+07:00"},
   "issuer": {
@@ -36,7 +36,7 @@
   ],
   "passwordPolicy": "generate local-only fixture credentials during explicit seed; do not store real credentials in this manifest",
   "measurements": "seed cumulative billing energy and canonical solar logger generation independently; building/grid values only with actual supported mappings",
-  "scenarioOutputs": "create bills/documents/payments/receipts through real workflow after policy selection, not direct fake-issued inserts",
+  "scenarioOutputs": "create bills/documents/payments/receipts through the accepted real TEST workflow, not direct fake-issued inserts",
   "email": "loopback local capture service only",
   "oldDataset": {"project": "solar-dashboard-review", "database": "solar_dashboard_review", "host": "127.0.0.1", "port": 15439, "volumes": ["solar-dashboard-review_review-postgres", "solar-dashboard-review_review-storage"]},
   "newDataset": {"project": "solar-financial-flow-review", "database": "solar_financial_flow_review", "host": "127.0.0.1", "port": 15449}

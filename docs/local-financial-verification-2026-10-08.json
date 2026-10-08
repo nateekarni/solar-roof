@@ -1,0 +1,39 @@
+[
+  {
+    "id": "c562b431-bbc1-457a-9583-90108276d780",
+    "workflow_state": "verified",
+    "workflow_evidence": {
+      "runId": "bfcbbfe0-f1fe-423e-a4fb-8c54815e42e1",
+      "checks": [
+        "real_monthly_job",
+        "sample_decimal_total",
+        "actual_download_smtp_hash_equality",
+        "rejection_resubmit",
+        "multiple_transfers_exact",
+        "underpayment_block",
+        "overpayment_block",
+        "concurrent_cross_cycle_duplicate",
+        "cross_org_scope",
+        "idempotent_replay",
+        "immutable_artifact",
+        "hourly_missing_data_recheck_gate",
+        "missing_boundary_repair",
+        "new_contract_http_multirate",
+        "required_payment_account_block",
+        "owner_accountant_approval_only",
+        "strict_invalid_date",
+        "original_bytes_after_config_edit"
+      ],
+      "purpose": "real_api_workflow_verification",
+      "invoiceId": "ffcea2f3-b3c7-45cd-b1b6-77e5f5fff328",
+      "receiptId": "4368c636-3258-4a3e-a301-095840b84b4e",
+      "startedAt": "2026-10-08T03:39:31.333Z",
+      "completedAt": "2026-10-08T03:40:12.966Z",
+      "invoiceHash": "25fef7fbef8dc52cf19613e5c836401589c951b76162462400bccec380c98985",
+      "receiptHash": "f53757f4e0e54e10c62809626da64581bcbbc66a956b1d4fb9b19b249afcf81b",
+      "repairedJobId": "8c41a45e-b8fe-4034-a998-4d2c7abec991",
+      "newInvoiceHash": "83f1b943e01fd513a75fd222ec2fc75b6cb80e24b729b0790c4f15ce56ea13a8",
+      "newReceiptHash": "e1ac6c0237b9b811d7da44b956643d71f74dad6df3af4e0d3410ee3c596306cd"
+    }
+  }
+]
