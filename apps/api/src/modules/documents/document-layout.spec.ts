@@ -162,3 +162,27 @@ test('issue, schedule, period, due and approved transfer dates share Thai presen
   assert.doesNotMatch(receiptText, /2026-10-08T18:30:00Z|undefined|null|กำหนดชำระ/);
   assert.equal(JSON.stringify(invoice), saved);
 });
+
+const financialFixture: DocumentSnapshot = {
+  ...fixture,
+  issuer: {name:'บริษัท โซลาร์ รูฟ จำกัด',address:'68/184 ซอยรามคำแหง 164 แขวงมีนบุรี เขตมีนบุรี กรุงเทพมหานคร 10510',taxId:'0105554059286',branch:'00000',phone:'02-000-0000',email:'billing@solar-roof.example.test'},
+  customer: {name:'บริษัท ลูกค้าทดสอบเอกสาร จำกัด',address:'123 ถนนทดสอบ แขวงทดสอบ เขตทดสอบ กรุงเทพมหานคร 10110',taxId:'0105554059286',branch:'00000'},
+  siteName:'Document channel acceptance a079952b0e6e41f18cd1fc354915e74e',contractNumber:'8a9c0caf-317c-44e4-8dac-bdc686c2d8a23',
+  paymentAccounts:[{bankName:'ธนาคารทดสอบ',accountName:'บริษัท โซลาร์ รูฟ จำกัด (ทดสอบ)',accountNumber:'000-0-00000-0'}],
+  period:'2020-06-01 - 2020-06-30',dueDate:'2026-11-07',paymentTerms:'ชำระภายใน 30 วัน (ข้อมูลสมมติสำหรับทดสอบ)',
+  items:[{description:'ค่าไฟฟ้าพลังงานแสงอาทิตย์ / Solar electricity charges',period:'2020-06-01 - 2020-06-30',quantity:'1234.567',rate:'3.5000',amount:'4320.98'}],
+  totals:{subtotal:'4320.98',tax:'302.47',taxLabel:'ภาษีทดสอบ 7% / Simulated tax 7%',total:'4623.45'},
+  approvedTransfers:[{paidAt:'2026-10-08T06:10:29Z',amount:'4623.45',evidence:'document-channels-synthetic-9daba5b1-5049-44c3-89ef-b2323cd60ae6',status:'approved'}],
+};
+function pdfPageCount(bytes:Buffer):number {return [...bytes.toString('latin1').matchAll(/\/Type\s*\/Page\b/g)].length;}
+test('ordinary invoice and one-transfer receipt fit one A4 page with their signatures',async()=>{
+ for(const type of ['invoice','receipt'] as const){const bytes=await renderDocumentPdf({...financialFixture,type});assert.equal(pdfPageCount(bytes),1,`${type} must retain its signature block on its single ordinary page`);}
+});
+test('long financial documents paginate instead of shrinking or dropping saved rows',async()=>{
+ const items=Array.from({length:45},(_,i)=>({...financialFixture.items[0]!,description:`รายการ ${i+1} ค่าไฟฟ้าพลังงานแสงอาทิตย์ / Solar electricity charges`}));
+ const snapshot={...financialFixture,items};const saved=JSON.stringify(snapshot);const bytes=await renderDocumentPdf(snapshot);
+ assert.ok(pdfPageCount(bytes)>1);assert.equal(JSON.stringify(snapshot),saved);
+ const definition=documentDefinition(snapshot);const rows=definition.content.find((node:any)=>node.table?.headerRows===1).table;
+ assert.equal(rows.body.length,46);assert.equal(rows.dontBreakRows,true);assert.equal(rows.keepWithHeaderRows,1);
+ assert.ok(definition.content.at(-1).unbreakable);
+});

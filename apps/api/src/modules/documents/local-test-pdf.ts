@@ -63,7 +63,7 @@ export function localTestDocumentSnapshot(document: SavedFinancialDocument): Doc
       ...(p.evidence_key || p.slip_url ? { evidence: p.evidence_key || p.slip_url } : {}),
     })),
     paymentAccounts: s.banks.map(bank => ({ bankName: bank.bank_name, accountName: bank.account_name, accountNumber: bank.account_number })),
-    ...(s.dueDate ? { dueDate: s.dueDate } : {}), logoDataUri: s.logo, templateVersion: 'sarabun-a4-v1', syntheticTest: true,
+    ...(s.dueDate ? { dueDate: s.dueDate } : {}), logoDataUri: s.logo, templateVersion: 'sarabun-a4-v2', syntheticTest: true,
   };
 }
 export async function renderLocalTestPdf(document: SavedFinancialDocument): Promise<Buffer> {
