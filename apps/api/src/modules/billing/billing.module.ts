@@ -1,3 +1,5 @@
+import { BillingSourceBindingController } from './billing-source-binding.controller.js';
+import { BillingSourceBindingService } from './billing-source-binding.service.js';
 import { ContractPdfService } from '../documents/contract-pdf.service.js';
 import { LocalFinancialApplicationService } from './local-financial-application.service.js';
 import { LocalFinancialScheduler } from './local-financial-scheduler.js';
@@ -12,8 +14,8 @@ import { RateService } from "./rate.service.js";
 
 @Module({
   imports: [DatabaseModule],
-  controllers: [BillingController],
-  providers: [ContractPdfService, LocalFinancialApplicationService, LocalFinancialScheduler, FinancialReadinessService, ContractService, RateService, BillingCalculationService, BillingCycleService],
+  controllers: [BillingController, BillingSourceBindingController],
+  providers: [ContractPdfService, BillingSourceBindingService, LocalFinancialApplicationService, LocalFinancialScheduler, FinancialReadinessService, ContractService, RateService, BillingCalculationService, BillingCycleService],
   exports: [ContractService, RateService, BillingCalculationService, BillingCycleService],
 })
 export class BillingModule {}

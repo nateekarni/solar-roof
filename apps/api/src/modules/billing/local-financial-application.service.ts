@@ -1,3 +1,4 @@
+import { billableBoundary, verifyBillingSegment } from './billing-source-readings.js';
 import { BadRequestException, ForbiddenException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID, createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
@@ -35,9 +36,10 @@ export class LocalFinancialApplicationService {
     if(rate.starts!==cursor||rate.ends<=rate.starts||rate.currency!=='THB'||rate.rate_type!=='fixed_kwh')throw new ConflictException('Effective rates overlap or do not cover the period');
     for(const meter of meters){const readings:any[]=[];
      for(const boundary of [rate.starts,rate.ends]){
-      const reading=(await client.query(`SELECT tr.id,tr.normalized_value AS value,tr.source_time,tr.mapping_version_id,($3::date::timestamp AT TIME ZONE $4) AS target_time FROM telemetry_raw tr JOIN register_mapping_versions m ON m.id=tr.mapping_version_id WHERE tr.site_id=$5 AND tr.device_id=$1 AND tr.semantic_field=$2 AND m.semantic_field=$2 AND tr.quality='complete' AND lower(tr.unit)='kwh' AND abs(extract(epoch FROM(tr.source_time-($3::date::timestamp AT TIME ZONE $4))))<=300 ORDER BY abs(extract(epoch FROM(tr.source_time-($3::date::timestamp AT TIME ZONE $4)))),tr.source_time DESC,tr.id LIMIT 1`,[meter.device_id,meter.semantic_field,boundary,site.timezone,siteId])).rows[0];
+      const reading=await billableBoundary(client,meter,boundary,site.timezone,siteId);
       if(!reading)throw new ConflictException(`Missing actual cumulative reading for meter ${meter.id} at ${boundary}`);readings.push(reading);
      }
+     await verifyBillingSegment(client,meter,siteId,readings[0],readings[1]);
      const totals=calculateTestTotals(reviewedActualEnergyDifference(readings[0].value,readings[1].value),rate.rate);
      energy+=BigInt(totals.consumedKwh.replace('.',''));subtotal+=BigInt(totals.subtotal.replace('.',''));
      if(rate.starts===start)opening+=Number(readings[0].value);if(rate.ends===finalBoundary)closing+=Number(readings[1].value);
@@ -146,14 +148,3 @@ export class LocalFinancialApplicationService {
   }return (await this.db.query('SELECT * FROM financial_month_jobs ORDER BY period_start,site_id')).rows;
  }
 }
-
-
-
-
-
-
-
-
-
-
-
