@@ -11,6 +11,7 @@ import { Button } from "../../components/ui/button";
 import {
   Card,
   CardContent,
+  CardDescription,
   CardHeader,
   CardTitle,
 } from "../../components/ui/card";
@@ -135,10 +136,17 @@ export function SystemSettingsContent({ showBackLink = false }: SystemSettingsCo
         {/* Card 1: System Defaults */}
         <Card className="panel h-full flex flex-col justify-between">
           <div>
-            <CardHeader className="p-0 pb-1.5 flex flex-row items-center justify-between">
-              <CardTitle className="text-sm font-semibold text-foreground">
-                {t("navigation.systemDefaults")}
-              </CardTitle>
+            <CardHeader className="p-0 pb-1.5 flex flex-row items-start justify-between gap-3">
+              <div className="min-w-0 flex-1 space-y-1">
+                <CardTitle className="text-sm font-semibold text-foreground">
+                  {t("navigation.systemDefaults")}
+                </CardTitle>
+                <CardDescription className="text-xs leading-relaxed">
+                  {locale === "th"
+                    ? "กำหนดราคาต่อหน่วยและความถี่ดึงข้อมูลมิเตอร์ตั้งต้น"
+                    : "Set the default unit price and meter data fetch frequency."}
+                </CardDescription>
+              </div>
               {editingCard !== "defaults" && (
                 <Button
                   type="button"
@@ -182,7 +190,7 @@ export function SystemSettingsContent({ showBackLink = false }: SystemSettingsCo
                   <div className="flex flex-col gap-2">
                     <Label htmlFor="fetch-freq" className="text-xs">
                       {locale === "th"
-                        ? "ความถี่ดึงข้อมูลมิเตอร์ตั้งต้น (วินาที)"
+                        ? "ความถี่ดึงข้อมูลมิเตอร์ตั้งต้น (sec)"
                         : "Default Meter Fetch Frequency (sec)"}
                     </Label>
                     <Input
@@ -201,8 +209,8 @@ export function SystemSettingsContent({ showBackLink = false }: SystemSettingsCo
                     />
                     <span className="text-[10px] text-muted-foreground">
                       {locale === "th"
-                        ? "ค่าตั้งต้นสำหรับเกตเวย์และการดึงข้อมูล MQTT (60 วินาที)"
-                        : "Default for Gateway & MQTT polling (60s)"}
+                        ? "ค่าตั้งต้นสำหรับเกตเวย์และการดึงข้อมูล MQTT (60 sec)"
+                        : "Default for Gateway & MQTT polling (60 sec)"}
                     </span>
                   </div>
                 </div>
@@ -221,7 +229,7 @@ export function SystemSettingsContent({ showBackLink = false }: SystemSettingsCo
                       {locale === "th" ? "ความถี่ดึงข้อมูลมิเตอร์" : "Fetch Frequency"}
                     </span>
                     <strong className="text-foreground font-semibold">
-                      {form.defaultFetchFrequencySec} {locale === "th" ? "วินาที" : "sec"}
+                      {form.defaultFetchFrequencySec} sec
                     </strong>
                   </div>
                 </div>
@@ -256,10 +264,17 @@ export function SystemSettingsContent({ showBackLink = false }: SystemSettingsCo
         {/* Card 2: Document Series */}
         <Card className="panel h-full flex flex-col justify-between">
           <div>
-            <CardHeader className="p-0 pb-1.5 flex flex-row items-center justify-between">
-              <CardTitle className="text-sm font-semibold text-foreground">
-                {t("settings.documentSeries")}
-              </CardTitle>
+            <CardHeader className="p-0 pb-1.5 flex flex-row items-start justify-between gap-3">
+              <div className="min-w-0 flex-1 space-y-1">
+                <CardTitle className="text-sm font-semibold text-foreground">
+                  {t("settings.documentSeries")}
+                </CardTitle>
+                <CardDescription className="text-xs leading-relaxed">
+                  {locale === "th"
+                    ? "กำหนดคำนำหน้าเลขที่ใบแจ้งหนี้และใบเสร็จ"
+                    : "Configure invoice and receipt number prefixes."}
+                </CardDescription>
+              </div>
               {editingCard !== "documents" && (
                 <Button
                   type="button"
@@ -360,10 +375,17 @@ export function SystemSettingsContent({ showBackLink = false }: SystemSettingsCo
         {/* Card 3: Retention */}
         <Card className="panel h-full flex flex-col justify-between">
           <div>
-            <CardHeader className="p-0 pb-1.5 flex flex-row items-center justify-between">
-              <CardTitle className="text-sm font-semibold text-foreground">
-                {t("settings.retention")}
-              </CardTitle>
+            <CardHeader className="p-0 pb-1.5 flex flex-row items-start justify-between gap-3">
+              <div className="min-w-0 flex-1 space-y-1">
+                <CardTitle className="text-sm font-semibold text-foreground">
+                  {t("settings.retention")}
+                </CardTitle>
+                <CardDescription className="text-xs leading-relaxed">
+                  {locale === "th"
+                    ? "กำหนดระยะเวลาเก็บข้อมูลมิเตอร์ดิบ ข้อมูลสรุป และเอกสาร"
+                    : "Set how long raw meter data, summaries and documents are retained."}
+                </CardDescription>
+              </div>
               {editingCard !== "retention" && (
                 <Button
                   type="button"
@@ -473,7 +495,32 @@ export function SystemSettingsContent({ showBackLink = false }: SystemSettingsCo
             </div>
           )}
         </Card>
-        <Card className="panel space-y-4"><CardHeader className="p-0 flex flex-row items-center justify-between gap-3"><CardTitle className="text-sm font-semibold">{locale === 'th' ? 'การแจ้งเตือน' : 'Notifications'}</CardTitle>{editingCard !== "notifications" && <Button type="button" variant="outline" size="sm" onClick={() => handleStartEdit("notifications")} className="h-10 shrink-0 gap-1.5 text-xs"><Edit2 className="size-3.5" /><span>{locale === "th" ? "แก้ไข" : "Edit"}</span></Button>}</CardHeader><CardContent className="p-0 space-y-4">
+        <Card className="panel space-y-4">
+          <CardHeader className="p-0 flex flex-row items-start justify-between gap-3">
+            <div className="min-w-0 flex-1 space-y-1">
+              <CardTitle className="text-sm font-semibold">
+                {locale === "th" ? "การแจ้งเตือน" : "Notifications"}
+              </CardTitle>
+              <CardDescription className="text-xs leading-relaxed">
+                {locale === "th"
+                  ? "เปิดหรือปิดอีเมลแจ้งเตือนสำคัญและการแจ้งเตือนในระบบ"
+                  : "Turn critical email alerts and in-app notifications on or off."}
+              </CardDescription>
+            </div>
+            {editingCard !== "notifications" && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => handleStartEdit("notifications")}
+                className="h-10 shrink-0 gap-1.5 text-xs"
+              >
+                <Edit2 className="size-3.5" />
+                <span>{locale === "th" ? "แก้ไข" : "Edit"}</span>
+              </Button>
+            )}
+          </CardHeader>
+          <CardContent className="p-0 space-y-4">
           {editingCard === 'notifications' ? <div className="space-y-4">{([['criticalEmailAlert','อีเมลแจ้งเตือนสำคัญ','Critical email alerts'],['inAppNotification','การแจ้งเตือนในระบบ','In-app notifications']] as const).map(([key,th,en])=><div key={key} className="space-y-2"><Label htmlFor={key}>{locale === 'th' ? th : en}</Label><Switch id={key} checked={cardDraft[key]} onCheckedChange={checked=>setCardDraft({...cardDraft,[key]:checked})}/></div>)}<div className="flex gap-2"><Button variant="outline" disabled={saving} onClick={handleCancel}>{locale === 'th' ? 'ยกเลิก' : 'Cancel'}</Button><Button disabled={saving} onClick={handleSaveCard}>{locale === 'th' ? 'บันทึก' : 'Save'}</Button></div></div> : <><dl className="space-y-4">{([['criticalEmailAlert','อีเมลแจ้งเตือนสำคัญ','Critical email alerts'],['inAppNotification','การแจ้งเตือนในระบบ','In-app notifications']] as const).map(([key,th,en])=><div key={key} className="space-y-1"><dt className="text-sm text-muted-foreground">{locale === 'th' ? th : en}</dt><dd className="text-sm font-medium">{form[key] ? locale === 'th' ? 'เปิด' : 'On' : locale === 'th' ? 'ปิด' : 'Off'}</dd></div>)}</dl></>}
         </CardContent></Card>
       </div>
