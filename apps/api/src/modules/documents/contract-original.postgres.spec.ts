@@ -6,7 +6,7 @@ import { Pool } from 'pg';
 import { DatabaseService } from '../../database/database.service.js';
 import { BillingController } from '../billing/billing.controller.js';
 import { ContractPdfService } from './contract-pdf.service.js';
-import { documentDefinition } from './document-layout.js';
+import { layoutDocumentPages, pageLines, lineText } from './document-layout.test-fixtures.js';
 import { OperationsService } from '../dashboard/operations.service.js';
 
 // Explicit opt-in only. Creates/drops one isolated schema, never migrates public or edits existing fixtures.
@@ -73,9 +73,11 @@ test('PostgreSQL contract original transactions and concurrent issuance',{skip:!
    assert.equal((await pool.query('SELECT count(*)::int AS count FROM documents WHERE contract_id=$1',[id])).rows[0].count,1);
    const snapshot=(await pool.query('SELECT snapshot FROM documents WHERE contract_id=$1',[id])).rows[0].snapshot;
    assert.equal(snapshot.siteExternalId,undefined);assert.equal(snapshot.siteName,'Later solar site');
-   const visible=(value:any):string=>typeof value==='string'?value.replaceAll('\u200b',''):Array.isArray(value)?value.map(visible).join(''):value?.text?visible(value.text):'';
-   const siteLine=documentDefinition(snapshot).content.map(visible).find(value=>value.startsWith('ไซต์งาน:'));
-   assert.equal(siteLine,'ไซต์งาน: Later solar site');assert.ok(!siteLine.includes(siteId));
+   const renderedLines=layoutDocumentPages(snapshot).flatMap(pageLines).map(lineText);
+   const siteLine=renderedLines.find(value=>value.startsWith('ไซต์งาน:'));
+   assert.equal(siteLine,'ไซต์งาน: Later solar site');
+   assert.ok(renderedLines.every(value=>!value.includes(siteId)));
+   assert.ok(renderedLines.every(value=>!value.includes('PROTOCOL-CHANGED')));
   });
   await t.test('cross-organization access cannot retrieve bytes or issue an original',async()=>{
    const other={role:'school_user',schoolId:randomUUID()};

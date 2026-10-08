@@ -283,3 +283,15 @@ test('ordinary receipt with complete reviewed payer metadata still fits one A4 p
  const snapshot={...fixtures.receipt!,approvedTransfers:[{...fixtures.receipt!.approvedTransfers[0]!,payerName:'บริษัท ลูกค้าทดสอบเอกสาร จำกัด',paymentMethod:'bank_transfer' as const,originBank:'ธนาคารต้นทางทดสอบ',originAccount:'001-2-34567-8'}]};
  assert.equal(layoutDocumentPages(snapshot).length,1);
 });
+
+
+test('saved PPA site identity survives nested draft and factual layouts without internal UUID',()=>{
+ const base={...fixtures.contract!,siteName:'Later solar site',siteExternalId:undefined,siteId:'internal-site-uuid'};
+ delete base.ppaClauses;delete base.ppaOpening;
+ for(const snapshot of [base,{...base,...freezeLocalPpaDraft(base)}]){
+  const renderedLines=layoutDocumentPages(snapshot).flatMap(pageLines).map(lineText);
+  assert.equal(renderedLines.find(value=>value.startsWith('ไซต์งาน:')),'ไซต์งาน: Later solar site');
+  assert.ok(renderedLines.every(value=>!value.includes(base.siteId)));
+  assert.ok(renderedLines.every(value=>!value.includes('PROTOCOL-CHANGED')));
+ }
+});
