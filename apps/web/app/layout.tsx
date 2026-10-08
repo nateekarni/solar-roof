@@ -1,5 +1,6 @@
 import {BRAND_NAME} from "../components/brand/brand-mark";
-import type { ReactNode } from "react";
+import { BRAND_PRIMARY } from "@solar/domain";
+import type { CSSProperties, ReactNode } from "react";
 import "./globals.css";
 import { Toaster } from "../components/ui/sonner";
 import { TooltipProvider } from "../components/ui/tooltip";
@@ -12,7 +13,7 @@ export const metadata = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="th" suppressHydrationWarning>
+    <html lang="th" suppressHydrationWarning style={{ "--brand-primary": BRAND_PRIMARY } as CSSProperties}>
       <body>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           <TooltipProvider>{children}</TooltipProvider>

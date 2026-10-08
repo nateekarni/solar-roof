@@ -16,19 +16,9 @@ const fixture: DocumentSnapshot = {
 };
 const serialized = (definition: ReturnType<typeof documentDefinition>) => JSON.stringify(definition.content, (key, value) => key === 'image' ? '[approved-logo]' : value);
 
-test('document layout prints shared A4 pages with the required Thai font and black/gray styling', () => {
-  const definition = documentDefinition(fixture);
-  assert.equal(definition.pageSize, 'A4');
-  assert.equal(definition.defaultStyle.font, 'THSarabunNew');
-  assert.equal(definition.defaultStyle.color, '#000000');
-  assert.ok(serialized(definition).includes('#eeeeee'));
-  const footer = definition.footer(2, 3);
-  assert.match(JSON.stringify(footer), /INV2026100001/);
-  assert.match(JSON.stringify(footer), /2 \/ 3/);
-  const table = definition.content.find((node: any) => node.table?.headerRows === 1);
-  assert.equal(table.table.dontBreakRows, false);
-  assert.equal(table.table.keepWithHeaderRows, 0);
-  assert.match(visibleText(definition.footer(1, 1)), /Prepared by/);
+test('document layout prints reference A4 pages and keeps visible footer identity empty', () => {
+ const d=documentDefinition(fixture);assert.equal(d.pageSize,'A4');assert.equal(d.defaultStyle.font,'THSarabunNew');assert.equal(d.defaultStyle.fontSize,16);assert.ok(serialized(d).includes('#f3f4f5'));assert.equal(d.footer(1,2),null);assert.doesNotMatch(visibleText(d.footer(2,2)),/INV|Page/);
+ const t=d.content.find((n:any)=>n.table?.headerRows===1).table;assert.equal(t.dontBreakRows,false);assert.equal(t.keepWithHeaderRows,0);assert.match(visibleText(d.footer(1,1)),/Prepared by/);
 });
 
 test('invoice uses exact saved rate rows and totals without changing the snapshot', () => {
@@ -58,11 +48,11 @@ test('contract retains the existing rate schedule and signer body without fabric
 });
 
 test('receipt prints only approved transfers with exact amounts and leaves missing optional identity out', () => {
-  const text = serialized(documentDefinition({ ...fixture, type: 'receipt', approvedTransfers: [
+  const text = visibleText(documentDefinition({ ...fixture, type: 'receipt', approvedTransfers: [
     { paidAt: '2026-10-08T09:00:00Z', amount: '2000.00', evidence: 'approved-evidence', status: 'paid' },
     { paidAt: '2026-10-08T10:00:00Z', amount: '2412.58', evidence: 'second-evidence', status: 'approved' },
     { paidAt: '2026-10-08T11:00:00Z', amount: '1.00', evidence: 'unapproved-evidence', status: 'pending' as any },
-  ] }));
+  ] }).content);
   assert.match(text, /approved-evidence/);
   assert.match(text, /2,412.58/);
   assert.doesNotMatch(text, /unapproved-evidence|undefined|null|บัญชีรับชำระ/);
@@ -78,16 +68,13 @@ test('real PDF rendering embeds the bundled Sarabun family without a runtime fon
 
 test('long Thai identity cells stay within the printable A4 width', () => {
   const definition = documentDefinition({ ...fixture, issuer: { ...fixture.issuer, name: 'บริษัทโซลาร์รูฟทดสอบชื่อภาษาไทยที่ยาวมากและไม่มีเว้นวรรคเพื่อทดสอบการตัดบรรทัด', address: 'ที่อยู่ภาษาไทยที่ยาวมากและไม่มีเว้นวรรคเพื่อยืนยันว่าข้อมูลไม่ล้นออกนอกหน้ากระดาษ' } });
-  const identity = definition.content[0].columns[2];
-  assert.equal(identity.width,180.348);
-  assert.ok(definition.content.some((node: any) => node.stack && visibleText(node).includes('Customer')));
+  const identity = definition.content[0].columns[1];
+  assert.equal(identity.width,'*');
+  assert.ok(definition.content.some((node: any) => node.table && visibleText(node).includes('Customer')));
 });
 
-test('receipt transfer caption repeats with its table header instead of being orphaned before a page break', () => {
-  const definition = documentDefinition({ ...fixture, type: 'receipt', approvedTransfers: [{ status: 'paid', paidAt: '2026-10-08', amount: '4412.58', evidence: 'original-evidence' }] });
-  const transferTable = definition.content.find((node: any) => node.table?.body?.some((row: any[]) => JSON.stringify(row).includes('original-evidence')));
-  assert.equal(transferTable.table.headerRows, 2);
-  assert.match(JSON.stringify(transferTable.table.body[0]), /Approved transfers/);
+test('receipt payment card retains the complete saved evidence while allowing long blocks to continue',()=>{
+ const d=documentDefinition({...fixture,type:'receipt',approvedTransfers:[{status:'paid',paidAt:'2026-10-08',amount:'4412.58',evidence:'original-evidence'}]});const card=d.content.find((n:any)=>n.table&&visibleText(n).includes('original-evidence'));assert.ok(card);assert.equal(card.table.dontBreakRows,false);assert.match(visibleText(card),/Payment Information/);
 });
 
 test('a non-TEST receipt does not claim tax-invoice status', () => {
@@ -98,7 +85,7 @@ test('a non-TEST receipt does not claim tax-invoice status', () => {
 test('long Thai identities expose word boundaries for wrapping without altering saved input', () => {
   const name = 'บริษัทโซลาร์รูฟทดสอบชื่อภาษาไทยที่ยาวมากและไม่มีเว้นวรรค';
   const definition = documentDefinition({ ...fixture, issuer: { ...fixture.issuer, name } });
-  const renderedName = definition.content[0].columns[2].stack.find((node: any) => node.bold).text;
+  const renderedName = definition.content[0].columns[1].stack.find((node: any) => node.bold).text;
   assert.ok(Array.isArray(renderedName));
   assert.ok(renderedName.some((part: any) => part.text === '\u200b' && part.fontSize === 0 && part.opacity === 0));
   assert.equal(renderedName.map((part: any) => part.text).join('').replaceAll('\u200b', ''), name);
@@ -166,7 +153,7 @@ const financialFixture: DocumentSnapshot = {
   ...fixture,
   issuer: {name:'บริษัท โซลาร์ รูฟ จำกัด',address:'68/184 ซอยรามคำแหง 164 แขวงมีนบุรี เขตมีนบุรี กรุงเทพมหานคร 10510',taxId:'0105554059286',branch:'00000',phone:'02-000-0000',email:'billing@solar-roof.example.test'},
   customer: {name:'บริษัท ลูกค้าทดสอบเอกสาร จำกัด',address:'123 ถนนทดสอบ แขวงทดสอบ เขตทดสอบ กรุงเทพมหานคร 10110',taxId:'0105554059286',branch:'00000'},
-  siteName:'Document channel acceptance a079952b0e6e41f18cd1fc354915e74e',contractNumber:'8a9c0caf-317c-44e4-8dac-bdc686c2d8a23',
+  siteName:'อาคารเรียนหนึ่ง',contractNumber:'PPA261000001',
   paymentAccounts:[{bankName:'ธนาคารทดสอบ',accountName:'บริษัท โซลาร์ รูฟ จำกัด (ทดสอบ)',accountNumber:'000-0-00000-0'}],
   period:'2020-06-01 - 2020-06-30',dueDate:'2026-11-07',paymentTerms:'ชำระภายใน 30 วัน (ข้อมูลสมมติสำหรับทดสอบ)',
   items:[{description:'ค่าไฟฟ้าพลังงานแสงอาทิตย์ / Solar electricity charges',period:'2020-06-01 - 2020-06-30',quantity:'1234.567',rate:'3.5000',amount:'4320.98'}],
@@ -191,8 +178,8 @@ test('PPA presents frozen effective dates, every dated rate and payment days as 
  const snapshot = {...fixture, type:'contract' as const, siteName:'ไซต์หนึ่ง',siteExternalId:'SCHOOL-001',contractNumber:'contract-record', startDate:'2026-01-01',endDate:'2046-12-31',paymentTermDays:30,paymentTerms:'ชำระตามข้อมูลสัญญาที่บันทึกไว้',rates:[{startDate:'2026-01-01',endDate:'2026-12-31',rate:'4.1234'},{startDate:'2027-01-01',rate:'3.9876'}]};
  const saved=JSON.stringify(snapshot);const d=documentDefinition(snapshot);const text=visibleText(d.content);
  assert.match(text,/ไซต์งาน: ไซต์หนึ่ง \(SCHOOL-001\)/);assert.match(text,/1 มกราคม 2569/);assert.match(text,/31 ธันวาคม 2589/);
- assert.match(text,/1\. .*4\.1234/);assert.match(text,/2\. .*3\.9876/);assert.match(text,/30 วัน/);assert.match(text,/ชำระตามข้อมูลสัญญาที่บันทึกไว้/);
- assert.equal(d.content.some((node:any)=>node.table),false);assert.equal(JSON.stringify(snapshot),saved);
+ assert.match(text,/4\.1234/);assert.match(text,/3\.9876/);assert.match(text,/30 วัน/);assert.match(text,/ชำระตามข้อมูลสัญญาที่บันทึกไว้/);
+ assert.equal(d.content.some((node:any)=>node.table?.headerRows===1),true);assert.equal(JSON.stringify(snapshot),saved);
  const footer=visibleText(d.footer(1,1));assert.equal((footer.match(/วันที่ลงนาม: ____________________/g)??[]).length,2);assert.doesNotMatch(footer,/8 ตุลาคม 2569/);
 });
 test('legacy site identity stays name-only and continuation signatures occur only on final page',()=>{
@@ -207,24 +194,6 @@ test('a signatory block taller than A4 fails explicitly instead of producing neg
 });
 
 
-test('compact header gives issuer its logical lines and right metadata only the saved title number and issue date', () => {
-  const s = {...fixture, issuer:{...fixture.issuer,branch:'00000',phone:'02-000-0000',email:'billing@example.test'}, dueDate:'2026-11-07'};
-  const header = documentDefinition(s).content[0];
-  assert.deepEqual(header.columns.map((c:any)=>c.width), [77.292,51.528,180.348,51.528,154.584]);
-  assert.equal(header.columnGap,0);
-  assert.equal(header.columns[0].image,s.logoDataUri);
-  assert.equal(header.columns[0].width,77.292);
-  const issuer=header.columns[2].stack;
-  assert.equal(issuer.length,5);
-  assert.equal(visibleText(issuer[0]),s.issuer.name);
-  assert.equal(visibleText(issuer[1]),s.issuer.address);
-  assert.match(visibleText(issuer[2]),/Tax ID: 0000000000000 \(00000\)/);
-  assert.match(visibleText(issuer[3]),/02-000-0000/);
-  assert.equal(visibleText(issuer[4]),'billing@example.test');
-  const metadata=header.columns[4];
-  assert.equal(metadata.alignment,'right');
-  assert.equal(metadata.stack.length,4);
-  assert.match(visibleText(metadata),/ใบแจ้งหนี้.*Invoice.*INV2026100001.*8 ตุลาคม 2569/s);
-  assert.doesNotMatch(visibleText(metadata),/Due|7 พฤศจิกายน|Customer/);
-  assert.ok(metadata.stack.every((node:any)=>node.noWrap!==true));
+test('reference header places issuer close to logo and includes saved title number issued and invoice due metadata',()=>{
+ const snapshot={...fixture,dueDate:'2026-11-07'};const header=documentDefinition(snapshot).content[0];assert.deepEqual(header.columns.map((c:any)=>c.width),[65,'*',190]);assert.equal(header.columnGap,10);assert.equal(header.columns[0].image,snapshot.logoDataUri);assert.match(visibleText(header.columns[1]),/Tax ID/);assert.match(visibleText(header.columns[2]),/Invoice.*INV2026100001.*Issued.*Due/s);assert.ok(header.columns[2].stack.every((n:any)=>n.noWrap!==true));
 });

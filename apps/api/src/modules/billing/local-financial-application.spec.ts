@@ -40,7 +40,7 @@ test('future financial originals freeze protocol site identity and persist the r
  if(sql.includes('AS starts'))return {rows:[{starts:'2026-09-01',ends:'2026-09-30'}]};
  if(sql.includes('INSERT INTO documents')){persisted=JSON.parse(params[7]);insertedVersion=params[10];return {rows:[{id:params[0],snapshot:persisted}]};}return {rows:[]};}})};
  const service=new LocalFinancialApplicationService(db as unknown as DatabaseService,{assertEnabled:async()=>{}} as unknown as FinancialReadinessService);
- const result=await service.issueInvoice('cycle');assert.equal(result.document.snapshot.customer.external_site_id,'PROTOCOL-002');assert.equal(persisted.templateVersion,'sarabun-a4-v4');assert.equal(insertedVersion,'sarabun-a4-v4');assert.equal(logoHash(persisted.logo),createHash('sha256').update(readFileSync(new URL('../../../../web/public/brand/solar-roof-document-stacked.png',import.meta.url))).digest('hex'));
+ const result=await service.issueInvoice('cycle');assert.equal(result.document.snapshot.customer.external_site_id,'PROTOCOL-002');assert.equal(persisted.templateVersion,'sarabun-a4-v5');assert.equal(insertedVersion,'sarabun-a4-v5');assert.equal(persisted.brandPrimary,'#f29700');assert.equal(persisted.policyHash,TEST_FINANCIAL_POLICY_HASH);assert.equal(persisted.policy.logo,'/brand/solar-roof-document.png');assert.equal(logoHash(persisted.logo),createHash('sha256').update(readFileSync(new URL('../../../../web/public/brand/solar-roof-document-stacked.png',import.meta.url))).digest('hex'));
 });
 
 // Missing persistence/normalization must fail here, independently of SQL column ordering.
