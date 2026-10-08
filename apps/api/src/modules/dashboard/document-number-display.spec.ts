@@ -8,4 +8,3 @@ test('PDF response filename uses the original human number with header-safe esca
  await controller.documentPdf('internal',{user:{role:'owner'}},{setHeader:(k:string,v:string)=>{headers[k]=v;},send:()=>{}} as any);
  assert.equal(headers['Content-Disposition'],'inline; filename="PPA261000001___X-Test_yes.pdf"');
 });
-
