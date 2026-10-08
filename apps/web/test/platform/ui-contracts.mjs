@@ -39,7 +39,10 @@ try {
     const invoiceAction=menuMode?page.getByRole('menuitem',{name:'ดูใบแจ้งหนี้',exact:true}):page.getByRole('button',{name:'ดูใบแจ้งหนี้',exact:true});
     const response=page.waitForResponse(r=>r.url()===web+'/v1/operations/documents/'+invoice);
     await invoiceAction.click();assert.equal((await response).status(),200);
-    await page.getByRole('dialog').getByRole('alert').waitFor();assert.equal(await page.getByRole('dialog').getByRole('button',{name:/พิมพ์|Print/}).isDisabled(),true,'Metadata-only issued fixture cannot print invented evidence');
+    const preview=page.getByRole('dialog');await preview.getByRole('alert').waitFor();
+    assert.equal(await preview.getByRole('button',{name:/พิมพ์|Print|ดาวน์โหลด|Download/}).count(),0,'Metadata-only original has no print/download buttons');
+    assert.equal(await preview.getByRole('link',{name:/พิมพ์|Print|ดาวน์โหลด|Download/}).count(),0,'Metadata-only original has no print/download links');
+    assert.equal(await preview.locator('iframe').count(),0,'Metadata-only original has no fabricated PDF frame');
     await page.keyboard.press('Escape');
     if(menuMode)await page.getByRole('button',{name:/เมนูการดำเนินการ|Open actions menu/}).click();
     const visibleForbiddenActions=await page.getByText(/ตรวจสอบสลิป|ตรวจสลิป|Verify Payment Slip|Verify Payment/).filter({visible:true}).count();assert.equal(visibleForbiddenActions,0,role);
@@ -65,8 +68,13 @@ try {
   await page.locator('img[alt="Slip Preview"]').waitFor();await db.query('UPDATE users SET school_id=NULL WHERE id=$1',[user]);
   const denied=page.waitForResponse(r=>r.url().endsWith('/pay')),capRefresh=page.waitForResponse(r=>r.url().endsWith('/v1/auth/capabilities'));
   await page.getByRole('button',{name:'ยืนยันการชำระเงิน',exact:true}).click();assert.equal((await denied).status(),403);assert.deepEqual((await (await capRefresh).json()).operationsActions,[]);
-  await page.getByRole('dialog').getByRole('alert').filter({hasText:'สิทธิ์ของคุณเปลี่ยนแล้ว'}).waitFor();
-  await page.getByRole('button',{name:'ยกเลิก',exact:true}).click();assert.equal(await page.getByRole('button',{name:'ชำระเงินและแนบสลิป',exact:true}).count(),0);
+  const deniedDialog=page.getByRole('dialog');
+  await deniedDialog.getByRole('alert').filter({hasText:'เกิดข้อผิดพลาดในการส่งหลักฐานการชำระเงิน'}).waitFor();
+  await deniedDialog.locator('button[type="submit"]:disabled').waitFor();
+  assert.equal(await deniedDialog.getByRole('button',{name:'ยืนยันการชำระเงิน',exact:true}).isDisabled(),true,'Refreshed empty capabilities disable payment submission');
+  await page.getByRole('button',{name:'ยกเลิก',exact:true}).click();await deniedDialog.waitFor({state:'hidden'});
+  await page.getByRole('alert').filter({hasText:'สิทธิ์ของคุณเปลี่ยนแล้ว'}).waitFor();
+  assert.equal(await page.getByRole('button',{name:'ชำระเงินและแนบสลิป',exact:true}).count(),0);
   await db.query('UPDATE users SET school_id=$1 WHERE id=$2',[school,user]);
   const expectedDeniedErrors=errors.filter(message=>message.includes('403 (Forbidden)'));assert.equal(expectedDeniedErrors.length,1,'One deliberate denied HTTP request is reported by Chromium');
   assert.deepEqual(errors.filter(message=>!message.includes('403 (Forbidden)')),[],timezoneId);errors.length=0;
@@ -103,5 +111,9 @@ try {
   await page.getByRole('link',{name:'เข้าสู่ระบบใหม่',exact:true}).click();await page.waitForURL(web+'/login?sessionExpired=1');assert.equal(refreshCount,1);
   assert.deepEqual(errors,stalled==='logout'?['Failed to load resource: the server responded with a status of 401 (Unauthorized)']:[],stalled+' timeout retains expected invalid-refresh 401 and no unexpected console/page errors');await context.close();
  }
- console.log('PASS U1: actual ID HTTP preview beyond first page, truthful metadata-only reason/print disabled, 5 roles, UTC/Bangkok, resize and history');
-} finally {await browser.close();await db.query('DELETE FROM audit_events WHERE actor_id=$1',[user]);await db.query('DELETE FROM users WHERE id=$1',[user]);await db.query('DELETE FROM documents WHERE site_id=$1',[site]);await db.query('DELETE FROM payments WHERE billing_cycle_id IN (SELECT id FROM billing_cycles WHERE site_id=$1)',[site]);await db.query('DELETE FROM billing_cycles WHERE site_id=$1',[site]);await db.query('DELETE FROM sites WHERE id=$1',[site]);await db.query('DELETE FROM schools WHERE id=$1',[school]);await db.end();}
+ console.log('PASS U1: actual ID HTTP preview beyond first page, truthful metadata-only reason/no print or download, 5 roles, UTC/Bangkok, resize and history');
+} finally {
+ // Issued originals and their fixture dependencies remain until owned isolated-stack teardown.
+ // The disposable CI database is removed by scripts/ci/isolated-stack.sh; immutability stays enforced.
+ await browser.close();await db.end();
+}
