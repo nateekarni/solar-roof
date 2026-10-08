@@ -36,10 +36,10 @@
 **Consumes:** Task1 reviewed numbering paths; existing scoped payment submission/approval/full-settlement guards.
 **Produces:** Optional payerName/paymentMethod/originBank/originAccount frozen approved transfer fields; report exact property names to Task3.
 
-- [ ] Write red tests for valid optional metadata, trimmed/length/enum limits, omitted legacy compatibility, rejected malformed values, scoped officer review and approved snapshot freeze.
-- [ ] Add nullable data columns via new migration; never edit applied SQL. Support current transfer flow metadata without new cash/card settlement behavior.
-- [ ] Capture optional fields when submitting payment, expose them in officer review, preserve on resubmission/approval semantics and snapshot only approved transfers. Missing values remain absent/dash; receiving accounts never masquerade as payer accounts.
-- [ ] Add translated Thai/English inputs/review labels and API types, meaningful behavior tests; preserve decimal amounts/authorization/retry behavior. Commit selective code/tests/migration with report.
+- [x] Write red tests for valid optional metadata, trimmed/length/enum limits, omitted legacy compatibility, rejected malformed values, scoped officer review and approved snapshot freeze.
+- [x] Add nullable data columns via new migration; never edit applied SQL. Support current transfer flow metadata without new cash/card settlement behavior.
+- [x] Capture optional fields when submitting payment, expose them in officer review, preserve on resubmission/approval semantics and snapshot only approved transfers. Missing values remain absent/dash; receiving accounts never masquerade as payer accounts.
+- [x] Add translated Thai/English inputs/review labels and API types, meaningful behavior tests; preserve decimal amounts/authorization/retry behavior. Commit selective code/tests/migration with report.
 
 ### Task 3: Reference PDF rendering and frozen local draft
 
