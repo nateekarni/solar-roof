@@ -1,0 +1,2 @@
+ALTER TABLE financial_month_jobs ADD COLUMN next_attempt_at timestamptz NOT NULL DEFAULT now(), ADD COLUMN last_attempt_at timestamptz;
+CREATE TABLE financial_staff_notices(id uuid PRIMARY KEY,job_id uuid NOT NULL REFERENCES financial_month_jobs(id),site_id uuid NOT NULL REFERENCES sites(id),kind text NOT NULL,detail jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),UNIQUE(job_id,kind));
