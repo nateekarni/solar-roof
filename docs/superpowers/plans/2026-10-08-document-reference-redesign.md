@@ -60,6 +60,5 @@
 
 - [x] Before any additive writes record every current original hash; root applies only required new migrations to approved loopback synthetic fixture after checking migration bytes/markers.
 - [x] After each scoped review merge reviewed feature commits into integration and verify shared application. Run fresh normal HTTP/MQTT→PPA→invoice→payment→receipt; multiple transfers, optional metadata and concurrent allocation; saved/download/SMTP/browser parity, old hashes, crossorg/retry guards.
-- [ ] Full integrated tests/lint and opt-in PostgreSQL original/numbering/payment boundaries. Independent most-capable final delta review; one scoped fix wave for final findings.
+- [x] Full integrated tests/lint and opt-in PostgreSQL original/numbering/payment boundaries. Independent most-capable final delta review; one scoped fix wave for final findings.
 - [ ] Record durable verification/review and ADR for permanent human-numbering identity tradeoff, push authorized feature and update existing draftPR6. Keep main unmerged and no deployment.
-
