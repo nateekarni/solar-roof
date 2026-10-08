@@ -1,4 +1,6 @@
 "use client";
+import { OrganizationPicker, useOrganizationCatalog } from "../organization/organization-picker";
+import { organizationSitePayload, type OrganizationSelection } from "../organization/organization-selection";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "../../components/ui/tabs";
 import { siteFormClassName, siteTabsListClassName, siteTabsTriggerClassName } from "./site-form-layout";
 import { ManualConnectionSection } from "./manual-connection-section";
@@ -109,6 +111,8 @@ export function SiteFormDialog({
   const { user } = useAuth();
   const t = useT();
   const locale = useLocale();
+  const [organization,setOrganization]=React.useState<OrganizationSelection|null>(null);
+  const organizationCatalog=useOrganizationCatalog(open);
   const [step, setStep] = React.useState<1 | 3>(1);
   const [loading, setLoading] = React.useState(false);
   const [pingStatus, setPingStatus] = React.useState<"idle" | "testing" | "online" | "offline">("idle");
@@ -140,11 +144,12 @@ export function SiteFormDialog({
   });
 
   const formValues = watch();
+  const selectOrganization=React.useCallback((selection:OrganizationSelection|null)=>{setOrganization(selection);setValue("schoolName",selection?.organization.name??"",{shouldValidate:true});},[setValue]);
 
   React.useEffect(() => {
     if (open) {
       setSampleInput("");setStep(1);setImportVersion(0);setImportReport("");setAdditionalDevices([]);setReceiveConfig({messagesPath:'payloads',fieldPaths:{},deviceAliases:[]});
-      setFormError("");
+      setFormError("");setOrganization(null);
       apiClient.get<PayloadRevision[]>("/v1/settings/payload-presets").then(setPayloadPresets).catch(e => setFormError(e.message));
       setPingStatus("idle");
       setPingMessage("");
@@ -243,7 +248,7 @@ export function SiteFormDialog({
       const finalStatus = "offline";
       const created = await apiClient.post<{ configDelivery: string }>("/v1/sites", {
         name: values.name,
-        schoolName: values.schoolName,
+        ...organizationSitePayload(organization),
         capacityMwp: values.capacityMwp,
         latitude: values.latitude,
         longitude: values.longitude,
@@ -338,20 +343,9 @@ export function SiteFormDialog({
                 )}
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="organization-name" required className="text-sm font-medium">
-                  {locale === "th" ? "ชื่อองค์กร" : "Organization Name"}
-                </Label>
-                <Input
-                  id="organization-name"
-                  placeholder={locale === "th" ? "ระบุชื่อองค์กร เช่น องค์กรบ้านดอนสำราญ" : "e.g. Demonstration Organization"}
-                  className="text-sm h-10"
-                  {...register("schoolName")}
-                />
-                {errors.schoolName && (
-                  <p className="text-sm text-destructive">{errors.schoolName.message}</p>
-                )}
-              </div>
+              <OrganizationPicker {...organizationCatalog} value={organization} onChange={selectOrganization} locale={locale} canEdit={user?.role==="admin"} disabled={loading}/>
+              {organizationCatalog.error&&<p role="alert" className="text-sm text-destructive">{organizationCatalog.error}</p>}
+              {errors.schoolName&&<p className="text-sm text-destructive">{errors.schoolName.message}</p>}
 
               </div>
               <div className="grid gap-3 sm:grid-cols-3">

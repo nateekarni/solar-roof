@@ -1,5 +1,7 @@
 import {
   BadRequestException,
+  ForbiddenException,
+  ConflictException,
   Body,
   Controller,
   Delete,
@@ -12,6 +14,7 @@ import {
   Query,
   Req,
 } from "@nestjs/common";
+import { organizationColumns, parseOrganization, insertOrganization, resolveSiteOrganization, organizationCodeError, type OrganizationInput } from "./organization-master.js";
 import { siteHistoryFilter } from "./site-history.js";
 import { randomUUID } from "node:crypto";
 
@@ -74,32 +77,33 @@ export class AssetsController {
   @Get("schools")
   async listSchools(@Req() req: { user?: { role?: string; schoolId?: string | null } }) {
     const res = await this.db.query(
-      "SELECT id, name, code, region, status FROM schools WHERE ($1::uuid IS NULL OR id = $1) AND $2 ORDER BY name",
+      `SELECT ${organizationColumns} FROM schools WHERE ($1::uuid IS NULL OR id = $1) AND $2 ORDER BY name`,
       [req.user?.role === "admin" ? null : req.user?.schoolId ?? null, req.user?.role !== "school_user" || Boolean(req.user?.schoolId)]
     );
     return res.rows;
   }
 
   @Post("schools")
-  async createSchool(@Body() body: { name?: string; region?: string }) {
-    const name = body.name?.trim();
-    const region = body.region?.trim() || "ภาคกลาง";
-    if (!name) {
-      throw new BadRequestException("School name is required");
-    }
+  async createSchool(@Body() body: OrganizationInput & { region?: string }) {
+    const input=parseOrganization(body);
+    try { return await insertOrganization(this.db,input,body.region?.trim()||"ภาคกลาง"); }
+    catch(error) { organizationCodeError(error); }
+  }
 
-    const countRes = await this.db.query("SELECT count(*)::int AS count FROM schools");
-    const count = countRes.rows[0]?.count ?? 0;
-    const code = `SCH-${String(count + 1).padStart(3, "0")}`;
-    const id = randomUUID();
-
-    const sql = `
-      INSERT INTO schools (id, name, code, region, status)
-      VALUES ($1, $2, $3, $4, 'active')
-      RETURNING id, name, code, region, status
-    `;
-    const res = await this.db.query(sql, [id, name, code, region]);
-    return res.rows[0];
+  @Patch("schools/:id")
+  async updateSchool(@Param("id") id:string,@Body() body:OrganizationInput & {impactConfirmed?:boolean;expectedUpdatedAt?:string},@Req() req:{user?:{role?:string;schoolId?:string}}){
+    if(req.user?.role!=="admin")throw new ForbiddenException("This action is not permitted for your role");
+    if(body.impactConfirmed!==true)throw new BadRequestException("Confirm the impact on all linked sites and future contracts");
+    if(!body.expectedUpdatedAt||!Number.isFinite(Date.parse(body.expectedUpdatedAt)))throw new BadRequestException("Reload organization before saving");
+    const input=parseOrganization(body);
+    if(!body.code)throw new BadRequestException("Organization code is required");
+    try {
+      const result=await this.db.query(`UPDATE schools SET name=$2,code=$3,legal_name=$4,tax_id=$5,tax_branch=$6,tax_address=$7,contact_name=$8,phone=$9,document_email=$10,updated_at=now()
+        WHERE id=$1 AND updated_at=$11::timestamptz RETURNING ${organizationColumns}`,
+        [id,input.name,input.code,input.legalName,input.taxId,input.taxBranch,input.taxAddress,input.contactName,input.phone,input.documentEmail,body.expectedUpdatedAt]);
+      if(!result.rows[0])throw new ConflictException("Organization changed; reload before editing");
+      return result.rows[0];
+    }catch(error){organizationCodeError(error);}
   }
 
   @Post("sites/test-connection")
@@ -201,6 +205,7 @@ export class AssetsController {
         coalesce(round(si.capacity_mwp::numeric, 4), 0) AS "capacityMwp",
         CASE WHEN si.status = 'archived' THEN 'archived' WHEN g.last_seen_at >= now() - interval '120 seconds' THEN 'online' ELSE 'offline' END AS status,
         s.name AS "schoolName",
+        s.code AS "schoolCode",
         g.id AS "gatewayId",
         g.name AS "gatewayName",
         CASE WHEN g.last_seen_at >= now() - interval '120 seconds' THEN 'online' ELSE 'offline' END AS "gatewayStatus",
@@ -241,6 +246,7 @@ export class AssetsController {
         si.longitude,
         CASE WHEN si.status = 'archived' THEN 'archived' WHEN g.last_seen_at >= now() - interval '120 seconds' THEN 'online' ELSE 'offline' END AS status,
         s.name AS "schoolName",
+        s.code AS "schoolCode",
         g.id AS "gatewayId",
         g.name AS "gatewayName",
         coalesce(g.protocol, 'mqtt') AS protocol,
@@ -283,6 +289,7 @@ export class AssetsController {
       name?: string;
       schoolId?: string;
       schoolName?: string;
+      newOrganization?: OrganizationInput;
       capacityMwp?: number;
       latitude?: number;
       longitude?: number;
@@ -313,7 +320,7 @@ export class AssetsController {
     const lat = body.latitude === undefined || body.latitude === null ? null : Number(body.latitude);
     const lng = body.longitude === undefined || body.longitude === null ? null : Number(body.longitude);
 
-    if (!name || (!schoolId && !schoolName)) {
+    if (!name || (!schoolId && !schoolName && !body.newOrganization?.name)) {
       throw new BadRequestException("กรุณาระบุชื่อไซต์งานและโรงเรียนสังกัด");
     }
 
@@ -368,19 +375,7 @@ export class AssetsController {
     try {
       await client.query("BEGIN");
 
-      if (!schoolId) {
-        await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [schoolName]);
-        const existing = await client.query("SELECT id FROM schools WHERE name = $1 ORDER BY id FOR UPDATE", [schoolName]);
-        if (existing.rows.length > 1) throw new BadRequestException("Multiple schools share that name; reconcile before creating a site");
-        schoolId = existing.rows[0]?.id;
-        if (!schoolId) {
-          schoolId = randomUUID();
-          await client.query("INSERT INTO schools (id,name,code,region,status) VALUES ($1,$2,$3,'ภาคกลาง','active')", [schoolId,schoolName,`SCH-${schoolId}`]);
-        }
-      }
-      await client.query("SELECT id FROM schools WHERE id = $1 FOR UPDATE", [schoolId]);
-      const linked = await client.query("SELECT id FROM sites WHERE school_id = $1", [schoolId]);
-      if (linked.rows.length) throw new BadRequestException("โรงเรียนนี้มีไซต์งานแล้ว (หนึ่งโรงเรียนต่อหนึ่งไซต์งาน)");
+      schoolId = await resolveSiteOrganization(client,body);
       // 1. Create Site
       const siteSql = `
         INSERT INTO sites (id, school_id, name, capacity_mwp, latitude, longitude, status, external_site_id)
@@ -461,7 +456,7 @@ export class AssetsController {
       return { ...res.rows[0], configDelivery: delivered ? "published" : "pending" };
     } catch (err) {
       await client.query("ROLLBACK");
-      throw err;
+      organizationCodeError(err);
     } finally {
       client.release();
     }
@@ -475,6 +470,7 @@ export class AssetsController {
       name?: string;
       schoolId?: string;
       schoolName?: string;
+      newOrganization?: OrganizationInput;
       deviceId?: string;
       pollingIntervalSeconds?: number;
       alertRules?: Record<string, unknown>;
@@ -502,9 +498,8 @@ export class AssetsController {
         throw new NotFoundException("ไม่พบไซต์งานที่ต้องการแก้ไข");
       }
 
-      if (body.schoolName !== undefined) {
-        if (!body.schoolName.trim()) throw new BadRequestException("School name is required");
-        await client.query("UPDATE schools SET name = $1, updated_at = now() WHERE id = (SELECT school_id FROM sites WHERE id = $2)", [body.schoolName.trim(), id]);
+      if(body.schoolId !== undefined || body.newOrganization) {
+        body.schoolId=await resolveSiteOrganization(client,{schoolId:body.schoolId,...(body.newOrganization?{newOrganization:body.newOrganization}:{})});
       }
       const gateway = await client.query(`SELECT g.id,g.name,g.endpoint,g.external_gateway_id AS "externalGatewayId",s.external_site_id AS "externalSiteId" FROM gateways g JOIN sites s ON s.id=g.site_id WHERE g.site_id = $1 FOR UPDATE OF g`, [id]);
       const gw = gateway.rows[0];
@@ -659,7 +654,7 @@ export class AssetsController {
       return { success: true, configDelivery: delivered ? 'published' : 'pending', message: "อัปเดตข้อมูลไซต์งานเรียบร้อยแล้ว" };
     } catch (err) {
       await client.query("ROLLBACK");
-      throw err;
+      organizationCodeError(err);
     } finally {
       client.release();
     }
