@@ -1,4 +1,6 @@
 "use client";
+import { OrganizationPicker, useOrganizationCatalog } from "../organization/organization-picker";
+import { organizationSitePayload, type OrganizationSelection } from "../organization/organization-selection";
 import { BrokerSelect } from "./broker-select";
 import { siteControlsClassName, siteFormClassName, siteTabsListClassName, siteTabsTriggerClassName } from "./site-form-layout";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "../../components/ui/tabs";
@@ -85,6 +87,8 @@ export function SiteEditDialog({
   const { user } = useAuth();
   const t = useT();
   const locale = useLocale();
+  const [organization,setOrganization]=React.useState<OrganizationSelection|null>(null);
+  const organizationCatalog=useOrganizationCatalog(open);
   const [payloadConfig, setPayloadConfig] = React.useState<PayloadConfig | null>(null);
   const refreshPayload = React.useCallback(() => { if(siteId) apiClient.get<PayloadConfig | null>(`/v1/sites/${siteId}/payload-config`).then(config => setPayloadConfig(config?.externalSiteId && config.externalGatewayId ? config : null)).catch(() => setPayloadConfig(null)); }, [siteId]);
   const [meterPresets, setMeterPresets] = React.useState<Array<{ id: string; model: string; registers: unknown[] }>>([]);
@@ -120,6 +124,7 @@ export function SiteEditDialog({
   });
 
   const formValues = watch();
+  const selectOrganization=React.useCallback((selection:OrganizationSelection|null)=>{setOrganization(selection);setValue("schoolName",selection?.organization.name??"",{shouldValidate:true});},[setValue]);
 
   React.useEffect(() => {
     if (open && siteId) {
@@ -134,6 +139,7 @@ export function SiteEditDialog({
       apiClient.get<any>(`/v1/sites/${siteId}`)
         .then((siteData) => {
           if (siteData) {
+            setOrganization({kind:"existing",organization:{id:siteData.schoolId,name:siteData.schoolName||"",code:siteData.schoolCode||""}});
             reset({
               name: siteData.name || "",
               deviceId: siteData.deviceId,
@@ -194,7 +200,8 @@ export function SiteEditDialog({
     if (!siteId) return;
     setLoading(true);
     try {
-      const result = await apiClient.patch<{ configDelivery: string }>(`/v1/sites/${siteId}`, { ...values,
+      const {schoolName:_displayName,...siteValues}=values;
+      const result = await apiClient.patch<{ configDelivery: string }>(`/v1/sites/${siteId}`, { ...siteValues,...organizationSitePayload(organization),
 
       });
       if (result.configDelivery === "pending") notify.error("บันทึกแล้ว แต่ MQTT config ยังส่งไม่สำเร็จ กรุณาลองอีกครั้ง");
@@ -274,12 +281,9 @@ export function SiteEditDialog({
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <Label htmlFor="edit-organization-select" required className="text-sm font-medium">
-                    {locale === "th" ? "องค์กรต้นสังกัด" : "Associated Organization"}
-                  </Label>
-                  <Input id="edit-organization-select" {...register("schoolName")} />
-                </div>
+                <OrganizationPicker {...organizationCatalog} value={organization} onChange={selectOrganization} locale={locale} canEdit={user?.role==="admin"} disabled={loading}/>
+                {organizationCatalog.error&&<p role="alert" className="text-sm text-destructive">{organizationCatalog.error}</p>}
+                {errors.schoolName&&<p className="text-sm text-destructive">{errors.schoolName.message}</p>}
 
                 <div className="space-y-2">
                   <Label htmlFor="edit-capacity" required className="text-sm font-medium">

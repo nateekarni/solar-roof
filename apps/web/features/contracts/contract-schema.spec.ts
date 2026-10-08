@@ -7,11 +7,12 @@ const validContract = {
   effectiveDate: "2026-10-08",
   paymentTerms: "Within 30 days",
   signerName: "Authorized signer",
+  companyName:"Customer legal",taxId:"1234567890123",taxAddress:"Bangkok",
 };
 
 for (const [locale, messages] of [
-  ["en", { siteId: "Please select a site", effectiveDate: "Please enter an effective date", paymentTerms: "Please enter payment terms", signerName: "Please enter the signer's name" }],
-  ["th", { siteId: "กรุณาเลือกไซต์งาน", effectiveDate: "กรุณาระบุวันที่มีผล", paymentTerms: "กรุณาระบุเงื่อนไขการชำระเงิน", signerName: "กรุณาระบุชื่อผู้ลงนาม" }],
+  ["en", { siteId: "Please select a site", effectiveDate: "Please enter an effective date", paymentTerms: "Please enter payment terms", signerName: "Please enter the signer's name", companyName:"Please enter the legal name", taxId:"Please enter the tax ID", taxAddress:"Please enter the billing address" }],
+  ["th", { siteId: "กรุณาเลือกไซต์งาน", effectiveDate: "กรุณาระบุวันที่มีผล", paymentTerms: "กรุณาระบุเงื่อนไขการชำระเงิน", signerName: "กรุณาระบุชื่อผู้ลงนาม", companyName:"กรุณาระบุชื่อทางกฎหมาย", taxId:"กรุณาระบุเลขประจำตัวผู้เสียภาษี", taxAddress:"กรุณาระบุที่อยู่สำหรับออกเอกสาร" }],
 ] as const) {
   test(`required contract fields return ${locale} validation messages`, () => {
     for (const [field, message] of Object.entries(messages)) {
@@ -24,7 +25,7 @@ for (const [locale, messages] of [
     }
   });
 
-  test(`valid contract accepts omitted optional billing fields in ${locale}`, () => {
+  test(`valid contract accepts omitted optional contact fields in ${locale}`, () => {
     assert.deepEqual(createContractSchema(locale).parse(validContract), validContract);
   });
 }

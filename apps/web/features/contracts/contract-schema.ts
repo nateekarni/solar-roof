@@ -12,10 +12,10 @@ export function createContractSchema(locale: Locale) {
     effectiveDate: requiredText("กรุณาระบุวันที่มีผล", "Please enter an effective date"),
     paymentTerms: requiredText("กรุณาระบุเงื่อนไขการชำระเงิน", "Please enter payment terms"),
     signerName: requiredText("กรุณาระบุชื่อผู้ลงนาม", "Please enter the signer's name"),
-    taxId: z.string().optional(),
-    companyName: z.string().optional(),
+    taxId: requiredText("กรุณาระบุเลขประจำตัวผู้เสียภาษี", "Please enter the tax ID").pipe(z.string().regex(/^[0-9]{13}$/,locale==="th"?"เลขประจำตัวผู้เสียภาษีต้องมี 13 หลัก":"Tax ID must contain 13 digits")),
+    companyName: requiredText("กรุณาระบุชื่อทางกฎหมาย", "Please enter the legal name"),
     branch: z.string().optional(),
-    taxAddress: z.string().optional(),
+    taxAddress: requiredText("กรุณาระบุที่อยู่สำหรับออกเอกสาร", "Please enter the billing address"),
     billingEmail: z.string().optional(),
     billingPhone: z.string().optional(),
   });

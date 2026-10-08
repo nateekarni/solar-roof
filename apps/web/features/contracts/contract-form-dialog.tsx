@@ -68,6 +68,7 @@ export function ContractFormDialog({
   const [recipientOptions,setRecipientOptions]=React.useState<Array<{id:string;email:string;displayName:string}>>([]);
   const [loading, setLoading] = React.useState(false);
   const [loadingSites, setLoadingSites] = React.useState(false);
+  const [loadingOrganization,setLoadingOrganization]=React.useState(false);
   const [sites, setSites] = React.useState<SiteOption[]>([]);
   const [rateRows, setRateRows] = React.useState<RateRow[]>([
     {
@@ -117,6 +118,17 @@ export function ContractFormDialog({
 
   const selectedSiteId=watch('siteId');
   React.useEffect(()=>{
+    let active=true;
+    const keys=['companyName','taxId','branch','taxAddress','billingEmail','billingPhone'] as const;
+    for(const key of keys)setValue(key,'');
+    setLoadingOrganization(Boolean(open&&selectedSiteId));
+    if(open&&selectedSiteId)apiClient.get<Pick<ContractFormValues,typeof keys[number]>>(`/v1/operations/contracts/organization-defaults?siteId=${encodeURIComponent(selectedSiteId)}`).then(defaults=>{
+      if(active)for(const key of keys)setValue(key,defaults[key]??'');
+    }).catch(error=>{if(active)notify.error(error instanceof Error?error.message:(locale==='th'?'โหลดข้อมูลเอกสารองค์กรไม่สำเร็จ':'Unable to load organization document defaults'));}).finally(()=>{if(active)setLoadingOrganization(false);});
+    return()=>{active=false;};
+  },[open,selectedSiteId,setValue,locale]);
+
+  React.useEffect(()=>{
     let active=true;setRecipientUserId('');setRecipientOptions([]);
     if(open&&selectedSiteId&&localTestMode)apiClient.get<Array<{id:string;email:string;displayName:string}>>(`/v1/operations/contracts/recipient-options?siteId=${encodeURIComponent(selectedSiteId)}`).then(rows=>{if(active)setRecipientOptions(rows);}).catch(()=>{if(active)setRecipientOptions([]);});
     return ()=>{active=false;};
@@ -153,6 +165,7 @@ export function ContractFormDialog({
   };
 
   const onSubmit = async (values: ContractFormValues) => {
+    if(loadingOrganization)return;
     setLoading(true);
     try {
       const payload = {
@@ -477,7 +490,7 @@ export function ContractFormDialog({
             >
               {t("common.cancel")}
             </Button>
-            <Button type="submit" size="sm" disabled={loading} className="text-xs h-10 px-5 font-semibold">
+            <Button type="submit" size="sm" disabled={loading || loadingOrganization} className="text-xs h-10 px-5 font-semibold">
               {loading ? t("common.saving") : locale === "th" ? "บันทึกสัญญาและอัตราค่าไฟ" : "Save Contract"}
             </Button>
           </DialogFooter>
