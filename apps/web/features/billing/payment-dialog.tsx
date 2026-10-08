@@ -33,7 +33,28 @@ import { Badge } from "../../components/ui/badge";
 import { useLocale } from "../../providers/locale-provider";
 import { apiClient } from "../../lib/api-client";
 import { useFinancialCapabilities } from "../../lib/financial-capabilities";
+import { normalizePaymentMetadata, type PaymentMetadata } from '@solar/api-contracts';
+import {paymentMetadataCopy} from './payment-metadata-copy';
 import { transferAmount,bangkokTransferWallTime,transferWallTimeToIso } from "./payment-input";
+
+interface PayerInputValue {payerName:string;paymentMethod:string;originBank:string;originAccount:string;}
+export function PaymentMetadataFields({locale,value,onChange,disabled=false}:{locale:'th'|'en';value:PayerInputValue;onChange:(value:PayerInputValue)=>void;disabled?:boolean}) {
+ const copy=paymentMetadataCopy[locale];
+ return <fieldset className="space-y-3" disabled={disabled}>
+  <legend className="text-xs font-semibold">{copy.payerName} / {copy.paymentMethod} ({copy.optional})</legend>
+  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+   {(['payerName','originBank','originAccount'] as const).map(field=><div key={field} className="space-y-2">
+    <Label htmlFor={'transfer-'+field}>{copy[field]} ({copy.optional})</Label>
+    <Input id={'transfer-'+field} value={value[field]} maxLength={{payerName:200,originBank:120,originAccount:80}[field]} onChange={event=>onChange({...value,[field]:event.target.value})}/>
+   </div>)}
+   <div className="space-y-2"><Label htmlFor="transfer-method">{copy.paymentMethod} ({copy.optional})</Label>
+    <select id="transfer-method" className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={value.paymentMethod} onChange={event=>onChange({...value,paymentMethod:event.target.value})}>
+     <option value="">{copy.unspecified}</option><option value="bank_transfer">{copy.bank_transfer}</option><option value="promptpay">{copy.promptpay}</option>
+    </select>
+   </div>
+  </div>
+ </fieldset>;
+}
 
 interface PaymentDialogProps {
   open: boolean;
@@ -59,6 +80,8 @@ export function PaymentDialog({
 }: PaymentDialogProps) {
   const locale=useLocale();
   const text = (th: string, en: string) => (locale === "th" ? th : en);
+  const copy=paymentMetadataCopy[locale];
+  const [payerMetadata,setPayerMetadata]=React.useState({payerName:"",paymentMethod:"",originBank:"",originAccount:""});
   const capabilities=useFinancialCapabilities();
   const canSubmit=(capabilities.operationsActions??[]).includes("submit_payment");
   const [enteredAmount,setEnteredAmount]=React.useState("");
@@ -109,6 +132,7 @@ export function PaymentDialog({
       setSlipPreviewUrl(null);
       setPaidAt(bangkokTransferWallTime());
       setNote("");
+      setPayerMetadata({payerName:"",paymentMethod:"",originBank:"",originAccount:""});
       setErrorMsg(null);
       setSuccessMsg(null);
     }
@@ -165,6 +189,8 @@ export function PaymentDialog({
     try{actualTransfer=transferAmount(enteredAmount);}catch{setErrorMsg(locale==="th"?"กรุณาระบุยอดโอนเป็นเงินบาทที่มากกว่าศูนย์และมีทศนิยมไม่เกิน 2 ตำแหน่ง":"Enter a positive THB transfer amount with at most two decimal places.");return;}
     let transferInstant:string;
     try{transferInstant=transferWallTimeToIso(paidAt);}catch{setErrorMsg(locale==="th"?"กรุณาระบุวันและเวลาที่โอนให้ถูกต้อง (เวลาไทย)":"Enter a valid transfer date and time in Bangkok time.");return;}
+    let metadata:PaymentMetadata;
+    try{metadata=normalizePaymentMetadata(payerMetadata);}catch{setErrorMsg(copy.invalid);return;}
     submitting.current=true;
     setIsSubmitting(true);
     setErrorMsg(null);
@@ -172,6 +198,7 @@ export function PaymentDialog({
     try {
       await apiClient.post(`/v1/billing-cycles/${billingCycle.id}/pay`, {
         amount: capabilities.financialScope==="TEST"?actualTransfer:Number(actualTransfer),
+        ...metadata,
         paidAt: transferInstant,
         slipUrl: slipPreviewUrl,
         note: note.trim() || undefined,
@@ -365,6 +392,8 @@ export function PaymentDialog({
                   )}
                 </div>
               </div>
+
+              <PaymentMetadataFields locale={locale} value={payerMetadata} onChange={setPayerMetadata} disabled={isSubmitting}/>
 
               {/* Transfer Date Time */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">

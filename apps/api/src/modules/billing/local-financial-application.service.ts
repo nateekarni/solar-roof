@@ -9,6 +9,8 @@ import { schoolScope, type ScopePrincipal } from '../../common/auth/route-policy
 import { DatabaseService } from '../../database/database.service.js';
 import { FinancialReadinessService } from './financial-readiness.service.js';
 import { calculateTestTotals, requireTestTransferAmount, validFinancialDate, decimal, sqlCalendarPeriod, actualEnergyDifference, requireTestSettlement, TEST_FINANCIAL_POLICY, TEST_FINANCIAL_POLICY_HASH, localFinancialBinding } from './local-financial-policy.js';
+import type { PaymentSubmission } from '@solar/api-contracts';
+import { reviewedPaymentMetadata } from './payment-metadata.js';
 import { allocateDocumentNumber } from '../documents/document-number.js';
 import { FINANCIAL_TEMPLATE_VERSION, renderLocalTestPdf } from '../documents/local-test-pdf.js';
 const validDate=validFinancialDate;
@@ -82,8 +84,9 @@ export class LocalFinancialApplicationService {
   await client.query('INSERT INTO financial_delivery_outbox(id,document_id,artifact_sha256) VALUES($1,$2,$3)',[randomUUID(),doc.id,sha256]);return doc;
  }
  async issueInvoice(id:string){await this.readiness.assertEnabled('issue');return this.db.transaction(async client=>{const cycle=(await client.query('SELECT * FROM billing_cycles WHERE id=$1 FOR UPDATE',[id])).rows[0];if(!cycle)throw new NotFoundException('Billing cycle not found');const document=await this.issue(client,cycle,'invoice');await client.query("UPDATE billing_cycles SET status=CASE WHEN status IN('paid','pending_verification') THEN status ELSE 'approved' END WHERE id=$1",[id]);return {created:true,document:{...document,documentNumber:document.document_number}};});}
- async submitPayment(id:string,body:{amount?:number|string;paidAt?:string;slipUrl?:string;evidenceKey?:string;note?:string},actorId:string|undefined){
+ async submitPayment(id:string,body:PaymentSubmission,actorId:string|undefined){
   if(!actorId)throw new BadRequestException('Actor required');
+  const metadata=reviewedPaymentMetadata(body);
   let amount:string;try{amount=requireTestTransferAmount(body.amount);}catch(error){throw new BadRequestException((error as Error).message);}
   if(!body.slipUrl&&!body.evidenceKey)throw new BadRequestException('Transfer evidence required');
   const paidAt=body.paidAt?new Date(body.paidAt):new Date();if(!Number.isFinite(paidAt.getTime()))throw new BadRequestException('Valid transfer date required');
@@ -92,7 +95,7 @@ export class LocalFinancialApplicationService {
    if(!['approved','pending_verification'].includes(cycle.status)||cycle.policy_hash!==TEST_FINANCIAL_POLICY_HASH)throw new ConflictException('Issued unpaid TEST invoice required');
    const invoice=(await client.query("SELECT id FROM documents WHERE billing_cycle_id=$1 AND document_type='invoice' AND status='issued'",[id])).rows[0];if(!invoice)throw new ConflictException('Issued invoice required');
    const duplicate=await client.query(`SELECT 1 FROM payments WHERE submitted_by IS NOT NULL AND status IN('pending_verification','paid') AND (evidence_key=$1 OR slip_url=$2)`,[body.evidenceKey??null,body.slipUrl??null]);if(duplicate.rowCount)throw new ConflictException('Transfer evidence already submitted');
-   const paymentId=randomUUID();await client.query(`INSERT INTO payments(id,billing_cycle_id,amount,status,paid_at,slip_url,evidence_key,note,submitted_by) VALUES($1,$2,$3,'pending_verification',$4,$5,$6,$7,$8)`,[paymentId,id,amount,paidAt,body.slipUrl??null,body.evidenceKey??null,body.note??null,actorId]);
+   const paymentId=randomUUID();await client.query(`INSERT INTO payments(id,billing_cycle_id,amount,status,paid_at,slip_url,evidence_key,note,submitted_by,payer_name,payment_method,origin_bank,origin_account) VALUES($1,$2,$3,'pending_verification',$4,$5,$6,$7,$8,$9,$10,$11,$12)`,[paymentId,id,amount,paidAt,body.slipUrl??null,body.evidenceKey??null,body.note??null,actorId,metadata.payerName??null,metadata.paymentMethod??null,metadata.originBank??null,metadata.originAccount??null]);
    await client.query("UPDATE billing_cycles SET status='pending_verification' WHERE id=$1",[id]);return {success:true,paymentId,status:'pending_verification'};
   }).catch(error=>{if(error?.code==='23505'&&['payments_new_active_evidence','payments_new_active_slip'].includes(error.constraint))throw new ConflictException('Transfer evidence already submitted');throw error;});
  }

@@ -1,3 +1,5 @@
+export { normalizePaymentMetadata } from './payments.js';
+export type { PaymentMetadata, PaymentSubmission, PaymentTransferRow, TransferPaymentMethod } from './payments.js';
 export type { OperationQuery, OperationPage, OperationRow, BillingRow, OperationAction, PersistedDocumentRow } from './operations.js';
 
 export interface ApiEnvelope<T> {

@@ -29,7 +29,7 @@ export interface DocumentSnapshot {
   rates: { startDate: string; endDate?: string; rate: string }[];
   items: { description: string; period?: string; quantity: string; rate: string; amount: string }[];
   totals?: { subtotal: string; tax?: string; taxLabel?: string; total: string };
-  approvedTransfers: { paidAt: string; amount: string; evidence?: string; status: 'paid' | 'approved' }[];
+  approvedTransfers: { payerName?: string; paymentMethod?: 'bank_transfer' | 'promptpay'; originBank?: string; originAccount?: string; paidAt: string; amount: string; evidence?: string; status: 'paid' | 'approved' }[];
   paymentAccounts: { bankName: string; accountName: string; accountNumber: string }[];
   dueDate?: string;
   paymentTerms?: string;

@@ -36,7 +36,7 @@ interface SavedFinancialDocument {
     dueDate?: string;
     logo: string;
     banks: { bank_name: string; account_name: string; account_number: string }[];
-    payments: { status: string; paid_at: string | Date; amount: string; evidence_key?: string; slip_url?: string }[];
+    payments: { payer_name?: string | null; payment_method?: 'bank_transfer' | 'promptpay' | null; origin_bank?: string | null; origin_account?: string | null; status: string; paid_at: string | Date; amount: string; evidence_key?: string; slip_url?: string }[];
   };
 }
 function partySnapshot(party: SavedFinancialParty, customer: boolean): DocumentParty {
@@ -68,6 +68,10 @@ export function localTestDocumentSnapshot(document: SavedFinancialDocument): Doc
     approvedTransfers: s.payments.filter(p => p.status === 'paid' || p.status === 'approved').map(p => ({
       status: p.status as 'paid' | 'approved', paidAt: typeof p.paid_at === 'string' ? p.paid_at : p.paid_at.toISOString(), amount: p.amount,
       ...(p.evidence_key || p.slip_url ? { evidence: p.evidence_key || p.slip_url } : {}),
+      ...(p.payer_name ? { payerName: p.payer_name } : {}),
+      ...(p.payment_method ? { paymentMethod: p.payment_method } : {}),
+      ...(p.origin_bank ? { originBank: p.origin_bank } : {}),
+      ...(p.origin_account ? { originAccount: p.origin_account } : {}),
     })),
     paymentAccounts: s.banks.map(bank => ({ bankName: bank.bank_name, accountName: bank.account_name, accountNumber: bank.account_number })),
     ...(s.dueDate ? { dueDate: s.dueDate } : {}), logoDataUri: s.logo, templateVersion: s.templateVersion ?? FINANCIAL_TEMPLATE_VERSION, syntheticTest: true,

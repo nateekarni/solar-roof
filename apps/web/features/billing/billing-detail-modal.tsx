@@ -45,6 +45,9 @@ import { useFinancialCapabilities } from "../../lib/financial-capabilities";
 import { useSessionUser } from "../../providers/session-user-provider";
 import { notify } from "../../components/feedback/notifications";
 import { formatAppDate, formatAppDateTime } from "../../lib/date-format";
+import {normalizePaymentMetadata,type PaymentMetadata} from '@solar/api-contracts';
+import {PaymentMetadataFields} from './payment-dialog';
+import {paymentMetadataCopy} from './payment-metadata-copy';
 import { PaymentHistory,type TransferHistoryRow } from "./payment-history";
 import { formatTransferAmount,transferAmount } from "./payment-input";
 import { billingDetailRequest } from "./billing-detail-request";
@@ -97,8 +100,9 @@ export function BillingDetailModal({
   const financial = useFinancialCapabilities();
   const isSchoolUser = user?.role === "school_user";
   const canSubmitTransfer=(financial.operationsActions??[]).includes("submit_payment");
+  const [payerMetadata,setPayerMetadata]=React.useState({payerName:"",paymentMethod:"",originBank:"",originAccount:""});
   const [enteredTransferAmount,setEnteredTransferAmount]=React.useState("");
-  React.useEffect(()=>{setEnteredTransferAmount("");},[open,billingId]);
+  React.useEffect(()=>{setEnteredTransferAmount("");setPayerMetadata({payerName:"",paymentMethod:"",originBank:"",originAccount:""});},[open,billingId]);
 
   const [loading, setLoading] = React.useState(false);
   const [data, setData] = React.useState<BillingDetailData | null>(initialData || null);
@@ -147,6 +151,8 @@ export function BillingDetailModal({
       notify.error(locale==="th"?"กรุณาเลือกไฟล์ PNG, JPEG หรือ PDF ขนาดไม่เกิน 10 MB":"Choose a PNG, JPEG or PDF file no larger than 10 MB");
       return;
     }
+    let metadata:PaymentMetadata;
+    try{metadata=normalizePaymentMetadata(payerMetadata);}catch{notify.error(paymentMetadataCopy[locale].invalid);return;}
     setIsUploadingSlip(true);
     try {
       const reader = new FileReader();
@@ -155,6 +161,7 @@ export function BillingDetailModal({
         try {
           await apiClient.post(`/v1/billing-cycles/${data.id}/pay`, {
             amount: financial.financialScope==="TEST"?actualTransfer:Number(actualTransfer),
+            ...metadata,
             slipUrl: dataUrl,
             paidAt: new Date().toISOString(),
             note: "Uploaded via Billing Detail Modal",
@@ -436,6 +443,7 @@ export function BillingDetailModal({
               </div>
 
               {canSubmitTransfer&&!isPaid&&<div className="space-y-2">
+                <PaymentMetadataFields locale={locale} value={payerMetadata} onChange={setPayerMetadata} disabled={isUploadingSlip}/>
                 <Label htmlFor="detail-transfer-amount" required>{locale==='th'?'ยอดที่โอนครั้งนี้ (บาท)':'This transfer amount (THB)'}</Label>
                 <Input id="detail-transfer-amount" inputMode="decimal" value={enteredTransferAmount} onChange={event=>setEnteredTransferAmount(event.target.value)} disabled={isUploadingSlip} aria-describedby="detail-transfer-amount-help"/>
                 <p id="detail-transfer-amount-help" className="text-muted-foreground">{locale==='th'?'ระบุยอดโอนของหลักฐานแต่ละรายการก่อนอัปโหลด ระบบเก็บรายการที่โอนแต่ละครั้งแยกกัน':'Enter the amount for this evidence before uploading. Each transfer is retained separately.'}</p>
