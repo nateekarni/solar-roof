@@ -47,4 +47,3 @@ export function OrganizationEditDialog({open,onOpenChange,organization,onSave,lo
  <DialogFooter><Button type="button" variant="outline" onClick={()=>onOpenChange(false)} disabled={saving}>{locale==='th'?'ยกเลิก':'Cancel'}</Button><Button type="button" disabled={saving||(existing&&!confirmed)} onClick={()=>void save()}>{locale==='th'?'บันทึกข้อมูลองค์กร':'Save organization'}</Button></DialogFooter>
  </DialogContent></Dialog>;
 }
-

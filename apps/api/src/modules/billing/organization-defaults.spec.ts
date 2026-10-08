@@ -45,4 +45,3 @@ test('contract preparation reads current defaults only for authors and rejects n
  await assert.rejects(f.c.contractOrganizationDefaults('',{user:{role:'owner'}}),/siteId is required/);
  await assert.rejects(f.c.contractOrganizationDefaults('missing-site',{user:{role:'owner'}}),/not found/i);
 });
-

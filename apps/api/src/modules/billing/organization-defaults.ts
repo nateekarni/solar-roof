@@ -21,4 +21,3 @@ export function contractIdentity(input:{companyName?:string|null;taxId?:string|n
  if(!identity.companyName||!/^[0-9]{13}$/.test(identity.taxId)||!identity.taxAddress)throw new BadRequestException('Complete customer tax identity required: legal name, 13-digit tax ID and billing address');
  return identity;
 }
-

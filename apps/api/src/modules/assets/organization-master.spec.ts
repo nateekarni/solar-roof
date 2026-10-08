@@ -135,4 +135,3 @@ test('simultaneous creation with the same code cannot leave two customer records
  assert.equal(rejected.reason.getStatus(),409);assert.match(rejected.reason.message,/organization code/i);
  assert.equal(f.organizations.size,1);assert.equal(f.sites.size,1);
 });
-

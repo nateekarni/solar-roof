@@ -18,4 +18,3 @@ test('master identity editor exposes separate display, legal, tax and contact fi
  for(const label of ['Display name','Organization code','Legal name','Tax ID','Tax branch','Billing address','Contact name','Phone','Document email'])assert.match(html,new RegExp(label));
  assert.equal((html.match(/<input/g)??[]).length,8); assert.equal((html.match(/<textarea/g)??[]).length,1);
 });
-
