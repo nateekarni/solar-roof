@@ -58,6 +58,8 @@ export class OperationsController {
     res.setHeader('Content-Type','application/pdf');res.setHeader('Content-Disposition',`inline; filename="${id}.pdf"`);
     res.setHeader('ETag',`"${artifact.sha256}"`);res.setHeader('Cache-Control','private, no-store');res.send(artifact.pdf_bytes);
   }
+  @Get('contracts/recipient-options')
+  contractRecipientOptions(@Req() req:any) {return this.operations.contractRecipientOptions(String(req?.query?.siteId??''),req?.user);}
   @Get("documents/:id")
   document(@Param("id") id:string,@Req() req:any) {return this.operations.document(id,req?.user);}
 
@@ -71,4 +73,5 @@ export class OperationsController {
     return this.operations.list(resource, req?.user, req?.query);
   }
 }
+
 

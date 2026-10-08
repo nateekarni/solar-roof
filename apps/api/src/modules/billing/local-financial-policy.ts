@@ -9,7 +9,7 @@ function scaled(value:unknown,scale:number):bigint {
  const source=String(value); if(!/^\d+(\.\d+)?$/.test(source))throw new Error('Explicit nonnegative decimal is required');
  const [whole,fraction='']=source.split('.'); const retained=fraction.padEnd(scale,'0').slice(0,scale);return BigInt(whole!)*10n**BigInt(scale)+BigInt(retained||'0')+(Number(fraction[scale]??0)>=5?1n:0n);
 }
-function decimal(value:bigint,scale:number):string {const source=value.toString().padStart(scale+1,'0');return `${source.slice(0,-scale)}.${source.slice(-scale)}`;}
+export function decimal(value:bigint,scale:number):string {const source=value.toString().padStart(scale+1,'0');return `${source.slice(0,-scale)}.${source.slice(-scale)}`;}
 export function calculateTestTotals(kwh:unknown,rate:unknown) {
  const energy=scaled(kwh,3),price=scaled(rate,4);const subtotal=(energy*price+50000n)/100000n;const tax=(subtotal*7n+50n)/100n;
  return {consumedKwh:decimal(energy,3),rate:decimal(price,4),subtotal:decimal(subtotal,2),tax:decimal(tax,2),total:decimal(subtotal+tax,2)};
@@ -25,4 +25,16 @@ export function sqlCalendarPeriod(row:{starts?:string;ends?:string;period_start?
 }
 
 
+
+
+export function validFinancialDate(value:string):boolean {return /^\d{4}-\d{2}-\d{2}$/.test(value)&&Number.isFinite(Date.parse(value))&&new Date(value).toISOString().slice(0,10)===value;}
+export function normalizeTestRateSchedule(rows:Array<{startDate:string;endDate?:string|null;rate:number}>) {
+ if(!rows.length)throw new Error('Effective rate required');const sorted=[...rows].sort((a,b)=>a.startDate.localeCompare(b.startDate));
+ return sorted.map((row,index)=>{
+  const next=sorted[index+1];if(!validFinancialDate(row.startDate)||!Number.isFinite(row.rate)||row.rate<0||(row.endDate&&!validFinancialDate(row.endDate))||(next&&!validFinancialDate(next.startDate)))throw new Error('Valid effective dates and rates required');
+  const endDate=row.endDate||(next?new Date(Date.parse(next.startDate)-86400000).toISOString().slice(0,10):null);
+  if(endDate&&(endDate<row.startDate||(next&&new Date(Date.parse(endDate)+86400000).toISOString().slice(0,10)!==next.startDate)))throw new Error('Inclusive rate intervals must be continuous without overlap');
+  return {startDate:row.startDate,endDate,rate:row.rate};
+ });
+}
 

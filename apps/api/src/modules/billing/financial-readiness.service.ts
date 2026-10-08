@@ -32,7 +32,7 @@ export class FinancialReadinessService implements FinancialReadinessEvidence {
   }
   async capabilities(role: string, hasScope: boolean): Promise<Capabilities> {
     const allowed: FinancialAction[] = !hasScope ? [] : ['owner','admin','accountant'].includes(role)
-      ? ['calculate','issue','approve_payment','adjust','send'] : [];
+      ? (role==='admin'?['calculate','issue','adjust','send']:['calculate','issue','approve_payment','adjust','send']) : [];
     const enabled = await this.enabledActions();
     const operationsActions = hasScope ? [
       ['read_invoice','GET','/v1/operations/documents/fixture'],
@@ -42,6 +42,7 @@ export class FinancialReadinessService implements FinancialReadinessEvidence {
     return {operationsActions,actions:[...(hasScope && routeAllowed(role,'POST','/v1/contracts') ? ['create_contract'] : []),...allowed.filter(action=>enabled.includes(action))],unavailable:Object.fromEntries(allowed.filter(action=>!enabled.includes(action)).map(action=>[action,'Financial workflows await verified accounting requirements and implementation readiness.']))};
   }
 }
+
 
 
 
