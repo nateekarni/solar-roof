@@ -41,6 +41,7 @@ export class DocumentService {
   async finalize(input: {
     id?: string;
     siteId?: string;
+    billingCycleId?: string;
     type: DocumentType;
     year: number;
     amount?: number;
@@ -59,9 +60,9 @@ export class DocumentService {
       const now=new Date();
       const result:FinalDocument={id,publicId:randomUUID(),type:input.type,year:Number(issueDate.slice(0,4)),number,contentHash,status:'finalized',snapshot:structuredClone(input.snapshot),issuedAt:now};
       await client.query(
-        `INSERT INTO documents(id,site_id,document_type,document_number,status,issue_date,amount,file_key,created_at)
-         VALUES($1,$2,$3,$4,'draft',$5,$6,$7,$8)`,
-        [id,siteId,input.type,number,issueDate,input.amount??0,`docs/${number}.pdf`,now]);
+        `INSERT INTO documents(id,site_id,document_type,document_number,status,issue_date,amount,file_key,created_at,billing_cycle_id)
+         VALUES($1,$2,$3,$4,'draft',$5,$6,$7,$8,$9)`,
+        [id,siteId,input.type,number,issueDate,input.amount??0,`docs/${number}.pdf`,now,input.billingCycleId??null]);
       return result;
     });
     this.docs.set(id,doc);
