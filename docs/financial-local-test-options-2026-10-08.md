@@ -1,6 +1,6 @@
 # Local financial test policy options
 
-Status: prepared for later selection; none of these options are approved accounting rules. All identities, accounts, evidence and example rates are synthetic local test data. This document does not state real-world tax obligations.
+Status: user selected the recommended local calculation, combined receipt/test-tax-document timing, numbering and normal-flow scope. These are approved synthetic local test policies, not production accounting rules. All identities, accounts, evidence and example rates are synthetic local test data. This document does not state real-world tax obligations.
 
 ## Fixed workflow decisions
 

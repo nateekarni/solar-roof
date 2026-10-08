@@ -59,4 +59,4 @@
 
 ## Current execution boundary
 
-User explicitly chose to begin UI/branding and prepare financial options/data/plan first. Calculation/issuance implementation and successful financial scenario generation wait for policy selection. Local runtime inspection found no running Docker containers at preparation time; this does not establish that old volumes are absent.
+User selected the recommended synthetic 7%/half-up test calculation, combined receipt/test-tax document and normal-flow scope. Local calculation/issuance implementation and real scenario generation are now authorized. Production accounting policy and adjustment-document issuance remain unapproved. Local runtime inspection found no running Docker containers at preparation time, but the old review database/storage volumes exist and must be verified before resetting.
