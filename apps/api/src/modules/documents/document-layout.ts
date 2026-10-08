@@ -157,11 +157,11 @@ const bodyText = (text: string, extra: any = {}) => ({
   text: printableText(text),
   ...extra,
 });
-const section = (text: string) =>
+const section = (text: string, margin = [0, 2, 0, 3]) =>
   bodyText(text, {
     bold: true,
     fontSize: 18,
-    margin: [0, 2, 0, 3],
+    margin,
   });
 function party(p: DocumentParty): any {
   return {
@@ -376,7 +376,7 @@ export function documentDefinition(s: DocumentSnapshot): DocumentDefinition {
       ? ["สัญญาซื้อขายไฟฟ้า", "Power Purchase Agreement (PPA)"]
       : s.type === "receipt"
         ? s.syntheticTest
-          ? ["ใบเสร็จรับเงิน / ใบกำกับภาษีทดสอบ", "Receipt / Test Tax Invoice"]
+          ? ["ใบเสร็จรับเงิน", "Receipt / Test Tax Invoice"]
           : ["ใบเสร็จรับเงิน", "Receipt"]
         : ["ใบแจ้งหนี้", "Invoice"];
   const primary = s.brandPrimary ?? BRAND_PRIMARY;
@@ -400,7 +400,9 @@ export function documentDefinition(s: DocumentSnapshot): DocumentDefinition {
         alignment: "right",
         fontSize: 14,
         stack: [
-          bodyText(`${title[0]} / ${title[1]}`),
+          bodyText(
+            `${title[0]} / ${s.type === "receipt" && s.syntheticTest ? "ใบกำกับภาษีทดสอบ / " : ""}${title[1]}`,
+          ),
           bodyText(s.documentNumber),
         ],
       },
@@ -440,6 +442,9 @@ export function documentDefinition(s: DocumentSnapshot): DocumentDefinition {
           alignment: "right",
           stack: [
             bodyText(title[0]!, { fontSize: 26, bold: true }),
+            ...(s.type === "receipt" && s.syntheticTest
+              ? [bodyText("ใบกำกับภาษีทดสอบ", { fontSize: 14 })]
+              : []),
             bodyText(title[1]!, { fontSize: 16 }),
             {
               canvas: [
@@ -534,7 +539,7 @@ export function documentDefinition(s: DocumentSnapshot): DocumentDefinition {
         content.push({
           unbreakable: true,
           stack: [
-            section(`${clause.number}. ${clause.title}`),
+            section(`${clause.number}. ${clause.title}`, [0, 1, 0, 0]),
             bodyText(lead, { margin: [16, 0, 0, 0] }),
           ],
         });
