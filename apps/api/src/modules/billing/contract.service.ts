@@ -45,7 +45,7 @@ export class ContractService {
 
   async create(input: Omit<ContractRecord, "active">): Promise<ContractRecord> {
     await this.validateNoOverlap(input.siteId, input);
-    const signer = input.signerName || input.signers?.[0] || "Solar Platform Owner";
+    const signer = input.signerName || input.signers?.[0] || "Solar Roof Owner";
     await this.db.query(
       `INSERT INTO contracts (id, site_id, version, start_date, end_date, status, payment_terms, signer_name)
        VALUES ($1, $2, $3, $4, $5, 'active', $6, $7)`,

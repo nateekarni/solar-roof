@@ -1,4 +1,5 @@
 "use client";
+import {BRAND_NAME} from "../../../components/brand/brand-mark";
 import { canVisitPage } from "@solar/domain";
 import { useSessionUser } from "../../../providers/session-user-provider";
 
@@ -300,7 +301,7 @@ export default function SettingsPage() {
             </DialogTitle>
             <DialogDescription className="text-xs mt-1">
               {locale === "th"
-                ? "คุณต้องการออกจากระบบ Solar Platform ใช่หรือไม่"
+                ? `คุณต้องการออกจากระบบ ${BRAND_NAME} ใช่หรือไม่`
                 : "Are you sure you want to sign out?"}
             </DialogDescription>
           </div>

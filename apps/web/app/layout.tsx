@@ -1,3 +1,4 @@
+import {BRAND_NAME} from "../components/brand/brand-mark";
 import type { ReactNode } from "react";
 import "./globals.css";
 import { Toaster } from "../components/ui/sonner";
@@ -5,7 +6,7 @@ import { TooltipProvider } from "../components/ui/tooltip";
 import { ThemeProvider } from "../components/theme-provider";
 
 export const metadata = {
-  title: "Solar Platform · แพลตฟอร์มจัดการพลังงาน",
+  title: `${BRAND_NAME} · แพลตฟอร์มจัดการพลังงาน`,
   description: "Solar energy management and billing platform",
 };
 

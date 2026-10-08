@@ -1,4 +1,5 @@
 "use client";
+import {BRAND_NAME} from "../../components/brand/brand-mark";
 
 import * as React from "react";
 import {
@@ -410,7 +411,7 @@ export function SchoolSettingsView() {
           <div>
             <DialogTitle className="text-base font-bold">ออกจากระบบ?</DialogTitle>
             <DialogDescription className="text-xs mt-1">
-              คุณต้องการออกจากระบบ Solar Platform ใช่หรือไม่
+              คุณต้องการออกจากระบบ {BRAND_NAME} ใช่หรือไม่
             </DialogDescription>
           </div>
           <DialogFooter className="flex-row justify-center gap-2 pt-2">

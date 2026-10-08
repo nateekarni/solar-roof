@@ -145,7 +145,7 @@ export const th = {
     statSites: "ไซต์พลังงาน",
     statCapacity: "กำลังติดตั้งรวม",
     statSecurity: "ระบบความปลอดภัย",
-    copyright: "© 2026 Solar Platform. สงวนลิขสิทธิ์",
+    copyright: "© 2026 Solar Roof. สงวนลิขสิทธิ์",
     securedBy: "JWT & Refresh Token Rotation Secured",
     badge: "ระบบบริหารจัดการพลังงานแสงอาทิตย์อัจฉริยะ",
   },

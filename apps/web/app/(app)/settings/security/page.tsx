@@ -197,7 +197,7 @@ export default function SecuritySettingsPage() {
                     type="submit"
                     disabled={isChangingPassword}
                     size="sm"
-                    className="h-10 text-xs font-semibold bg-[#EAB308] text-[#0F172A] hover:bg-[#EAB308]/90 gap-1.5 cursor-pointer shadow-xs"
+                    className="h-10 text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90 gap-1.5 cursor-pointer shadow-xs"
                   >
                     <Lock className="size-3.5" />
                     <span>

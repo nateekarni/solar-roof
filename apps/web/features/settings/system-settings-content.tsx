@@ -245,7 +245,7 @@ export function SystemSettingsContent({ showBackLink = false }: SystemSettingsCo
                 size="sm"
                 disabled={saving}
                 onClick={handleSaveCard}
-                className="h-10 text-xs font-semibold bg-[#EAB308] text-[#0F172A] hover:bg-[#EAB308]/90"
+                className="h-10 text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90"
               >
                 {saving ? (locale === "th" ? "กำลังบันทึก..." : "Saving...") : (locale === "th" ? "บันทึก" : "Save")}
               </Button>
@@ -349,7 +349,7 @@ export function SystemSettingsContent({ showBackLink = false }: SystemSettingsCo
                 size="sm"
                 disabled={saving}
                 onClick={handleSaveCard}
-                className="h-10 text-xs font-semibold bg-[#EAB308] text-[#0F172A] hover:bg-[#EAB308]/90"
+                className="h-10 text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90"
               >
                 {saving ? (locale === "th" ? "กำลังบันทึก..." : "Saving...") : (locale === "th" ? "บันทึก" : "Save")}
               </Button>
@@ -466,7 +466,7 @@ export function SystemSettingsContent({ showBackLink = false }: SystemSettingsCo
                 size="sm"
                 disabled={saving}
                 onClick={handleSaveCard}
-                className="h-10 text-xs font-semibold bg-[#EAB308] text-[#0F172A] hover:bg-[#EAB308]/90"
+                className="h-10 text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90"
               >
                 {saving ? (locale === "th" ? "กำลังบันทึก..." : "Saving...") : (locale === "th" ? "บันทึก" : "Save")}
               </Button>

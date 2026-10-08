@@ -1,4 +1,5 @@
 "use client";
+import {BRAND_NAME} from "../../components/brand/brand-mark";
 
 import { AddButton } from "../../components/ui/add-button";
 
@@ -276,7 +277,7 @@ export function ContractFormDialog({
                 </Label>
                 <Input
                   id="signer"
-                  placeholder="Solar Platform Owner"
+                  placeholder={`${BRAND_NAME} Owner`}
                   className="text-xs h-10 bg-card"
                   {...register("signerName")}
                 />
