@@ -875,9 +875,19 @@ export function formatDocumentDate(value: string): string {
   if (range) {
     const start = calendarDate(range[1]!);
     const end = calendarDate(range[2]!);
-    return start && end
-      ? `${buddhistDate.format(start)} - ${buddhistDate.format(end)}`
-      : value;
+    if (!start || !end) return value;
+    const endDate = buddhistDate.format(end);
+    if (
+      start.getTime() <= end.getTime() &&
+      start.getUTCFullYear() === end.getUTCFullYear()
+    ) {
+      const parts = buddhistDate.formatToParts(start);
+      const day = parts.find((part) => part.type === "day")!.value;
+      if (start.getUTCMonth() === end.getUTCMonth()) return `${day}-${endDate}`;
+      const month = parts.find((part) => part.type === "month")!.value;
+      return `${day} ${month} - ${endDate}`;
+    }
+    return `${buddhistDate.format(start)} - ${endDate}`;
   }
   const date = calendarDate(value);
   if (date) return buddhistDate.format(date);
