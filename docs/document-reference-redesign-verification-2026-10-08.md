@@ -46,3 +46,5 @@ Historical integrity: original19/19 unchanged; later pre-fix25/25 unchanged. Cur
 Evidence directory on the task host: D:/Dev/solar-roof/.superpowers/document-reference-redesign. Flow evidence JSON, original PDFs, mailpit copies, browser evidence, font/bounds reports and PNGs remain there. Test harness failures are retained separately rather than misrepresented as application fixes.
 
 Independent final reviewer recomputed all six PDF/SMTP hashes and the browser-download hash, inspected all nine actual pages, and approved specification and quality. Full report: document-reference-redesign-final-review-2026-10-08.md. All six actual SMTP attachment filenames independently checked as issued humanNumber.pdf.
+
+Publication completed: verified feature2841211 pushed tocodex/document-layout-sarabun; existing https://github.com/nateekarni/solar-roof/pull/6 title/body updated and attached. Connector confirms draft/open/unmerged with unchanged basecodex/ui-financial-integration. Worktree retained for PR feedback. Only final documentation/status bookkeeping follows this published source; main is not merged or deployed.
