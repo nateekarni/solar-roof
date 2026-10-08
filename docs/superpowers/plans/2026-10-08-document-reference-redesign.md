@@ -47,18 +47,19 @@
 **Consumes:** Stored human document/contract numbers, optional Task2 payment metadata; approved stacked logo.
 **Produces:** Future financial sarabun-a4-v5 and contract ppa-th-sarabun-new-v4 snapshots and matching renderer.
 
-- [ ] Read all accepted constraints and user PNG references (layout source, draft clauses explicitly adopted only local). Write red tests for numbering/title consistency, three reference layouts, palette snapshot, footer blank, signatures and required text completeness.
-- [ ] Reuse centralized brand primary, freeze actual chosen color into new snapshots. Old saved originals not rerendered. No hardcoded unrelated accent colors.
-- [ ] Invoice: header with title/number/issued/due card; paired customer/project cards; table sequence/description/kWh/THBperKWh/amount auto numeric widths; right subtotal/tax/total; Thai amountwords; receiving accounts/accepted remarks paired; paired blank-date signatures.
-- [ ] Receipt: combined TEST title; reference invoice human number; customer/payment pair; all approved transfers with truthful method/payer/origin fields and date/time; received energy subtotal/tax/total consistent existing calculation (do not double count partial payments); Thai amountwords; recorded remarks; issuer-only right blank-date signature. No invented names/accounts.
-- [ ] PPA: numbered written clauses1–10; frozen actual parties/site/protocolID/capacity/effective dates/paymentdays and complete dated rate table. Local synthetic draft clause texts frozen from adopted reference; outside guarded local binding, retain factual-only PPA rather than silently publish legal template.
-- [ ] Typography exact accepted roles, blackgray+primary accent, thin border/card spacing like reference. Match spatial arrangement, not previous literal15/35/30 header. No visible footer metadata; compact continuation header, final-page bottom signatures and no clipping/overlap/signature-only ordinary page. Long rows can continue.
-- [ ] Run focused red/green geometry/actualPDF tests and API types. Render ordinary and long reference fixtures to root-authorized evidence directory supplied by controller; inspect every page, fonts/text bounds/all rows/clauses/transfers. Ordinary invoice/receipt target1 A4, complete long PPA can span pages.
-- [ ] Commit selective source/tests/docs report.
+- [x] Read all accepted constraints and user PNG references (layout source, draft clauses explicitly adopted only local). Write red tests for numbering/title consistency, three reference layouts, palette snapshot, footer blank, signatures and required text completeness.
+- [x] Reuse centralized brand primary, freeze actual chosen color into new snapshots. Old saved originals not rerendered. No hardcoded unrelated accent colors.
+- [x] Invoice: header with title/number/issued/due card; paired customer/project cards; table sequence/description/kWh/THBperKWh/amount auto numeric widths; right subtotal/tax/total; Thai amountwords; receiving accounts/accepted remarks paired; paired blank-date signatures.
+- [x] Receipt: combined TEST title; reference invoice human number; customer/payment pair; all approved transfers with truthful method/payer/origin fields and date/time; received energy subtotal/tax/total consistent existing calculation (do not double count partial payments); Thai amountwords; recorded remarks; issuer-only right blank-date signature. No invented names/accounts.
+- [x] PPA: numbered written clauses1–10; frozen actual parties/site/protocolID/capacity/effective dates/paymentdays and complete dated rate table. Local synthetic draft clause texts frozen from adopted reference; outside guarded local binding, retain factual-only PPA rather than silently publish legal template.
+- [x] Typography exact accepted roles, blackgray+primary accent, thin border/card spacing like reference. Match spatial arrangement, not previous literal15/35/30 header. No visible footer metadata; compact continuation header, final-page bottom signatures and no clipping/overlap/signature-only ordinary page. Long rows can continue.
+- [x] Run focused red/green geometry/actualPDF tests and API types. Render ordinary and long reference fixtures to root-authorized evidence directory supplied by controller; inspect every page, fonts/text bounds/all rows/clauses/transfers. Ordinary invoice/receipt target1 A4, complete long PPA can span pages.
+- [x] Commit selective source/tests/docs report.
 
 ### Task 4: Root guarded integration, review and release
 
-- [ ] Before any additive writes record every current original hash; root applies only required new migrations to approved loopback synthetic fixture after checking migration bytes/markers.
-- [ ] After each scoped review merge reviewed feature commits into integration and verify shared application. Run fresh normal HTTP/MQTT→PPA→invoice→payment→receipt; multiple transfers, optional metadata and concurrent allocation; saved/download/SMTP/browser parity, old hashes, crossorg/retry guards.
+- [x] Before any additive writes record every current original hash; root applies only required new migrations to approved loopback synthetic fixture after checking migration bytes/markers.
+- [x] After each scoped review merge reviewed feature commits into integration and verify shared application. Run fresh normal HTTP/MQTT→PPA→invoice→payment→receipt; multiple transfers, optional metadata and concurrent allocation; saved/download/SMTP/browser parity, old hashes, crossorg/retry guards.
 - [ ] Full integrated tests/lint and opt-in PostgreSQL original/numbering/payment boundaries. Independent most-capable final delta review; one scoped fix wave for final findings.
 - [ ] Record durable verification/review and ADR for permanent human-numbering identity tradeoff, push authorized feature and update existing draftPR6. Keep main unmerged and no deployment.
+
