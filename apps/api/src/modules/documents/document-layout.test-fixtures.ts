@@ -233,3 +233,12 @@ export const lineText = (line: any): string =>
     .map((inline: any) => inline.text)
     .join('')
     .replaceAll('\u200b', '');
+
+/** Actual approved isolated HTTP issuance inputs, with the same bundled logo restored.
+ * Saved terms, evidence length, payer metadata and all adopted clauses are preserved. */
+export function ordinaryIssuedFixtures(): Record<string, DocumentSnapshot> {
+ const snapshots=JSON.parse(readFileSync(new URL('./document-ordinary-issued.test-fixtures.json',import.meta.url),'utf8')) as Record<string,DocumentSnapshot>;
+ const logoDataUri=refinementFixtures().invoice!.logoDataUri;
+ for(const snapshot of Object.values(snapshots))snapshot.logoDataUri=logoDataUri;
+ return snapshots;
+}
