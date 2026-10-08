@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { Button } from "../../components/ui/button";
 import { useLocale } from "../../providers/locale-provider";
 import { apiClient } from "../../lib/api-client";
 import { formatAppDate } from "../../lib/date-format";
@@ -145,8 +146,10 @@ export function OrganizationDocuments() {
                 THB
               </p>
               <div className="flex flex-wrap gap-3">
-                <button
-                  className="min-h-11 text-primary"
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="min-h-11 text-foreground"
                   onClick={() =>
                     setPreview({
                       type,
@@ -164,7 +167,7 @@ export function OrganizationDocuments() {
                   }
                 >
                   {text("เปิดเอกสาร", "Preview document")}
-                </button>
+                </Button>
                 <Link
                   className="inline-flex min-h-11 items-center text-primary"
                   href={`/records/${type === "invoice" ? "billing" : "receipts"}/${encodeURIComponent(row.id)}`}
@@ -203,12 +206,14 @@ export function OrganizationDocuments() {
                 )
               : text("โหลดเอกสารไม่สำเร็จ", "Unable to load documents")}
           </p>
-          <button
-            className="min-h-11 text-primary"
+          <Button
+            type="button"
+            variant="outline"
+            className="min-h-11 text-foreground"
             onClick={() => setRetry((value) => value + 1)}
           >
             {text("ลองอีกครั้ง", "Retry")}
-          </button>
+          </Button>
         </div>
       ) : !data ? (
         <p role="status">{text("กำลังโหลดเอกสาร", "Loading documents")}</p>
@@ -292,15 +297,17 @@ export function OrganizationDocuments() {
                 ))}
               </select>
             </label>
-            <button
-              className="min-h-11 self-end text-primary"
+            <Button
+              type="button"
+              variant="outline"
+              className="min-h-11 self-end text-foreground"
               onClick={() => {
                 setMonth("");
                 setStatus("");
               }}
             >
               {text("ล้างตัวกรอง", "Clear filters")}
-            </button>
+            </Button>
           </div>
           {selected && (
             <Link

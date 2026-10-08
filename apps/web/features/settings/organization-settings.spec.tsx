@@ -27,3 +27,20 @@ test("password validation is localized and rejects mismatch before submission", 
     null,
   );
 });
+
+test("Settings actions pair semantic filled surfaces with their foreground tokens", () => {
+  const html = renderToStaticMarkup(<SchoolSettingsView />);
+  assert.match(
+    html,
+    /data-variant="default"[^>]*class="[^"]*bg-primary[^"]*text-primary-foreground/,
+  );
+  assert.match(
+    html,
+    /data-variant="destructive"[^>]*class="[^"]*bg-destructive[^"]*text-destructive-foreground/,
+  );
+});
+
+test("Filled signout retains its semantic background in dark mode", () => {
+  const html = renderToStaticMarkup(<SchoolSettingsView />);
+  assert.doesNotMatch(html, /dark:bg-destructive\/20/);
+});
