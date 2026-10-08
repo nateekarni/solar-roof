@@ -96,25 +96,25 @@ function party(p: DocumentParty, title: string): any {
     ...(p.email ? [{ text: p.email }] : []),
   ] };
 }
-function table(headers: string[], rows: any[][], widths: (string | number)[], caption?: string): any {
+function table(headers: string[], rows: any[][], widths: (string | number)[], caption?: string, compact = false): any {
   const remaining = 515.28 - headers.length * 12 - (headers.length + 1) * 0.5 - widths.reduce<number>((sum, width) => sum + (typeof width === 'number' ? width : 0), 0);
   const flexibleCount = widths.filter(width => width === '*').length;
   const boundedWidths = widths.map(width => width === '*' ? remaining / flexibleCount : width);
   const captionRow = caption ? [[{ text: caption, bold: true, colSpan: headers.length, fillColor: '#eeeeee' }, ...headers.slice(1).map(() => ({}))]] : [];
-  return { margin: [0, 8, 0, 8], table: {
+  return { margin: [0, compact ? 5 : 8, 0, compact ? 5 : 8], table: {
     headerRows: caption ? 2 : 1, keepWithHeaderRows: 1, dontBreakRows: true, widths: boundedWidths,
     body: [...captionRow, headers.map(text => ({ text, bold: true, fillColor: '#eeeeee' })), ...rows],
   }, layout: {
     hLineWidth: () => 0.5, vLineWidth: () => 0.5,
     hLineColor: () => '#000000', vLineColor: () => '#000000',
-    paddingLeft: () => 6, paddingRight: () => 6, paddingTop: () => 4, paddingBottom: () => 4,
+    paddingLeft: () => 6, paddingRight: () => 6, paddingTop: () => compact ? 3 : 4, paddingBottom: () => compact ? 3 : 4,
   } };
 }
 const right = (text: string) => ({ text, alignment: 'right' });
 function signatures(s: DocumentSnapshot): any {
   const contract = s.type === 'contract';
   const person = (signatory: DocumentSignatory | undefined, label: string) => ({ stack: [
-    { text: '________________________', margin: [0, 28, 0, 6] },
+    { text: '________________________', margin: [0, contract ? 28 : 16, 0, 6] },
     ...(signatory?.name ? [{ text: printableText(signatory.name) }] : []),
     ...(signatory?.title ? [{ text: printableText(signatory.title) }] : []),
     { text: label },
@@ -126,15 +126,16 @@ function signatures(s: DocumentSnapshot): any {
 }
 export function documentDefinition(s: DocumentSnapshot): DocumentDefinition {
   const title = s.type === 'contract' ? ['สัญญาซื้อขายไฟฟ้า', 'Power Purchase Agreement (PPA)'] : s.type === 'receipt' ? (s.syntheticTest ? ['ใบเสร็จรับเงิน / ใบกำกับภาษีทดสอบ', 'Receipt / Test Tax Invoice'] : ['ใบเสร็จรับเงิน', 'Receipt']) : ['ใบแจ้งหนี้', 'Invoice'];
+  const financial = s.type !== 'contract';
   const content: any[] = [
     { columns: [{ image: s.logoDataUri, width: 160 }, { width: '*', alignment: 'right', stack: [
       { text: title[0], bold: true, fontSize: 20 }, { text: title[1], fontSize: 12 },
       { text: `${s.syntheticTest ? 'TEST - ' : ''}${s.documentNumber}`, margin: [0, 6, 0, 0] },
       { text: `วันที่ / Issued: ${formatDocumentDate(s.issueDate)}` },
-    ] }], margin: [0, 0, 0, 12] },
+    ] }], margin: [0, 0, 0, financial ? 8 : 12] },
   ];
   if (s.syntheticTest) content.push({ text: s.type === 'contract' ? 'SYNTHETIC LOCAL TEST / เอกสารทดสอบ' : 'SYNTHETIC LOCAL TEST - simulated tax 7%; no withholding / เอกสารทดสอบ', italics: true, fontSize: 12, margin: [0, 0, 0, 8] });
-  content.push({ table: { widths: [240.89, 240.89], body: [[party(s.issuer, 'ผู้ขาย / Issuer'), party(s.customer, 'ลูกค้า / Customer')]], dontBreakRows: true }, layout: { hLineWidth: () => 0.5, vLineWidth: () => 0.5, hLineColor: () => '#000000', vLineColor: () => '#000000', paddingLeft: () => 8, paddingRight: () => 8, paddingTop: () => 8, paddingBottom: () => 8 } });
+  content.push({ table: { widths: [240.89, 240.89], body: [[party(s.issuer, 'ผู้ขาย / Issuer'), party(s.customer, 'ลูกค้า / Customer')]], dontBreakRows: true }, layout: { hLineWidth: () => 0.5, vLineWidth: () => 0.5, hLineColor: () => '#000000', vLineColor: () => '#000000', paddingLeft: () => 8, paddingRight: () => 8, paddingTop: () => financial ? 5 : 8, paddingBottom: () => financial ? 5 : 8 } });
   if (s.siteName) content.push({ text: `ไซต์ / Site: ${s.siteName}`, margin: [0, 8, 0, 0] });
   if (s.contractNumber) content.push({ text: `สัญญา / Contract: ${s.contractNumber}` });
   if (s.period) content.push({ text: `รอบบิล / Period: ${formatDocumentDate(s.period)}` });
@@ -145,7 +146,7 @@ export function documentDefinition(s: DocumentSnapshot): DocumentDefinition {
   } else {
     content.push(table(['รายการ / Description', 'kWh', 'THB/kWh', 'THB'], s.items.map(item => [
       { text: printableText(`${item.description}${item.period ? `\n${formatDocumentDate(item.period)}` : ''}`) }, right(exactDecimal(item.quantity)), right(exactDecimal(item.rate)), right(formatDocumentMoney(item.amount)),
-    ]), ['*', 65, 65, 115]));
+    ]), ['*', 65, 65, 115], undefined, true));
     if (s.totals) content.push({ unbreakable: true, margin: [0, 8, 0, 8], stack: [
       { columns: [{ text: 'ยอดก่อนภาษี / Subtotal' }, right(`${formatDocumentMoney(s.totals.subtotal)} THB`)] },
       ...(s.totals.tax === undefined ? [] : [{ columns: [{ text: s.totals.taxLabel ?? 'ภาษี / Tax' }, right(`${formatDocumentMoney(s.totals.tax)} THB`)] }]),
@@ -154,7 +155,7 @@ export function documentDefinition(s: DocumentSnapshot): DocumentDefinition {
     ] });
     if (s.type === 'receipt') {
       const transfers = s.approvedTransfers.filter(p => p.status === 'paid' || p.status === 'approved');
-      if (transfers.length) content.push(table(['วันที่ชำระ / Paid', 'หลักฐาน / Evidence', 'THB'], transfers.map(p => [formatDocumentDate(p.paidAt), p.evidence ?? '', right(formatDocumentMoney(p.amount))]), [140, '*', 115], 'หลักฐานการชำระ / Approved transfers'));
+      if (transfers.length) content.push(table(['วันที่ชำระ / Paid', 'หลักฐาน / Evidence', 'THB'], transfers.map(p => [formatDocumentDate(p.paidAt), p.evidence ?? '', right(formatDocumentMoney(p.amount))]), [140, '*', 115], 'หลักฐานการชำระ / Approved transfers', true));
     } else {
       if (s.dueDate) content.push({ text: `กำหนดชำระ / Due: ${formatDocumentDate(s.dueDate)}`, margin: [0, 5, 0, 0] });
       if (s.paymentAccounts.length) content.push(section('บัญชีรับชำระ / Payment accounts'), ...s.paymentAccounts.map(b => ({ text: `${b.bankName} - ${b.accountName} - ${b.accountNumber}` })));
@@ -164,7 +165,7 @@ export function documentDefinition(s: DocumentSnapshot): DocumentDefinition {
   content.push(signatures(s));
   return {
     pageSize: 'A4', pageOrientation: 'portrait', pageMargins: [40, 36, 40, 52],
-    defaultStyle: { font: 'THSarabunNew', fontSize: 15, color: '#000000', lineHeight: 1.1 }, content,
+    defaultStyle: { font: 'THSarabunNew', fontSize: financial ? 14.5 : 15, color: '#000000', lineHeight: financial ? 1 : 1.1 }, content,
     info: { title: s.documentNumber, subject: s.templateVersion },
     footer: (page, total) => ({ text: `${s.syntheticTest ? 'TEST - ' : ''}${s.documentNumber} | หน้า / Page ${page} / ${total}`, fontSize: 11, color: '#000000', alignment: 'right', margin: [40, 12, 40, 0] }),
   };
