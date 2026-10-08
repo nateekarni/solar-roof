@@ -1,0 +1,144 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import {
+  refinementFixtures,
+  layoutDocumentPages,
+  pageLines,
+  lineText,
+} from './document-layout.test-fixtures.js';
+const fixtures = refinementFixtures();
+test('ordinary documents share one A4 page and anchor paired signatures above page footer', () => {
+  for (const name of ['contract', 'invoice', 'receipt']) {
+    const pages = layoutDocumentPages(fixtures[name]!);
+    assert.equal(pages.length, 1, name);
+    const lines = pageLines(pages[0]);
+    const signatures = lines.filter((l) =>
+      lineText(l).startsWith('________________________'),
+    );
+    assert.equal(signatures.length, 2, name);
+    assert.equal(signatures[0].y, signatures[1].y);
+    assert.ok(signatures[0].y > 680, name);
+    const footer = lines.find((l) => lineText(l).includes('Page 1 / 1'));
+    assert.ok(footer.y >= 795 && footer.y < 820);
+    for (const line of lines) assert.ok(line.y + line.getHeight() < 830);
+  }
+});
+test('long documents preserve all facts, compact continuation identity and final-page signatures', () => {
+  for (const [name, count, prefix] of [
+    ['long-contract', 60, '4.'],
+    ['long-invoice', 45, 'ROW-'],
+    ['long-receipt', 35, 'TRANSFER-'],
+    ['oversized-row', 100, 'LINE-'],
+  ] as const) {
+    const pages = layoutDocumentPages(fixtures[name]!);
+    assert.ok(pages.length > 1, name);
+    for (let i = 0; i < pages.length; i++) {
+      const lines = pageLines(pages[i]);
+      const signatures = lines.filter((l) =>
+        lineText(l).startsWith('________________________'),
+      );
+      assert.equal(signatures.length, i === pages.length - 1 ? 2 : 0, name);
+      if (signatures.length) assert.ok(signatures[0].y > 680);
+      if (i > 0) {
+        assert.ok(
+          lines.some(
+            (l) =>
+              l.y < 60 && lineText(l).includes(fixtures[name]!.documentNumber),
+          ),
+          name,
+        );
+        assert.ok(
+          pages[i].items.some(
+            (item: any) => item.type === 'image' && item.item.y < 60,
+          ),
+          name,
+        );
+      }
+      for (const line of lines) {
+        assert.ok(
+          line.x >= 39.9 && line.x + line.getWidth() <= 555.4,
+          `${name}: ${lineText(line)}`,
+        );
+        assert.ok(line.y + line.getHeight() < 830, `${name} text below footer`);
+      }
+    }
+    const text = pages.flatMap(pageLines).map(lineText).join('\n');
+    for (let i = 1; i <= count; i++)
+      assert.ok(
+        text.includes(
+          prefix === '4.'
+            ? `4.${String(i - 1).padStart(4, '0')}`
+            : `${prefix}${i}`,
+        ),
+        `${name} lost ${i}`,
+      );
+    assert.ok(
+      pageLines(pages.at(-1)).some((l) => l.y > 60 && l.y < 650),
+      `${name} signature-only final page`,
+    );
+  }
+});
+test('long Thai parties and signatories wrap within A4 and preserve footer clearance', () => {
+  const pages = layoutDocumentPages(fixtures['long-identity']!);
+  const lines = pages.flatMap(pageLines);
+  for (const line of lines) {
+    assert.ok(
+      line.x >= 39.9 && line.x + line.getWidth() <= 555.4,
+      lineText(line),
+    );
+    assert.ok(line.y + line.getHeight() < 830);
+  }
+  const signatureLines = pageLines(pages.at(-1)).filter((l) =>
+    lineText(l).startsWith('________________________'),
+  );
+  assert.equal(signatureLines.length, 2);
+  assert.equal(signatureLines[0].y, signatureLines[1].y);
+  const fullText = lines.map(lineText).join('').replaceAll(/\s/g, '');
+  assert.ok(
+    fullText.includes(
+      fixtures['long-identity']!.signatories.issuer!.name!.replaceAll(
+        /\s/g,
+        '',
+      ),
+    ),
+  );
+});
+
+test('paired PPA names of different lengths retain aligned roles and blank signing dates', () => {
+  const pages = layoutDocumentPages({
+    ...fixtures.contract!,
+    signatories: {
+      issuer: {
+        name: 'ผู้ลงนามฝ่ายผู้ขายโครงการและผู้แทนที่มีชื่อยาวสำหรับทดสอบการตัดบรรทัด'.repeat(
+          3,
+        ),
+        title: 'กรรมการผู้มีอำนาจ',
+      },
+      customer: { name: 'นายผู้ซื้อ', title: 'ผู้แทนองค์กร' },
+    },
+  });
+  const lines = pageLines(pages.at(-1));
+  const dates = lines.filter((l) => lineText(l).includes('วันที่ลงนาม:'));
+  assert.equal(dates.length, 2);
+  assert.equal(dates[0].y, dates[1].y);
+});
+test('financial numeric columns grow to fit exact values and return unused space to descriptions', () => {
+  const ordinary = pageLines(layoutDocumentPages(fixtures.invoice!)[0]);
+  const large = layoutDocumentPages(fixtures['oversized-row']!).flatMap(
+    pageLines,
+  );
+  for (const value of [
+    '90071992547409.123',
+    '12345.6789',
+    '90,071,992,547,409.91',
+  ]) {
+    const line = large.find((l) => lineText(l) === value);
+    assert.ok(line, value);
+    assert.ok(line.getWidth() <= line.maxWidth + 0.01, value);
+  }
+  const ordinaryDescription = ordinary.find((l) =>
+    lineText(l).includes('Solar electricity charges'),
+  );
+  const largeDescription = large.find((l) => lineText(l).includes('LINE-1'));
+  assert.ok(ordinaryDescription.maxWidth > largeDescription.maxWidth + 100);
+});

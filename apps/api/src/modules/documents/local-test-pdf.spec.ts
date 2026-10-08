@@ -7,7 +7,7 @@ test('financial snapshot adapter retains every saved meter/rate and approved tra
   const document = {
     document_type: 'receipt', document_number: 'RCT2026100001', snapshot: {
       company: { company_name: 'บริษัทจริง', address: 'ที่อยู่บริษัท', tax_id: '0000000000000', branch: 'สำนักงานใหญ่' },
-      customer: { id: 'contract-id', company_name: 'โรงเรียนจริง', tax_address: 'ที่อยู่ลูกค้า', tax_id: '1111111111111', site_name: 'ไซต์จริง' },
+      customer: { id: 'contract-id', company_name: 'โรงเรียนจริง', tax_address: 'ที่อยู่ลูกค้า', tax_id: '1111111111111', site_name: 'ไซต์จริง', external_site_id: 'SITE-002', start_date: '2026-01-01', end_date: '2046-12-31', payment_term_days: 30, payment_terms: '30 days' },
       issueDate: '2026-10-08', dueDate: '2026-10-23', logo: 'data:image/png;base64,AA==',
       cycle: { period_start: '2026-09-01', period_end: '2026-09-30', subtotal: '90071992547409.91', simulated_tax: '0.00', amount: '90071992547409.91', meter_snapshot: [
         { from: '2026-09-01', to: '2026-09-16', consumedKwh: '1000.123', rate: '4.1234', subtotal: '4123.91' },
@@ -23,6 +23,8 @@ test('financial snapshot adapter retains every saved meter/rate and approved tra
   const original = JSON.stringify(document);
   const snapshot = localTestDocumentSnapshot(document);
   assert.equal(snapshot.issuer.name, 'บริษัทจริง');
+  assert.equal(snapshot.siteExternalId,'SITE-002');
+  assert.equal(snapshot.templateVersion,'sarabun-a4-v3');
   assert.deepEqual(snapshot.items.map((item: any) => [item.period, item.quantity, item.rate, item.amount]), [
     ['2026-09-01 - 2026-09-15', '1000.123', '4.1234', '4123.91'],
     ['2026-09-16 - 2026-09-30', '2000.456', '4.5678', '9137.68'],

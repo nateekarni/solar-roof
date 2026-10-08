@@ -76,3 +76,16 @@ test('legacy frozen document email is accepted only by exact scoped verified act
  assert.deepEqual(result,[recipient]);
  assert.deepEqual(await resolve({query:async()=>({rows:[recipient]})},{...contract,recipient_user_ids:['a','b']}),[]);
 });
+
+
+test('future contract issuance freezes protocol Site ID from the site query into original bytes and persisted snapshot',async()=>{
+ let frozen:any;let persisted:any;const customer={...contract,external_site_id:'TH-SITE-001',end_date:'2046-10-07'};
+ const client={query:async(sql:string,params:any[]=[])=>{
+ if(sql.includes('FROM contracts c JOIN sites')) { const {external_site_id,...legacy}=customer;return {rows:[sql.includes('s.external_site_id')?customer:legacy]}; }
+ if(sql.includes('FROM company_profile'))return {rows:[issuer]};if(sql.includes('FROM rate_versions'))return {rows:rates};
+ if(sql.includes('INSERT INTO documents'))persisted=JSON.parse(params[5]);return {rows:[]};}};
+ const service=new ContractPdfService({transaction:async(work:any)=>work(client)} as unknown as DatabaseService,async(snapshot)=>{frozen=snapshot;return Buffer.from('%PDF-fixture');},async()=>logo);
+ await service.ensureContractOriginal('contract-a',{role:'owner'});
+ assert.equal(frozen.siteExternalId,'TH-SITE-001');assert.equal(persisted.siteExternalId,'TH-SITE-001');assert.equal(persisted.startDate,'2026-10-08');assert.equal(persisted.endDate,'2046-10-07');assert.equal(persisted.paymentTermDays,30);assert.equal(persisted.templateVersion,'ppa-th-sarabun-new-v2');
+ const legacy=buildContractSnapshot(contract,issuer,rates,logo);assert.equal(legacy.siteExternalId,undefined);
+});
