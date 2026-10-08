@@ -1,3 +1,4 @@
+import {normalizeTestRateSchedule,validFinancialDate} from './local-financial-policy.js';
 import {
   BadRequestException,
   Body,
@@ -158,6 +159,10 @@ export class BillingController {
     const effectiveDate = body.effectiveDate || new Date().toISOString().slice(0, 10);
     const ratePerKwh = Number(body.ratePerKwh);
     const paymentTerms = body.paymentTerms?.trim();
+    if(await this.readiness.isLocalTestReady()) {
+      if(!validFinancialDate(effectiveDate))throw new BadRequestException('Valid contract start date required');
+      if(body.rates?.length)try{body.rates=normalizeTestRateSchedule(body.rates.map(rate=>({...rate,startDate:rate.startDate||effectiveDate})));}catch(error){throw new BadRequestException((error as Error).message);}
+    }
     if(body.paymentTermDays!==undefined&&(!Number.isInteger(body.paymentTermDays)||body.paymentTermDays<0||body.paymentTermDays>3650))throw new BadRequestException('paymentTermDays must be 0–3650');
     const signerName = body.signerName?.trim();
     const taxId = body.taxId?.trim() || null;
@@ -185,6 +190,13 @@ export class BillingController {
         const countRes = await client.query("SELECT count(*)::int AS count FROM contracts WHERE site_id = $1", [targetSiteId]);
         const version = (countRes.rows[0]?.count ?? 0) + 1;
         const contractId = randomUUID();
+        if(await this.readiness.isLocalTestReady()) {
+          const recipients=Array.from(new Set(body.recipientUserIds??[]));
+          if(!recipients.length)throw new BadRequestException('Select verified organization recipients');
+          const eligible=await client.query(`SELECT u.id FROM users u JOIN sites s ON s.school_id=u.school_id JOIN schools sc ON sc.id=s.school_id WHERE s.id=$1 AND u.id=ANY($2::uuid[]) AND u.role='school_user' AND u.status='active' AND sc.status='active' AND u.email_verified_at IS NOT NULL AND u.verified_email=u.email`,[targetSiteId,recipients]);
+          if(eligible.rows.length!==recipients.length)throw new BadRequestException('Recipients must be active verified organization users for this site');
+          if(body.paymentTermDays===undefined)throw new BadRequestException('Explicit paymentTermDays required');
+        }
 
         // 1. Insert contract with tax details
         const contractSql = `
@@ -786,6 +798,8 @@ export class BillingController {
     };
   }
 }
+
+
 
 
 

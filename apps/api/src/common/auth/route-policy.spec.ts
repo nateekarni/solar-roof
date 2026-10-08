@@ -35,10 +35,15 @@ test('business routes exclude operational configuration and user management', ()
  assert.equal(routeAllowed('school_user','GET','/v1/settings/bank-accounts'),true);
  assert.equal(routeAllowed('school_user','PUT','/v1/me/preferences'),true);
  for(const path of ['/v1/billing-cycles/1/generate-invoice','/v1/documents']) assert.equal(routeAllowed('admin','POST',path),true);
- assert.equal(routeAllowed('admin','PATCH','/v1/billing-cycles/1/verify-payment'),true);
+ assert.equal(routeAllowed('admin','PATCH','/v1/billing-cycles/1/verify-payment'),false);
 });
 test('business roles can read scoped billing collections and details',()=>{
  for(const role of ['owner','school_user']) for(const path of ['/v1/operations/billing','/v1/operations/billing/records/1']) assert.equal(routeAllowed(role,'GET',path),true);
 });
 
 test('Owner receives narrowly scoped dashboard read APIs without technical privileges',()=>{for(const path of ['/v1/dashboard/compare','/v1/dashboard/power-flow']){assert.equal(routeAllowed('owner','GET',path),true);assert.equal(routeAllowed('owner','HEAD',path),true);for(const method of ['POST','PUT','PATCH','DELETE'])assert.equal(routeAllowed('owner',method,path),false);assert.equal(routeAllowed('school_user','GET',path),path==='/v1/dashboard/power-flow');}for(const path of ['/v1/sites','/v1/gateways','/v1/dashboard/technical','/v1/settings/payload-presets'])assert.equal(routeAllowed('owner','GET',path),false);});
+
+test('only Owner and Accountant may approve or reject payment evidence',()=>{
+ for(const role of ['admin','operator','school_user'])assert.equal(routeAllowed(role,'PATCH','/v1/billing-cycles/1/verify-payment'),false);
+ for(const role of ['owner','accountant'])assert.equal(routeAllowed(role,'PATCH','/v1/billing-cycles/1/verify-payment'),true);
+});

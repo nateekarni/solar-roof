@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID, createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -6,9 +6,9 @@ import type { PoolClient } from 'pg';
 import nodemailer from 'nodemailer';
 import { DatabaseService } from '../../database/database.service.js';
 import { FinancialReadinessService } from './financial-readiness.service.js';
-import { calculateTestTotals, sqlCalendarPeriod, actualEnergyDifference, requireTestSettlement, TEST_FINANCIAL_POLICY, TEST_FINANCIAL_POLICY_HASH, localFinancialBinding } from './local-financial-policy.js';
+import { calculateTestTotals, validFinancialDate, decimal, sqlCalendarPeriod, actualEnergyDifference, requireTestSettlement, TEST_FINANCIAL_POLICY, TEST_FINANCIAL_POLICY_HASH, localFinancialBinding } from './local-financial-policy.js';
 import { renderLocalTestPdf } from '../documents/local-test-pdf.js';
-const validDate=(value:string)=>/^\d{4}-\d{2}-\d{2}$/.test(value)&&new Date(value).toISOString().slice(0,10)===value;
+const validDate=validFinancialDate;
 @Injectable()
 export class LocalFinancialApplicationService {
  constructor(@Inject(DatabaseService) private readonly db:DatabaseService,@Inject(FinancialReadinessService) private readonly readiness:FinancialReadinessService){}
@@ -22,7 +22,7 @@ export class LocalFinancialApplicationService {
    const contracts=(await client.query(`SELECT *, (start_date<=$2::date AND (end_date IS NULL OR end_date>=$3::date)) AS covers_period FROM contracts WHERE site_id=$1 AND status='active' AND start_date<=$3::date AND (end_date IS NULL OR end_date>=$2::date) ORDER BY start_date`,[siteId,start,end])).rows;
    if(contracts.length!==1)throw new ConflictException('Exactly one unambiguous active contract required for this period');
    const contract=contracts[0];if(!contract.covers_period)throw new ConflictException('Contract must cover complete requested period');
-   const rates=(await client.query(`SELECT *,to_char(greatest(effective_from,$2::date),'YYYY-MM-DD') AS starts,to_char(least(coalesce(effective_to+1,'infinity'::date),$3::date+1),'YYYY-MM-DD') AS ends FROM rate_versions WHERE contract_id=$1 AND effective_from<=$3::date AND (effective_to IS NULL OR effective_to>=$2::date) ORDER BY effective_from`,[contract.id,start,end])).rows;
+   const rates=(await client.query(`WITH effective AS (SELECT *,lead(effective_from) OVER(ORDER BY effective_from,id) AS next_from FROM rate_versions WHERE contract_id=$1) SELECT *,to_char(greatest(effective_from,$2::date),'YYYY-MM-DD') AS starts,to_char(least(coalesce(effective_to+1,next_from,'infinity'::date),$3::date+1),'YYYY-MM-DD') AS ends FROM effective WHERE effective_from<=$3::date AND coalesce(effective_to+1,next_from,'infinity'::date)>$2::date ORDER BY effective_from`,[contract.id,start,end])).rows;
    const meters=(await client.query('SELECT * FROM billing_meters WHERE site_id=$1 AND active=true ORDER BY id',[siteId])).rows;
    if(!meters.length||!rates.length)throw new ConflictException('Billing meters and effective rate required');
    const finalBoundary=new Date(Date.parse(end)+86400000).toISOString().slice(0,10);let cursor=start;const snapshots:any[]=[];
@@ -42,7 +42,7 @@ export class LocalFinancialApplicationService {
    }
    if(cursor!==finalBoundary)throw new ConflictException('No effective rate covers whole period');
    const tax=(subtotal*7n+50n)/100n;const id=randomUUID();
-   const result=await client.query(`INSERT INTO billing_cycles(id,site_id,contract_id,period_start,period_end,cutoff_time,status,quality,opening_energy,closing_energy,consumed_kwh,rate,amount,subtotal,simulated_tax,meter_snapshot,policy_hash) VALUES($1,$2,$3,$4,$5,($5::date+1)::timestamp AT TIME ZONE $6,'pending_review','complete',$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,[id,siteId,contract.id,start,end,site.timezone,opening,closing,Number(energy)/1000, rates.length===1?rates[0].rate:Number(subtotal)/100/(Number(energy)/1000||1),Number(subtotal+tax)/100,Number(subtotal)/100,Number(tax)/100,JSON.stringify(snapshots),TEST_FINANCIAL_POLICY_HASH]);
+   const result=await client.query(`INSERT INTO billing_cycles(id,site_id,contract_id,period_start,period_end,cutoff_time,status,quality,opening_energy,closing_energy,consumed_kwh,rate,amount,subtotal,simulated_tax,meter_snapshot,policy_hash) VALUES($1,$2,$3,$4,$5,($5::date+1)::timestamp AT TIME ZONE $6,'pending_review','complete',$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,[id,siteId,contract.id,start,end,site.timezone,opening,closing,decimal(energy,3), rates.length===1?snapshots[0].rate:decimal(energy?(subtotal*100000n+energy/2n)/energy:0n,4),decimal(subtotal+tax,2),decimal(subtotal,2),decimal(tax,2),JSON.stringify(snapshots),TEST_FINANCIAL_POLICY_HASH]);
    return {cycles:result.rows};
   });
  }
@@ -55,6 +55,9 @@ export class LocalFinancialApplicationService {
   if(!company?.company_name||!company.tax_id||!company.address||!customer?.company_name||!customer.tax_id||!customer.tax_address)throw new ConflictException('Complete issuer and customer tax identity required');
   if(!Number.isInteger(customer.payment_term_days))throw new ConflictException('Explicit paymentTermDays required');
   const banks=(await client.query('SELECT * FROM company_bank_accounts WHERE is_configured=true ORDER BY is_default DESC,created_at')).rows;
+  if(!banks.some(bank=>bank.bank_name?.trim()&&bank.account_name?.trim()&&bank.account_number?.trim()))throw new ConflictException('Usable configured payment account required');
+  const recipients=(await client.query(`SELECT u.id,u.email,u.display_name AS name FROM users u JOIN sites s ON s.school_id=u.school_id JOIN schools sc ON sc.id=s.school_id WHERE s.id=$1 AND u.id=ANY($2::uuid[]) AND u.role='school_user' AND u.status='active' AND sc.status='active' AND u.email_verified_at IS NOT NULL AND u.verified_email=u.email ORDER BY u.id`,[cycle.site_id,customer.recipient_user_ids])).rows;
+  if(!recipients.length||recipients.length!==customer.recipient_user_ids.length)throw new ConflictException('Selected verified organization recipients required');
   const payments=type==='receipt'?(await client.query("SELECT * FROM payments WHERE billing_cycle_id=$1 AND status='paid' ORDER BY submitted_at,id",[cycle.id])).rows:[];
   if(type==='receipt')requireTestSettlement(payments.map(p=>p.amount),cycle.amount);
   const day=(await client.query("SELECT to_char(now() AT TIME ZONE 'Asia/Bangkok','YYYY-MM-DD') AS day")).rows[0].day;
@@ -64,7 +67,7 @@ export class LocalFinancialApplicationService {
   const logo=await readFile(fileURLToPath(new URL('../../../../web/public/brand/solar-roof-document.png',import.meta.url)));
   const cycleDates=(await client.query(`SELECT to_char(period_start,'YYYY-MM-DD') AS starts,to_char(period_end,'YYYY-MM-DD') AS ends FROM billing_cycles WHERE id=$1`,[cycle.id])).rows[0];
   cycle={...cycle,period_start:cycleDates.starts,period_end:cycleDates.ends};
-  const snapshot={policy:TEST_FINANCIAL_POLICY,policyHash:TEST_FINANCIAL_POLICY_HASH,cycle,customer,company,banks,payments,logo:`data:image/png;base64,${logo.toString('base64')}`,language:'th-en',issueDate:day,dueDate:new Date(Date.parse(day)+customer.payment_term_days*86400000).toISOString().slice(0,10)};
+  const snapshot={policy:TEST_FINANCIAL_POLICY,policyHash:TEST_FINANCIAL_POLICY_HASH,cycle,customer,company,banks,payments,recipients,logo:`data:image/png;base64,${logo.toString('base64')}`,language:'th-en',issueDate:day,dueDate:new Date(Date.parse(day)+customer.payment_term_days*86400000).toISOString().slice(0,10)};
   const document={id:randomUUID(),document_number:number,document_type:type,snapshot,amount:cycle.amount};
   const bytes=await renderLocalTestPdf(document);const sha256=createHash('sha256').update(bytes).digest('hex');
   const doc=(await client.query(`INSERT INTO documents(id,site_id,billing_cycle_id,document_type,document_number,status,issue_date,amount,snapshot,content_hash,file_key) VALUES($1,$2,$3,$4,$5,'issued',$6,$7,$8,$9,$10) RETURNING *`,[document.id,cycle.site_id,cycle.id,type,number,day,cycle.amount,JSON.stringify(snapshot),sha256,`local-artifact:${document.id}`])).rows[0];
@@ -81,7 +84,7 @@ export class LocalFinancialApplicationService {
    const cycle=(await client.query('SELECT * FROM billing_cycles WHERE id=$1 FOR UPDATE',[id])).rows[0];if(!cycle)throw new NotFoundException('Billing cycle not found');
    if(!['approved','pending_verification'].includes(cycle.status)||cycle.policy_hash!==TEST_FINANCIAL_POLICY_HASH)throw new ConflictException('Issued unpaid TEST invoice required');
    const invoice=(await client.query("SELECT id FROM documents WHERE billing_cycle_id=$1 AND document_type='invoice' AND status='issued'",[id])).rows[0];if(!invoice)throw new ConflictException('Issued invoice required');
-   const duplicate=await client.query(`SELECT 1 FROM payments WHERE billing_cycle_id=$1 AND status IN('pending_verification','paid') AND (evidence_key=$2 OR slip_url=$3)`,[id,body.evidenceKey??null,body.slipUrl??null]);if(duplicate.rowCount)throw new ConflictException('Transfer evidence already submitted');
+   const duplicate=await client.query(`SELECT 1 FROM payments WHERE submitted_by IS NOT NULL AND status IN('pending_verification','paid') AND (evidence_key=$1 OR slip_url=$2)`,[body.evidenceKey??null,body.slipUrl??null]);if(duplicate.rowCount)throw new ConflictException('Transfer evidence already submitted');
    const paymentId=randomUUID();await client.query(`INSERT INTO payments(id,billing_cycle_id,amount,status,paid_at,slip_url,evidence_key,note,submitted_by) VALUES($1,$2,$3,'pending_verification',$4,$5,$6,$7,$8)`,[paymentId,id,body.amount,paidAt,body.slipUrl??null,body.evidenceKey??null,body.note??null,actorId]);
    await client.query("UPDATE billing_cycles SET status='pending_verification' WHERE id=$1",[id]);return {success:true,paymentId,status:'pending_verification'};
   });
@@ -106,12 +109,21 @@ export class LocalFinancialApplicationService {
    if(!(await lock.query('SELECT pg_try_advisory_lock(hashtextextended($1,0)) AS locked',[`financial-mail:${id}`])).rows[0].locked)return {pending:true};
    const outboxes=(await lock.query(`SELECT o.*,d.document_number,d.snapshot,a.pdf_bytes,a.sha256 FROM financial_delivery_outbox o JOIN documents d ON d.id=o.document_id JOIN document_artifacts a ON a.document_id=d.id WHERE d.billing_cycle_id=$1 AND d.status='issued' ORDER BY d.created_at`,[id])).rows;
    for(const job of outboxes){if(job.state==='sent')continue;if(['sending','uncertain'].includes(job.state))throw new ConflictException('SMTP outcome uncertain; reconcile capture before retry');
-    const recipient=job.snapshot.customer.billing_email;if(!recipient)throw new ConflictException('Contract email required');
-    const messageId=`<financial-${job.id}@solar-platform.invalid>`;
-    await lock.query("UPDATE financial_delivery_outbox SET state='sending',attempts=attempts+1,message_id=$2 WHERE id=$1",[job.id,messageId]);
-    const transport=nodemailer.createTransport({host:'127.0.0.1',port:11049,secure:false,connectionTimeout:5000,socketTimeout:10000});
-    try{const result=await transport.sendMail({from:process.env.SMTP_FROM??'local-financial@solar-platform.invalid',to:recipient,messageId,subject:`TEST ${job.document_number}`,text:'Synthetic local financial workflow test. Document attached.',attachments:[{filename:`${job.document_number}.pdf`,content:job.pdf_bytes,contentType:'application/pdf'}]});if(!result.accepted?.length)throw new Error('SMTP recipient rejected');}
-    catch(error){const e=error as Error&{code?:string;responseCode?:number};const safe=e.code==='ECONNREFUSED'||Boolean(e.responseCode&&e.responseCode>=400);await lock.query('UPDATE financial_delivery_outbox SET state=$2,last_error=$3 WHERE id=$1',[job.id,safe?'failed':'uncertain',e.message]);throw error;}finally{transport.close();}
+    if(job.attempts>=5)throw new ConflictException('Local capture retry budget exhausted; staff reconciliation required');
+    if(!Array.isArray(job.snapshot.recipients)||!job.snapshot.recipients.length)throw new ConflictException('Frozen verified recipient selection required');
+    await lock.query("UPDATE financial_delivery_outbox SET state='sending',attempts=attempts+1 WHERE id=$1",[job.id]);
+    for(const recipient of job.snapshot.recipients) {
+      if(job.delivered_user_ids?.includes(recipient.id))continue;
+      const eligible=(await lock.query(`SELECT u.id FROM users u JOIN sites s ON s.school_id=u.school_id JOIN schools sc ON sc.id=s.school_id JOIN contracts c ON c.site_id=s.id WHERE c.id=$1 AND u.id=$2 AND u.id=ANY(c.recipient_user_ids) AND u.role='school_user' AND u.status='active' AND sc.status='active' AND u.email=$3 AND u.email_verified_at IS NOT NULL AND u.verified_email=u.email`,[job.snapshot.customer.id,recipient.id,recipient.email])).rows[0];
+      if(!eligible){await lock.query("UPDATE financial_delivery_outbox SET state='failed',last_error='Selected recipient is no longer verified or scoped' WHERE id=$1",[job.id]);throw new ConflictException('Selected recipient is no longer verified or scoped');}
+      const messageId=`<financial-${job.id}-${recipient.id}@solar-platform.invalid>`;
+      await lock.query('UPDATE financial_delivery_outbox SET message_id=$2 WHERE id=$1',[job.id,messageId]);
+      const transport=nodemailer.createTransport({host:'127.0.0.1',port:11049,secure:false,connectionTimeout:5000,socketTimeout:10000});
+      try{const result=await transport.sendMail({from:process.env.SMTP_FROM??'local-financial@solar-platform.invalid',to:recipient.email,messageId,subject:`TEST ${job.document_number}`,text:'Synthetic local financial workflow test. Document attached.',attachments:[{filename:`${job.document_number}.pdf`,content:job.pdf_bytes,contentType:'application/pdf'}]});if(!result.accepted?.map((email:string)=>email.toLowerCase()).includes(recipient.email.toLowerCase()))throw Object.assign(new Error('SMTP recipient rejected'),{code:'ERECIPIENT'});}
+      catch(error){const e=error as Error&{code?:string;responseCode?:number};const safe=['ECONNREFUSED','ERECIPIENT','EAUTH','EDNS'].includes(e.code??'')||Boolean(e.responseCode&&e.responseCode>=400);await lock.query('UPDATE financial_delivery_outbox SET state=$2,last_error=$3 WHERE id=$1',[job.id,safe?'failed':'uncertain',e.message]);throw error;}finally{transport.close();}
+      // A database failure after SMTP acceptance leaves 'sending', so retries stop as uncertain.
+      await lock.query('UPDATE financial_delivery_outbox SET delivered_user_ids=array_append(delivered_user_ids,$2::uuid) WHERE id=$1',[job.id,recipient.id]);
+    }
     await lock.query("UPDATE financial_delivery_outbox SET state='sent',completed_at=now(),last_error=NULL WHERE id=$1",[job.id]);
    }return {success:true};
   }finally{await lock.query('SELECT pg_advisory_unlock(hashtextextended($1,0))',[`financial-mail:${id}`]);lock.release();}
@@ -129,6 +141,12 @@ export class LocalFinancialApplicationService {
   }return (await this.db.query('SELECT * FROM financial_month_jobs ORDER BY period_start,site_id')).rows;
  }
 }
+
+
+
+
+
+
 
 
 

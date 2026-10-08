@@ -1,5 +1,6 @@
 "use client";
 import {BRAND_NAME} from "../../components/brand/brand-mark";
+import {financialContractInput,nextRateStart,contractRatePayload} from './contract-financial-input';
 
 import { AddButton } from "../../components/ui/add-button";
 
@@ -59,6 +60,9 @@ export function ContractFormDialog({
   const locale = useLocale();
   const user = useSessionUser();
   const contractSchema = React.useMemo(() => createContractSchema(locale), [locale]);
+  const [paymentTermDays,setPaymentTermDays]=React.useState('');
+  const [recipientUserId,setRecipientUserId]=React.useState('');
+  const [recipientOptions,setRecipientOptions]=React.useState<Array<{id:string;email:string;displayName:string}>>([]);
   const [loading, setLoading] = React.useState(false);
   const [loadingSites, setLoadingSites] = React.useState(false);
   const [sites, setSites] = React.useState<SiteOption[]>([]);
@@ -108,10 +112,16 @@ export function ContractFormDialog({
     }
   }, [open, setValue, locale]);
 
+  const selectedSiteId=watch('siteId');
+  React.useEffect(()=>{
+    let active=true;setRecipientUserId('');setRecipientOptions([]);
+    if(open&&selectedSiteId)apiClient.get<Array<{id:string;email:string;displayName:string}>>(`/v1/operations/contracts/recipient-options?siteId=${encodeURIComponent(selectedSiteId)}`).then(rows=>{if(active)setRecipientOptions(rows);}).catch(()=>{if(active)setRecipientOptions([]);});
+    return ()=>{active=false;};
+  },[open,selectedSiteId]);
   const handleAddRateRow = () => {
     const lastRow = rateRows[rateRows.length - 1];
     const nextStart = lastRow?.endDate
-      ? lastRow.endDate
+      ? nextRateStart(lastRow.endDate)
       : new Date().toISOString().slice(0, 10);
 
     setRateRows((prev) => [
@@ -147,6 +157,7 @@ export function ContractFormDialog({
         siteIds: [values.siteId],
         effectiveDate: values.effectiveDate,
         paymentTerms: values.paymentTerms,
+        ...financialContractInput(paymentTermDays,recipientUserId),
         signerName: values.signerName,
         taxId: values.taxId?.trim() || null,
         companyName: values.companyName?.trim() || null,
@@ -155,11 +166,7 @@ export function ContractFormDialog({
         billingEmail: values.billingEmail?.trim() || null,
         billingPhone: values.billingPhone?.trim() || null,
         ratePerKwh: Number(rateRows[0]?.rate),
-        rates: rateRows.map((r) => ({
-          startDate: r.startDate,
-          endDate: r.endDate.trim() ? r.endDate : null,
-          rate: Number(r.rate),
-        })),
+        rates: contractRatePayload(rateRows),
       };
 
       await apiClient.post("/v1/contracts", payload);
@@ -169,7 +176,7 @@ export function ContractFormDialog({
           ? "สร้างสัญญาและตารางอัตราค่าไฟสำเร็จ"
           : "Created contract and rate schedule successfully"
       );
-      reset();
+      reset();setPaymentTermDays('');setRecipientUserId('');
       onOpenChange(false);
       router.refresh();
     } catch (err: unknown) {
@@ -209,7 +216,19 @@ export function ContractFormDialog({
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-2 sm:col-span-2">
+                            <div className="space-y-2">
+                <Label htmlFor="payment-term-days" required>{locale==='th'?'จำนวนวันชำระเงิน':'Payment term (calendar days)'}</Label>
+                <Input id="payment-term-days" type="number" min="0" max="3650" step="1" required value={paymentTermDays} onChange={event=>setPaymentTermDays(event.target.value)}/>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="contract-recipient" required>{locale==='th'?'บัญชีผู้รับเอกสาร':'Document recipient account'}</Label>
+                <Select value={recipientUserId} onValueChange={setRecipientUserId} disabled={!selectedSiteId}>
+                  <SelectTrigger id="contract-recipient"><SelectValue placeholder={locale==='th'?'เลือกผู้รับที่ยืนยันอีเมลแล้ว':'Select verified recipient'}/></SelectTrigger>
+                  <SelectContent>{recipientOptions.map(option=><SelectItem key={option.id} value={option.id}>{option.displayName} · {option.email}</SelectItem>)}</SelectContent>
+                </Select>
+                {!recipientOptions.length&&selectedSiteId&&<p className="text-xs text-muted-foreground">{locale==='th'?'ยังไม่มีบัญชีผู้รับที่ยืนยันอีเมลในองค์กรนี้':'No verified recipient account in this organization.'}</p>}
+              </div>
+<div className="space-y-2 sm:col-span-2">
                 <Label htmlFor="c-site" required className="text-xs font-medium">
                   {locale === "th" ? "เลือกไซต์งานติดตั้ง" : "Solar Site"}
                 </Label>
@@ -440,8 +459,8 @@ export function ContractFormDialog({
             </div>
             <p className="text-[11px] text-muted-foreground">
               {locale === "th"
-                ? "* หากเว้นว่างวันสิ้นสุด อัตราค่าไฟนั้นจะมีผลต่อเนื่องจนกว่าจะมีอัตราค่าไฟช่วงถัดไปกำหนดขึ้น"
-                : "* Leaving end date blank marks the rate as open-ended until superseded by a newer version"}
+                ? "* วันสิ้นสุดรวมวันนั้นด้วย หากเว้นว่างจะสิ้นสุดวันก่อนอัตราถัดไป หรือมีผลต่อเนื่องหากเป็นอัตราสุดท้าย"
+                : "* End date includes that day. A blank end stops the day before the next rate, or continues for the final rate."}
             </p>
           </div>
 
@@ -464,5 +483,7 @@ export function ContractFormDialog({
     </Dialog>
   );
 }
+
+
 
 

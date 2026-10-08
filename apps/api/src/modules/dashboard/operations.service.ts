@@ -123,6 +123,11 @@ export class OperationsService {
     if(artifact)return {...result.rows[0],downloadUrl:`/v1/operations/documents/${id}/pdf`,previewUrl:`/v1/operations/documents/${id}/pdf`,contentHash:artifact.sha256};
     return {...result.rows[0],previewUnavailableReason:'เอกสารต้นฉบับที่ตรวจสอบยังไม่พร้อมใช้งาน'};
   }
+  async contractRecipientOptions(siteId:string,user?:ScopePrincipal) {
+    if(!['owner','admin'].includes(user?.role??''))throw new ForbiddenException('Contract author required');
+    if(!/^[0-9a-f-]{36}$/i.test(siteId))throw new NotFoundException('Site not found');
+    return (await this.db.query(`SELECT u.id,u.email,u.display_name AS "displayName" FROM users u JOIN sites s ON s.school_id=u.school_id JOIN schools sc ON sc.id=s.school_id WHERE s.id=$1 AND sc.status='active' AND u.role='school_user' AND u.status='active' AND u.email_verified_at IS NOT NULL AND u.verified_email=u.email ORDER BY u.display_name,u.id`,[siteId])).rows;
+  }
   async documentPdf(id:string,user?:ScopePrincipal) {
     await this.document(id,user);
     const artifact=(await this.db.query('SELECT pdf_bytes,sha256 FROM document_artifacts WHERE document_id=$1',[id])).rows[0];
@@ -160,6 +165,7 @@ export class OperationsService {
     return [item('รายการทั้งหมด',r.count,'รายการ')];
   }
 }
+
 
 
 
