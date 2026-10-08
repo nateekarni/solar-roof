@@ -499,13 +499,23 @@ export class AssetsController {
     try {
       await client.query("BEGIN");
 
-      const siteCheck = await client.query("SELECT id FROM sites WHERE id = $1 FOR UPDATE", [id]);
+      const siteCheck = await client.query("SELECT id, school_id FROM sites WHERE id = $1 FOR UPDATE", [id]);
       if (siteCheck.rows.length === 0) {
         throw new NotFoundException("ไม่พบไซต์งานที่ต้องการแก้ไข");
       }
 
       if(body.schoolId !== undefined || body.newOrganization) {
         body.schoolId=await resolveSiteOrganization(client,{schoolId:body.schoolId,...(body.newOrganization?{newOrganization:body.newOrganization}:{})});
+        if (body.schoolId !== siteCheck.rows[0].school_id) {
+          const history = await client.query(`SELECT (
+            EXISTS(SELECT 1 FROM contracts WHERE site_id=$1)
+            OR EXISTS(SELECT 1 FROM billing_cycles WHERE site_id=$1)
+            OR EXISTS(SELECT 1 FROM documents WHERE site_id=$1)
+          ) AS has_history`, [id]);
+          if (history.rows[0]?.has_history) throw new ConflictException(
+            'ไซต์งานมีประวัติสัญญา การเรียกเก็บเงิน หรือเอกสารแล้ว ไม่สามารถเปลี่ยนองค์กรได้ กรุณาสร้างไซต์งานใหม่สำหรับองค์กรอื่น / This site has contract, billing or document history. Its organization cannot change; create a new site for another organization.'
+          );
+        }
       }
       const gateway = await client.query(`SELECT g.id,g.name,g.endpoint,g.external_gateway_id AS "externalGatewayId",s.external_site_id AS "externalSiteId" FROM gateways g JOIN sites s ON s.id=g.site_id WHERE g.site_id = $1 FOR UPDATE OF g`, [id]);
       const gw = gateway.rows[0];

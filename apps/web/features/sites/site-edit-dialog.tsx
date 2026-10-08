@@ -9,6 +9,8 @@ import { AddButton } from "../../components/ui/add-button";
 import { AppLoading } from "../../components/feedback/app-loading";
 import { optionalNumber } from "./site-form-values";
 import type { PayloadConfig } from "./payload-contracts";
+import {createSitePayloadLoader} from "./site-payload-loader";
+import {SiteBillingSource} from "./site-billing-source";
 import { PayloadConnectionCard } from "./payload-connection-card";
 import { ChoiceSelect } from '../../components/ui/choice-select';
 
@@ -78,10 +80,12 @@ export function SiteEditDialog({
   open,
   onOpenChange,
   siteId,
+  billingSetupPending = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   siteId: string | null;
+  billingSetupPending?: boolean;
 }) {
   const router = useRouter();
   const { user } = useAuth();
@@ -89,8 +93,24 @@ export function SiteEditDialog({
   const locale = useLocale();
   const [organization,setOrganization]=React.useState<OrganizationSelection|null>(null);
   const organizationCatalog=useOrganizationCatalog(open);
-  const [payloadConfig, setPayloadConfig] = React.useState<PayloadConfig | null>(null);
-  const refreshPayload = React.useCallback(() => { if(siteId) apiClient.get<PayloadConfig | null>(`/v1/sites/${siteId}/payload-config`).then(config => setPayloadConfig(config?.externalSiteId && config.externalGatewayId ? config : null)).catch(() => setPayloadConfig(null)); }, [siteId]);
+  const [tab,setTab]=React.useState("settings");
+  React.useEffect(()=>{if(open)setTab(billingSetupPending?"payload":"settings");},[open,siteId,billingSetupPending]);
+  const [storedPayloadConfig,setPayloadConfig]=React.useState<PayloadConfig|null>(null);
+  const payloadScope=React.useRef({open,siteId});
+  payloadScope.current={open,siteId};
+  const [payloadLoader]=React.useState(()=>createSitePayloadLoader(
+    requestedSiteId=>apiClient.get<PayloadConfig|null>(`/v1/sites/${encodeURIComponent(requestedSiteId)}/payload-config`),
+    ()=>payloadScope.current,
+    setPayloadConfig,
+  ));
+  const refreshPayload=React.useCallback(()=>{void payloadLoader.refresh();},[payloadLoader]);
+  React.useEffect(()=>{
+    payloadLoader.activate(open?siteId:null);
+    setPayloadConfig(null);
+    if(open&&siteId)refreshPayload();
+    return()=>payloadLoader.invalidate();
+  },[open,siteId,payloadLoader,refreshPayload]);
+  const payloadConfig=open&&storedPayloadConfig?.siteId===siteId?storedPayloadConfig:null;
   const [meterPresets, setMeterPresets] = React.useState<Array<{ id: string; model: string; registers: unknown[] }>>([]);
   const [devices, setDevices] = React.useState<Array<{ id: string; name: string; model: string; serialNumber: string }>>([]);
   const [newDevice, setNewDevice] = React.useState({ name: "", model: "", serialNumber: "", slaveId: 2, meterPresetId: "" });
@@ -127,18 +147,19 @@ export function SiteEditDialog({
   const selectOrganization=React.useCallback((selection:OrganizationSelection|null)=>{setOrganization(selection);setValue("schoolName",selection?.organization.name??"",{shouldValidate:true});},[setValue]);
 
   React.useEffect(() => {
+    let active=true;
+    const current=()=>active&&payloadScope.current.open&&payloadScope.current.siteId===siteId;
     if (open && siteId) {
       setFetching(true);
-      setPayloadConfig(null); refreshPayload();
-      apiClient.get<typeof meterPresets>("/v1/meter-presets").then(setMeterPresets).catch(() => setMeterPresets([]));
-      apiClient.get<typeof devices>(`/v1/sites/${siteId}/devices`).then(setDevices).catch(() => setDevices([]));
+      apiClient.get<typeof meterPresets>("/v1/meter-presets").then(rows=>{if(current())setMeterPresets(rows);}).catch(()=>{if(current())setMeterPresets([]);});
+      apiClient.get<typeof devices>(`/v1/sites/${siteId}/devices`).then(rows=>{if(current())setDevices(rows);}).catch(()=>{if(current())setDevices([]);});
       setPingStatus("idle");
       setPingMessage("");
       setPingLatency(null);
 
       apiClient.get<any>(`/v1/sites/${siteId}`)
         .then((siteData) => {
-          if (siteData) {
+          if (current() && siteData) {
             setOrganization({kind:"existing",organization:{id:siteData.schoolId,name:siteData.schoolName||"",code:siteData.schoolCode||""}});
             reset({
               name: siteData.name || "",
@@ -158,13 +179,15 @@ export function SiteEditDialog({
           }
         })
         .catch((err: any) => {
+          if(!current())return;
           notify.error(err.message || "ไม่สามารถโหลดข้อมูลไซต์งานได้");
           onOpenChange(false);
         })
         .finally(() => {
-          setFetching(false);
+          if(current())setFetching(false);
         });
     }
+    return()=>{active=false;};
   }, [open, siteId, reset, onOpenChange, refreshPayload]);
 
   const handleTestPing = async () => {
@@ -255,7 +278,7 @@ export function SiteEditDialog({
         {fetching ? (
           <AppLoading fullPage={false} />
         ) : (
-          <Tabs defaultValue="settings" className={`min-h-0 gap-4 overflow-hidden ${siteControlsClassName}`}>
+          <Tabs value={payloadConfig?tab:"settings"} onValueChange={setTab} className={`min-h-0 gap-4 overflow-hidden ${siteControlsClassName}`}>
             {payloadConfig && <TabsList className={siteTabsListClassName}><TabsTrigger value="settings" className={siteTabsTriggerClassName}>{locale === "th" ? "ข้อมูลไซต์และ Gateway" : "Site & Gateway"}</TabsTrigger><TabsTrigger value="payload" className={siteTabsTriggerClassName}>{locale === "th" ? "การเชื่อมต่อและ Preset" : "Connection & Preset"}</TabsTrigger></TabsList>}
             <TabsContent value="settings" className="min-h-0 overflow-y-auto px-1">
           <form onSubmit={handleSubmit(onSubmit)} className={siteFormClassName}>
@@ -513,9 +536,9 @@ export function SiteEditDialog({
                 {loading ? t("common.saving") : locale === "th" ? "บันทึกการแก้ไข" : "Save Changes"}
               </Button>
             </DialogFooter>
-          </form>
+          </form>{billingSetupPending&&!payloadConfig&&siteId&&<SiteBillingSource siteId={siteId} locale={locale} setupPending focusOnLoad/>}
             </TabsContent>
-            {payloadConfig && <TabsContent value="payload" className="min-h-0 overflow-y-auto p-1"><PayloadConnectionCard config={payloadConfig} onRefresh={refreshPayload} editable/></TabsContent>}
+            {payloadConfig && <TabsContent value="payload" className="min-h-0 overflow-y-auto p-1"><PayloadConnectionCard config={payloadConfig} onRefresh={refreshPayload} editable focusBilling={billingSetupPending} billingSetupPending={billingSetupPending}/></TabsContent>}
           </Tabs>
         )}
       </DialogContent>
