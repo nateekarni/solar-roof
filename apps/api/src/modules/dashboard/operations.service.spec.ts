@@ -44,3 +44,8 @@ test('billing history is read only after scoped cycle lookup succeeds',async()=>
  const result=await new OperationsService(db as unknown as DatabaseService).detail('billing',id,{role:'school_user',schoolId:'school-a'});assert.deepEqual(result.row.payments,rows);assert.equal(calls,2);
  let deniedCalls=0;const denied=new OperationsService({query:async()=>{deniedCalls++;return {rows:[]};}} as unknown as DatabaseService);await assert.rejects(()=>denied.detail('billing',id,{role:'school_user',schoolId:'school-b'}));assert.equal(deniedCalls,1);
 });
+test('scoped officer review exposes persisted payer metadata',async()=>{
+ const id='00000000-0000-4000-8000-000000000001';let calls=0;
+ const db={query:async(sql:string,params:unknown[])=>{calls++;if(calls===1)return {rows:[{id}]};assert.deepEqual(params,[id]);const row:Record<string,unknown>={id:'transfer',amount:'107.00',status:'pending_verification'};for(const [column,alias,value] of [['payer_name','payerName','Payer'],['payment_method','paymentMethod','bank_transfer'],['origin_bank','originBank','Origin bank'],['origin_account','originAccount','00123']])if(sql.includes(column+' AS "'+alias+'"'))row[alias!]=value;return {rows:[row]};}};
+ const result=await new OperationsService(db as unknown as DatabaseService).detail('billing',id,{role:'accountant'});assert.equal((result.row.payments as any)[0].payerName,'Payer');assert.equal((result.row.payments as any)[0].paymentMethod,'bank_transfer');assert.equal((result.row.payments as any)[0].originBank,'Origin bank');assert.equal((result.row.payments as any)[0].originAccount,'00123');
+});

@@ -57,3 +57,9 @@ test('financial adapter preserves saved transfer date strings for presentation a
   assert.equal(snapshot.period, '2026-09-01 - 2026-09-30');
   assert.equal(JSON.stringify(document), saved);
 });
+
+test('approved snapshot retains optional payer metadata without mixing receiving accounts or pending history',()=>{
+ const document={document_type:'receipt',document_number:'RCP261000001',snapshot:{company:{company_name:'Issuer',tax_id:'0',address:'Issuer address'},customer:{company_name:'Customer',tax_id:'1',tax_address:'Customer address'},issueDate:'2026-10-08',logo:'data:image/png;base64,AA==',cycle:{period_start:'2026-09-01',period_end:'2026-09-30',subtotal:'100.00',simulated_tax:'7.00',amount:'107.00',meter_snapshot:[]},banks:[{bank_name:'Receiving bank',account_name:'Issuer',account_number:'9999'}],payments:[{status:'paid',paid_at:'2026-10-08T09:00:00Z',amount:'57.00',payer_name:'Actual payer',payment_method:'bank_transfer',origin_bank:'Payer bank',origin_account:'00123'},{status:'paid',paid_at:'2026-10-08T09:01:00Z',amount:'50.00'},{status:'pending_verification',paid_at:'2026-10-08T09:02:00Z',amount:'9.00',payer_name:'Pending payer'},{status:'rejected',paid_at:'2026-10-08T09:03:00Z',amount:'9.00',payer_name:'Rejected payer'}]}};
+ const before=JSON.stringify(document);const snapshot=localTestDocumentSnapshot(document as any);
+ assert.deepEqual(snapshot.approvedTransfers,[{status:'paid',paidAt:'2026-10-08T09:00:00Z',amount:'57.00',payerName:'Actual payer',paymentMethod:'bank_transfer',originBank:'Payer bank',originAccount:'00123'},{status:'paid',paidAt:'2026-10-08T09:01:00Z',amount:'50.00'}]);assert.equal(snapshot.paymentAccounts[0]!.bankName,'Receiving bank');assert.equal(JSON.stringify(document),before);
+});

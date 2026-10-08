@@ -1,3 +1,5 @@
+import type { PaymentSubmission } from '@solar/api-contracts';
+import { reviewedPaymentMetadata } from './payment-metadata.js';
 import {allocateDocumentNumber} from '../documents/document-number.js';
 import { ContractPdfService, type ScopedActor } from '../documents/contract-pdf.service.js';
 import { readOrganizationDefaults, contractIdentity } from "./organization-defaults.js";
@@ -355,16 +357,11 @@ export class BillingController {
   @Post("billing-cycles/:id/pay")
   async payBillingCycle(
     @Param("id") id: string,
-    @Body() body: {
-      amount?: number|string;
-      paidAt?: string;
-      slipUrl?: string;
-      evidenceKey?: string;
-      note?: string;
-    },
+    @Body() body: PaymentSubmission,
     @Req() req: Request & { user?: { id: string; role: string } }
   ) {
     if(await this.readiness.isLocalTestReady())return this.financial.submitPayment(id,body,req.user?.id);
+    const metadata=reviewedPaymentMetadata(body);
     return this.db.transaction(async client=>{
     const cycleRes = await client.query("SELECT * FROM billing_cycles WHERE id = $1 FOR UPDATE", [id]);
     const cycle = cycleRes.rows[0];
@@ -392,16 +389,16 @@ export class BillingController {
       paymentId = firstPayment.id;
       await client.query(
         `UPDATE payments 
-         SET amount = $1, status = 'pending_verification', paid_at = $2, slip_url = coalesce($3, slip_url), evidence_key = coalesce($4, evidence_key), note = $5, rejection_reason = NULL
+         SET amount = $1, status = 'pending_verification', paid_at = $2, slip_url = coalesce($3, slip_url), evidence_key = coalesce($4, evidence_key), note = $5, rejection_reason = NULL, payer_name=coalesce($7,payer_name), payment_method=coalesce($8,payment_method), origin_bank=coalesce($9,origin_bank), origin_account=coalesce($10,origin_account)
          WHERE id = $6`,
-        [payAmount, paidAt, slipUrl, evidenceKey, note, paymentId]
+        [payAmount, paidAt, slipUrl, evidenceKey, note, paymentId,metadata.payerName??null,metadata.paymentMethod??null,metadata.originBank??null,metadata.originAccount??null]
       );
     } else {
       paymentId = randomUUID();
       await client.query(
-        `INSERT INTO payments (id, billing_cycle_id, amount, status, paid_at, slip_url, evidence_key, note)
-         VALUES ($1, $2, $3, 'pending_verification', $4, $5, $6, $7)`,
-        [paymentId, id, payAmount, paidAt, slipUrl, evidenceKey, note]
+        `INSERT INTO payments (id, billing_cycle_id, amount, status, paid_at, slip_url, evidence_key, note,payer_name,payment_method,origin_bank,origin_account)
+         VALUES ($1, $2, $3, 'pending_verification', $4, $5, $6, $7,$8,$9,$10,$11)`,
+        [paymentId, id, payAmount, paidAt, slipUrl, evidenceKey, note,metadata.payerName??null,metadata.paymentMethod??null,metadata.originBank??null,metadata.originAccount??null]
       );
     }
 

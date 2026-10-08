@@ -110,7 +110,7 @@ export class OperationsService {
     params.push(id);
     const result=await this.db.query<OperationRow>(`SELECT q.* FROM (${sql}) q WHERE q.id=$${params.length}::uuid`,params);
     if(!result.rows[0]) throw new NotFoundException('Record not found');
-    if(resource==='billing')result.rows[0].payments=(await this.db.query(`SELECT id,amount::text AS amount,status,paid_at AS "transferDate",submitted_at AS "submittedAt",verified_at AS "verifiedAt",rejection_reason AS "rejectionReason",evidence_key AS "evidenceKey" FROM payments WHERE billing_cycle_id=$1 ORDER BY submitted_at,id`,[id])).rows;
+    if(resource==='billing')result.rows[0].payments=(await this.db.query(`SELECT id,amount::text AS amount,status,paid_at AS "transferDate",submitted_at AS "submittedAt",verified_at AS "verifiedAt",rejection_reason AS "rejectionReason",evidence_key AS "evidenceKey",payer_name AS "payerName",payment_method AS "paymentMethod",origin_bank AS "originBank",origin_account AS "originAccount" FROM payments WHERE billing_cycle_id=$1 ORDER BY submitted_at,id`,[id])).rows;
     return {columns,row:result.rows[0]};
   }
   async document(id:string,user?:ScopePrincipal) {

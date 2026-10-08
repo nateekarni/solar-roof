@@ -28,6 +28,9 @@ import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { Badge } from "../../components/ui/badge";
+import {useLocale} from '../../providers/locale-provider';
+import {PaymentHistory,type TransferHistoryRow} from './payment-history';
+import {billingDetailRequest} from './billing-detail-request';
 import { apiClient } from "../../lib/api-client";
 
 interface PaymentVerificationDialogProps {
@@ -55,6 +58,9 @@ export function PaymentVerificationDialog({
   billingCycle,
   onSuccess,
 }: PaymentVerificationDialogProps) {
+  const locale=useLocale();
+  const [transfers,setTransfers]=React.useState<TransferHistoryRow[]>([]);
+  const [reviewLoaded,setReviewLoaded]=React.useState(false);
   const [rejectionReason, setRejectionReason] = React.useState("");
   const [showRejectInput, setShowRejectInput] = React.useState(false);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
@@ -70,8 +76,16 @@ export function PaymentVerificationDialog({
     }
   }, [open]);
 
+  React.useEffect(()=>{
+    let cancelled=false;setTransfers([]);setReviewLoaded(false);
+    if(open&&billingCycle?.id)billingDetailRequest<{payments?:TransferHistoryRow[]}>(billingCycle.id,path=>apiClient.get(path))
+      .then(row=>{if(!cancelled){setTransfers(row.payments??[]);setReviewLoaded(true);}})
+      .catch(()=>{if(!cancelled)setErrorMsg(locale==='th'?'โหลดรายการโอนเพื่อตรวจสอบไม่สำเร็จ':'Unable to load transfers for review.');});
+    return ()=>{cancelled=true;};
+  },[open,billingCycle?.id,locale]);
+
   const handleApprove = async () => {
-    if (!billingCycle?.id) return;
+    if (!billingCycle?.id || !reviewLoaded) return;
     setIsSubmitting(true);
     setErrorMsg(null);
     try {
@@ -168,6 +182,8 @@ export function PaymentVerificationDialog({
                 </div>
               )}
             </div>
+
+            <PaymentHistory payments={transfers} locale={locale}/>
 
             {/* Slip Preview Box */}
             <div className="space-y-2">
@@ -272,7 +288,7 @@ export function PaymentVerificationDialog({
                   <Button
                     type="button"
                     onClick={handleApprove}
-                    disabled={isSubmitting}
+                    disabled={isSubmitting||!reviewLoaded}
                     className="h-10 text-xs bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 flex-1 sm:flex-initial"
                   >
                     {isSubmitting && <Loader2 className="size-3.5 animate-spin" />}
