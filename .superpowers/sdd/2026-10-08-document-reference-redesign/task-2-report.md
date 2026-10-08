@@ -70,3 +70,13 @@ Additional final checks: pnpm --filter @solar/api lint, pnpm --filter @solar/web
 ## Remaining validation and risks
 
 Root owns guarded migration application, actual PostgreSQL/HTTP/browser/channel verification and all runtime/SMTP activity. This commit requires migration 037 before payment submission/review paths use the new columns; rebuild api-contracts before running consumers. The root's existing 19-artifact/hash baseline remains untouched. No database, SMTP, runtime, production, push or merge action was performed here. No outstanding focused test/type errors. Final independent review and guarded end-to-end validation remain with root.
+
+## Review fix round 1 — normal migration registration
+
+Reviewer P1 confirmed against the normal db-migrate.ts explicit registry: it ended at 036 and omitted the new schema migration. Added exactly one registry entry for infra/migrations/037_optional_payer_metadata.sql after 036. Existing SQL files, checksums, transaction handling and migration side effects are unchanged. Registration fix HEAD: 973dad7d3659c3d61f95fb73481ebf0c452bcd0b.
+
+Focused checks: pnpm --filter @solar/api lint exits 0; git diff --check passes; git diff --name-only 4369743 -- infra/migrations returns no paths, confirming all migration bytes preserved.
+
+No existing registration-test pattern was found. A focused node --input-type=module stdin check exercised the actual db-migrate.ts loop in vm.Script with the imports/environment boundary replaced and an in-memory Pool/client. All preceding migrations were represented as applied; migration 037 was represented as unapplied. The check asserts the actual loop records exactly ['infra/migrations/037_optional_payer_metadata.sql'] and transaction sequence ['BEGIN','COMMIT']. Result: pass. Real registered SQL files were read; no database connection, SQL execution against a database, runtime service or SMTP activity occurred. An initial attempt to inspect the registry through TypeScript's compiler API could not run because the installed native TypeScript package does not expose ScriptTarget; replaced that check with this executed migration-loop boundary check.
+
+Only normal registration and this report changed in this fix round. No whole suite rerun or migration application. Root retains guarded application and scoped re-review ownership.
