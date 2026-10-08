@@ -59,7 +59,7 @@ export function localTestDocumentSnapshot(document: SavedFinancialDocument): Doc
     })),
     totals: { subtotal: s.cycle.subtotal, tax: s.cycle.simulated_tax, taxLabel: 'ภาษีทดสอบ 7% / Simulated tax 7%', total: s.cycle.amount },
     approvedTransfers: s.payments.filter(p => p.status === 'paid' || p.status === 'approved').map(p => ({
-      status: p.status as 'paid' | 'approved', paidAt: new Date(p.paid_at).toISOString(), amount: p.amount,
+      status: p.status as 'paid' | 'approved', paidAt: typeof p.paid_at === 'string' ? p.paid_at : p.paid_at.toISOString(), amount: p.amount,
       ...(p.evidence_key || p.slip_url ? { evidence: p.evidence_key || p.slip_url } : {}),
     })),
     paymentAccounts: s.banks.map(bank => ({ bankName: bank.bank_name, accountName: bank.account_name, accountNumber: bank.account_number })),
@@ -72,4 +72,3 @@ export async function renderLocalTestPdf(document: SavedFinancialDocument): Prom
 export function formatTestMoney(value: unknown): string {
   return formatDocumentMoney(String(value));
 }
-

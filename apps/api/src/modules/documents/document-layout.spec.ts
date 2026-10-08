@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
-import { documentDefinition, formatDocumentMoney, thaiAmountWords, renderDocumentPdf, type DocumentSnapshot } from './document-layout.js';
+import { documentDefinition, formatDocumentDate, formatDocumentMoney, thaiAmountWords, renderDocumentPdf, type DocumentSnapshot } from './document-layout.js';
 
 const fixture: DocumentSnapshot = {
   type: 'invoice', documentNumber: 'INV2026100001', issueDate: '2026-10-08',
@@ -103,4 +103,62 @@ test('long Thai identities expose word boundaries for wrapping without altering 
   assert.ok(Array.isArray(renderedName));
   assert.ok(renderedName.some((part: any) => part.text === '\u200b' && part.fontSize === 0 && part.opacity === 0));
   assert.equal(renderedName.map((part: any) => part.text).join('').replaceAll('\u200b', ''), name);
+});
+
+test('Thai document dates use Buddhist years and preserve invalid or descriptive source values', () => {
+  for (const [input, expected] of [
+    ['2026-10-08', '8 ตุลาคม 2569'],
+    ['2024-02-29', '29 กุมภาพันธ์ 2567'],
+    ['2026-09-01 - 2026-09-30', '1 กันยายน 2569 - 30 กันยายน 2569'],
+    ['2026-02-30', '2026-02-30'],
+    ['2026-13-01', '2026-13-01'],
+    ['2026-02-30 - 2026-03-31', '2026-02-30 - 2026-03-31'],
+    ['ไม่กำหนด / Not specified', 'ไม่กำหนด / Not specified'],
+    ['  period pending  ', '  period pending  '],
+    ['', ''],
+  ]) assert.equal(formatDocumentDate(input!), expected);
+});
+
+test('date-only fields ignore host timezones and transfer instants display their Bangkok calendar and time', () => {
+  const prior = process.env.TZ;
+  try {
+    for (const timezone of ['Pacific/Honolulu', 'Pacific/Kiritimati', 'UTC']) {
+      process.env.TZ = timezone;
+      assert.equal(formatDocumentDate('2026-10-08'), '8 ตุลาคม 2569');
+      assert.equal(formatDocumentDate('2026-10-08T18:30:00Z'), '9 ตุลาคม 2569 เวลา 01:30:00 (Asia/Bangkok)');
+      assert.equal(formatDocumentDate('2026-10-09T01:30:00+07:00'), '9 ตุลาคม 2569 เวลา 01:30:00 (Asia/Bangkok)');
+    }
+    assert.equal(formatDocumentDate('2026-10-08T18:30:00'), '2026-10-08T18:30:00');
+    assert.equal(formatDocumentDate('2026-02-30T18:30:00Z'), '2026-02-30T18:30:00Z');
+    assert.equal(formatDocumentDate('2026-10-08T25:30:00Z'), '2026-10-08T25:30:00Z');
+  } finally { if (prior === undefined) delete process.env.TZ; else process.env.TZ = prior; }
+});
+
+function visibleText(value: any): string {
+  if (typeof value === 'string') return value.replaceAll('\u200b', '');
+  if (Array.isArray(value)) return value.map(visibleText).join('');
+  if (value && typeof value === 'object') {
+    if ('text' in value) return visibleText(value.text);
+    return Object.entries(value).filter(([key]) => key !== 'image').map(([,child]) => visibleText(child)).join('\n');
+  }
+  return '';
+}
+
+test('issue, schedule, period, due and approved transfer dates share Thai presentation without rewriting snapshots', () => {
+  const invoice = { ...fixture, period: '2026-09-01 - 2026-09-30', dueDate: '2026-10-23' };
+  const saved = JSON.stringify(invoice);
+  const invoiceText = visibleText(documentDefinition(invoice).content);
+  assert.match(invoiceText, /วันที่ \/ Issued: 8 ตุลาคม 2569/);
+  assert.match(invoiceText, /รอบบิล \/ Period: 1 กันยายน 2569 - 30 กันยายน 2569/);
+  assert.match(invoiceText, /1 กันยายน 2569 - 30 กันยายน 2569/);
+  assert.match(invoiceText, /กำหนดชำระ \/ Due: 23 ตุลาคม 2569/);
+  assert.match(invoiceText, /INV2026100001/);
+  assert.doesNotMatch(invoiceText, /2026-09-01|2026-09-30|2026-10-08|2026-10-23/);
+  const contractText = visibleText(documentDefinition({ ...fixture, type: 'contract', rates: [{ startDate: '2026-01-01', endDate: '2026-12-31', rate: '4.1234' }] }).content);
+  assert.match(contractText, /1 มกราคม 2569/);
+  assert.match(contractText, /31 ธันวาคม 2569/);
+  const receiptText = visibleText(documentDefinition({ ...fixture, type: 'receipt', approvedTransfers: [{ status: 'paid', paidAt: '2026-10-08T18:30:00Z', amount: '4412.58' }] }).content);
+  assert.match(receiptText, /9 ตุลาคม 2569 เวลา 01:30:00 \(Asia\/Bangkok\)/);
+  assert.doesNotMatch(receiptText, /2026-10-08T18:30:00Z|undefined|null|กำหนดชำระ/);
+  assert.equal(JSON.stringify(invoice), saved);
 });

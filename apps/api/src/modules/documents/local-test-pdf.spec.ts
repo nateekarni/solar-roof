@@ -32,3 +32,26 @@ test('financial snapshot adapter retains every saved meter/rate and approved tra
   assert.equal(snapshot.syntheticTest, true);
   assert.equal(JSON.stringify(document), original);
 });
+
+test('financial adapter preserves saved transfer date strings for presentation and serialization', () => {
+  const document = {
+    document_type: 'receipt', document_number: 'RCT2026100002', snapshot: {
+      company: { company_name: 'บริษัทจริง', address: 'ที่อยู่บริษัท', tax_id: '0000000000000' },
+      customer: { company_name: 'โรงเรียนจริง', tax_address: 'ที่อยู่ลูกค้า', tax_id: '1111111111111' },
+      issueDate: '2026-10-08', logo: 'data:image/png;base64,AA==',
+      cycle: { period_start: '2026-09-01', period_end: '2026-09-30', subtotal: '3.00', simulated_tax: '0.00', amount: '3.00', meter_snapshot: [] },
+      banks: [], payments: [
+        { status: 'paid', paid_at: '2026-10-08T18:30:00Z', amount: '1.00' },
+        { status: 'paid', paid_at: '  transfer date pending  ', amount: '1.00' },
+        { status: 'paid', paid_at: new Date('2026-10-08T18:30:00Z'), amount: '1.00' },
+      ],
+    },
+  };
+  const saved = JSON.stringify(document);
+  assert.doesNotThrow(() => localTestDocumentSnapshot(document));
+  const snapshot = localTestDocumentSnapshot(document);
+  assert.deepEqual(snapshot.approvedTransfers.map(p => p.paidAt), ['2026-10-08T18:30:00Z', '  transfer date pending  ', '2026-10-08T18:30:00.000Z']);
+  assert.equal(snapshot.issueDate, '2026-10-08');
+  assert.equal(snapshot.period, '2026-09-01 - 2026-09-30');
+  assert.equal(JSON.stringify(document), saved);
+});

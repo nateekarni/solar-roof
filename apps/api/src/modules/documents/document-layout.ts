@@ -130,21 +130,21 @@ export function documentDefinition(s: DocumentSnapshot): DocumentDefinition {
     { columns: [{ image: s.logoDataUri, width: 160 }, { width: '*', alignment: 'right', stack: [
       { text: title[0], bold: true, fontSize: 20 }, { text: title[1], fontSize: 12 },
       { text: `${s.syntheticTest ? 'TEST - ' : ''}${s.documentNumber}`, margin: [0, 6, 0, 0] },
-      { text: `วันที่ / Issued: ${s.issueDate}` },
+      { text: `วันที่ / Issued: ${formatDocumentDate(s.issueDate)}` },
     ] }], margin: [0, 0, 0, 12] },
   ];
   if (s.syntheticTest) content.push({ text: s.type === 'contract' ? 'SYNTHETIC LOCAL TEST / เอกสารทดสอบ' : 'SYNTHETIC LOCAL TEST - simulated tax 7%; no withholding / เอกสารทดสอบ', italics: true, fontSize: 12, margin: [0, 0, 0, 8] });
   content.push({ table: { widths: [240.89, 240.89], body: [[party(s.issuer, 'ผู้ขาย / Issuer'), party(s.customer, 'ลูกค้า / Customer')]], dontBreakRows: true }, layout: { hLineWidth: () => 0.5, vLineWidth: () => 0.5, hLineColor: () => '#000000', vLineColor: () => '#000000', paddingLeft: () => 8, paddingRight: () => 8, paddingTop: () => 8, paddingBottom: () => 8 } });
   if (s.siteName) content.push({ text: `ไซต์ / Site: ${s.siteName}`, margin: [0, 8, 0, 0] });
   if (s.contractNumber) content.push({ text: `สัญญา / Contract: ${s.contractNumber}` });
-  if (s.period) content.push({ text: `รอบบิล / Period: ${s.period}` });
+  if (s.period) content.push({ text: `รอบบิล / Period: ${formatDocumentDate(s.period)}` });
   if (s.type === 'contract') {
     content.push({ text: `ผู้ลงนาม: ${s.signatories.customer?.name ?? ''}`, margin: [0, 8, 0, 0] });
-    if (s.rates.length) content.push(table(['วันเริ่มต้น / Start date', 'วันสิ้นสุด (รวมวันนั้น) / End date (inclusive)', 'THB/kWh'], s.rates.map(r => [r.startDate, r.endDate || 'ไม่กำหนด / Not specified', right(exactDecimal(r.rate))]), [120, '*', 95]));
+    if (s.rates.length) content.push(table(['วันเริ่มต้น / Start date', 'วันสิ้นสุด (รวมวันนั้น) / End date (inclusive)', 'THB/kWh'], s.rates.map(r => [formatDocumentDate(r.startDate), (r.endDate ? formatDocumentDate(r.endDate) : undefined) || 'ไม่กำหนด / Not specified', right(exactDecimal(r.rate))]), [120, '*', 95]));
     else content.push({ text: 'ไม่มีตารางอัตราที่บันทึกไว้ / No recorded rate schedule', margin: [0, 8, 0, 0] });
   } else {
     content.push(table(['รายการ / Description', 'kWh', 'THB/kWh', 'THB'], s.items.map(item => [
-      { text: printableText(`${item.description}${item.period ? `\n${item.period}` : ''}`) }, right(exactDecimal(item.quantity)), right(exactDecimal(item.rate)), right(formatDocumentMoney(item.amount)),
+      { text: printableText(`${item.description}${item.period ? `\n${formatDocumentDate(item.period)}` : ''}`) }, right(exactDecimal(item.quantity)), right(exactDecimal(item.rate)), right(formatDocumentMoney(item.amount)),
     ]), ['*', 65, 65, 115]));
     if (s.totals) content.push({ unbreakable: true, margin: [0, 8, 0, 8], stack: [
       { columns: [{ text: 'ยอดก่อนภาษี / Subtotal' }, right(`${formatDocumentMoney(s.totals.subtotal)} THB`)] },
@@ -154,9 +154,9 @@ export function documentDefinition(s: DocumentSnapshot): DocumentDefinition {
     ] });
     if (s.type === 'receipt') {
       const transfers = s.approvedTransfers.filter(p => p.status === 'paid' || p.status === 'approved');
-      if (transfers.length) content.push(table(['วันที่ชำระ / Paid', 'หลักฐาน / Evidence', 'THB'], transfers.map(p => [p.paidAt, p.evidence ?? '', right(formatDocumentMoney(p.amount))]), [140, '*', 115], 'หลักฐานการชำระ / Approved transfers'));
+      if (transfers.length) content.push(table(['วันที่ชำระ / Paid', 'หลักฐาน / Evidence', 'THB'], transfers.map(p => [formatDocumentDate(p.paidAt), p.evidence ?? '', right(formatDocumentMoney(p.amount))]), [140, '*', 115], 'หลักฐานการชำระ / Approved transfers'));
     } else {
-      if (s.dueDate) content.push({ text: `กำหนดชำระ / Due: ${s.dueDate}`, margin: [0, 5, 0, 0] });
+      if (s.dueDate) content.push({ text: `กำหนดชำระ / Due: ${formatDocumentDate(s.dueDate)}`, margin: [0, 5, 0, 0] });
       if (s.paymentAccounts.length) content.push(section('บัญชีรับชำระ / Payment accounts'), ...s.paymentAccounts.map(b => ({ text: `${b.bankName} - ${b.accountName} - ${b.accountNumber}` })));
     }
   }
@@ -187,4 +187,32 @@ export async function renderDocumentPdf(snapshot: DocumentSnapshot): Promise<Buf
   const bytes: Buffer = await pdf.createPdf(documentDefinition(snapshot)).getBuffer();
   if (bytes.subarray(0, 5).toString() !== '%PDF-') throw new Error('Invalid PDF bytes');
   return bytes;
+}
+
+const buddhistDate = new Intl.DateTimeFormat('th-TH-u-ca-buddhist', {
+  day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC',
+});
+const buddhistDateTime = new Intl.DateTimeFormat('th-TH-u-ca-buddhist', {
+  day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  second: '2-digit', hourCycle: 'h23', timeZone: 'Asia/Bangkok',
+});
+function calendarDate(value: string): Date | undefined {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value ? date : undefined;
+}
+/** Presentation only: ISO snapshots/numbering stay Gregorian; unknown values stay exact. */
+export function formatDocumentDate(value: string): string {
+  const range = /^(\d{4}-\d{2}-\d{2})\s+[-–]\s+(\d{4}-\d{2}-\d{2})$/.exec(value);
+  if (range) {
+    const start = calendarDate(range[1]!);
+    const end = calendarDate(range[2]!);
+    return start && end ? `${buddhistDate.format(start)} - ${buddhistDate.format(end)}` : value;
+  }
+  const date = calendarDate(value);
+  if (date) return buddhistDate.format(date);
+  const timestamp = /^(\d{4}-\d{2}-\d{2})T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/.exec(value);
+  if (!timestamp || !calendarDate(timestamp[1]!)) return value;
+  const instant = new Date(value);
+  return Number.isFinite(instant.getTime()) ? `${buddhistDateTime.format(instant)} (Asia/Bangkok)` : value;
 }
