@@ -3,6 +3,7 @@ import {createRequire} from 'node:module';
 import {createHash,randomBytes,scryptSync,randomUUID} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
 import {assertTarget,assertOwnership,marker} from './guard.mjs';
+import {energySampleSpec} from './canonical-energy.mjs';
 import {TEST_FINANCIAL_POLICY,TEST_FINANCIAL_POLICY_HASH,localFinancialBinding} from '../../apps/api/src/modules/billing/local-financial-policy.ts';
 const require=createRequire(new URL('../../apps/api/package.json',import.meta.url));
 const {Pool}=require('pg');
@@ -32,8 +33,11 @@ await c.query(`INSERT INTO telemetry_raw(id,device_id,site_id,source_time,receiv
 SELECT md5($1||stamp::text)::uuid,$2,$3,stamp,stamp,jsonb_build_object('synthetic',true,'fixtureMarker',$6::text),10000+extract(epoch FROM(stamp-'2026-07-01T00:00:00+07:00'::timestamptz))/86400*$4::numeric,'kWh','complete',$1||stamp::text,$7,10000+extract(epoch FROM(stamp-'2026-07-01T00:00:00+07:00'::timestamptz))/86400*$4::numeric,20000,$5 FROM generate_series('2026-07-01T00:00:00+07:00'::timestamptz,'2026-10-01T00:00:00+07:00'::timestamptz,interval '1 hour')stamp WHERE NOT($8::boolean AND stamp>'2026-09-30T23:00:00+07:00'::timestamptz)`,[`${marker}-${kind}-${n}`,id(`${kind}-${n}`),id(site.key),kind==='meter'?41.152233333333:52.1,profile,marker,kind==='meter'?'total_energy':'solar_total_yield',n===2]);
 await c.query(`INSERT INTO payload_messages(id,gateway_id,device_id,message_id,digest,accepted_at,profile_revision_id,lot_number,sequence,polled_at,sent_at,raw_payload,unmapped)
 SELECT md5($1||stamp::text)::uuid,$2,$3,$1||stamp::text,encode(sha256(($1||stamp::text)::bytea),'hex'),stamp,$4,1,row_number() OVER (ORDER BY stamp),stamp,stamp,jsonb_build_object('synthetic',true,'fixtureMarker',$5::text),'{}'::jsonb FROM generate_series('2026-07-01T00:00:00+07:00'::timestamptz,'2026-10-01T00:00:00+07:00'::timestamptz,interval '1 hour')stamp WHERE NOT($6::boolean AND stamp>'2026-09-30T23:00:00+07:00'::timestamptz)`,[`${marker}-${kind}-${n}`,id(`gateway-${n}`),id(`${kind}-${n}`),profile,marker,n===2]);
+const energyTag=kind==='meter'?'energy.active.import.total':'solar.total_yield';
+const energyProfile=(await c.query('SELECT config FROM payload_profile_revisions WHERE id=$1',[profile])).rows[0]?.config;
+const canonicalEnergy=energySampleSpec(energyProfile,energyTag);
 await c.query(`INSERT INTO payload_samples(id,message_id,site_id,gateway_id,device_id,profile_revision_id,tag,value,unit,raw_value,raw_unit,poll_group,polled_at,measured_at,received_at,quality,communication)
-SELECT md5(m.id::text||'energy')::uuid,m.id,$1,m.gateway_id,m.device_id,m.profile_revision_id,$3,10000+extract(epoch FROM(m.polled_at-'2026-07-01T00:00:00+07:00'::timestamptz))/86400*$4::numeric,'kWh',(10000+extract(epoch FROM(m.polled_at-'2026-07-01T00:00:00+07:00'::timestamptz))/86400*$4::numeric)*1000,'Wh',$5,m.polled_at,m.polled_at,m.polled_at,'good','online' FROM payload_messages m WHERE m.device_id=$2`,[id(site.key),id(`${kind}-${n}`),kind==='meter'?'energy.active.import.total':'solar.total_yield',kind==='meter'?41.152233333333:52.1,kind==='meter'?'energy':'plant']);
+SELECT md5(m.id::text||'energy')::uuid,m.id,$1,m.gateway_id,m.device_id,m.profile_revision_id,$3,(10000+extract(epoch FROM(m.polled_at-'2026-07-01T00:00:00+07:00'::timestamptz))/86400*$4::numeric)*$6::numeric,$7::text,(10000+extract(epoch FROM(m.polled_at-'2026-07-01T00:00:00+07:00'::timestamptz))/86400*$4::numeric)*1000,'Wh',$5,m.polled_at,m.polled_at,m.polled_at,'good','online' FROM payload_messages m WHERE m.device_id=$2`,[id(site.key),id(`${kind}-${n}`),kind==='meter'?'energy.active.import.total':'solar.total_yield',kind==='meter'?41.152233333333:52.1,kind==='meter'?'energy':'plant',canonicalEnergy.valueMultiplier,canonicalEnergy.unit]);
 }
 await insert('register_mapping_versions',{id:id('mapping-'+n),device_id:id('meter-'+n),semantic_field:'total_energy',register_address:'energy.active.import.total',data_type:'uint32',byte_order:'ABCD',scale:1,unit:'kWh',effective_from:'2026-07-01T00:00:00+07:00'});
 await c.query('UPDATE telemetry_raw SET mapping_version_id=$1 WHERE device_id=$2',[id('mapping-'+n),id('meter-'+n)]);
