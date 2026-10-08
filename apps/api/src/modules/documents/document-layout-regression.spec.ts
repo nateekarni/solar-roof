@@ -142,3 +142,57 @@ test('financial numeric columns grow to fit exact values and return unused space
   const largeDescription = large.find((l) => lineText(l).includes('LINE-1'));
   assert.ok(ordinaryDescription.maxWidth > largeDescription.maxWidth + 100);
 });
+
+
+test('ordinary first-page header uses three top-aligned blocks with the confirmed whitespace and full-width customer below', () => {
+  for(const name of ['contract','invoice','receipt']) {
+    const page=layoutDocumentPages(fixtures[name]!)[0];
+    const lines=pageLines(page);
+    const image=page.items.find((i:any)=>i.type==='image').item;
+    assert.ok(Math.abs(image.x-40)<0.01,name);
+    assert.ok(Math.abs(image._width-77.292)<0.01,name);
+    const issuer=lines.find(l=>lineText(l).includes('บริษัท โซลาร์ รูฟ จำกัด'));
+    assert.ok(Math.abs(issuer.x-168.82)<0.01,name);
+    assert.equal(issuer.y,image.y,name);
+    const number=lines.find(l=>lineText(l).includes(fixtures[name]!.documentNumber));
+    assert.ok(number.x>=400.696-0.01,name);
+    assert.ok(number.x+number.getWidth()<=555.28+0.01,name);
+    const customer=lines.find(l=>lineText(l).includes('ลูกค้า / Customer'));
+    const upper=lines.filter(l=>l.y>=image.y&&l.y<customer.y);
+    assert.ok(customer.y>Math.max(image.y+image._height,...upper.map(l=>l.y+l.getHeight())),name);
+    assert.equal(customer.x,40,name);
+  }
+});
+
+test('long saved number date and issuer wrap completely within header columns and clear continuation content', () => {
+  const snapshot = fixtures['long-header']!;
+  const pages=layoutDocumentPages(snapshot);
+  const first=pageLines(pages[0]);
+  const customer=first.find(l=>lineText(l).includes('ลูกค้า / Customer'));
+  const header=first.filter(l=>l.y<customer.y && lineText(l) && !lineText(l).includes('SYNTHETIC LOCAL TEST'));
+  const joined=header.map(lineText).join('').replaceAll(/\s/g,'');
+  for(const value of [snapshot.documentNumber,snapshot.issueDate,snapshot.issuer.name,snapshot.issuer.address,snapshot.issuer.email!]) assert.ok(joined.includes(value.replaceAll(/\s/g,'')),value);
+  for(const line of header) {
+    const left=line.x<400?168.82:400.696;
+    const edge=line.x<400?349.168:555.28;
+    assert.ok(line.x>=left-0.01 && line.x+line.getWidth()<=edge+0.01,lineText(line));
+    assert.ok(line.y+line.getHeight()<=customer.y,lineText(line));
+    assert.ok(line.inlines.every((inline:any)=>inline.fontSize===0||inline.fontSize>=12));
+  }
+  for(let i=0;i<pages.length;i++) {
+    const footerLines=pageLines(pages[i]).filter(l=>l.y>760);
+    assert.ok(footerLines.map(lineText).join('').includes(snapshot.documentNumber));
+    assert.ok(footerLines.some(l=>lineText(l).includes(`Page ${i+1} / ${pages.length}`)),`page ${i+1} lost footer page label`);
+    for(const line of footerLines) assert.ok(line.y+line.getHeight()<830);
+  }
+  for(const page of pages.slice(1)) {
+    const image=page.items.find((i:any)=>i.type==='image').item;
+    assert.ok(image._height<=26.01 && image._width<=32.01);
+    const lines=pageLines(page);
+    const body=lines.find(l=>l.y>=75);
+    assert.ok(body);
+    const metadata=lines.filter(l=>l.y<body.y);
+    assert.ok(metadata.map(lineText).join('').includes(snapshot.documentNumber));
+    assert.ok(body.y>=Math.max(image.y+image._height,...metadata.map(l=>l.y+l.getHeight())));
+  }
+});

@@ -89,7 +89,7 @@ function printableText(text: string): string | { text: string; fontSize?: number
   if (!/[\u0e00-\u0e7f]/.test(text)) return text;
   // SIPA 1.35 has no U+200B glyph. Invisible, zero-size break inlines let pdfmake
   // wrap at Thai word boundaries without printing .notdef boxes or changing fonts.
-  return [...thaiWords.segment(text)].flatMap(part => [{ text: part.segment }, { text: '\u200b', fontSize: 0, opacity: 0 }]);
+  return [...thaiWords.segment(text)].flatMap(part => /[\u0e00-\u0e7f]/.test(part.segment) ? [{ text: part.segment }, { text: '\u200b', fontSize: 0, opacity: 0 }] : [{ text: part.segment }]);
 }
 const section = (text: string) => ({ text, bold: true, margin: [0, 10, 0, 4] });
 function party(p: DocumentParty, title?: string): any {
@@ -136,16 +136,16 @@ function signatures(s: DocumentSnapshot): any {
     paddingTop: () => 0, paddingBottom: () => 0,
   } };
 }
-/** Measure with the same pdfmake engine/font so long signatory names reserve real space.
+/** Measure with the same pdfmake engine/font so wrapped headers and signatures reserve real space.
  * This small internal-API boundary is covered by actual page geometry regressions. */
-function signatureHeight(s: DocumentSnapshot, style: DocumentDefinition['defaultStyle']): number {
+function blockHeight(block: any, style: DocumentDefinition['defaultStyle']): number {
   const PDFDocument = require('pdfmake/js/PDFDocument.js').default;
   const LayoutBuilder = require('pdfmake/js/LayoutBuilder.js').default;
   const doc = new PDFDocument({ THSarabunNew: fonts }, {}, {}, {}, { autoFirstPage: false });
   const builder = new LayoutBuilder({ width: 595.28, height: Infinity }, { left: 40, top: 0, right: 40, bottom: 0 });
   try {
-    const pages = builder.layoutDocument(signatures(s), doc, {}, style);
-    return Math.ceil(Math.max(0, ...pages[0].items.filter((item: any) => item.type === 'line').map((item: any) => item.item.y + item.item.getHeight())));
+    const pages = builder.layoutDocument(block, doc, {}, style);
+    return Math.ceil(Math.max(0, ...pages[0].items.flatMap((item: any) => item.type === 'line' ? [item.item.y + item.item.getHeight()] : item.type === 'image' ? [item.item.y + item.item._height] : [])));
   } finally { doc.end(); doc.resume(); }
 }
 export function documentDefinition(s: DocumentSnapshot): DocumentDefinition {
@@ -154,15 +154,42 @@ export function documentDefinition(s: DocumentSnapshot): DocumentDefinition {
   const defaultStyle = { font: 'THSarabunNew', fontSize: financial ? 14.5 : 15, color: '#000000', lineHeight: financial ? 1 : 1.1 };
   // Reserve signature space on every page. Final-page-only footer signatures cannot
   // force an empty signature page and cannot overlap long body/table content.
-  const signatureSpace = signatureHeight(s, defaultStyle);
-  const bottomMargin = signatureSpace + 48;
+  const signatureSpace = blockHeight(signatures(s), defaultStyle);
+  const continuation = { columns: [
+    { width: 32, image: s.logoDataUri, fit: [32, 26] },
+    { width: '*', alignment: 'right', fontSize: 12, stack: [
+      { text: printableText(`${title[0]} / ${title[1]}`) },
+      { text: s.documentNumber },
+    ] },
+  ], columnGap: 12 };
+  // Measure wrapped continuation identity so its bounded logo and complete number
+  // clear body content even when a saved identifier is unusually long.
+  const topMargin = Math.max(54, 20 + blockHeight(continuation, defaultStyle) + 8);
+  const footerRow = (page: number, total: number) => ({ columns: [
+    { width: '*', text: `${s.syntheticTest ? 'TEST - ' : ''}${s.documentNumber}`, alignment: 'right' },
+    { width: 90, text: `หน้า / Page ${page} / ${total}`, alignment: 'right' },
+  ], columnGap: 8, fontSize: 11, color: '#000000' });
+  // Give the page indicator its own column and reserve wrapped number height.
+  // A long saved identifier must not silently discard the page indicator.
+  const footerExtraHeight = Math.max(0, blockHeight(footerRow(1, 1), defaultStyle) - blockHeight({ text: 'Page', fontSize: 11 }, defaultStyle));
+  const bottomMargin = signatureSpace + 48 + footerExtraHeight;
   if (bottomMargin >= 841.89 - 54 - 40) throw new Error('Signature block exceeds A4 capacity');
+  if (topMargin + bottomMargin >= 841.89 - 40) throw new Error('Continuation header exceeds A4 capacity');
+  const printableWidth = 595.28 - 40 * 2;
+  const [logoWidth, gapWidth, issuerWidth, metadataWidth] = [0.15, 0.10, 0.35, 0.30].map(fraction => Number((printableWidth * fraction).toFixed(3)));
   const content: any[] = [
-    { columns: [{ width: 310, stack: [{ image: s.logoDataUri, width: 160, margin: [0, 0, 0, 7] }, ...party(s.issuer).stack] }, { width: '*', alignment: 'right', stack: [
-      { text: printableText(title[0]!), bold: true, fontSize: 20 }, { text: title[1], fontSize: 12 },
-      { text: `${s.syntheticTest ? 'TEST - ' : ''}${s.documentNumber}`, margin: [0, 6, 0, 0] },
-      { text: `วันที่ / Issued: ${formatDocumentDate(s.issueDate)}` },
-    ] }], columnGap: 16, margin: [0, 0, 0, 12] },
+    { columns: [
+      { width: logoWidth, image: s.logoDataUri },
+      { width: gapWidth, text: '' },
+      { width: issuerWidth, ...party(s.issuer) },
+      { width: gapWidth, text: '' },
+      { width: metadataWidth, alignment: 'right', stack: [
+        { text: printableText(title[0]!), bold: true, fontSize: 20 },
+        { text: title[1], fontSize: 12 },
+        { text: `${s.syntheticTest ? 'TEST - ' : ''}${s.documentNumber}`, margin: [0, 6, 0, 0] },
+        { text: printableText(`วันที่ / Issued: ${formatDocumentDate(s.issueDate)}`) },
+      ] },
+    ], columnGap: 0, margin: [0, 0, 0, 12] },
   ];
   if (s.syntheticTest) content.push({ text: printableText(s.type === 'contract' ? 'SYNTHETIC LOCAL TEST / เอกสารทดสอบ' : 'SYNTHETIC LOCAL TEST - simulated tax 7%; no withholding / เอกสารทดสอบ'), italics: true, fontSize: 12, margin: [0, 0, 0, 8] });
   content.push({ ...party(s.customer, 'ลูกค้า / Customer'), margin: [0, 0, 0, 6] });
@@ -196,12 +223,12 @@ export function documentDefinition(s: DocumentSnapshot): DocumentDefinition {
   }
   if (s.paymentTerms) content.push({ text: printableText(s.paymentTerms), margin: [0, 8, 0, 0] });
   return {
-    pageSize: 'A4', pageOrientation: 'portrait', pageMargins: [40, 54, 40, bottomMargin], defaultStyle, content,
+    pageSize: 'A4', pageOrientation: 'portrait', pageMargins: [40, topMargin, 40, bottomMargin], defaultStyle, content,
     info: { title: s.documentNumber, subject: s.templateVersion },
-    header: page => page === 1 ? null : { columns: [{ image: s.logoDataUri, width: 85 }, { width: '*', text: printableText(`${title[0]} / ${title[1]}`), alignment: 'right', fontSize: 12 }, { text: s.documentNumber, alignment: 'right', fontSize: 12 }], columnGap: 12, margin: [40, 20, 40, 0] },
-    footer: (page, total) => ({ margin: [40, page === total ? 8 : bottomMargin - 28, 40, 0], stack: [
+    header: page => page === 1 ? null : { ...continuation, margin: [40, 20, 40, 0] },
+    footer: (page, total) => ({ margin: [40, page === total ? 8 : bottomMargin - 28 - footerExtraHeight, 40, 0], stack: [
       ...(page === total ? [signatures(s)] : []),
-      { text: `${s.syntheticTest ? 'TEST - ' : ''}${s.documentNumber} | หน้า / Page ${page} / ${total}`, fontSize: 11, color: '#000000', alignment: 'right', margin: [0, page === total ? 12 : 0, 0, 0] },
+      { ...footerRow(page, total), margin: [0, page === total ? 12 : 0, 0, 0] },
     ] }),
   };
 }

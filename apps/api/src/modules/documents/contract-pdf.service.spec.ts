@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+const logoHash=(uri:string)=>createHash('sha256').update(Buffer.from(uri.split(',')[1]!, 'base64')).digest('hex');
 import { buildContractSnapshot, ContractPdfService } from './contract-pdf.service.js';
 import type { DatabaseService } from '../../database/database.service.js';
 const issuer={company_name:'บริษัท ผู้ขาย',tax_id:'1234567890123',address:'กรุงเทพ',branch:'00000',phone:'02',email:'issuer@example.com'};
@@ -84,8 +87,8 @@ test('future contract issuance freezes protocol Site ID from the site query into
  if(sql.includes('FROM contracts c JOIN sites')) { const {external_site_id,...legacy}=customer;return {rows:[sql.includes('s.external_site_id')?customer:legacy]}; }
  if(sql.includes('FROM company_profile'))return {rows:[issuer]};if(sql.includes('FROM rate_versions'))return {rows:rates};
  if(sql.includes('INSERT INTO documents'))persisted=JSON.parse(params[5]);return {rows:[]};}};
- const service=new ContractPdfService({transaction:async(work:any)=>work(client)} as unknown as DatabaseService,async(snapshot)=>{frozen=snapshot;return Buffer.from('%PDF-fixture');},async()=>logo);
+ const service=new ContractPdfService({transaction:async(work:any)=>work(client)} as unknown as DatabaseService,async(snapshot)=>{frozen=snapshot;return Buffer.from('%PDF-fixture');});
  await service.ensureContractOriginal('contract-a',{role:'owner'});
- assert.equal(frozen.siteExternalId,'TH-SITE-001');assert.equal(persisted.siteExternalId,'TH-SITE-001');assert.equal(persisted.startDate,'2026-10-08');assert.equal(persisted.endDate,'2046-10-07');assert.equal(persisted.paymentTermDays,30);assert.equal(persisted.templateVersion,'ppa-th-sarabun-new-v2');
+ assert.equal(logoHash(frozen.logoDataUri),createHash('sha256').update(readFileSync(new URL('../../../../web/public/brand/solar-roof-document-stacked.png',import.meta.url))).digest('hex'));assert.equal(persisted.logoDataUri,frozen.logoDataUri);assert.equal(frozen.siteExternalId,'TH-SITE-001');assert.equal(persisted.siteExternalId,'TH-SITE-001');assert.equal(persisted.startDate,'2026-10-08');assert.equal(persisted.endDate,'2046-10-07');assert.equal(persisted.paymentTermDays,30);assert.equal(persisted.templateVersion,'ppa-th-sarabun-new-v3');
  const legacy=buildContractSnapshot(contract,issuer,rates,logo);assert.equal(legacy.siteExternalId,undefined);
 });
