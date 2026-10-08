@@ -101,9 +101,11 @@ interface MeterPresetOption {
 export function SiteFormDialog({
   open,
   onOpenChange,
+  onCreated,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onCreated?: (siteId: string) => void;
 }) {
   const router = useRouter();
   const { user } = useAuth();
@@ -247,7 +249,7 @@ export function SiteFormDialog({
     setLoading(true);
     try {
       const finalStatus = "offline";
-      const created = await apiClient.post<{ configDelivery: string }>("/v1/sites", {
+      const created = await apiClient.post<{ id: string; configDelivery: string }>("/v1/sites", {
         name: values.name,
         ...organizationSitePayload(organization),
         capacityMwp: values.capacityMwp,
@@ -268,13 +270,14 @@ export function SiteFormDialog({
       if (created.configDelivery === "pending") notify.error("สร้างไซต์งานแล้ว แต่ MQTT config ยังส่งไม่สำเร็จ กรุณาส่งอีกครั้งเมื่อ Broker พร้อม");
       notify.success(
         locale === "th"
-          ? `เพิ่มไซต์งาน "${values.name}" เรียบร้อยแล้ว รอข้อมูลจาก Gateway`
-          : `Solar Site "${values.name}" created successfully (Status: ${finalStatus})`
+          ? `เพิ่มไซต์งาน "${values.name}" เรียบร้อยแล้ว โปรดตั้งค่าแหล่งข้อมูลบิลในขั้นตอนถัดไป`
+          : `Solar Site "${values.name}" created successfully. Configure its billing source in the next step.`
       );
       reset();
       setPayloadMode(true); setDataFormat("payload"); payloadModeRef.current = true;setMainDevice(newDeviceDraft());
       onOpenChange(false);
       router.refresh();
+      if (created.id) onCreated?.(created.id);
     } catch (err: any) {
       setFormError(err.message || "เกิดข้อผิดพลาดในการบันทึกข้อมูล");
       notify.error(err.message || "เกิดข้อผิดพลาดในการบันทึกข้อมูล");

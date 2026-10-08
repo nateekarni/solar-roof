@@ -24,6 +24,7 @@ import { ContractFormDialog } from "../contracts/contract-form-dialog";
 import { NotificationSettingsDialog } from "../notifications/notification-settings-dialog";
 import { GenerateReportDialog } from "../reports/generate-report-dialog";
 import { SchoolFormDialog } from "../schools/school-form-dialog";
+import {SiteEditDialog} from "../sites/site-edit-dialog";
 import { SiteFormDialog } from "../sites/site-form-dialog";
 import { InviteUserDialog } from "../users/invite-user-dialog";
 
@@ -48,6 +49,9 @@ export function OperationActions({
   const [exportTo, setExportTo] = React.useState("");
   const [exporting, setExporting] = React.useState(false);
   const [dialogOpen, setDialogOpen] = React.useState(false);
+  const [billingSiteId,setBillingSiteId]=React.useState<string|null>(null);
+  const handleCreatedSite=React.useCallback((siteId:string)=>setBillingSiteId(siteId),[]);
+  const handleBillingOpenChange=React.useCallback((open:boolean)=>{if(!open)setBillingSiteId(null);},[]);
 
   const financialAction = resource === "billing" ? "calculate" : resource === "contracts" ? "create_contract" : resource === "documents" || resource === "receipts" ? "issue" : undefined;
   const canCreate = canCreateOperation(resource, user, financial.actions);
@@ -149,7 +153,7 @@ export function OperationActions({
         <SchoolFormDialog open={dialogOpen} onOpenChange={handleDialogOpenChange} />
       )}
       {resource === "sites" && canCreate && (
-        <SiteFormDialog open={dialogOpen} onOpenChange={handleDialogOpenChange} />
+        <><SiteFormDialog open={dialogOpen} onOpenChange={handleDialogOpenChange} onCreated={handleCreatedSite}/><SiteEditDialog open={Boolean(billingSiteId)} onOpenChange={handleBillingOpenChange} siteId={billingSiteId} billingSetupPending/></>
       )}
       {resource === "billing" && canCreate && (
         <BillingCycleDialog open={dialogOpen} onOpenChange={handleDialogOpenChange} />

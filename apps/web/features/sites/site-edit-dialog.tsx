@@ -9,6 +9,7 @@ import { AddButton } from "../../components/ui/add-button";
 import { AppLoading } from "../../components/feedback/app-loading";
 import { optionalNumber } from "./site-form-values";
 import type { PayloadConfig } from "./payload-contracts";
+import {SiteBillingSource} from "./site-billing-source";
 import { PayloadConnectionCard } from "./payload-connection-card";
 import { ChoiceSelect } from '../../components/ui/choice-select';
 
@@ -78,10 +79,12 @@ export function SiteEditDialog({
   open,
   onOpenChange,
   siteId,
+  billingSetupPending = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   siteId: string | null;
+  billingSetupPending?: boolean;
 }) {
   const router = useRouter();
   const { user } = useAuth();
@@ -89,6 +92,8 @@ export function SiteEditDialog({
   const locale = useLocale();
   const [organization,setOrganization]=React.useState<OrganizationSelection|null>(null);
   const organizationCatalog=useOrganizationCatalog(open);
+  const [tab,setTab]=React.useState("settings");
+  React.useEffect(()=>{if(open)setTab(billingSetupPending?"payload":"settings");},[open,siteId,billingSetupPending]);
   const [payloadConfig, setPayloadConfig] = React.useState<PayloadConfig | null>(null);
   const refreshPayload = React.useCallback(() => { if(siteId) apiClient.get<PayloadConfig | null>(`/v1/sites/${siteId}/payload-config`).then(config => setPayloadConfig(config?.externalSiteId && config.externalGatewayId ? config : null)).catch(() => setPayloadConfig(null)); }, [siteId]);
   const [meterPresets, setMeterPresets] = React.useState<Array<{ id: string; model: string; registers: unknown[] }>>([]);
@@ -255,7 +260,7 @@ export function SiteEditDialog({
         {fetching ? (
           <AppLoading fullPage={false} />
         ) : (
-          <Tabs defaultValue="settings" className={`min-h-0 gap-4 overflow-hidden ${siteControlsClassName}`}>
+          <Tabs value={payloadConfig?tab:"settings"} onValueChange={setTab} className={`min-h-0 gap-4 overflow-hidden ${siteControlsClassName}`}>
             {payloadConfig && <TabsList className={siteTabsListClassName}><TabsTrigger value="settings" className={siteTabsTriggerClassName}>{locale === "th" ? "ข้อมูลไซต์และ Gateway" : "Site & Gateway"}</TabsTrigger><TabsTrigger value="payload" className={siteTabsTriggerClassName}>{locale === "th" ? "การเชื่อมต่อและ Preset" : "Connection & Preset"}</TabsTrigger></TabsList>}
             <TabsContent value="settings" className="min-h-0 overflow-y-auto px-1">
           <form onSubmit={handleSubmit(onSubmit)} className={siteFormClassName}>
@@ -513,9 +518,9 @@ export function SiteEditDialog({
                 {loading ? t("common.saving") : locale === "th" ? "บันทึกการแก้ไข" : "Save Changes"}
               </Button>
             </DialogFooter>
-          </form>
+          </form>{billingSetupPending&&!payloadConfig&&siteId&&<SiteBillingSource siteId={siteId} locale={locale} setupPending focusOnLoad/>}
             </TabsContent>
-            {payloadConfig && <TabsContent value="payload" className="min-h-0 overflow-y-auto p-1"><PayloadConnectionCard config={payloadConfig} onRefresh={refreshPayload} editable/></TabsContent>}
+            {payloadConfig && <TabsContent value="payload" className="min-h-0 overflow-y-auto p-1"><PayloadConnectionCard config={payloadConfig} onRefresh={refreshPayload} editable focusBilling={billingSetupPending} billingSetupPending={billingSetupPending}/></TabsContent>}
           </Tabs>
         )}
       </DialogContent>
