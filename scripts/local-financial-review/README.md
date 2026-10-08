@@ -27,3 +27,5 @@ The real guarded seed transaction passed after migrations 029 and 031. Database 
 The old dataset deletion completed after rechecking Compose labels, its audit marker `solar-dashboard-review-v1`, 18 synthetic REVIEW schools, 5 review.local users and no client application sessions. Only owned old project containers and exact volumes `solar-dashboard-review_review-postgres` and `solar-dashboard-review_review-storage` were removed. Other volumes and networks were preserved.
 
 The canonical history provides cumulative meter import and independent logger total yield. It provides no current solar active-power sample, so current generation remains unavailable until supported ingestion supplies it.
+
+Canonical sample values and units are derived from each pinned profile before insertion: Wh identity stores value × 1000; Wh-to-kWh stores kWh. Unsupported or inconsistent mappings stop the seed. The inspected pinned Schneider/Huawei profiles currently target kWh; raw source values remain Wh and billing telemetry remains kWh.
