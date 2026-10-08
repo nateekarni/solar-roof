@@ -95,7 +95,7 @@ test('Thai document dates use Buddhist years and preserve invalid or descriptive
   for (const [input, expected] of [
     ['2026-10-08', '8 ตุลาคม 2569'],
     ['2024-02-29', '29 กุมภาพันธ์ 2567'],
-    ['2026-09-01 - 2026-09-30', '1 กันยายน 2569 - 30 กันยายน 2569'],
+    ['2026-09-01 - 2026-09-30', '1-30 กันยายน 2569'],
     ['2026-02-30', '2026-02-30'],
     ['2026-13-01', '2026-13-01'],
     ['2026-02-30 - 2026-03-31', '2026-02-30 - 2026-03-31'],
@@ -105,12 +105,34 @@ test('Thai document dates use Buddhist years and preserve invalid or descriptive
   ]) assert.equal(formatDocumentDate(input!), expected);
 });
 
+test('valid document ranges omit repeated Thai month and Buddhist year', () => {
+  for (const [input, expected] of [
+    ['2026-06-01 - 2026-06-30', '1-30 มิถุนายน 2569'],
+    ['2024-02-01 – 2024-02-29', '1-29 กุมภาพันธ์ 2567'],
+    ['2026-06-25 - 2026-07-05', '25 มิถุนายน - 5 กรกฎาคม 2569'],
+    ['2026-12-25 - 2027-01-05', '25 ธันวาคม 2569 - 5 มกราคม 2570'],
+  ]) assert.equal(formatDocumentDate(input!), expected);
+});
+
+test('reversed document ranges keep full dates and invalid or unsupported ranges keep exact source', () => {
+  for (const [input, expected] of [
+    ['2026-06-30 - 2026-06-01', '30 มิถุนายน 2569 - 1 มิถุนายน 2569'],
+    ['2027-01-05 - 2026-12-25', '5 มกราคม 2570 - 25 ธันวาคม 2569'],
+    ['2026-06-01 - 2026-06-31', '2026-06-01 - 2026-06-31'],
+    ['2026-02-29 - 2026-03-05', '2026-02-29 - 2026-03-05'],
+    ['2026-06-01/2026-06-30', '2026-06-01/2026-06-30'],
+    [' period pending ', ' period pending '],
+  ]) assert.equal(formatDocumentDate(input!), expected);
+});
+
 test('date-only fields ignore host timezones and transfer instants display their Bangkok calendar and time', () => {
   const prior = process.env.TZ;
   try {
     for (const timezone of ['Pacific/Honolulu', 'Pacific/Kiritimati', 'UTC']) {
       process.env.TZ = timezone;
       assert.equal(formatDocumentDate('2026-10-08'), '8 ตุลาคม 2569');
+      assert.equal(formatDocumentDate('2026-06-01 - 2026-06-30'), '1-30 มิถุนายน 2569');
+      assert.equal(formatDocumentDate('2026-06-25 - 2026-07-05'), '25 มิถุนายน - 5 กรกฎาคม 2569');
       assert.equal(formatDocumentDate('2026-10-08T18:30:00Z'), '9 ตุลาคม 2569 เวลา 01:30:00 (Asia/Bangkok)');
       assert.equal(formatDocumentDate('2026-10-09T01:30:00+07:00'), '9 ตุลาคม 2569 เวลา 01:30:00 (Asia/Bangkok)');
     }
@@ -135,8 +157,8 @@ test('issue, schedule, period, due and approved transfer dates share Thai presen
   const saved = JSON.stringify(invoice);
   const invoiceText = visibleText(documentDefinition(invoice).content);
   assert.match(invoiceText, /วันที่ \/ Issued: 8 ตุลาคม 2569/);
-  assert.match(invoiceText, /รอบบิล \/ Period: 1 กันยายน 2569 - 30 กันยายน 2569/);
-  assert.match(invoiceText, /1 กันยายน 2569 - 30 กันยายน 2569/);
+  assert.match(invoiceText, /รอบบิล \/ Period: 1-30 กันยายน 2569/);
+  assert.match(invoiceText, /1-30 กันยายน 2569/);
   assert.match(invoiceText, /กำหนดชำระ \/ Due: 23 ตุลาคม 2569/);
   assert.match(invoiceText, /INV2026100001/);
   assert.doesNotMatch(invoiceText, /2026-09-01|2026-09-30|2026-10-08|2026-10-23/);
