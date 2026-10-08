@@ -5,13 +5,16 @@ import type { PoolClient } from 'pg';
 import { DatabaseService } from '../../database/database.service.js';
 import { schoolScope, type ScopePrincipal } from '../../common/auth/route-policy.js';
 import type { FrozenRecipient } from '../billing/saved-document-delivery.js';
+import { BRAND_PRIMARY } from '@solar/domain';
+import { localFinancialBinding } from '../billing/local-financial-policy.js';
+import { capacityKwp, freezeLocalPpaDraft } from './local-ppa-draft.js';
 import { allocateDocumentNumber } from './document-number.js';
 import { renderDocumentPdf, type DocumentSnapshot } from './document-layout.js';
 
 export type ScopedActor = ScopePrincipal;
-export const CONTRACT_TEMPLATE_VERSION = 'ppa-th-sarabun-new-v3';
+export const CONTRACT_TEMPLATE_VERSION = 'ppa-th-sarabun-new-v4';
 interface ContractSource {
- id:string; site_id:string; site_name:string; external_site_id?:string|null; school_id:string; version?:number;
+ capacity_mwp?:string|null; id:string; site_id:string; site_name:string; external_site_id?:string|null; school_id:string; version?:number;
  start_date:string; end_date:string|null; issue_date?:string; document_number?:string;
  company_name:string; tax_id:string; tax_address:string; branch?:string; billing_phone?:string; billing_email?:string;
  payment_terms:string; payment_term_days?:number|null; recipient_user_ids?:string[];
@@ -37,7 +40,8 @@ export function buildContractSnapshot(contract:ContractSource,issuer:IssuerSourc
  required('paymentTerms',contract.payment_terms,'กรุณาระบุเงื่อนไขการชำระเงิน','Payment terms required');
  if(!rates.length||rates.some(r=>!/^\d+(\.\d+)?$/.test(r.rate)))fields.rates={th:'กรุณาระบุอัตราค่าไฟที่บันทึกไว้',en:'Recorded nonnegative rate schedule required'};
  if(Object.keys(fields).length)throw new BadRequestException({message:'ข้อมูลสัญญาไม่ครบถ้วน / Complete contract identity and rate schedule required',fields});
- return {
+ const snapshot:ContractSnapshot = {
+  brandPrimary:BRAND_PRIMARY,...(capacityKwp(contract.capacity_mwp)===undefined?{}:{capacityKwp:capacityKwp(contract.capacity_mwp)!}),
   deliveryRecipients:[],
   type:'contract',documentNumber:contract.document_number!,contractNumber:contract.document_number!,contractId:contract.id,
   siteId:contract.site_id,schoolId:contract.school_id,siteName:contract.site_name,siteExternalId:contract.external_site_id??undefined,contractVersion:contract.version,
@@ -48,6 +52,8 @@ export function buildContractSnapshot(contract:ContractSource,issuer:IssuerSourc
   paymentTerms:contract.payment_terms,paymentTermDays:contract.payment_term_days,rates:rates.map(r=>({...r})),
   items:[],approvedTransfers:[],paymentAccounts:[],logoDataUri,templateVersion:CONTRACT_TEMPLATE_VERSION,syntheticTest:false,
  };
+ if(localFinancialBinding()){snapshot.syntheticTest=true;Object.assign(snapshot,freezeLocalPpaDraft(snapshot));}
+ return snapshot;
 }
 /** Optional mail identity never blocks original PDF issuance. An incomplete selection disables sending. */
 export async function contractDeliveryRecipients(client:Pick<PoolClient,'query'>,contract:ContractSource):Promise<FrozenRecipient[]> {
@@ -80,7 +86,7 @@ export class ContractPdfService {
   const scope=this.scope(actor);
   const params:unknown[]=[contractId];if(scope!==null)params.push(scope);
   // Scope is part of the lookup; no unscoped identity/artifact/settings read precedes it.
-  const contract=(await client.query<ContractSource>(`SELECT c.*,s.name AS site_name,s.external_site_id,s.school_id,
+  const contract=(await client.query<ContractSource>(`SELECT c.*,s.name AS site_name,s.external_site_id,s.capacity_mwp::text AS capacity_mwp,s.school_id,
    to_char(c.start_date,'YYYY-MM-DD') AS start_date,to_char(c.end_date,'YYYY-MM-DD') AS end_date,
    to_char(now() AT TIME ZONE 'Asia/Bangkok','YYYY-MM-DD') AS issue_date
    FROM contracts c JOIN sites s ON s.id=c.site_id WHERE c.id=$1 ${scope===null?'':'AND s.school_id=ANY($2::uuid[])'}`,params)).rows[0];

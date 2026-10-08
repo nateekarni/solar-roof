@@ -1,6 +1,6 @@
 import { formatDocumentMoney, renderDocumentPdf, type DocumentParty, type DocumentSnapshot } from './document-layout.js';
 
-export const FINANCIAL_TEMPLATE_VERSION = 'sarabun-a4-v4';
+export const FINANCIAL_TEMPLATE_VERSION = 'sarabun-a4-v5';
 interface SavedFinancialParty {
   company_name: string;
   tax_id: string;
@@ -33,10 +33,12 @@ interface SavedFinancialDocument {
     };
     issueDate: string;
     templateVersion?: string;
+    brandPrimary?: string;
+    invoiceNumber?: string;
     dueDate?: string;
     logo: string;
     banks: { bank_name: string; account_name: string; account_number: string }[];
-    payments: { payer_name?: string | null; payment_method?: 'bank_transfer' | 'promptpay' | null; origin_bank?: string | null; origin_account?: string | null; status: string; paid_at: string | Date; amount: string; evidence_key?: string; slip_url?: string }[];
+    payments: { note?:string|null; payer_name?: string | null; payment_method?: 'bank_transfer' | 'promptpay' | null; origin_bank?: string | null; origin_account?: string | null; status: string; paid_at: string | Date; amount: string; evidence_key?: string; slip_url?: string }[];
   };
 }
 function partySnapshot(party: SavedFinancialParty, customer: boolean): DocumentParty {
@@ -52,6 +54,8 @@ export function localTestDocumentSnapshot(document: SavedFinancialDocument): Doc
   if (document.document_type !== 'invoice' && document.document_type !== 'receipt') throw new Error('Financial document type required');
   const s = document.snapshot;
   return {
+    ...(s.brandPrimary?{brandPrimary:s.brandPrimary}:{}),...(s.invoiceNumber?{invoiceNumber:s.invoiceNumber}:{}),
+    remarks:[...(s.customer.payment_terms?[s.customer.payment_terms]:[]),...s.payments.filter(p=>p.status==='paid'||p.status==='approved').flatMap(p=>p.note?[p.note]:[])],
     type: document.document_type, documentNumber: document.document_number, issueDate: s.issueDate,
     issuer: partySnapshot(s.company, false), customer: partySnapshot(s.customer, true),
     ...(s.customer.site_name ? { siteName: s.customer.site_name } : {}), ...(s.customer.contract_number ? { contractNumber: s.customer.contract_number } : {}),

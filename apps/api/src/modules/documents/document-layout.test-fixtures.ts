@@ -5,6 +5,8 @@ import {
   documentDefinition,
   type DocumentSnapshot,
 } from './document-layout.js';
+import {freezeLocalPpaDraft} from './local-ppa-draft.js';
+import {BRAND_PRIMARY} from '@solar/domain';
 const require = createRequire(import.meta.url);
 export const fixtureFonts = Object.fromEntries(
   ['normal', 'bold', 'italics', 'bolditalics'].map((style, i) => [
@@ -20,7 +22,8 @@ export const fixtureFonts = Object.fromEntries(
 export function refinementFixtures(): Record<string, DocumentSnapshot> {
   const base: DocumentSnapshot = {
     type: 'invoice',
-    documentNumber: 'INV2026100001',
+    documentNumber: 'INV261000001',
+    brandPrimary:BRAND_PRIMARY,
     issueDate: '2026-10-08',
     issuer: {
       name: 'บริษัท โซลาร์ รูฟ จำกัด',
@@ -39,7 +42,7 @@ export function refinementFixtures(): Record<string, DocumentSnapshot> {
     },
     siteName: 'อาคารเรียนหนึ่ง',
     siteExternalId: 'SITE-001',
-    contractNumber: '8a9c0caf-317c-44e4-8dac-bdc686c2d8a23',
+    contractNumber: 'PPA261000001',
     period: '2020-06-01 - 2020-06-30',
     dueDate: '2026-11-07',
     paymentTerms: 'ชำระภายใน 30 วัน (ข้อมูลสมมติสำหรับทดสอบ)',
@@ -77,15 +80,16 @@ export function refinementFixtures(): Record<string, DocumentSnapshot> {
       },
     ],
     logoDataUri: `data:image/png;base64,${readFileSync(new URL('../../../../web/public/brand/solar-roof-document-stacked.png', import.meta.url)).toString('base64')}`,
-    templateVersion: 'sarabun-a4-v4',
+    templateVersion: 'sarabun-a4-v5',
     syntheticTest: true,
   };
   const { totals, ...contractBase } = base;
   const contract: DocumentSnapshot = {
     ...contractBase,
     type: 'contract',
-    documentNumber: 'PPA2026100001',
-    templateVersion: 'ppa-th-sarabun-new-v3',
+    documentNumber: 'PPA261000001',
+    capacityKwp:'12.345',
+    templateVersion: 'ppa-th-sarabun-new-v4',
     items: [],
     startDate: '2026-01-01',
     endDate: '2046-12-31',
@@ -99,10 +103,10 @@ export function refinementFixtures(): Record<string, DocumentSnapshot> {
       customer: { name: 'นายผู้ซื้อ องค์กรทดสอบ', title: 'ผู้แทนองค์กร' },
     },
   };
-  return {
+  const result:Record<string,DocumentSnapshot> = {
     contract,
     invoice: base,
-    receipt: { ...base, type: 'receipt', documentNumber: 'RCT2026100001' },
+    receipt: { ...base, type: 'receipt', documentNumber: 'RCP261000001', invoiceNumber:'INV261000001' },
     'long-contract': {
       ...contract,
       endDate: '2085-12-31',
@@ -122,7 +126,7 @@ export function refinementFixtures(): Record<string, DocumentSnapshot> {
     'long-receipt': {
       ...base,
       type: 'receipt',
-      documentNumber: 'RCT2026100002',
+      documentNumber: 'RCP261000002',invoiceNumber:'INV261000001',
       approvedTransfers: Array.from({ length: 35 }, (_, i) => ({
         ...base.approvedTransfers[0]!,
         evidence: `TRANSFER-${i + 1}`,
@@ -183,6 +187,8 @@ export function refinementFixtures(): Record<string, DocumentSnapshot> {
       ],
     },
   };
+  for(const snapshot of Object.values(result))if(snapshot.type==='contract')Object.assign(snapshot,freezeLocalPpaDraft(snapshot));
+  return result;
 }
 /** Actual pdfmake layout, without an external parser or test-only production hooks. */
 export function layoutDocumentPages(snapshot: DocumentSnapshot): any[] {

@@ -84,16 +84,16 @@ test('legacy frozen document email is accepted only by exact scoped verified act
 
 
 test('future contract issuance freezes protocol Site ID from the site query into original bytes and persisted snapshot',async()=>{
- let frozen:any;let persisted:any;const customer={...contract,external_site_id:'TH-SITE-001',end_date:'2046-10-07'};
+ let frozen:any;let persisted:any;const customer={...contract,external_site_id:'TH-SITE-001',capacity_mwp:'0.025123000',end_date:'2046-10-07'};
  const client={query:async(sql:string,params:any[]=[])=>{
  if(sql.includes('AS day'))return {rows:[{day:'2026-10-08'}]};
   if(sql.includes('document_number_series'))return {rows:[{last_value:1}]};
-  if(sql.includes('FROM contracts c JOIN sites')) { const {external_site_id,...legacy}=customer;return {rows:[sql.includes('s.external_site_id')?customer:legacy]}; }
+  if(sql.includes('FROM contracts c JOIN sites')) { assert.match(sql,/s.capacity_mwp::text AS capacity_mwp/); const {external_site_id,...legacy}=customer;return {rows:[sql.includes('s.external_site_id')?customer:legacy]}; }
  if(sql.includes('FROM company_profile'))return {rows:[issuer]};if(sql.includes('FROM rate_versions'))return {rows:rates};
  if(sql.includes('INSERT INTO documents'))persisted=JSON.parse(params[5]);return {rows:[]};}};
  const service=new ContractPdfService({transaction:async(work:any)=>work(client)} as unknown as DatabaseService,async(snapshot)=>{frozen=snapshot;return Buffer.from('%PDF-fixture');});
  await service.ensureContractOriginal('contract-a',{role:'owner'});
- assert.equal(logoHash(frozen.logoDataUri),createHash('sha256').update(readFileSync(new URL('../../../../web/public/brand/solar-roof-document-stacked.png',import.meta.url))).digest('hex'));assert.equal(persisted.logoDataUri,frozen.logoDataUri);assert.equal(frozen.siteExternalId,'TH-SITE-001');assert.equal(persisted.siteExternalId,'TH-SITE-001');assert.equal(persisted.startDate,'2026-10-08');assert.equal(persisted.endDate,'2046-10-07');assert.equal(persisted.paymentTermDays,30);assert.equal(persisted.templateVersion,'ppa-th-sarabun-new-v3');
+ assert.equal(logoHash(frozen.logoDataUri),createHash('sha256').update(readFileSync(new URL('../../../../web/public/brand/solar-roof-document-stacked.png',import.meta.url))).digest('hex'));assert.equal(persisted.logoDataUri,frozen.logoDataUri);assert.equal(frozen.siteExternalId,'TH-SITE-001');assert.equal(persisted.siteExternalId,'TH-SITE-001');assert.equal(persisted.startDate,'2026-10-08');assert.equal(persisted.endDate,'2046-10-07');assert.equal(persisted.paymentTermDays,30);assert.equal(persisted.templateVersion,'ppa-th-sarabun-new-v4');assert.equal(persisted.capacityKwp,'25.123');assert.equal(persisted.brandPrimary,'#f29700');
  const legacy=buildContractSnapshot(contract,issuer,rates,logo);assert.equal(legacy.siteExternalId,undefined);
 });
 

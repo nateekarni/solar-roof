@@ -60,7 +60,6 @@
 }
 
 :root {
-  --brand-primary: oklch(0.75 0.18 72);
   --brand-primary-foreground: oklch(0.145 0 0);
   --tabs-background: color-mix(in oklab, var(--primary) 12%, var(--card));
   --tabs-foreground: var(--foreground);

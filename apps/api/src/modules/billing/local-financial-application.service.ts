@@ -9,6 +9,7 @@ import { schoolScope, type ScopePrincipal } from '../../common/auth/route-policy
 import { DatabaseService } from '../../database/database.service.js';
 import { FinancialReadinessService } from './financial-readiness.service.js';
 import { calculateTestTotals, requireTestTransferAmount, validFinancialDate, decimal, sqlCalendarPeriod, actualEnergyDifference, requireTestSettlement, TEST_FINANCIAL_POLICY, TEST_FINANCIAL_POLICY_HASH, localFinancialBinding } from './local-financial-policy.js';
+import { BRAND_PRIMARY } from '@solar/domain';
 import type { PaymentSubmission } from '@solar/api-contracts';
 import { reviewedPaymentMetadata } from './payment-metadata.js';
 import { allocateDocumentNumber } from '../documents/document-number.js';
@@ -76,7 +77,7 @@ export class LocalFinancialApplicationService {
   const logo=await readFile(fileURLToPath(new URL('../../../../web/public/brand/solar-roof-document-stacked.png',import.meta.url)));
   const cycleDates=(await client.query(`SELECT to_char(period_start,'YYYY-MM-DD') AS starts,to_char(period_end,'YYYY-MM-DD') AS ends FROM billing_cycles WHERE id=$1`,[cycle.id])).rows[0];
   cycle={...cycle,period_start:cycleDates.starts,period_end:cycleDates.ends};
-  const snapshot={...(invoiceNumber?{invoiceNumber}:{}),templateVersion:FINANCIAL_TEMPLATE_VERSION,policy:TEST_FINANCIAL_POLICY,policyHash:TEST_FINANCIAL_POLICY_HASH,cycle,customer,company,banks,payments,recipients,logo:`data:image/png;base64,${logo.toString('base64')}`,language:'th-en',issueDate:day,dueDate:new Date(Date.parse(day)+customer.payment_term_days*86400000).toISOString().slice(0,10)};
+  const snapshot={brandPrimary:BRAND_PRIMARY,...(invoiceNumber?{invoiceNumber}:{}),templateVersion:FINANCIAL_TEMPLATE_VERSION,policy:TEST_FINANCIAL_POLICY,policyHash:TEST_FINANCIAL_POLICY_HASH,cycle,customer,company,banks,payments,recipients,logo:`data:image/png;base64,${logo.toString('base64')}`,language:'th-en',issueDate:day,dueDate:new Date(Date.parse(day)+customer.payment_term_days*86400000).toISOString().slice(0,10)};
   const document={id:randomUUID(),document_number:number,document_type:type,snapshot,amount:cycle.amount};
   const bytes=await renderLocalTestPdf(document);const sha256=createHash('sha256').update(bytes).digest('hex');
   const doc=(await client.query(`INSERT INTO documents(id,site_id,billing_cycle_id,document_type,document_number,status,issue_date,amount,snapshot,content_hash,file_key,template_version) VALUES($1,$2,$3,$4,$5,'issued',$6,$7,$8,$9,$10,$11) RETURNING *`,[document.id,cycle.site_id,cycle.id,type,number,day,cycle.amount,JSON.stringify(snapshot),sha256,`local-artifact:${document.id}`,FINANCIAL_TEMPLATE_VERSION])).rows[0];
