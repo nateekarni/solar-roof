@@ -1,6 +1,10 @@
+import { readOrganizationDefaults, contractIdentity } from "./organization-defaults.js";
+import { schoolScope } from "../../common/auth/route-policy.js";
 import {normalizeTestRateSchedule,validFinancialDate} from './local-financial-policy.js';
 import {
   BadRequestException,
+  ForbiddenException,
+  Query,
   Body,
   Controller,
   Get,
@@ -136,6 +140,17 @@ export class BillingController {
   }
 
   @Roles("owner", "admin")
+  @Get("operations/contracts/organization-defaults")
+  async contractOrganizationDefaults(@Query("siteId") siteId:string,@Req() req:{user?:{role?:string;schoolId?:string}}){
+    if(!["owner","admin"].includes(req.user?.role??""))throw new ForbiddenException("This action is not permitted for your role");
+    if(!siteId)throw new BadRequestException("siteId is required");
+    const defaults=await readOrganizationDefaults(this.db,siteId);
+    const scope=schoolScope(req.user);
+    if(scope!==null&&!scope.includes(defaults.schoolId))throw new ForbiddenException("Resource outside assigned school");
+    return {organization:{id:defaults.id,name:defaults.name,code:defaults.code},companyName:defaults.legalName,taxId:defaults.taxId,branch:defaults.taxBranch,taxAddress:defaults.taxAddress,billingEmail:defaults.documentEmail,billingPhone:defaults.phone};
+  }
+
+  @Roles("owner", "admin")
   @Post("contracts")
   async createContract(@Body() body: {
     siteId?: string;
@@ -165,13 +180,6 @@ export class BillingController {
     }
     if(body.paymentTermDays!==undefined&&(!Number.isInteger(body.paymentTermDays)||body.paymentTermDays<0||body.paymentTermDays>3650))throw new BadRequestException('paymentTermDays must be 0–3650');
     const signerName = body.signerName?.trim();
-    const taxId = body.taxId?.trim() || null;
-    const companyName = body.companyName?.trim() || null;
-    const branch = body.branch?.trim() || null;
-    const taxAddress = body.taxAddress?.trim() || null;
-    const billingEmail = body.billingEmail?.trim() || null;
-    const billingPhone = body.billingPhone?.trim() || null;
-
     if (!paymentTerms || !signerName) throw new BadRequestException('Payment terms and authorized signatory must be supplied');
     const rates = body.rates?.length ? body.rates : [{rate: body.ratePerKwh}];
     if (rates.some(r => typeof r.rate !== 'number' || !Number.isFinite(r.rate) || r.rate < 0)) throw new BadRequestException('An explicit nonnegative rate is required for every rate period');
@@ -187,6 +195,7 @@ export class BillingController {
       const createdContracts = [];
 
       for (const targetSiteId of siteIds) {
+        const {taxId,companyName,branch,taxAddress,billingEmail,billingPhone}=contractIdentity(body,await readOrganizationDefaults(client,targetSiteId));
         const countRes = await client.query("SELECT count(*)::int AS count FROM contracts WHERE site_id = $1", [targetSiteId]);
         const version = (countRes.rows[0]?.count ?? 0) + 1;
         const contractId = randomUUID();
