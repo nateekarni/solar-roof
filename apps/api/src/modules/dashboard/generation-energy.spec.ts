@@ -21,5 +21,21 @@ test('current day uses observed counters with partial quality and reset never be
 });
 test('canonical query excludes billing meters and unpinned/unhealthy payloads',()=>{
  assert.ok(!GENERATION_SAMPLES_SQL.includes('billing_meters'));assert.ok(!GENERATION_SAMPLES_SQL.includes('telemetry_raw'));
- for(const requirement of ["deviceType'='solar-logger'","solar.total_yield","profile_revision_id=d.payload_profile_revision_id","quality='good'","communication='online'","unit='Wh'"])assert.ok(GENERATION_SAMPLES_SQL.includes(requirement),requirement);
+ for(const requirement of ["deviceType'='solar-logger'","solar.total_yield","profile_revision_id=d.payload_profile_revision_id","quality='good'","communication='online'","ps.unit=yield_field.target_unit"])assert.ok(GENERATION_SAMPLES_SQL.includes(requirement),requirement);
+});
+
+test('canonical query validates pinned normalized Wh or kWh target and converts kWh counters',()=>{
+ assert.ok(GENERATION_SAMPLES_SQL.includes("f->>'targetUnit' IN ('Wh','kWh')"));
+ assert.ok(GENERATION_SAMPLES_SQL.includes("ps.unit=yield_field.target_unit"));
+ assert.ok(GENERATION_SAMPLES_SQL.includes("CASE WHEN ps.unit='kWh' THEN ps.value*1000 ELSE ps.value END"));
+ assert.ok(!GENERATION_SAMPLES_SQL.includes('raw_unit'));
+});
+test('current-month future days are omitted while current measured day remains partial',()=>{
+ const now=start+25*3600000,input=samples().filter(row=>row.site_id==='a'&&Date.parse(row.polled_at)<=now);
+ const rows=generationDays(['a'],'2026-09-01','2026-09-30',input,now);
+ assert.equal(rows.length,2);assert.deepEqual(rows.map(row=>row.quality),['complete','partial']);
+ assert.ok(rows.every(row=>row.value!==null));assert.ok(Number(rows[1]?.value)>0);
+ assert.deepEqual(generationDays(['a'],'2026-09-03','2026-09-30',input,now),[]);
+ const missing=generationDays(['a'],'2026-09-01','2026-09-30',input.filter(row=>Date.parse(row.polled_at)!==start),now);
+ assert.equal(missing[0]?.value,null);assert.equal(missing[0]?.quality,'missing');
 });
