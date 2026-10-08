@@ -118,12 +118,14 @@ export class LocalFinancialApplicationService {
   await this.readiness.assertEnabled('calculate');const local=new Date(now.getTime()+7*3600000);if(local.getUTCDate()===1&&local.getUTCHours()<1)return [];
   const start=new Date(Date.UTC(local.getUTCFullYear(),local.getUTCMonth()-1,1)).toISOString().slice(0,10),end=new Date(Date.UTC(local.getUTCFullYear(),local.getUTCMonth(),0)).toISOString().slice(0,10);
   await this.db.query(`INSERT INTO financial_month_jobs(id,site_id,period_start,period_end) SELECT gen_random_uuid(),s.id,$1,$2 FROM sites s WHERE EXISTS(SELECT 1 FROM contracts c WHERE c.site_id=s.id AND c.status='active' AND c.start_date<=$2::date AND (c.end_date IS NULL OR c.end_date>=$1::date)) ON CONFLICT(site_id,period_start) DO NOTHING`,[start,end]);
-  const jobs=(await this.db.query("SELECT * FROM financial_month_jobs WHERE state IN('pending','blocked') ORDER BY period_start,site_id")).rows;
+  const jobs=(await this.db.query("SELECT * FROM financial_month_jobs WHERE state IN('pending','blocked') AND next_attempt_at<=now() ORDER BY period_start,site_id")).rows;
   for(const job of jobs){try{let cycles=(await this.db.query('SELECT * FROM billing_cycles WHERE site_id=$1 AND period_start=$2 AND period_end=$3',[job.site_id,job.period_start,job.period_end])).rows;
     if(!cycles.length)cycles=(await this.calculate(job.site_id,new Date(job.period_start).toISOString().slice(0,10),new Date(job.period_end).toISOString().slice(0,10))).cycles;
-    for(const cycle of cycles){await this.issueInvoice(cycle.id);await this.send(cycle.id);}await this.db.query("UPDATE financial_month_jobs SET state='done',completed_at=now(),last_error=NULL WHERE id=$1",[job.id]);
-   }catch(error){await this.db.query("UPDATE financial_month_jobs SET state='blocked',attempts=attempts+1,last_error=$2 WHERE id=$1",[job.id,(error as Error).message]);}
+    for(const cycle of cycles){await this.issueInvoice(cycle.id);await this.send(cycle.id);}await this.db.query("UPDATE financial_month_jobs SET state='done',completed_at=now(),last_error=NULL,last_attempt_at=now() WHERE id=$1",[job.id]);
+   }catch(error){await this.db.query("UPDATE financial_month_jobs SET state='blocked',attempts=attempts+1,last_error=$2,last_attempt_at=now(),next_attempt_at=now()+interval '1 hour' WHERE id=$1",[job.id,(error as Error).message]);
+    await this.db.query(`INSERT INTO financial_staff_notices(id,job_id,site_id,kind,detail) VALUES($1,$2,$3,'monthly_billing_blocked',$4) ON CONFLICT(job_id,kind) DO NOTHING`,[randomUUID(),job.id,job.site_id,JSON.stringify({error:(error as Error).message,periodStart:job.period_start,periodEnd:job.period_end})]);}
   }return (await this.db.query('SELECT * FROM financial_month_jobs ORDER BY period_start,site_id')).rows;
  }
 }
+
 

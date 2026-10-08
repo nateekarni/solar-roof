@@ -128,7 +128,7 @@ export class OperationsService {
     const artifact=(await this.db.query('SELECT pdf_bytes,sha256 FROM document_artifacts WHERE document_id=$1',[id])).rows[0];
     if(!artifact)throw new NotFoundException('Original issued PDF unavailable');return artifact;
   }
-async summary(resource:string,user?:ScopePrincipal,raw:Record<string,unknown>={}) {
+  async summary(resource:string,user?:ScopePrincipal,raw:Record<string,unknown>={}) {
     const query=parseOperationQuery(resource,raw);
     // Independent aggregate statement; never calls list or transfers history rows.
     const {scope}=this.source(resource,user);
@@ -160,6 +160,7 @@ async summary(resource:string,user?:ScopePrincipal,raw:Record<string,unknown>={}
     return [item('รายการทั้งหมด',r.count,'รายการ')];
   }
 }
+
 
 
 
