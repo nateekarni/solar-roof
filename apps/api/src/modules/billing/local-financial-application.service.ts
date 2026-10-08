@@ -9,6 +9,9 @@ import { FinancialReadinessService } from './financial-readiness.service.js';
 import { calculateTestTotals, validFinancialDate, decimal, sqlCalendarPeriod, actualEnergyDifference, requireTestSettlement, TEST_FINANCIAL_POLICY, TEST_FINANCIAL_POLICY_HASH, localFinancialBinding } from './local-financial-policy.js';
 import { renderLocalTestPdf } from '../documents/local-test-pdf.js';
 const validDate=validFinancialDate;
+export function reviewedActualEnergyDifference(opening:unknown,closing:unknown):string {
+ try{return actualEnergyDifference(opening,closing);}catch(error){throw new ConflictException((error as Error).message);}
+}
 @Injectable()
 export class LocalFinancialApplicationService {
  constructor(@Inject(DatabaseService) private readonly db:DatabaseService,@Inject(FinancialReadinessService) private readonly readiness:FinancialReadinessService){}
@@ -34,7 +37,7 @@ export class LocalFinancialApplicationService {
       const reading=(await client.query(`SELECT tr.id,tr.normalized_value AS value,tr.source_time,tr.mapping_version_id,($3::date::timestamp AT TIME ZONE $4) AS target_time FROM telemetry_raw tr JOIN register_mapping_versions m ON m.id=tr.mapping_version_id WHERE tr.site_id=$5 AND tr.device_id=$1 AND tr.semantic_field=$2 AND m.semantic_field=$2 AND tr.quality='complete' AND lower(tr.unit)='kwh' AND abs(extract(epoch FROM(tr.source_time-($3::date::timestamp AT TIME ZONE $4))))<=300 ORDER BY abs(extract(epoch FROM(tr.source_time-($3::date::timestamp AT TIME ZONE $4)))),tr.source_time DESC,tr.id LIMIT 1`,[meter.device_id,meter.semantic_field,boundary,site.timezone,siteId])).rows[0];
       if(!reading)throw new ConflictException(`Missing actual cumulative reading for meter ${meter.id} at ${boundary}`);readings.push(reading);
      }
-     const totals=calculateTestTotals(actualEnergyDifference(readings[0].value,readings[1].value),rate.rate);
+     const totals=calculateTestTotals(reviewedActualEnergyDifference(readings[0].value,readings[1].value),rate.rate);
      energy+=BigInt(totals.consumedKwh.replace('.',''));subtotal+=BigInt(totals.subtotal.replace('.',''));
      if(rate.starts===start)opening+=Number(readings[0].value);if(rate.ends===finalBoundary)closing+=Number(readings[1].value);
      snapshots.push({meterId:meter.id,contractId:contract.id,from:rate.starts,to:rate.ends,opening:readings[0],closing:readings[1],...totals});
