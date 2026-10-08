@@ -61,7 +61,7 @@ export function DocumentPreviewModal({open,onOpenChange,data}:{open:boolean;onOp
   return()=>{active=false;};
  },[open,selectedId]);
  if(!data)return null;
- if(isFinancial&&document?.previewUrl&&document.contentHash)return <OriginalDocumentPreview open={open} onOpenChange={onOpenChange} id={document.id} hash={document.contentHash} number={document.documentNumber}/>;
+ if(isFinancial&&document?.previewUrl&&document.contentHash)return <OriginalDocumentPreview key={`${document.id}:${document.contentHash}`} open={open} onOpenChange={onOpenChange} id={document.id} hash={document.contentHash} number={document.documentNumber}/>;
  const snapshot=document?.snapshot;
  const cycle=snapshot?.cycle;
  const customer=snapshot?.customer;
@@ -84,4 +84,5 @@ export function DocumentPreviewModal({open,onOpenChange,data}:{open:boolean;onOp
  <div className="signatures mt-20 flex justify-between gap-8"><p>________________________<br/>ผู้จัดทำ / Prepared by</p><p>________________________<br/>{data.type==='receipt'?'ผู้รับเงิน / Received by':'ผู้รับเอกสาร / Received by'}</p></div>
  </article></div>}</DialogContent></Dialog>;
 }
+
 
