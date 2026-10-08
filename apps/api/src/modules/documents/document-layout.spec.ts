@@ -11,8 +11,8 @@ const fixture: DocumentSnapshot = {
   items: [{ description: 'ค่าไฟฟ้าพลังงานแสงอาทิตย์', period: '2026-09-01 - 2026-09-30', quantity: '1000.125', rate: '4.1234', amount: '4123.91' }],
   totals: { subtotal: '4123.91', tax: '288.67', taxLabel: 'ภาษีทดสอบ 7% / Simulated tax 7%', total: '4412.58' },
   approvedTransfers: [], paymentAccounts: [],
-  logoDataUri: `data:image/png;base64,${readFileSync(new URL('../../../../web/public/brand/solar-roof-document.png', import.meta.url)).toString('base64')}`,
-  templateVersion: 'sarabun-a4-v1', syntheticTest: true,
+  logoDataUri: `data:image/png;base64,${readFileSync(new URL('../../../../web/public/brand/solar-roof-document-stacked.png', import.meta.url)).toString('base64')}`,
+  templateVersion: 'sarabun-a4-v4', syntheticTest: true,
 };
 const serialized = (definition: ReturnType<typeof documentDefinition>) => JSON.stringify(definition.content, (key, value) => key === 'image' ? '[approved-logo]' : value);
 
@@ -78,8 +78,8 @@ test('real PDF rendering embeds the bundled Sarabun family without a runtime fon
 
 test('long Thai identity cells stay within the printable A4 width', () => {
   const definition = documentDefinition({ ...fixture, issuer: { ...fixture.issuer, name: 'บริษัทโซลาร์รูฟทดสอบชื่อภาษาไทยที่ยาวมากและไม่มีเว้นวรรคเพื่อทดสอบการตัดบรรทัด', address: 'ที่อยู่ภาษาไทยที่ยาวมากและไม่มีเว้นวรรคเพื่อยืนยันว่าข้อมูลไม่ล้นออกนอกหน้ากระดาษ' } });
-  const identity = definition.content[0].columns[0];
-  assert.ok(identity.width >= 270 && identity.width <= 310);
+  const identity = definition.content[0].columns[2];
+  assert.equal(identity.width,180.348);
   assert.ok(definition.content.some((node: any) => node.stack && visibleText(node).includes('Customer')));
 });
 
@@ -98,7 +98,7 @@ test('a non-TEST receipt does not claim tax-invoice status', () => {
 test('long Thai identities expose word boundaries for wrapping without altering saved input', () => {
   const name = 'บริษัทโซลาร์รูฟทดสอบชื่อภาษาไทยที่ยาวมากและไม่มีเว้นวรรค';
   const definition = documentDefinition({ ...fixture, issuer: { ...fixture.issuer, name } });
-  const renderedName = definition.content[0].columns[0].stack.find((node: any) => node.bold).text;
+  const renderedName = definition.content[0].columns[2].stack.find((node: any) => node.bold).text;
   assert.ok(Array.isArray(renderedName));
   assert.ok(renderedName.some((part: any) => part.text === '\u200b' && part.fontSize === 0 && part.opacity === 0));
   assert.equal(renderedName.map((part: any) => part.text).join('').replaceAll('\u200b', ''), name);
@@ -204,4 +204,27 @@ test('legacy site identity stays name-only and continuation signatures occur onl
 
 test('a signatory block taller than A4 fails explicitly instead of producing negative body space or clipping facts',()=>{
  assert.throws(()=>documentDefinition({...fixture,type:'contract',signatories:{issuer:{name:Array.from({length:80},()=> 'ผู้ลงนามทดสอบ').join('\n')}}}),/Signature block exceeds A4 capacity/);
+});
+
+
+test('compact header gives issuer its logical lines and right metadata only the saved title number and issue date', () => {
+  const s = {...fixture, issuer:{...fixture.issuer,branch:'00000',phone:'02-000-0000',email:'billing@example.test'}, dueDate:'2026-11-07'};
+  const header = documentDefinition(s).content[0];
+  assert.deepEqual(header.columns.map((c:any)=>c.width), [77.292,51.528,180.348,51.528,154.584]);
+  assert.equal(header.columnGap,0);
+  assert.equal(header.columns[0].image,s.logoDataUri);
+  assert.equal(header.columns[0].width,77.292);
+  const issuer=header.columns[2].stack;
+  assert.equal(issuer.length,5);
+  assert.equal(visibleText(issuer[0]),s.issuer.name);
+  assert.equal(visibleText(issuer[1]),s.issuer.address);
+  assert.match(visibleText(issuer[2]),/Tax ID: 0000000000000 \(00000\)/);
+  assert.match(visibleText(issuer[3]),/02-000-0000/);
+  assert.equal(visibleText(issuer[4]),'billing@example.test');
+  const metadata=header.columns[4];
+  assert.equal(metadata.alignment,'right');
+  assert.equal(metadata.stack.length,4);
+  assert.match(visibleText(metadata),/ใบแจ้งหนี้.*Invoice.*INV2026100001.*8 ตุลาคม 2569/s);
+  assert.doesNotMatch(visibleText(metadata),/Due|7 พฤศจิกายน|Customer/);
+  assert.ok(metadata.stack.every((node:any)=>node.noWrap!==true));
 });

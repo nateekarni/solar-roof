@@ -1,6 +1,6 @@
 import { formatDocumentMoney, renderDocumentPdf, type DocumentParty, type DocumentSnapshot } from './document-layout.js';
 
-export const FINANCIAL_TEMPLATE_VERSION = 'sarabun-a4-v3';
+export const FINANCIAL_TEMPLATE_VERSION = 'sarabun-a4-v4';
 interface SavedFinancialParty {
   company_name: string;
   tax_id: string;

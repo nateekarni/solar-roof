@@ -68,7 +68,7 @@ export class LocalFinancialApplicationService {
   const prefix=`${type==='receipt'?'RCT':'INV'}${day.replaceAll('-','').slice(0,6)}`;
   const seq=(await client.query(`INSERT INTO document_number_series(prefix,last_value) VALUES($1,1) ON CONFLICT(prefix) DO UPDATE SET last_value=document_number_series.last_value+1 RETURNING last_value`,[prefix])).rows[0].last_value;
   const number=prefix+String(seq).padStart(4,'0');
-  const logo=await readFile(fileURLToPath(new URL('../../../../web/public/brand/solar-roof-document.png',import.meta.url)));
+  const logo=await readFile(fileURLToPath(new URL('../../../../web/public/brand/solar-roof-document-stacked.png',import.meta.url)));
   const cycleDates=(await client.query(`SELECT to_char(period_start,'YYYY-MM-DD') AS starts,to_char(period_end,'YYYY-MM-DD') AS ends FROM billing_cycles WHERE id=$1`,[cycle.id])).rows[0];
   cycle={...cycle,period_start:cycleDates.starts,period_end:cycleDates.ends};
   const snapshot={templateVersion:FINANCIAL_TEMPLATE_VERSION,policy:TEST_FINANCIAL_POLICY,policyHash:TEST_FINANCIAL_POLICY_HASH,cycle,customer,company,banks,payments,recipients,logo:`data:image/png;base64,${logo.toString('base64')}`,language:'th-en',issueDate:day,dueDate:new Date(Date.parse(day)+customer.payment_term_days*86400000).toISOString().slice(0,10)};

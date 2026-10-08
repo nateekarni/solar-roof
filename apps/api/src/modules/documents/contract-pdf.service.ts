@@ -8,7 +8,7 @@ import type { FrozenRecipient } from '../billing/saved-document-delivery.js';
 import { renderDocumentPdf, type DocumentSnapshot } from './document-layout.js';
 
 export type ScopedActor = ScopePrincipal;
-export const CONTRACT_TEMPLATE_VERSION = 'ppa-th-sarabun-new-v2';
+export const CONTRACT_TEMPLATE_VERSION = 'ppa-th-sarabun-new-v3';
 interface ContractSource {
  id:string; site_id:string; site_name:string; external_site_id?:string|null; school_id:string; version?:number;
  start_date:string; end_date:string|null; issue_date?:string;
@@ -56,7 +56,7 @@ export async function contractDeliveryRecipients(client:Pick<PoolClient,'query'>
  return recipients.map(r=>({...r}));
 }
 async function approvedLogo():Promise<string>{
- const logo=await readFile(new URL('../../../../web/public/brand/solar-roof-document.png',import.meta.url));
+ const logo=await readFile(new URL('../../../../web/public/brand/solar-roof-document-stacked.png',import.meta.url));
  return `data:image/png;base64,${logo.toString('base64')}`;
 }
 @Injectable()

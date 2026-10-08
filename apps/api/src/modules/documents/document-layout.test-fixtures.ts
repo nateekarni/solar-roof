@@ -76,8 +76,8 @@ export function refinementFixtures(): Record<string, DocumentSnapshot> {
         status: 'approved',
       },
     ],
-    logoDataUri: `data:image/png;base64,${readFileSync(new URL('../../../../web/public/brand/solar-roof-document.png', import.meta.url)).toString('base64')}`,
-    templateVersion: 'sarabun-a4-v3',
+    logoDataUri: `data:image/png;base64,${readFileSync(new URL('../../../../web/public/brand/solar-roof-document-stacked.png', import.meta.url)).toString('base64')}`,
+    templateVersion: 'sarabun-a4-v4',
     syntheticTest: true,
   };
   const { totals, ...contractBase } = base;
@@ -85,7 +85,7 @@ export function refinementFixtures(): Record<string, DocumentSnapshot> {
     ...contractBase,
     type: 'contract',
     documentNumber: 'PPA2026100001',
-    templateVersion: 'ppa-th-sarabun-new-v2',
+    templateVersion: 'ppa-th-sarabun-new-v3',
     items: [],
     startDate: '2026-01-01',
     endDate: '2046-12-31',
@@ -151,6 +151,21 @@ export function refinementFixtures(): Record<string, DocumentSnapshot> {
           title: 'ผู้แทนองค์กรตามข้อมูลสัญญา',
         },
       },
+    },
+    'long-header': {
+      ...base,
+      documentNumber: 'INV-VERY-LONG-SAVED-IDENTIFIER-'.repeat(4) + 'END',
+      issueDate: 'Document issue date pending confirmation from the recorded source with complete identity retained',
+      issuer: {
+        ...base.issuer,
+        name: 'บริษัทโซลาร์รูฟทดสอบชื่อภาษาไทยที่ยาวมากและไม่มีเว้นวรรคเพื่อทดสอบการตัดบรรทัด',
+        address: 'ที่อยู่ภาษาไทยที่ยาวมากและไม่มีเว้นวรรคเพื่อยืนยันว่าข้อมูลไม่ล้นออกนอกหน้ากระดาษ',
+        email: 'complete-recorded-email-address@long-company-domain.example.test',
+      },
+      items: Array.from({ length: 45 }, (_, i) => ({
+        ...base.items[0]!,
+        description: `ROW-${i + 1} ค่าไฟฟ้าพลังงานแสงอาทิตย์ / Solar electricity charges`,
+      })),
     },
     'oversized-row': {
       ...base,
