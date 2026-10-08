@@ -31,7 +31,7 @@ function fixture(){
   if(sql.includes('FROM documents'))return {rows:original?[original]:[]};
   if(sql.includes('FROM company_profile')){companyReads++;return {rows:[issuer]};}
   if(sql.includes('FROM rate_versions'))return {rows:rates};
-  if(sql.includes('INSERT INTO documents')){original={documentId:params[0],sha256:params[6]};return {rows:[]};}
+  if(sql.includes('INSERT INTO documents')){original={documentId:params[0],sha256:params[6],deliveryAvailable:false};return {rows:[]};}
   if(sql.includes('INSERT INTO document_artifacts')){artifacts++;return {rows:[]};}
   return {rows:[]};
  }};
@@ -58,4 +58,21 @@ test('unauthorized organization cannot read or create an original',async()=>{
 test('failed render leaves no document original',async()=>{
  const f=fixture();f.fail();await assert.rejects(f.service.ensureContractOriginal('contract-a',{role:'owner'}),/render failed/);
  assert.equal(f.stats().artifacts,0);
+});
+import * as originals from './contract-pdf.service.js';
+test('issuance freezes selected scoped verified accounts including email, while missing mail is optional',async()=>{
+ const recipient={id:'recipient-a',email:'verified@example.invalid',name:'Verified'};
+ const resolve=(originals as any).contractDeliveryRecipients;
+ const client={query:async(sql:string,params:any[])=>{assert.match(sql,/verified_email=u.email/);assert.match(sql,/sc.status='active'/);assert.equal(params[0],'site-a');return {rows:[recipient]};}};
+ const frozen=await resolve(client,{...contract,recipient_user_ids:['recipient-a']});
+ assert.deepEqual(frozen,[recipient]);recipient.email='changed@example.invalid';assert.equal(frozen[0]!.email,'verified@example.invalid');
+ assert.deepEqual(await resolve({query:async()=>{throw new Error('No mail query expected');}},contract),[]);
+ assert.deepEqual(await resolve({query:async()=>({rows:[]})},{...contract,billing_email:'unverified@example.invalid'}),[]);
+});
+test('legacy frozen document email is accepted only by exact scoped verified active account match',async()=>{
+ const resolve=(originals as any).contractDeliveryRecipients;
+ const recipient={id:'legacy-user',email:'legacy@example.invalid',name:'Legacy'};
+ const result=await resolve({query:async(sql:string,params:any[])=>{assert.match(sql,/u.email=\$2/);assert.match(sql,/u.status='active'/);assert.equal(params[1],'legacy@example.invalid');return {rows:[recipient]};}},{...contract,billing_email:'legacy@example.invalid'});
+ assert.deepEqual(result,[recipient]);
+ assert.deepEqual(await resolve({query:async()=>({rows:[recipient]})},{...contract,recipient_user_ids:['a','b']}),[]);
 });

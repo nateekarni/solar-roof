@@ -1,18 +1,7 @@
 "use client";
-import {DocumentBrand} from "../../components/brand/document-brand";
-import {embeddedImageSource} from "./document-export";
-import {snapshotCompany} from "./snapshot-company";
-import {OriginalDocumentPreview} from "./original-document-preview";
-import { ChoiceSelect } from '../../components/ui/choice-select';
-
-import * as React from "react";
-import type {PersistedDocumentRow} from "@solar/api-contracts";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
-import { Button } from "../../components/ui/button";
-import { apiClient } from "../../lib/api-client";
-import { useLocale } from "../../providers/locale-provider";
-import { Printer, Download } from "lucide-react";
-
+import * as React from 'react';
+import {SavedOriginalDocumentPreview} from './saved-original-document-preview';
+import {HandoverPreviewModal} from './handover-preview-modal';
 export type DocumentType = "contract" | "invoice" | "receipt" | "settlement" | "handover";
 export interface RateScheduleItem { startDate: string; endDate?: string; rate: number; }
 export interface DocumentPreviewData {
@@ -26,72 +15,9 @@ export interface DocumentPreviewData {
   gridSavingsThb?: number; peakPowerKw?: number; codDate?: string; gatewaySerial?: string;
   meterSerial?: string; inverterModel?: string; inverterSerial?: string; panelModel?: string;
 }
-interface PersistedDocument { id:string; documentNumber:string; documentType:string; status:string; issueDate:string|null; amount:string; previewUrl?:string;contentHash?:string;snapshot?: {cycle:any;company:any;customer:any;banks:any[];payment?:any}; }
-interface Period { id:string; documentNumber:string; periodStart:string; periodEnd:string; }
-const emptyCompany=snapshotCompany(undefined);
-const printCss=`@page{size:A4;margin:14mm}body{font-family:Arial,sans-serif;color:#172b39;margin:0;font-size:12px}.document-brand{display:block;height:64px;width:auto;max-width:256px;object-fit:contain;margin-bottom:16px}article{width:100%;max-width:182mm;margin:auto}header{display:flex;justify-content:space-between;border-bottom:3px solid #14718a;padding-bottom:24px}h1{font-size:24px;color:#14718a}h2{font-size:17px}table{width:100%;border-collapse:collapse;margin:24px 0}th,td{padding:12px 8px;border-bottom:1px solid #dce5e9;text-align:left}th{background:#edf4f6}.right{text-align:right}.grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin:24px 0}.muted{color:#607481}.total{font-size:20px;text-align:right;border-top:2px solid #14718a;padding:20px 0}.signatures{display:flex;justify-content:space-between;margin-top:70px}.notice{padding:12px;background:#fff5dc}p{line-height:1.6;margin:4px 0}`;
 
-export function DocumentPreviewModal({open,onOpenChange,data}:{open:boolean;onOpenChange:(open:boolean)=>void;data:DocumentPreviewData|null}) {
- const locale=useLocale();
- const text=(th:string,en:string)=>locale === "th"?th:en;
- const [company,setCompany]=React.useState(emptyCompany);
- const [banks,setBanks]=React.useState<any[]>([]);
- const [document,setDocument]=React.useState<PersistedDocument|null>(null);
- const [periods,setPeriods]=React.useState<Period[]>([]);
- const [selectedId,setSelectedId]=React.useState("");
- const [error,setError]=React.useState("");
- const [loading,setLoading]=React.useState(false);
- const [exporting,setExporting]=React.useState(false);
- const paper=React.useRef<HTMLElement>(null);
- const isFinancial=data?.type==='invoice'||data?.type==='receipt'||data?.type==='settlement';
- React.useEffect(()=>{
-  if(!open||!data) return;
-  let active=true;
-  setDocument(null);setPeriods([]);setError("");setCompany(emptyCompany);setBanks([]);
-  setSelectedId(data.documentId||"");
-  if(!isFinancial){
-   Promise.all([apiClient.get<typeof emptyCompany>('/v1/settings/company'),apiClient.get<any[]>('/v1/settings/bank-accounts')]).then(([c,b])=>{if(active){setCompany(c);setBanks(b);}}).catch(e=>{if(active)setError(e.message);});
-  } else if(!data.documentId) setError(locale==='th'?'ยังไม่มีเอกสารที่ออกและบันทึกไว้สำหรับรายการนี้':'No issued document is available for this record.');
-  return()=>{active=false;};
- },[open,data,isFinancial,locale]);
- React.useEffect(()=>{
-  if(!open||!selectedId) return;
-  let active=true;setLoading(true);setError("");setDocument(null);
-  apiClient.get<PersistedDocumentRow>('/v1/operations/documents/'+encodeURIComponent(selectedId)).then(doc=>{
-   if(!active)return;
-   setDocument(doc);
-   setPeriods([]);
-   setError(doc.previewUnavailableReason ? (locale === 'th' ? doc.previewUnavailableReason : 'This record has saved document metadata, but a verified original artifact is unavailable. Preview and printing are unavailable.') : '');
-  }).catch(e=>{if(active)setError(e.message);}).finally(()=>{if(active)setLoading(false);});
-  return()=>{active=false;};
- },[open,selectedId,locale]);
- if(!data)return null;
- if(isFinancial&&document?.previewUrl&&document.contentHash)return <OriginalDocumentPreview key={`${document.id}:${document.contentHash}`} open={open} onOpenChange={onOpenChange} id={document.id} hash={document.contentHash} number={document.documentNumber}/>;
- const snapshot=document?.snapshot;
- const issuerCompany=isFinancial ? snapshotCompany(snapshot?.company) : company;
- const issuerBanks=isFinancial ? snapshot?.banks ?? [] : banks;
- const cycle=snapshot?.cycle;
- const customer=snapshot?.customer;
- const details= isFinancial ? {number:document?.documentNumber,issue:document?.issueDate,site:customer?.site_name,school:customer?.company_name||customer?.school_name,tax:customer?.tax_id,address:customer?.tax_address,period:cycle?`${String(cycle.period_start).slice(0,10)} – ${String(cycle.period_end).slice(0,10)}`:undefined,kwh:cycle?.consumed_kwh,rate:cycle?.rate,amount:document?.amount,paidAt:snapshot?.payment?.paid_at} : {number:data.documentNumber,issue:data.issueDate,site:data.siteName,school:data.schoolName,tax:data.taxId,address:data.taxAddress,period:data.period,kwh:data.consumedKwh,rate:data.rate,amount:data.amount,paidAt:data.paidAt};
- const number=(v:unknown)=>v===null||v===undefined||v===''?'—':Number.isFinite(Number(v))?Number(v).toLocaleString(locale==='th'?'th-TH':'en-US',{minimumFractionDigits:2,maximumFractionDigits:2}):'—';
- const title=data.type==='receipt'?text('ใบเสร็จรับเงิน','Receipt'):data.type==='invoice'?text('ใบแจ้งหนี้','Invoice'):data.type==='settlement'?text('ใบวางบิล','Billing statement'):data.type==='contract'?text('สัญญาซื้อขายไฟฟ้า','Contract'):text('เอกสารส่งมอบ','Handover');
- const eligible=!loading&&!error&&(!isFinancial||!!document?.snapshot)&&!!issuerCompany.companyName;
- const html=(article=paper.current?.outerHTML||'')=>`<!doctype html><html lang="${locale}"><head><meta charset="utf-8"><title>${title}</title><style>${printCss}</style></head><body>${article}</body></html>`;
- const print=()=>{const w=window.open('','_blank');if(!w)return;w.document.write(html());w.document.close();w.focus();w.print();};
- const download=async()=>{if(!paper.current||exporting)return;setExporting(true);try{const clone=paper.current.cloneNode(true) as HTMLElement;for(const image of clone.querySelectorAll('img')){image.src=await embeddedImageSource(image.getAttribute('src')||image.src,window.location.href);}const url=URL.createObjectURL(new Blob([html(clone.outerHTML)],{type:'text/html;charset=utf-8'}));const a=window.document.createElement('a');a.href=url;a.download=`${details.number||data.type}.html`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch(e){setError(e instanceof Error?e.message:'Unable to export document');}finally{setExporting(false);}};
- return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="w-[calc(100%-2rem)] sm:max-w-5xl max-h-[94dvh] overflow-y-auto p-0 [&_button]:min-h-11"><DialogHeader className="sticky top-0 z-10 bg-background p-4"><DialogTitle>{title}</DialogTitle><div className="flex flex-wrap items-center gap-2">
- {isFinancial&&<ChoiceSelect aria-label={text("รอบเอกสารที่ออกแล้ว","Issued document period")} className="rounded border bg-card p-2 text-sm" value={selectedId} onChange={e=>setSelectedId(e.target.value)} disabled={!periods.length}>{!periods.length&&<option value="">{locale==='th'?'ไม่มีรอบเอกสารที่ออกแล้ว':'No issued periods'}</option>}{periods.map(p=><option key={p.id} value={p.id}>{p.periodStart} – {p.periodEnd} · {p.documentNumber}</option>)}</ChoiceSelect>}
- <Button variant="outline" onClick={print} disabled={!eligible}><Printer className="size-4"/> {locale==='th'?'พิมพ์ / บันทึก PDF':'Print / Save PDF'}</Button><Button variant="outline" onClick={download} disabled={!eligible||exporting}><Download className="size-4"/> {locale==='th'?'ดาวน์โหลดเอกสาร HTML':'Download HTML'}</Button></div></DialogHeader>
- {loading&&<p className="p-6" role="status">{locale === 'th' ? 'กำลังโหลดเอกสาร…' : 'Loading document…'}</p>}{error&&<p role="alert" className="m-6 rounded border border-destructive p-4 text-destructive">{error}</p>}
- {!loading&&!error&&<div className="overflow-x-auto bg-muted/40 p-4 sm:p-8"><article ref={paper} className="mx-auto min-h-[260mm] w-full max-w-[210mm] bg-white p-6 text-slate-900 shadow sm:p-12" style={{fontSize:12}}>
- <header className="flex flex-col sm:flex-row justify-between gap-4 sm:gap-8 border-b-4 border-cyan-700 pb-6"><div><DocumentBrand issued={isFinancial} company={isFinancial ? snapshot?.company : company}/><h2 className="text-lg font-bold">{issuerCompany.companyName||text('ยังไม่ได้ตั้งค่าข้อมูลบริษัท','Company details unavailable')}</h2><p>{issuerCompany.address||'—'}</p><p>{text("เลขประจำตัวผู้เสียภาษี","Tax ID")} {issuerCompany.taxId||'—'} {issuerCompany.branch}</p><p>{issuerCompany.phone} {issuerCompany.email}</p></div><div className="text-right"><h1 className="text-xl font-bold text-cyan-800">{title}</h1><p>{details.number||text('ยังไม่ออกเลขเอกสาร','Draft document')}</p><p>{details.issue?.slice(0,10)||'—'}</p></div></header>
- <div className="grid my-6 grid-cols-1 sm:grid-cols-2 gap-6"><div><p className="font-bold">{text("ลูกค้า / Customer","Customer")}</p><p>{details.school||'—'}</p><p>{details.address||'—'}</p><p>{text("เลขประจำตัวผู้เสียภาษี:","Tax ID:")} {details.tax||'—'}</p></div><div><p>{text("ไซต์ / Site:","Site:")} {details.site||'—'}</p><p>{text("รอบบิล / Period:","Period:")} {details.period||'—'}</p>{data.type==='receipt'&&<p>{text("วันที่ชำระ / Paid:","Paid:")} {details.paidAt||'—'}</p>}</div></div>
- {data.type==='contract'?<><p>{text("ผู้ลงนาม:","Signer:")} {data.signers||'—'}</p><table className="my-6 w-full"><thead><tr><th>{text("วันเริ่มต้น","Start date")}</th><th>{text("วันสิ้นสุด (รวมวันนั้น)","End date (inclusive)")}</th><th>THB/kWh</th></tr></thead><tbody>{(data.rates||[]).map((r,i)=><tr key={i}><td>{r.startDate}</td><td>{r.endDate||text('ไม่กำหนด','Not specified')}</td><td>{number(r.rate)}</td></tr>)}</tbody></table>{!data.rates?.length&&<p>{text("ไม่มีตารางอัตราที่บันทึกไว้","No recorded rate schedule")}</p>}</>:data.type==='handover'?<><p>Gateway: {data.gatewaySerial||'—'}</p><p>Meter: {data.meterSerial||'—'}</p><p>COD: {data.codDate||'—'}</p></>:<><table className="my-6 w-full border-collapse"><thead className="bg-cyan-50"><tr><th className="p-3 text-left">{text("รายการ / Description","Description")}</th><th className="p-3 text-right">kWh</th><th className="p-3 text-right">THB/kWh</th><th className="p-3 text-right">THB</th></tr></thead><tbody><tr className="border-b"><td className="p-3">{text("ค่าไฟฟ้าพลังงานแสงอาทิตย์","Solar electricity charges")}<br/>{details.period}</td><td className="p-3 text-right">{number(details.kwh)}</td><td className="p-3 text-right">{number(details.rate)}</td><td className="p-3 text-right">{number(details.amount)}</td></tr></tbody></table><p className="total border-t-2 border-cyan-700 py-5 text-right text-xl font-bold">{text("ยอดรวม / Total","Total")} THB {number(details.amount)}</p><p className="muted text-slate-500">{text("อัตราค่าไฟเป็นอัตราเฉลี่ยถ่วงน้ำหนักตามช่วงสัญญา / Rate reflects the recorded effective schedule.","Rate reflects the recorded effective schedule.")}</p></>}
- {isFinancial&&data.type!=='receipt'&&<div className="my-8"><h2 className="font-bold">{text("บัญชีรับชำระ / Payment accounts","Payment accounts")}</h2>{issuerBanks.length?issuerBanks.map(b=><p key={b.id}>{b.bank_name||b.bankName} · {b.account_number||b.accountNumber} · {b.account_name||b.accountName}</p>):<p>{text("ยังไม่ได้ตั้งค่าบัญชีรับชำระ","Payment accounts unavailable")}</p>}</div>}
- <div className="signatures mt-20 flex justify-between gap-8"><p>________________________<br/>{text("ผู้จัดทำ / Prepared by","Prepared by")}</p><p>________________________<br/>{data.type==='receipt'?text('ผู้รับเงิน','Received by'):text('ผู้รับเอกสาร','Document received by')}</p></div>
- </article></div>}</DialogContent></Dialog>;
+export function DocumentPreviewModal(props:{open:boolean;onOpenChange:(open:boolean)=>void;data:DocumentPreviewData|null}) {
+ if(!props.data)return null;
+ if(props.data.type==='handover')return <HandoverPreviewModal open={props.open} onOpenChange={props.onOpenChange} data={props.data}/>;
+ return <SavedOriginalDocumentPreview key={`${props.data.type}:${props.data.id}:${props.data.documentId}`} open={props.open} onOpenChange={props.onOpenChange} source={props.data}/>;
 }
-
-
-
-

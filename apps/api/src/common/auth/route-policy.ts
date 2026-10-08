@@ -36,6 +36,7 @@ export function routeAllowed(role: string, method: string, rawPath: string): boo
   if (path === "/v1/telemetry/ingest") return false; // MQTT is the only provisioned ingestion transport.
   if (/^\/v1\/billing-cycles\/[^/]+\/pay$/.test(path)) return method === "POST" && ["owner", "admin", "accountant", "school_user"].includes(role);
   if(/^\/v1\/billing-cycles\/[^/]+\/verify-payment$/.test(path))return method==='PATCH'&&['owner','accountant'].includes(role);
+  if (/^\/v1\/contracts\/[^/]+\/send-email$/.test(path)) return method === 'POST' && ['owner','admin'].includes(role);
   if (path === '/v1/contracts' && !read) return method === 'POST' && ['owner','admin'].includes(role);
   if (/^\/v1\/billing-cycles\/[^/]+\/(?:generate-invoice|verify-payment|status|adjust|send-email)$/.test(path) || path === '/v1/documents' && !read) return ['owner','admin','accountant'].includes(role);
   if (/^\/v1\/(?:billing-cycles|contracts|documents)(?:\/|$)/.test(path)) return read || ["owner", "admin", "accountant"].includes(role);

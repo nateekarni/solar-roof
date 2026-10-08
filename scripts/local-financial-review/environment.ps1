@@ -23,5 +23,16 @@ $env:ENERGY_READ_MODEL_ENABLED='false'
 $env:SMTP_HOST='127.0.0.1'
 $env:SMTP_PORT='11049'
 $env:FINANCIAL_WRITES_ENABLED='true'
-$env:FINANCIAL_PDF_FONT_PATH='C:/Windows/Fonts/tahoma.ttf'
+# Verify the exact bundled faces; financial TEST readiness/policy gates stay server-owned.
+$documentFontDirectory=Join-Path $PSScriptRoot '../../apps/api/assets/fonts/th-sarabun-new'
+$documentFontHashes=@{
+ 'THSarabunNew.ttf'='b248f824f3d7a8576bc396826a4d898070c1420564f6ce6aa716aa8ad24f824a'
+ 'THSarabunNew Bold.ttf'='49596f298a8fe248c5340b4589b3b4adfcf34a3e24084ebeb4f49c6600f75fa7'
+ 'THSarabunNew Italic.ttf'='341b9b5d13b696f74c6318d32bbae7ff183e6bdc07ef3ca1a6f9c5dd83c6494b'
+ 'THSarabunNew BoldItalic.ttf'='64a69cbeca6d34dc754a7ab2106615c14fbd359d339ed0f65d2a7b17de14cdfa'
+}
+foreach($documentFontName in $documentFontHashes.Keys){
+ $documentFontFile=Join-Path $documentFontDirectory $documentFontName
+ if(!(Test-Path -LiteralPath $documentFontFile) -or (Get-FileHash -LiteralPath $documentFontFile -Algorithm SHA256).Hash.ToLowerInvariant() -ne $documentFontHashes[$documentFontName]){throw "Bundled TH Sarabun New verification failed: $documentFontName"}
+}
 $env:USER_CREATE_ENABLED='true'

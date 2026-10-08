@@ -3,7 +3,8 @@ import { randomUUID, createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import type { PoolClient } from 'pg';
-import nodemailer from 'nodemailer';
+import { deliverSavedArtifacts, frozenRecipients, originalArtifactHash } from './saved-document-delivery.js';
+import { schoolScope, type ScopePrincipal } from '../../common/auth/route-policy.js';
 import { DatabaseService } from '../../database/database.service.js';
 import { FinancialReadinessService } from './financial-readiness.service.js';
 import { calculateTestTotals, requireTestTransferAmount, validFinancialDate, decimal, sqlCalendarPeriod, actualEnergyDifference, requireTestSettlement, TEST_FINANCIAL_POLICY, TEST_FINANCIAL_POLICY_HASH, localFinancialBinding } from './local-financial-policy.js';
@@ -111,26 +112,26 @@ export class LocalFinancialApplicationService {
  async send(id:string){await this.readiness.assertEnabled('send');if(!localFinancialBinding())throw new ConflictException('Local mail capture binding required');
   const lock=await this.db.pool.connect();try{
    if(!(await lock.query('SELECT pg_try_advisory_lock(hashtextextended($1,0)) AS locked',[`financial-mail:${id}`])).rows[0].locked)return {pending:true};
-   const outboxes=(await lock.query(`SELECT o.*,d.document_number,d.snapshot,a.pdf_bytes,a.sha256 FROM financial_delivery_outbox o JOIN documents d ON d.id=o.document_id JOIN document_artifacts a ON a.document_id=d.id WHERE d.billing_cycle_id=$1 AND d.status='issued' ORDER BY d.created_at`,[id])).rows;
-   for(const job of outboxes){if(job.state==='sent')continue;if(['sending','uncertain'].includes(job.state))throw new ConflictException('SMTP outcome uncertain; reconcile capture before retry');
-    if(job.attempts>=5)throw new ConflictException('Local capture retry budget exhausted; staff reconciliation required');
-    if(!Array.isArray(job.snapshot.recipients)||!job.snapshot.recipients.length)throw new ConflictException('Frozen verified recipient selection required');
-    await lock.query("UPDATE financial_delivery_outbox SET state='sending',attempts=attempts+1 WHERE id=$1",[job.id]);
-    for(const recipient of job.snapshot.recipients) {
-      if(job.delivered_user_ids?.includes(recipient.id))continue;
-      const eligible=(await lock.query(`SELECT u.id FROM users u JOIN sites s ON s.school_id=u.school_id JOIN schools sc ON sc.id=s.school_id JOIN contracts c ON c.site_id=s.id WHERE c.id=$1 AND u.id=$2 AND u.id=ANY(c.recipient_user_ids) AND u.role='school_user' AND u.status='active' AND sc.status='active' AND u.email=$3 AND u.email_verified_at IS NOT NULL AND u.verified_email=u.email`,[job.snapshot.customer.id,recipient.id,recipient.email])).rows[0];
-      if(!eligible){await lock.query("UPDATE financial_delivery_outbox SET state='failed',last_error='Selected recipient is no longer verified or scoped' WHERE id=$1",[job.id]);throw new ConflictException('Selected recipient is no longer verified or scoped');}
-      const messageId=`<financial-${job.id}-${recipient.id}@solar-platform.invalid>`;
-      await lock.query('UPDATE financial_delivery_outbox SET message_id=$2 WHERE id=$1',[job.id,messageId]);
-      const transport=nodemailer.createTransport({host:'127.0.0.1',port:11049,secure:false,connectionTimeout:5000,socketTimeout:10000});
-      try{const result=await transport.sendMail({from:process.env.SMTP_FROM??'local-financial@solar-platform.invalid',to:recipient.email,messageId,subject:`TEST ${job.document_number}`,text:'Synthetic local financial workflow test. Document attached.',attachments:[{filename:`${job.document_number}.pdf`,content:job.pdf_bytes,contentType:'application/pdf'}]});if(!result.accepted?.map((email:string)=>email.toLowerCase()).includes(recipient.email.toLowerCase()))throw Object.assign(new Error('SMTP recipient rejected'),{code:'ERECIPIENT'});}
-      catch(error){const e=error as Error&{code?:string;responseCode?:number};const safe=['ECONNREFUSED','ERECIPIENT','EAUTH','EDNS'].includes(e.code??'')||Boolean(e.responseCode&&e.responseCode>=400);await lock.query('UPDATE financial_delivery_outbox SET state=$2,last_error=$3 WHERE id=$1',[job.id,safe?'failed':'uncertain',e.message]);throw error;}finally{transport.close();}
-      // A database failure after SMTP acceptance leaves 'sending', so retries stop as uncertain.
-      await lock.query('UPDATE financial_delivery_outbox SET delivered_user_ids=array_append(delivered_user_ids,$2::uuid) WHERE id=$1',[job.id,recipient.id]);
-    }
-    await lock.query("UPDATE financial_delivery_outbox SET state='sent',completed_at=now(),last_error=NULL WHERE id=$1",[job.id]);
-   }return {success:true};
+   const outboxes=(await lock.query(`SELECT o.*,d.document_number,d.document_type,d.site_id,d.contract_id,d.snapshot,d.content_hash,a.pdf_bytes,a.sha256 FROM financial_delivery_outbox o JOIN documents d ON d.id=o.document_id JOIN document_artifacts a ON a.document_id=d.id WHERE d.billing_cycle_id=$1 AND d.status='issued' ORDER BY d.created_at`,[id])).rows;
+   await deliverSavedArtifacts(lock,outboxes);return {success:true};
   }finally{await lock.query('SELECT pg_advisory_unlock(hashtextextended($1,0))',[`financial-mail:${id}`]);lock.release();}
+ }
+ async sendContract(id:string,actor:ScopePrincipal){
+  if(!['owner','admin'].includes(actor.role??''))throw new ForbiddenException('Contract author required');
+  await this.readiness.assertEnabled('send');if(!localFinancialBinding())throw new ConflictException('Local mail capture binding required');
+  const lock=await this.db.pool.connect();const key=`contract-mail:${id}`;
+  try{
+   const scope=schoolScope(actor);const params:unknown[]=[id];if(scope!==null)params.push(scope);
+   const contract=(await lock.query(`SELECT c.id,c.site_id FROM contracts c JOIN sites s ON s.id=c.site_id WHERE c.id=$1 ${scope===null?'':'AND s.school_id=ANY($2::uuid[])'}`,params)).rows[0];
+   if(!contract)throw new NotFoundException('ไม่พบสัญญา / Contract not found');
+   if(!(await lock.query('SELECT pg_try_advisory_lock(hashtextextended($1,0)) AS locked',[key])).rows[0].locked)return {pending:true};
+   const original=(await lock.query(`SELECT d.id AS document_id,d.document_type,d.contract_id,d.site_id,d.document_number,d.snapshot,d.content_hash,a.pdf_bytes,a.sha256 FROM documents d JOIN document_artifacts a ON a.document_id=d.id WHERE d.contract_id=$1 AND d.document_type='contract' AND d.status='issued'`,[id])).rows[0];
+   if(!original)throw new ConflictException('กรุณาเปิดเอกสารต้นฉบับสัญญาก่อนส่ง / Open the saved contract original before sending');
+   originalArtifactHash(original);frozenRecipients(original);
+   await lock.query('INSERT INTO financial_delivery_outbox(id,document_id,artifact_sha256) VALUES($1,$2,$3) ON CONFLICT(document_id) DO NOTHING',[randomUUID(),original.document_id,original.sha256]);
+   const jobs=(await lock.query(`SELECT o.*,d.document_number,d.document_type,d.site_id,d.contract_id,d.snapshot,d.content_hash,a.pdf_bytes,a.sha256 FROM financial_delivery_outbox o JOIN documents d ON d.id=o.document_id JOIN document_artifacts a ON a.document_id=d.id WHERE d.id=$1 AND d.status='issued'`,[original.document_id])).rows;
+   await deliverSavedArtifacts(lock,jobs);return {success:true,documentId:original.document_id,contentHash:original.sha256};
+  }finally{await lock.query('SELECT pg_advisory_unlock(hashtextextended($1,0))',[key]);lock.release();}
  }
  async monthly(now=new Date()) {
   await this.readiness.assertEnabled('calculate');const local=new Date(now.getTime()+7*3600000);if(local.getUTCDate()===1&&local.getUTCHours()<1)return [];

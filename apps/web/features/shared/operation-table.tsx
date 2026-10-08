@@ -1,4 +1,5 @@
 "use client";
+import { originalSourceFromRow } from './original-document-loader';
 
 import * as React from "react";
 import type {OperationRow} from "@solar/api-contracts";
@@ -181,8 +182,8 @@ export function OperationTable({
     row: Record<string, any>
   ) => {
     setPreviewData({
+      ...originalSourceFromRow(type,row,resource),
       type,
-      documentId: type === "invoice" ? row.invoiceId || (resource === "documents" ? row.id : undefined) : type === "receipt" ? row.receiptId || (["receipts","documents"].includes(resource) ? row.id : undefined) : undefined,
       siteId: row.siteId,
       billingCycleId: row.billingCycleId,
       documentNumber: row.documentNumber || (type === "receipt" ? row.receiptNumber : row.invoiceNumber),

@@ -269,6 +269,13 @@ export class BillingController {
     }
   }
 
+  @Roles('owner','admin')
+  @Post('contracts/:id/send-email')
+  async sendContractEmail(@Param('id') id:string,@Body() body:Record<string,unknown>,@Req() req:{user?:ScopedActor}) {
+    if(Object.keys(body??{}).length)throw new BadRequestException('Contract delivery uses frozen recipients; no address override is permitted');
+    return this.financial.sendContract(id,req.user??{});
+  }
+
   @Get('operations/contracts/:id/original')
   async contractOriginal(@Param('id') id:string,@Req() req:{user?:ScopedActor}) {
     const original=await this.contractPdfs.ensureContractOriginal(id,req.user??{});
