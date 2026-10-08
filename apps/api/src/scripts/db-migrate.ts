@@ -40,6 +40,7 @@ try {
     "infra/migrations/031_organization_multiple_sites.sql",
     "infra/migrations/032_local_financial_transfer_evidence.sql",
     "infra/migrations/033_organization_document_identity.sql",
+    "infra/migrations/035_billing_source_binding.sql",
   ];
   for (const file of migrationFiles) {
     const sql = await readFile(new URL(`../../../../${file}`, import.meta.url), "utf8");
@@ -62,7 +63,3 @@ try {
   client.release();
   await pool.end();
 }
-
-
-
-
