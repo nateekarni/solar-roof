@@ -4,8 +4,8 @@ import { DatabaseService } from '../../database/database.service.js';
 import { localTestReadiness } from './local-test-readiness.js';
 import { routeAllowed } from '../../common/auth/route-policy.js';
 
-/** F2 must supply a verifier for persisted, reviewed accounting and workflow evidence.
- * A flag or administrator-authored setting is not evidence. No verifier is authorized yet.
+/** Production awaits persisted, reviewed accounting and workflow evidence.
+ * A flag alone is never evidence. The environment-bound synthetic TEST verifier permits local execution only.
  */
 export interface VerifiedFinancialReadiness {
   accountingApprovalId: string;
@@ -42,5 +42,6 @@ export class FinancialReadinessService implements FinancialReadinessEvidence {
     return {operationsActions,actions:[...(hasScope && routeAllowed(role,'POST','/v1/contracts') ? ['create_contract'] : []),...allowed.filter(action=>enabled.includes(action))],unavailable:Object.fromEntries(allowed.filter(action=>!enabled.includes(action)).map(action=>[action,'Financial workflows await verified accounting requirements and implementation readiness.']))};
   }
 }
+
 
 
