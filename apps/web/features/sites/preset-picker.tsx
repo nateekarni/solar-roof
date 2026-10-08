@@ -16,11 +16,11 @@ import {DropdownMenu,DropdownMenuTrigger,DropdownMenuContent,DropdownMenuItem} f
 import {Dialog,DialogContent,DialogHeader,DialogTitle,DialogDescription,DialogFooter} from '../../components/ui/dialog';
 export interface LegacyPreset {id:string;brand?:string;model:string;deviceType?:string;registers?:unknown[]}
 const EMPTY_LEGACY_PRESETS:LegacyPreset[]=[];
-export function PresetPicker({revisions,value,onChange,label='Preset',manual=false,onCatalogChange,legacyPresets=EMPTY_LEGACY_PRESETS,legacyValue='',onLegacyChange,onLegacyCatalogChange,billingOnly=false}:{manual?:boolean;billingOnly?:boolean;revisions:PayloadRevision[];value:string;onChange:(id:string,revision?:PayloadRevision)=>void;label?:string;onCatalogChange?:(rows:PayloadRevision[])=>void;legacyPresets?:LegacyPreset[];legacyValue?:string;onLegacyChange?:(id:string)=>void;onLegacyCatalogChange?:(rows:LegacyPreset[])=>void}){
+export function PresetPicker({revisions,value,onChange,label='Preset',manual=false,onCatalogChange,legacyPresets=EMPTY_LEGACY_PRESETS,legacyValue='',onLegacyChange,onLegacyCatalogChange,billingOnly=false}:{manual?:boolean;billingOnly?:boolean;revisions:PayloadRevision[];value:string;onChange:(id:string,revision?:PayloadRevision)=>void;label?:string;onCatalogChange?:(rows:PayloadRevision[],previous?:PayloadRevision[])=>void;legacyPresets?:LegacyPreset[];legacyValue?:string;onLegacyChange?:(id:string)=>void;onLegacyCatalogChange?:(rows:LegacyPreset[])=>void}){
  const id=useId(),{user}=useAuth();const manage=user?.role==='admin';
  const [rows,setRows]=useState(revisions),[legacy,setLegacy]=useState(legacyPresets),[open,setOpen]=useState(false),[search,setSearch]=useState(''),[editor,setEditor]=useState<PayloadRevision|null|undefined>(undefined),[remove,setRemove]=useState<{id:string;name:string;legacy:boolean}|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[legacyEdit,setLegacyEdit]=useState<LegacyPreset|null>(null),[registers,setRegisters]=useState('');
  useEffect(()=>setRows(revisions),[revisions]);useEffect(()=>setLegacy(legacyPresets),[legacyPresets]);
- function update(next:PayloadRevision[]){setRows(next);onCatalogChange?.(next);}
+ function update(next:PayloadRevision[]){setRows(next);onCatalogChange?.(next,rows);}
  function updateLegacy(next:LegacyPreset[]){setLegacy(next);onLegacyCatalogChange?.(next);}
  const selected=rows.find(r=>r.id===value),selectedLegacy=legacy.find(r=>r.id===legacyValue);
  const latest=[...rows].sort((a,b)=>b.version.localeCompare(a.version,undefined,{numeric:true})).filter((r,index,all)=>all.findIndex(other=>other.profileId===r.profileId)===index);

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {mergeDevicePresetCatalog,publishSavedPreset,selectDevicePresetById} from './device-preset-selection';
+import {mergeDevicePresetCatalog,publishSavedPreset,selectDevicePresetById,devicePresetEvents,type DevicePresetState} from './device-preset-selection';
 import {newDeviceDraft,selectDevicePreset} from './site-form-values';
 import type {PayloadRevision} from './payload-contracts';
 const meter:PayloadRevision={id:'meter-r1',profileId:'meter',version:'1.0.0',createdAt:'',config:{id:'meter',version:'1.0.0',schemaVersion:'1.1',displayName:'Meter model',deviceType:'energy-meter',pollGroups:['energy'],fields:[{tag:'energy.active.import.total',displayName:'Energy',pollGroup:'energy',sourceUnit:'Wh',targetUnit:'kWh',conversion:'wh-to-kwh',role:'billing-import'}]}};
@@ -29,4 +29,39 @@ test('archive removes hidden versions of that family while retaining unrelated t
  const hiddenFamilyVersion:PayloadRevision={...meter,id:'meter-old-type',config:{...meter.config,deviceType:'old-meter-type'}};
  const merged=mergeDevicePresetCatalog([meter,hiddenFamilyVersion,logger],[meter],[]);
  assert.deepEqual(merged.map(revision=>revision.id),['logger-r1']);
+});
+
+test('delayed preset POST merges into catalogue loaded by GET while the save is pending',async()=>{
+ let parentCatalog:PayloadRevision[]=[];
+ let current:DevicePresetState={catalog:[],draft:newDeviceDraft(),onCatalogChange:rows=>{parentCatalog=rows;}};
+ const capturedRows:PayloadRevision[]=[];
+ const events=devicePresetEvents(()=>current,capturedRows);
+ let complete!:(revision:PayloadRevision)=>void;
+ const response=new Promise<PayloadRevision>(resolve=>{complete=resolve;});
+ let selection:ReturnType<typeof selectDevicePresetById>=null;
+ const request=response.then(revision=>publishSavedPreset(revision,capturedRows,events.update,(id,row)=>{selection=events.select(id,false,row);}));
+ const otherMeter:PayloadRevision={...meter,id:'other-meter',profileId:'other-meter'};
+ parentCatalog=[meter,otherMeter,logger];current={...current,catalog:parentCatalog};
+ complete(saved);await request;
+ assert.deepEqual(parentCatalog.map(r=>r.id).sort(),['logger-r1','meter-r1','meter-r2','other-meter']);
+ assert.equal(selection?.sourcePresetRevisionId,'meter-r2');assert.equal(selection?.model,'New meter model');
+});
+test('delayed save uses current dirty draft and retains its protocol identity through confirmation',async()=>{
+ let current:DevicePresetState={catalog:[],draft:newDeviceDraft(),onCatalogChange:undefined};
+ const events=devicePresetEvents(()=>current,[]);
+ let complete!:(revision:PayloadRevision)=>void;
+ const response=new Promise<PayloadRevision>(resolve=>{complete=resolve;});
+ let selection:ReturnType<typeof selectDevicePresetById>|undefined;
+ const request=response.then(revision=>publishSavedPreset(revision,[],events.update,(id,row)=>{selection=events.select(id,false,row);}));
+ current={...current,catalog:[meter,logger],draft:{...current.draft,dirty:true,model:'Intervening edit',externalDeviceId:'LATEST-ID',serialNumber:'LATEST-SERIAL'}};
+ complete(saved);await request;
+ assert.equal(selection,null);assert.equal(current.draft.model,'Intervening edit');
+ const confirmed=events.select(saved.id,true,saved)!;assert.equal(confirmed.sourcePresetRevisionId,'meter-r2');assert.equal(confirmed.externalDeviceId,'LATEST-ID');assert.equal(confirmed.serialNumber,'LATEST-SERIAL');
+});
+test('delayed archive removes only the archived family from the latest same-type and other-type rows',()=>{
+ let parentCatalog=[meter,logger];let current:DevicePresetState={catalog:parentCatalog,draft:newDeviceDraft(),onCatalogChange:rows=>{parentCatalog=rows;}};
+ const events=devicePresetEvents(()=>current,[meter]);
+ const otherMeter:PayloadRevision={...meter,id:'other-meter',profileId:'other-meter'};
+ parentCatalog=[meter,saved,otherMeter,logger];current={...current,catalog:parentCatalog};
+ events.update([], [meter]);assert.deepEqual(parentCatalog.map(r=>r.id).sort(),['logger-r1','other-meter']);
 });

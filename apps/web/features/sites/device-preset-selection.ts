@@ -20,3 +20,16 @@ export function publishSavedPreset(saved:PayloadRevision,rows:PayloadRevision[],
  update([saved,...rows]);
  select(saved.id,saved);
 }
+
+export interface DevicePresetState {
+ catalog:PayloadRevision[];
+ draft:DeviceDraft;
+ onCatalogChange:((rows:PayloadRevision[])=>void)|undefined;
+}
+/** Resolve mutable editor state at completion time, not at the render that started a request. */
+export function devicePresetEvents(readCurrent:()=>DevicePresetState,visible:PayloadRevision[]){
+ return {
+  update(updated:PayloadRevision[],previous=visible){const state=readCurrent();const next=mergeDevicePresetCatalog(state.catalog,previous,updated);state.catalog=next;state.onCatalogChange?.(next);},
+  select(id:string,confirmed=false,revision?:PayloadRevision){const state=readCurrent();return selectDevicePresetById(state.draft,id,state.catalog,confirmed,revision);},
+ };
+}
