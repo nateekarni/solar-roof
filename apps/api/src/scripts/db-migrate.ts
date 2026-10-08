@@ -41,6 +41,7 @@ try {
     "infra/migrations/032_local_financial_transfer_evidence.sql",
     "infra/migrations/033_organization_document_identity.sql",
     "infra/migrations/036_contract_document_originals.sql",
+    "infra/migrations/037_optional_payer_metadata.sql",
   ];
   for (const file of migrationFiles) {
     const sql = await readFile(new URL(`../../../../${file}`, import.meta.url), "utf8");
