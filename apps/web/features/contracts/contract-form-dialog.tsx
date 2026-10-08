@@ -1,5 +1,6 @@
 "use client";
 import {BRAND_NAME} from "../../components/brand/brand-mark";
+import {useFinancialCapabilities} from '../../lib/financial-capabilities';
 import {financialContractInput,nextRateStart,contractRatePayload} from './contract-financial-input';
 
 import { AddButton } from "../../components/ui/add-button";
@@ -60,6 +61,8 @@ export function ContractFormDialog({
   const locale = useLocale();
   const user = useSessionUser();
   const contractSchema = React.useMemo(() => createContractSchema(locale), [locale]);
+  const capabilities=useFinancialCapabilities();
+  const localTestMode=capabilities.financialScope==='TEST';
   const [paymentTermDays,setPaymentTermDays]=React.useState('');
   const [recipientUserId,setRecipientUserId]=React.useState('');
   const [recipientOptions,setRecipientOptions]=React.useState<Array<{id:string;email:string;displayName:string}>>([]);
@@ -115,9 +118,9 @@ export function ContractFormDialog({
   const selectedSiteId=watch('siteId');
   React.useEffect(()=>{
     let active=true;setRecipientUserId('');setRecipientOptions([]);
-    if(open&&selectedSiteId)apiClient.get<Array<{id:string;email:string;displayName:string}>>(`/v1/operations/contracts/recipient-options?siteId=${encodeURIComponent(selectedSiteId)}`).then(rows=>{if(active)setRecipientOptions(rows);}).catch(()=>{if(active)setRecipientOptions([]);});
+    if(open&&selectedSiteId&&localTestMode)apiClient.get<Array<{id:string;email:string;displayName:string}>>(`/v1/operations/contracts/recipient-options?siteId=${encodeURIComponent(selectedSiteId)}`).then(rows=>{if(active)setRecipientOptions(rows);}).catch(()=>{if(active)setRecipientOptions([]);});
     return ()=>{active=false;};
-  },[open,selectedSiteId]);
+  },[open,selectedSiteId,localTestMode]);
   const handleAddRateRow = () => {
     const lastRow = rateRows[rateRows.length - 1];
     const nextStart = lastRow?.endDate
@@ -157,7 +160,7 @@ export function ContractFormDialog({
         siteIds: [values.siteId],
         effectiveDate: values.effectiveDate,
         paymentTerms: values.paymentTerms,
-        ...financialContractInput(paymentTermDays,recipientUserId),
+        ...(localTestMode?financialContractInput(paymentTermDays,recipientUserId):(paymentTermDays?{paymentTermDays:Number(paymentTermDays)}:{})),
         signerName: values.signerName,
         taxId: values.taxId?.trim() || null,
         companyName: values.companyName?.trim() || null,
@@ -217,16 +220,16 @@ export function ContractFormDialog({
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <div className="space-y-2">
-                <Label htmlFor="payment-term-days" required>{locale==='th'?'จำนวนวันชำระเงิน':'Payment term (calendar days)'}</Label>
-                <Input id="payment-term-days" type="number" min="0" max="3650" step="1" required value={paymentTermDays} onChange={event=>setPaymentTermDays(event.target.value)}/>
+                <Label htmlFor="payment-term-days" required={localTestMode}>{locale==='th'?'จำนวนวันชำระเงิน':'Payment term (calendar days)'}</Label>
+                <Input id="payment-term-days" type="number" min="0" max="3650" step="1" required={localTestMode} value={paymentTermDays} onChange={event=>setPaymentTermDays(event.target.value)}/>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="contract-recipient" required>{locale==='th'?'บัญชีผู้รับเอกสาร':'Document recipient account'}</Label>
+                {localTestMode&&<><Label htmlFor="contract-recipient" required>{locale==='th'?'บัญชีผู้รับเอกสาร':'Document recipient account'}</Label>
                 <Select value={recipientUserId} onValueChange={setRecipientUserId} disabled={!selectedSiteId}>
                   <SelectTrigger id="contract-recipient"><SelectValue placeholder={locale==='th'?'เลือกผู้รับที่ยืนยันอีเมลแล้ว':'Select verified recipient'}/></SelectTrigger>
                   <SelectContent>{recipientOptions.map(option=><SelectItem key={option.id} value={option.id}>{option.displayName} · {option.email}</SelectItem>)}</SelectContent>
                 </Select>
-                {!recipientOptions.length&&selectedSiteId&&<p className="text-xs text-muted-foreground">{locale==='th'?'ยังไม่มีบัญชีผู้รับที่ยืนยันอีเมลในองค์กรนี้':'No verified recipient account in this organization.'}</p>}
+                {!recipientOptions.length&&selectedSiteId&&<p className="text-xs text-muted-foreground">{locale==='th'?'ยังไม่มีบัญชีผู้รับที่ยืนยันอีเมลในองค์กรนี้':'No verified recipient account in this organization.'}</p>}</>}
               </div>
 <div className="space-y-2 sm:col-span-2">
                 <Label htmlFor="c-site" required className="text-xs font-medium">
@@ -483,6 +486,7 @@ export function ContractFormDialog({
     </Dialog>
   );
 }
+
 
 
 

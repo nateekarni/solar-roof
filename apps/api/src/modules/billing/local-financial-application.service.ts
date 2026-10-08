@@ -87,11 +87,12 @@ export class LocalFinancialApplicationService {
    const duplicate=await client.query(`SELECT 1 FROM payments WHERE submitted_by IS NOT NULL AND status IN('pending_verification','paid') AND (evidence_key=$1 OR slip_url=$2)`,[body.evidenceKey??null,body.slipUrl??null]);if(duplicate.rowCount)throw new ConflictException('Transfer evidence already submitted');
    const paymentId=randomUUID();await client.query(`INSERT INTO payments(id,billing_cycle_id,amount,status,paid_at,slip_url,evidence_key,note,submitted_by) VALUES($1,$2,$3,'pending_verification',$4,$5,$6,$7,$8)`,[paymentId,id,body.amount,paidAt,body.slipUrl??null,body.evidenceKey??null,body.note??null,actorId]);
    await client.query("UPDATE billing_cycles SET status='pending_verification' WHERE id=$1",[id]);return {success:true,paymentId,status:'pending_verification'};
-  });
+  }).catch(error=>{if(error?.code==='23505'&&['payments_new_active_evidence','payments_new_active_slip'].includes(error.constraint))throw new ConflictException('Transfer evidence already submitted');throw error;});
  }
  async verifyPayment(id:string,status:string,reason:string|undefined,actorId:string|undefined){
   await this.readiness.assertEnabled('approve_payment');if(!actorId)throw new BadRequestException('Actor required');if(!['approved','rejected'].includes(status))throw new BadRequestException('Invalid verification status');
   return this.db.transaction(async client=>{
+   const actor=(await client.query('SELECT role,status FROM users WHERE id=$1',[actorId])).rows[0];if(!actor||actor.status!=='active'||!['owner','accountant'].includes(actor.role))throw new ForbiddenException('Owner or Accountant payment approval required');
    const cycle=(await client.query('SELECT * FROM billing_cycles WHERE id=$1 FOR UPDATE',[id])).rows[0];if(!cycle)throw new NotFoundException('Billing cycle not found');
    if(cycle.status==='paid'){const receipt=(await client.query("SELECT * FROM documents WHERE billing_cycle_id=$1 AND document_type='receipt'",[id])).rows[0];if(status==='approved'&&receipt)return {success:true,billingCycleStatus:'paid',receipt};throw new ConflictException('Paid cycle cannot be rejected');}
    const payments=(await client.query("SELECT * FROM payments WHERE billing_cycle_id=$1 AND status='pending_verification' ORDER BY submitted_at,id FOR UPDATE",[id])).rows;if(!payments.length)throw new ConflictException('No pending transfers');

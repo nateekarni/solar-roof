@@ -10,3 +10,6 @@ test('local financial binding rejects production, remote and wrong local databas
  assert.ok(localFinancialBinding(env));
  for(const change of [{NODE_ENV:'production'},{DATABASE_URL:'postgres://local:local@example.com:15449/solar_financial_flow_review'},{DATABASE_URL:'postgres://local:local@127.0.0.1:15449/production'},{LOCAL_FINANCIAL_FIXTURE_MARKER:'wrong'},{SMTP_HOST:'smtp.example.com'}])assert.equal(localFinancialBinding({...env,...change}),null);
 });
+import {actualEnergyDifference} from './local-financial-policy.js';
+test('round cumulative difference after subtraction rather than each meter boundary',()=>{assert.equal(actualEnergyDifference('13168.72196667','13786.00546667'),'617.284');});
+test('consumption rounds exact delta and detects subprecision resets',()=>{assert.equal(actualEnergyDifference('10000.0004','10000.0006'),'0.000');assert.equal(actualEnergyDifference('10000.0000','10000.0005'),'0.001');assert.throws(()=>actualEnergyDifference('10000.000000001','10000.000000000'),/reset/);});
