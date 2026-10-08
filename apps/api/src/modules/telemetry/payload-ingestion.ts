@@ -4,7 +4,7 @@ import { logicalPayloadDigest, normalizePayloadEnvelope, type PayloadProfile } f
 import { decodePayloadMessages, validateReceiveConfig } from './payload-receive.js';
 export function payloadTopic(site: string, gateway: string, device = '+') { return `solar/v1/sites/${site}/gateways/${gateway}/devices/${device}/telemetry`; }
 export function gatewayPrefix(site: string, gateway: string) { return `solar/v1/sites/${site}/gateways/${gateway}`; }
-interface RegisteredBinding {deviceId:string;siteId:string;gatewayId:string;externalSiteId:string;externalGatewayId:string;externalDeviceId:string;revisionId:string;config:PayloadProfile;billing:boolean}
+interface RegisteredBinding {deviceId:string;siteId:string;gatewayId:string;externalSiteId:string;externalGatewayId:string;externalDeviceId:string;revisionId:string;config:PayloadProfile;billing:boolean;billingSource?:{id:string;siteId:string;deviceId:string;profileRevisionId:string;sourceTag:string;canonicalTag:string;sourceUnit:string;targetUnit:string;conversion:string}|null}
 export class PayloadIngestion {
  constructor(private readonly db: DatabaseService) {}
  async acceptMany(topic: string, input: unknown, brokerId: string | null, acknowledged: (ack: NonNullable<Awaited<ReturnType<PayloadIngestion['accept']>>>) => void) {
@@ -48,7 +48,8 @@ export class PayloadIngestion {
   const segments=/^solar\/v1\/sites\/([A-Za-z0-9_-]{1,128})\/gateways\/([A-Za-z0-9_-]{1,128})\/devices\/([A-Za-z0-9_-]{1,128})\/telemetry$/.exec(topic);
   if (!segments) return null;
   const site=segments[1]!, gateway=segments[2]!, device=segments[3]!;
-  const found=await this.db.query<RegisteredBinding>(`SELECT d.id AS "deviceId",d.site_id AS "siteId",g.id AS "gatewayId",s.external_site_id AS "externalSiteId",g.external_gateway_id AS "externalGatewayId",d.external_device_id AS "externalDeviceId",p.id AS "revisionId",p.config,EXISTS(SELECT 1 FROM billing_meters b WHERE b.device_id=d.id AND b.active) AS billing
+  const found=await this.db.query<RegisteredBinding>(`SELECT d.id AS "deviceId",d.site_id AS "siteId",g.id AS "gatewayId",s.external_site_id AS "externalSiteId",g.external_gateway_id AS "externalGatewayId",d.external_device_id AS "externalDeviceId",p.id AS "revisionId",p.config,EXISTS(SELECT 1 FROM billing_meters b WHERE b.device_id=d.id AND b.site_id=d.site_id AND b.active) AS billing,
+   (SELECT jsonb_build_object('id',bs.id,'siteId',bs.site_id,'deviceId',bs.device_id,'profileRevisionId',bs.profile_revision_id,'sourceTag',bs.source_tag,'canonicalTag',bs.canonical_tag,'sourceUnit',bs.source_unit,'targetUnit',bs.target_unit,'conversion',bs.conversion) FROM billing_meters b JOIN billing_source_bindings bs ON bs.id=b.billing_source_binding_id AND bs.meter_id=b.id WHERE b.device_id=d.id AND b.site_id=d.site_id AND b.active AND bs.site_id=d.site_id AND bs.device_id=d.id LIMIT 1) AS "billingSource"
    FROM devices d JOIN gateways g ON g.id=d.gateway_id AND g.site_id=d.site_id JOIN sites s ON s.id=d.site_id JOIN payload_profile_revisions p ON p.id=d.payload_profile_revision_id
    WHERE s.external_site_id=$1 AND g.external_gateway_id=$2 AND d.external_device_id=$3 AND s.status<>'archived' AND g.protocol='mqtt' AND ($4::boolean OR g.mqtt_broker_id IS NOT DISTINCT FROM $5::uuid)`,[site,gateway,device,brokerId===undefined,brokerId??null]);
   const entity=found.rows.length===1?found.rows[0]:undefined;
@@ -61,12 +62,17 @@ export class PayloadIngestion {
   const previous=typeof messageHint==='string' ? await this.db.query<{config:PayloadProfile}>(`SELECT p.config FROM payload_messages m JOIN payload_profile_revisions p ON p.id=m.profile_revision_id WHERE m.gateway_id=$1 AND m.device_id=$2 AND m.message_id=$3`,[entity.gatewayId,entity.deviceId,messageHint]) : null;
   let normalized;
   try { normalized=normalizePayloadEnvelope(input,{profile:previous?.rows[0]?.config??entity.config,siteId:entity.externalSiteId,gatewayId:entity.externalGatewayId,deviceId:entity.externalDeviceId},topic);
-   if(new Date(normalized.polledAt).getTime()>Date.now()+30000)throw Error('Source timestamp is in the future');
+   if([normalized.polledAt,normalized.measuredAt].some(time=>time&&new Date(time).getTime()>Date.now()))throw Error('Source timestamp is in the future');
   }catch(error){await this.reject(topic,error instanceof Error?error.message:'Invalid payload',entity);return null;}
   const n=normalized, receivedAt=new Date(), messageId=randomUUID();
   const client=await this.db.pool.connect();let acceptedAt: Date|string=receivedAt, conflict=false;
   try {
    await client.query('BEGIN');
+   // Binding/profile activation locks the same device. Recheck after acquiring the
+   // lock so a concurrent edit cannot stamp stale provenance on a new message.
+   const pinned=(await client.query('SELECT payload_profile_revision_id AS "revisionId" FROM devices WHERE id=$1 FOR SHARE',[entity.deviceId])).rows[0];
+   const active=(await client.query('SELECT billing_source_binding_id AS id FROM billing_meters WHERE site_id=$1 AND device_id=$2 AND active=true',[entity.siteId,entity.deviceId])).rows;
+   if(pinned?.revisionId!==entity.revisionId||active.length>1||(active[0]?.id??null)!==(entity.billingSource?.id??null))throw Error('Profile or billing source changed; retry message');
    const inserted=await client.query(`INSERT INTO payload_messages (id,gateway_id,device_id,message_id,digest,accepted_at,profile_revision_id,lot_number,sequence,polled_at,sent_at,raw_payload,unmapped,receive_revision_id,source_payload)
     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13::jsonb,$14,$15::jsonb) ON CONFLICT (gateway_id,device_id,message_id) DO NOTHING RETURNING id`,
     [messageId,entity.gatewayId,entity.deviceId,n.messageId,n.digest,receivedAt,entity.revisionId,n.lotNumber,n.sequence,n.polledAt,n.sentAt,JSON.stringify(n.raw),JSON.stringify(n.unmapped),reception?.revisionId??null,JSON.stringify(reception?.original??n.raw)]);
@@ -78,12 +84,16 @@ export class PayloadIngestion {
     for(const s of n.samples)await client.query(`INSERT INTO payload_samples (id,message_id,site_id,gateway_id,device_id,profile_revision_id,tag,value,unit,raw_value,raw_unit,poll_group,polled_at,measured_at,received_at,quality,communication)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,[randomUUID(),messageId,entity.siteId,entity.gatewayId,entity.deviceId,entity.revisionId,s.tag,s.value,s.unit,s.rawValue,s.rawUnit,s.pollGroup,s.polledAt,s.measuredAt??null,receivedAt,n.quality.status,n.quality.communication]);
     const healthy=['good','complete','ok'].includes(n.quality.status.toLowerCase())&&['online','ok','connected','success'].includes(n.quality.communication.toLowerCase());
-    const energy=entity.billing&&healthy?n.samples.find(s=>s.role==='billing-import')?.value??null:null;
+    const source=entity.billingSource;
+    const field=source&&entity.config.fields.find(f=>(f.sourceTag??f.tag)===source.sourceTag&&f.tag===source.canonicalTag&&f.sourceUnit===source.sourceUnit&&f.targetUnit===source.targetUnit&&f.conversion===source.conversion&&f.role==='billing-import');
+    const sample=source&&n.samples.find(s=>(s.sourceTag??s.tag)===source.sourceTag&&s.tag===source.canonicalTag&&s.rawUnit===source.sourceUnit&&s.unit==='kWh');
+    const bound=Boolean(entity.billing&&source&&field&&source.siteId===entity.siteId&&source.deviceId===entity.deviceId&&source.profileRevisionId===entity.revisionId);
+    const energy=bound&&healthy&&sample&&sample.value>=0?sample.value:null;
     const find=(tag:string)=>n.samples.find(s=>s.tag===tag)?.value??null;
-    const quality=!healthy?'invalid':Date.now()-new Date(n.polledAt).getTime()<=120000?'complete':'partial';
+    const quality=!healthy||sample&&sample.value<0?'invalid':'complete'; // Measurement validity is independent of online freshness.
     // Existing energy_raw_dirty trigger participates in this transaction.
-    await client.query(`INSERT INTO telemetry_raw (id,device_id,site_id,source_time,received_time,raw_payload,normalized_value,unit,quality,ingestion_id,semantic_field,total_energy_kwh,payload_profile_revision_id,voltage_v,current_a,active_power_w,apparent_power_va,reactive_power_var,frequency_hz,power_factor)
-     VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,'kWh',$8,$9,'total_energy',$7,$10,$11,$12,$13,$14,$15,$16,$17)`,[randomUUID(),entity.deviceId,entity.siteId,n.polledAt,receivedAt,JSON.stringify(n.raw),energy,quality,`payload:${messageId}`,entity.revisionId,find('electrical.voltage.l1_n'),find('electrical.current.l1'),n.samples.find(s=>s.role==='active-power'&&s.unit==='W')?.value??null,find('power.apparent.total'),find('power.reactive.total'),find('electrical.frequency'),find('power.factor.total')]);
+    await client.query(`INSERT INTO telemetry_raw (id,device_id,site_id,source_time,received_time,raw_payload,normalized_value,unit,quality,ingestion_id,semantic_field,total_energy_kwh,payload_profile_revision_id,voltage_v,current_a,active_power_w,apparent_power_va,reactive_power_var,frequency_hz,power_factor,billing_source_binding_id)
+     VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,'kWh',$8,$9,'total_energy',$7,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,[randomUUID(),entity.deviceId,entity.siteId,n.polledAt,receivedAt,JSON.stringify(n.raw),energy,quality,`payload:${messageId}`,entity.revisionId,find('electrical.voltage.l1_n'),find('electrical.current.l1'),n.samples.find(s=>s.role==='active-power'&&s.unit==='W')?.value??null,find('power.apparent.total'),find('power.reactive.total'),find('electrical.frequency'),find('power.factor.total'),bound&&field&&n.pollGroup===field.pollGroup?source!.id:null]);
     await client.query(`UPDATE gateways SET last_seen_at=GREATEST(last_seen_at,$2::timestamptz),status=CASE WHEN $2::timestamptz>=now()-interval '120 seconds' THEN 'online' ELSE status END WHERE id=$1`,[entity.gatewayId,n.polledAt]);
    }
    await client.query('COMMIT');

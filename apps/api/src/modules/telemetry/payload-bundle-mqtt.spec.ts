@@ -8,6 +8,7 @@ test('bundles commit and acknowledge all four registered messages on the receivi
   let commits = 0; const sent: any[] = []; const raw: any[] = [];
   const query = async (sql: string, values: any[] = []) => {
     if (sql.includes('FROM gateways g JOIN sites')) return { rows: [{ siteId: 's', gatewayId: 'g', externalSiteId: 'SITE-001', externalGatewayId: 'GW-001' }] };
+    if(sql.includes('FROM devices WHERE'))return {rows:[{revisionId:values[0]==='l'?'rl':'rm'}]};
     if (sql.includes('FROM devices d')) {
       assert.equal(values[4], 'broker');
       const logger = values[2] === 'SMARTLOGGER-001';

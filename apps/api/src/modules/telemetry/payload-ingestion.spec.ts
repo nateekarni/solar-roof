@@ -5,10 +5,12 @@ import { PayloadIngestion } from './payload-ingestion.js';
 import { DEFAULT_PAYLOAD_PROFILES, type PayloadProfile } from './payload-profile.js';
 const examples = JSON.parse(readFileSync(new URL('./fixtures/payload-examples-v1.1.json', import.meta.url), 'utf8')).payloads;
 const topic = 'solar/v1/sites/SITE-001/gateways/GW-001/devices/METER-001/telemetry';
-function fixture(options: { fail?: boolean; commit?: () => Promise<void>; profile?:()=>PayloadProfile } = {}) {
+function fixture(options: { changedDuringCommit?:boolean; unbound?:boolean; mismatch?:boolean; fail?: boolean; commit?: () => Promise<void>; profile?:()=>PayloadProfile } = {}) {
  const events: string[] = [], samples: unknown[][] = [], raws: unknown[][] = [], rejects: unknown[][] = []; const messages = new Map<string, any>();
  const query = async (sql: string, values: any[] = []) => {
-  if (sql.includes('FROM devices d')) return {rows:[{deviceId:'d',siteId:'s',gatewayId:'g',externalSiteId:'SITE-001',externalGatewayId:'GW-001',externalDeviceId:'METER-001',revisionId:'r',config:options.profile?.()??DEFAULT_PAYLOAD_PROFILES[0],billing:true}]};
+  if(sql.includes('FROM devices WHERE'))return {rows:[{revisionId:options.changedDuringCommit?'changed':'r'}]};
+  if(sql.includes('SELECT billing_source_binding_id'))return {rows:[{id:options.unbound?null:'binding'}]};
+  if (sql.includes('FROM devices d')) return {rows:[{deviceId:'d',siteId:'s',gatewayId:'g',externalSiteId:'SITE-001',externalGatewayId:'GW-001',externalDeviceId:'METER-001',revisionId:'r',config:options.profile?.()??DEFAULT_PAYLOAD_PROFILES[0],billing:true,billingSource:options.unbound?null:{id:"binding",siteId:"s",deviceId:"d",profileRevisionId:options.mismatch?"other":"r",sourceTag:"energy.active.import.total",canonicalTag:"energy.active.import.total",sourceUnit:"Wh",targetUnit:"kWh",conversion:"wh-to-kwh"}}]};
   if (sql.includes('FROM gateways g')) return {rows:[{siteId:'s',gatewayId:'g'}]};
   if (sql === 'COMMIT') {await options.commit?.();events.push('commit');return {rows:[]};}
   if (sql === 'ROLLBACK') {events.push('rollback');return {rows:[]};}
@@ -38,3 +40,13 @@ test('independent groups and late readings all persist with original polledAt',a
 
 
 test('durable replay still accepts original revision after explicit device upgrade',async()=>{let profile=structuredClone(DEFAULT_PAYLOAD_PROFILES[0]!);const f=fixture({profile:()=>profile});const original=await f.ingest.accept(topic,examples.pm2230Energy);profile={...profile,version:'2.0.0'};const duplicate=await f.ingest.accept(topic,examples.pm2230Energy);assert.ok(duplicate);assert.equal(duplicate.acceptedAt,original?.acceptedAt);assert.equal(f.raws.length,1);});
+
+test('validated delayed counters stay complete for historical billing',async()=>{const f=fixture();const p=structuredClone(examples.pm2230Energy);p.timestamps.polledAt='2020-01-01T00:00:00Z';await f.ingest.accept(topic,p);assert.equal(f.raws[0]?.[7],'complete');});
+test('billing role alone cannot populate an unbound billing counter',async()=>{const f=fixture({unbound:true});await f.ingest.accept(topic,examples.pm2230Energy);assert.equal(f.raws[0]?.[6],null);});
+test('changed profile cannot populate the old bound counter',async()=>{const f=fixture({mismatch:true});await f.ingest.accept(topic,examples.pm2230Energy);assert.equal(f.raws[0]?.[6],null);});
+
+
+test('future source and negative selected counters never become billable',async()=>{const f=fixture();const future=structuredClone(examples.pm2230Energy);future.timestamps.polledAt=new Date(Date.now()+86400000).toISOString();assert.equal(await f.ingest.accept(topic,future),null);const negative=structuredClone(examples.pm2230Energy);negative.messageId='negative';negative.data.values['energy.active.import.total']=-1;await f.ingest.accept(topic,negative);assert.equal(f.raws[0]?.[6],null);assert.equal(f.raws[0]?.[7],'invalid');});
+test('missing selected energy field preserves binding for incomplete-data review',async()=>{const f=fixture();const p=structuredClone(examples.pm2230Energy);delete p.data.values['energy.active.import.total'];delete p.data.units['energy.active.import.total'];await f.ingest.accept(topic,p);assert.equal(f.raws[0]?.[6],null);assert.equal(f.raws[0]?.[17],'binding');});
+
+test('mapping changes between validation and commit abort before persistence',async()=>{const f=fixture({changedDuringCommit:true});await assert.rejects(f.ingest.accept(topic,examples.pm2230Energy),/changed.*retry/i);assert.equal(f.raws.length,0);assert.equal(f.samples.length,0);});
