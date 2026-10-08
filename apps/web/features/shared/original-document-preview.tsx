@@ -1,4 +1,5 @@
 "use client";
+import {documentPdfFilename} from '@solar/domain/document-number';
 import * as React from 'react';
 import {Dialog,DialogContent,DialogHeader,DialogTitle} from '../../components/ui/dialog';
 import {Button} from '../../components/ui/button';
@@ -10,7 +11,7 @@ export function OriginalPdfContent({url,error,number,th,onSend,deliveryUnavailab
  if(error)return <p role="alert">{th?'ไม่สามารถเปิดเอกสารต้นฉบับที่ตรวจสอบแล้วได้':'Could not load the verified original document.'}</p>;
  if(!url)return <p role="status">{th?'กำลังโหลดเอกสารต้นฉบับ…':'Loading original document…'}</p>;
  return <><div className="flex flex-wrap gap-2">
-  <Button asChild variant="outline"><a href={url} download={`${number}.pdf`}>{th?'ดาวน์โหลด PDF':'Download PDF'}</a></Button>
+  <Button asChild variant="outline"><a href={url} download={documentPdfFilename(number)}>{th?'ดาวน์โหลด PDF':'Download PDF'}</a></Button>
   <Button asChild variant="outline"><a href={url} target="_blank" rel="noopener noreferrer">{th?'เปิด / พิมพ์เอกสารต้นฉบับ':'Open / print original'}</a></Button>
   {onSend&&<Button variant="outline" onClick={onSend} disabled={sending||sent}>{sending?(th?'กำลังส่ง…':'Sending…'):sent?(th?'ส่งแล้ว':'Sent'):(th?'ส่งเอกสารต้นฉบับ':'Send original')}</Button>}
  </div>{deliveryUnavailable&&<p role="status">{th?'ไม่มีบัญชีผู้รับที่ยืนยันไว้ กรุณาติดต่อผู้ดูแลเพื่อออกสัญญาที่เลือกบัญชีผู้รับ':'No frozen verified recipient. Ask an administrator to issue a contract with selected recipient accounts.'}</p>}

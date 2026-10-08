@@ -1,0 +1,3 @@
+# Human document identity is allocated at issuance
+
+Accepted2026-10-08: future invoices, receipts and PPA originals use INV/RCP/PPA +Gregorian Bangkok issueYYMM +five-digit typed monthly sequence from one transactional authority. The stored immutable original is the authoritative human contract/document reference across UI, PDF, filenames and delivery; internal UUIDs remain routing/storage keys. Previously issued originals and their numbers remain unchanged instead of being renamed, because their hashes and shared-channel bytes are already fixed. Sequence changes therefore affect only future issuance and must not create independent presentation aliases.

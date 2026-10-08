@@ -26,6 +26,7 @@ test('PostgreSQL contract original transactions and concurrent issuance',{skip:!
    CREATE TABLE rate_versions(id uuid PRIMARY KEY,contract_id uuid REFERENCES contracts(id),effective_from date,effective_to date,rate_type text,rate numeric(20,8),currency text);
    CREATE TABLE billing_cycles(id uuid PRIMARY KEY,contract_id uuid);
    CREATE TABLE documents(id uuid PRIMARY KEY,site_id uuid REFERENCES sites(id),billing_cycle_id uuid,document_type text CONSTRAINT documents_document_type_check CHECK(document_type IN('invoice','receipt','billing_statement')),document_number text UNIQUE,status text,issue_date date,amount numeric,file_key text,snapshot jsonb,content_hash text,created_at timestamptz DEFAULT now());
+   CREATE TABLE document_number_series(prefix text PRIMARY KEY,last_value bigint NOT NULL);
    CREATE TABLE document_artifacts(document_id uuid PRIMARY KEY REFERENCES documents(id),pdf_bytes bytea NOT NULL,sha256 text NOT NULL CHECK(length(sha256)=64));
   `);
   // Apply the real additive migration and the existing original immutability triggers.
@@ -43,7 +44,7 @@ test('PostgreSQL contract original transactions and concurrent issuance',{skip:!
   await t.test('POST creates one PDF and scoped download serves identical bytes',async()=>{
    created=await controller.createContract(input,{user:actor});
    const saved=(await pool.query('SELECT d.snapshot,a.* FROM documents d JOIN document_artifacts a ON a.document_id=d.id WHERE d.contract_id=$1',[created.id])).rows;
-   assert.equal(saved.length,1);assert.equal(saved[0].pdf_bytes.subarray(0,5).toString(),'%PDF-');
+   assert.equal(saved.length,1);assert.match(created.documentNumber,/^PPA\d{9}$/);assert.equal(saved[0].snapshot.documentNumber,created.documentNumber);assert.equal(saved[0].snapshot.contractNumber,created.documentNumber);assert.equal(saved[0].pdf_bytes.subarray(0,5).toString(),'%PDF-');
    assert.equal(saved[0].snapshot.signatories.issuer.name,'Edited provider');assert.equal(saved[0].snapshot.signatories.customer.title,'Manager');
    assert.equal(saved[0].snapshot.rates[0].rate,'4.25000000');
    assert.equal(saved[0].snapshot.siteExternalId,'PROTOCOL-001');

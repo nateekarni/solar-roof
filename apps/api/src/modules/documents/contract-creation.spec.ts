@@ -6,6 +6,8 @@ function fixture(failRender=false){
  const contracts=new Map<string,any>();const rates=new Map<string,any[]>();const artifacts=new Map<string,Buffer>();const documents=new Map<string,any>();let backup:any;let queries=0;
  const company={company_name:'Issuer Ltd',tax_id:'1234567890123',address:'Issuer address',signatory_name:'Default signer',signatory_title:'Director'};
  const query=async(sql:string,p:any[]=[])=>{queries++;
+  if(sql.includes('AS day'))return {rows:[{day:'2026-10-08'}]};
+  if(sql.includes('document_number_series'))return {rows:[{last_value:1}]};
   if(sql==='BEGIN'){backup=[new Map(contracts),new Map(rates),new Map(artifacts),new Map(documents)];return {rows:[]};}
   if(sql==='ROLLBACK'){for(const [map,old] of [[contracts,backup[0]],[rates,backup[1]],[artifacts,backup[2]],[documents,backup[3]]]){map.clear();for(const [k,v] of old)map.set(k,v);}return {rows:[]};}
   if(sql.includes('FROM sites s JOIN schools'))return {rows:[{id:'school-a',schoolId:'school-a',name:'Customer',code:'ORG',legalName:'Customer Ltd',taxId:'9876543210123',taxAddress:'Customer address',taxBranch:'00000',phone:'',documentEmail:''}]};
@@ -16,7 +18,7 @@ function fixture(failRender=false){
   if(sql.includes('FROM contracts c JOIN sites'))return {rows:contracts.has(p[0])?[contracts.get(p[0])]:[]};
   if(sql.includes('FROM rate_versions'))return {rows:rates.get(p[0])??[]};
   if(sql.includes('FROM documents'))return {rows:documents.has(p[0])?[documents.get(p[0])]:[]};
-  if(sql.includes('INSERT INTO documents')){documents.set(p[2],{documentId:p[0],sha256:p[6],snapshot:JSON.parse(p[5])});return {rows:[]};}
+  if(sql.includes('INSERT INTO documents')){documents.set(p[2],{documentId:p[0],documentNumber:p[3],sha256:p[6],snapshot:JSON.parse(p[5])});return {rows:[]};}
   if(sql.includes('INSERT INTO document_artifacts')){artifacts.set(p[0],p[1]);return {rows:[]};}
   return {rows:[]};
  };

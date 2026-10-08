@@ -16,12 +16,17 @@ export class ReceiptService {
       throw new ConflictException("Payment must be paid before receipt can be issued");
     }
 
+    if(!payment.siteId||!payment.billingCycleId)throw new ConflictException("Payment billing-cycle site required before receipt issuance");
+
     const receipt = await this.documents.finalize({
+      siteId: payment.siteId,
+      billingCycleId: payment.billingCycleId,
       type: "receipt",
       year: new Date().getFullYear(),
       amount: payment.amount,
       snapshot: {
         paymentId,
+        siteId: payment.siteId,
         invoiceId: payment.invoiceId,
         billingCycleId: payment.billingCycleId,
         amount: payment.amount,

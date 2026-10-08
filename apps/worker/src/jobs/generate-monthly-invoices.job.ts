@@ -1,3 +1,4 @@
+import {allocateDocumentNumber,type DocumentNumberClient} from '@solar/domain/document-number';
 import { Injectable, Logger } from "@nestjs/common";
 
 export interface InvoiceGenerationResult {
@@ -9,6 +10,7 @@ export interface InvoiceGenerationResult {
 
 export interface InvoiceDatabaseClient {
   query(sql: string, params?: unknown[]): Promise<{ rows: any[] }>;
+  transaction<T>(work:(client:DocumentNumberClient)=>Promise<T>):Promise<T>;
 }
 
 @Injectable()
@@ -39,37 +41,19 @@ export class GenerateMonthlyInvoicesJob {
 
     for (const cycle of cyclesRes.rows) {
       try {
-        const yr = String(periodYear);
-        const mo = String(periodMonth).padStart(2, "0");
-        const prefix = `INV${yr}${mo}`;
-        const countRes = await db.query(
-          `SELECT count(*)::int AS count FROM documents WHERE document_number LIKE $1`,
-          [`${prefix}%`]
-        );
-        const seq = (countRes.rows[0]?.count ?? 0) + 1;
-        const documentNumber = `${prefix}${String(seq).padStart(4, "0")}`;
-        const docId = `inv-${cycle.id}`;
-        const fileKey = `invoices/${periodYear}/${documentNumber}.pdf`;
-
-        const insertRes = await db.query(
-          `INSERT INTO documents (
-             id, site_id, billing_cycle_id, document_type, document_number,
-             status, issue_date, amount, file_key
-           )
-           VALUES (gen_random_uuid(), $1, $2, 'invoice', $3, 'draft', NOW(), $4, $5)
-           ON CONFLICT (billing_cycle_id, document_type) DO NOTHING
-           RETURNING document_number, amount`,
-          [cycle.site_id, cycle.id, documentNumber, cycle.amount, fileKey]
-        );
-
-        if (insertRes.rows.length > 0) {
-          results.push({
-            billingCycleId: cycle.id,
-            documentNumber,
-            amount: Number(cycle.amount),
-            created: true,
-          });
-        }
+        const result=await db.transaction(async client=>{
+          // Serialize every issuer on the billing cycle and recheck after the lock.
+          const locked=(await client.query('SELECT * FROM billing_cycles WHERE id=$1 FOR UPDATE',[cycle.id])).rows[0];
+          if(!locked)return undefined;
+          if((await client.query("SELECT id FROM documents WHERE billing_cycle_id=$1 AND document_type='invoice'",[cycle.id])).rows.length)return undefined;
+          const {number,issueDate}=await allocateDocumentNumber(client,'invoice');
+          const inserted=await client.query(
+            `INSERT INTO documents(id,site_id,billing_cycle_id,document_type,document_number,status,issue_date,amount,file_key)
+             VALUES(gen_random_uuid(),$1,$2,'invoice',$3,'draft',$4,$5,$6) RETURNING document_number,amount`,
+            [locked.site_id,cycle.id,number,issueDate,locked.amount,`invoices/${issueDate.slice(0,4)}/${number}.pdf`]);
+          return inserted.rows.length?{billingCycleId:cycle.id,documentNumber:number,amount:Number(locked.amount),created:true}:undefined;
+        });
+        if(result)results.push(result);
       } catch (err: any) {
         this.logger.error(`Failed to generate invoice for billing cycle ${cycle.id}: ${err.message}`);
       }

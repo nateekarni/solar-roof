@@ -51,8 +51,8 @@ export class SettingsService {
     const map = new Map(res.rows.map((r) => [r.key, r.value]));
 
     return {
-      invoicePrefix: map.get("invoicePrefix") ?? "INV{year}{month}",
-      receiptPrefix: map.get("receiptPrefix") ?? "RCT{year}{month}",
+      invoicePrefix: "INV{YY}{MM}",
+      receiptPrefix: "RCP{YY}{MM}",
       rawTelemetryRetentionYears: Number(map.get("rawTelemetryRetentionYears") ?? 2),
       aggregateRetentionYears: Number(map.get("aggregateRetentionYears") ?? 7),
       language: map.get("language") ?? "th",
@@ -64,7 +64,7 @@ export class SettingsService {
   }
 
   async updateSettings(newSettings: Partial<SystemSettings>): Promise<SystemSettings> {
-    const entries = Object.entries(newSettings).filter(([_, v]) => v !== undefined);
+    const entries = Object.entries(newSettings).filter(([key, v]) => v !== undefined && !["invoicePrefix","receiptPrefix"].includes(key));
     for (const [k, v] of entries) {
       await this.db.query(
         `INSERT INTO system_settings (key, value, updated_at)

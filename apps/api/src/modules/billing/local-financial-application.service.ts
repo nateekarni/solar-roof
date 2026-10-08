@@ -9,6 +9,7 @@ import { schoolScope, type ScopePrincipal } from '../../common/auth/route-policy
 import { DatabaseService } from '../../database/database.service.js';
 import { FinancialReadinessService } from './financial-readiness.service.js';
 import { calculateTestTotals, requireTestTransferAmount, validFinancialDate, decimal, sqlCalendarPeriod, actualEnergyDifference, requireTestSettlement, TEST_FINANCIAL_POLICY, TEST_FINANCIAL_POLICY_HASH, localFinancialBinding } from './local-financial-policy.js';
+import { allocateDocumentNumber } from '../documents/document-number.js';
 import { FINANCIAL_TEMPLATE_VERSION, renderLocalTestPdf } from '../documents/local-test-pdf.js';
 const validDate=validFinancialDate;
 export function reviewedActualEnergyDifference(opening:unknown,closing:unknown):string {
@@ -56,9 +57,10 @@ export class LocalFinancialApplicationService {
   const existing=(await client.query('SELECT * FROM documents WHERE billing_cycle_id=$1 AND document_type=$2',[cycle.id,type])).rows;
   if(existing.length){if(existing.length!==1||!existing[0].snapshot?.policy||!['issued','finalized'].includes(existing[0].status))throw new ConflictException('Legacy document requires explicit reconciliation');return existing[0];}
   if(cycle.quality!=='complete'||!cycle.meter_snapshot||cycle.policy_hash!==TEST_FINANCIAL_POLICY_HASH)throw new ConflictException('Verified actual TEST calculation required');
-  const customer=(await client.query(`SELECT c.*,to_char(c.start_date,'YYYY-MM-DD') AS start_date,to_char(c.end_date,'YYYY-MM-DD') AS end_date,s.name AS site_name,s.external_site_id,sc.name AS school_name FROM contracts c JOIN sites s ON s.id=c.site_id JOIN schools sc ON sc.id=s.school_id WHERE c.id=$1 AND c.site_id=$2`,[cycle.contract_id,cycle.site_id])).rows[0];
+  const customer=(await client.query(`SELECT c.*,(SELECT d.document_number FROM documents d WHERE d.contract_id=c.id AND d.document_type='contract') AS contract_number,to_char(c.start_date,'YYYY-MM-DD') AS start_date,to_char(c.end_date,'YYYY-MM-DD') AS end_date,s.name AS site_name,s.external_site_id,sc.name AS school_name FROM contracts c JOIN sites s ON s.id=c.site_id JOIN schools sc ON sc.id=s.school_id WHERE c.id=$1 AND c.site_id=$2`,[cycle.contract_id,cycle.site_id])).rows[0];
   const company=(await client.query('SELECT * FROM company_profile WHERE is_configured=true ORDER BY updated_at DESC LIMIT 1')).rows[0];
   if(!company?.company_name||!company.tax_id||!company.address||!customer?.company_name||!customer.tax_id||!customer.tax_address)throw new ConflictException('Complete issuer and customer tax identity required');
+  if(!customer.contract_number)throw new ConflictException('Issued contract original required before financial issuance');
   if(!Number.isInteger(customer.payment_term_days))throw new ConflictException('Explicit paymentTermDays required');
   const banks=(await client.query('SELECT * FROM company_bank_accounts WHERE is_configured=true ORDER BY is_default DESC,created_at')).rows;
   if(!banks.some(bank=>bank.bank_name?.trim()&&bank.account_name?.trim()&&bank.account_number?.trim()))throw new ConflictException('Usable configured payment account required');
@@ -66,14 +68,13 @@ export class LocalFinancialApplicationService {
   if(!recipients.length||recipients.length!==customer.recipient_user_ids.length)throw new ConflictException('Selected verified organization recipients required');
   const payments=type==='receipt'?(await client.query("SELECT * FROM payments WHERE billing_cycle_id=$1 AND status='paid' ORDER BY submitted_at,id",[cycle.id])).rows:[];
   if(type==='receipt')requireTestSettlement(payments.map(p=>p.amount),cycle.amount);
-  const day=(await client.query("SELECT to_char(now() AT TIME ZONE 'Asia/Bangkok','YYYY-MM-DD') AS day")).rows[0].day;
-  const prefix=`${type==='receipt'?'RCT':'INV'}${day.replaceAll('-','').slice(0,6)}`;
-  const seq=(await client.query(`INSERT INTO document_number_series(prefix,last_value) VALUES($1,1) ON CONFLICT(prefix) DO UPDATE SET last_value=document_number_series.last_value+1 RETURNING last_value`,[prefix])).rows[0].last_value;
-  const number=prefix+String(seq).padStart(4,'0');
+  const {number,issueDate:day}=await allocateDocumentNumber(client,type);
+  const invoiceNumber=type==='receipt'?(await client.query("SELECT document_number FROM documents WHERE billing_cycle_id=$1 AND document_type='invoice'",[cycle.id])).rows[0]?.document_number:undefined;
+  if(type==='receipt'&&!invoiceNumber)throw new ConflictException('Issued invoice reference required');
   const logo=await readFile(fileURLToPath(new URL('../../../../web/public/brand/solar-roof-document-stacked.png',import.meta.url)));
   const cycleDates=(await client.query(`SELECT to_char(period_start,'YYYY-MM-DD') AS starts,to_char(period_end,'YYYY-MM-DD') AS ends FROM billing_cycles WHERE id=$1`,[cycle.id])).rows[0];
   cycle={...cycle,period_start:cycleDates.starts,period_end:cycleDates.ends};
-  const snapshot={templateVersion:FINANCIAL_TEMPLATE_VERSION,policy:TEST_FINANCIAL_POLICY,policyHash:TEST_FINANCIAL_POLICY_HASH,cycle,customer,company,banks,payments,recipients,logo:`data:image/png;base64,${logo.toString('base64')}`,language:'th-en',issueDate:day,dueDate:new Date(Date.parse(day)+customer.payment_term_days*86400000).toISOString().slice(0,10)};
+  const snapshot={...(invoiceNumber?{invoiceNumber}:{}),templateVersion:FINANCIAL_TEMPLATE_VERSION,policy:TEST_FINANCIAL_POLICY,policyHash:TEST_FINANCIAL_POLICY_HASH,cycle,customer,company,banks,payments,recipients,logo:`data:image/png;base64,${logo.toString('base64')}`,language:'th-en',issueDate:day,dueDate:new Date(Date.parse(day)+customer.payment_term_days*86400000).toISOString().slice(0,10)};
   const document={id:randomUUID(),document_number:number,document_type:type,snapshot,amount:cycle.amount};
   const bytes=await renderLocalTestPdf(document);const sha256=createHash('sha256').update(bytes).digest('hex');
   const doc=(await client.query(`INSERT INTO documents(id,site_id,billing_cycle_id,document_type,document_number,status,issue_date,amount,snapshot,content_hash,file_key,template_version) VALUES($1,$2,$3,$4,$5,'issued',$6,$7,$8,$9,$10,$11) RETURNING *`,[document.id,cycle.site_id,cycle.id,type,number,day,cycle.amount,JSON.stringify(snapshot),sha256,`local-artifact:${document.id}`,FINANCIAL_TEMPLATE_VERSION])).rows[0];
