@@ -53,6 +53,8 @@ interface CompanyProfile {
   phone: string;
   email: string;
   logoUrl?: string;
+  signatoryName?: string;
+  signatoryTitle?: string;
 }
 
 interface CompanyBankAccount {
@@ -252,9 +254,13 @@ export default function CompanyBankingPage() {
           </CardHeader>
           <CardContent className="p-0 pt-4">
             {!editingCompany ? <div className="space-y-4"><dl className="grid grid-cols-1 gap-4 md:grid-cols-2">{([
-                ['companyName', 'ชื่อบริษัท / นิติบุคคล', 'Company name'], ['taxId', 'เลขประจำตัวผู้เสียภาษี', 'Tax ID'], ['branch', 'สาขา', 'Branch'], ['phone', 'เบอร์โทรศัพท์', 'Phone'], ['email', 'อีเมลสำหรับการเงิน', 'Billing email'], ['address', 'ที่อยู่จดทะเบียนภาษี', 'Tax address']
+                ['companyName', 'ชื่อบริษัท / นิติบุคคล', 'Company name'], ['taxId', 'เลขประจำตัวผู้เสียภาษี', 'Tax ID'], ['branch', 'สาขา', 'Branch'], ['phone', 'เบอร์โทรศัพท์', 'Phone'], ['email', 'อีเมลสำหรับการเงิน', 'Billing email'], ['address', 'ที่อยู่จดทะเบียนภาษี', 'Tax address'], ['signatoryName', 'ชื่อผู้ลงนามฝ่ายผู้ให้บริการ', 'Default provider signatory'], ['signatoryTitle', 'ตำแหน่งผู้ลงนาม', 'Default signatory title']
               ] as const).map(([key, th, en]) => <div key={key} className={key === "address" ? "space-y-1 md:col-span-2" : "space-y-1"}><dt className="text-sm text-muted-foreground">{locale === 'th' ? th : en}</dt><dd className="text-sm font-medium whitespace-pre-wrap break-words">{company[key] || '—'}</dd></div>)}</dl></div> : <form onSubmit={handleSaveCompany} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                {(['signatoryName','signatoryTitle'] as const).map(key=><div className="space-y-2" key={key}>
+                  <Label htmlFor={`company-${key}`}>{key==='signatoryName'?(locale==='th'?'ชื่อผู้ลงนามฝ่ายผู้ให้บริการ':'Default provider signatory'):(locale==='th'?'ตำแหน่งผู้ลงนาม':'Default signatory title')}</Label>
+                  <Input id={`company-${key}`} value={company[key]??''} onChange={event=>setCompany({...company,[key]:event.target.value})}/>
+                </div>)}
                 <div className="space-y-2">
                   <Label htmlFor="company-companyName" className="text-xs font-medium text-foreground">
                     {locale === "th" ? "ชื่อบริษัท / นิติบุคคล *" : "Company Name *"}

@@ -1,3 +1,4 @@
+import { ContractPdfService, type ScopedActor } from '../documents/contract-pdf.service.js';
 import { readOrganizationDefaults, contractIdentity } from "./organization-defaults.js";
 import { schoolScope } from "../../common/auth/route-policy.js";
 import {normalizeTestRateSchedule,validFinancialDate} from './local-financial-policy.js';
@@ -26,7 +27,7 @@ import { LocalFinancialApplicationService } from './local-financial-application.
 
 @Controller("v1")
 export class BillingController {
-  constructor(@Inject(DatabaseService) private readonly db: DatabaseService, @Inject(FinancialReadinessService) private readonly readiness: FinancialReadinessService, @Inject(LocalFinancialApplicationService) private readonly financial: LocalFinancialApplicationService) {}
+  constructor(@Inject(DatabaseService) private readonly db: DatabaseService, @Inject(FinancialReadinessService) private readonly readiness: FinancialReadinessService, @Inject(LocalFinancialApplicationService) private readonly financial: LocalFinancialApplicationService, @Inject(ContractPdfService) private readonly contractPdfs: ContractPdfService) {}
 
   @Roles("owner", "admin", "accountant")
   @Post("billing-cycles")
@@ -161,6 +162,9 @@ export class BillingController {
     recipientUserIds?: string[];
     paymentTerms?: string;
     signerName?: string;
+    signerTitle?: string;
+    customerSignerName?: string;
+    customerSignerTitle?: string;
     taxId?: string;
     companyName?: string;
     branch?: string;
@@ -168,7 +172,9 @@ export class BillingController {
     billingEmail?: string;
     billingPhone?: string;
     rates?: Array<{ startDate: string; endDate?: string | null; rate: number }>;
-  }) {
+  }, @Req() req: {user?:ScopedActor}) {
+    if(!['owner','admin'].includes(req?.user?.role??''))throw new ForbiddenException('Contract author required');
+    const actor=req.user!;
     const rawSiteIds = body.siteIds && body.siteIds.length > 0 ? body.siteIds : body.siteId ? [body.siteId] : [];
     const siteIds = Array.from(new Set(rawSiteIds.filter(Boolean)));
     const effectiveDate = body.effectiveDate || new Date().toISOString().slice(0, 10);
@@ -180,7 +186,7 @@ export class BillingController {
     }
     if(body.paymentTermDays!==undefined&&(!Number.isInteger(body.paymentTermDays)||body.paymentTermDays<0||body.paymentTermDays>3650))throw new BadRequestException('paymentTermDays must be 0–3650');
     const signerName = body.signerName?.trim();
-    if (!paymentTerms || !signerName) throw new BadRequestException('Payment terms and authorized signatory must be supplied');
+    if (!paymentTerms) throw new BadRequestException({message:'กรุณาระบุเงื่อนไขการชำระเงิน / Payment terms required',fields:{paymentTerms:{th:'กรุณาระบุเงื่อนไขการชำระเงิน',en:'Payment terms required'}}});
     const rates = body.rates?.length ? body.rates : [{rate: body.ratePerKwh}];
     if (rates.some(r => typeof r.rate !== 'number' || !Number.isFinite(r.rate) || r.rate < 0)) throw new BadRequestException('An explicit nonnegative rate is required for every rate period');
 
@@ -193,6 +199,9 @@ export class BillingController {
       await client.query("BEGIN");
 
       const createdContracts = [];
+      const issuerDefaults=(await client.query('SELECT signatory_name,signatory_title FROM company_profile WHERE is_configured=true ORDER BY updated_at DESC LIMIT 1')).rows[0];
+      const providerName=body.signerName===undefined?(issuerDefaults?.signatory_name??''):signerName;
+      const providerTitle=body.signerTitle===undefined?(issuerDefaults?.signatory_title??''):body.signerTitle.trim();
 
       for (const targetSiteId of siteIds) {
         const {taxId,companyName,branch,taxAddress,billingEmail,billingPhone}=contractIdentity(body,await readOrganizationDefaults(client,targetSiteId));
@@ -211,16 +220,16 @@ export class BillingController {
         const contractSql = `
           INSERT INTO contracts (
             id, site_id, version, start_date, status, payment_terms, signer_name,
-            tax_id, company_name, branch, tax_address, billing_email, billing_phone
+            tax_id, company_name, branch, tax_address, billing_email, billing_phone, signer_title, customer_signer_name, customer_signer_title
           )
-          VALUES ($1, $2, $3, $4, 'active', $5, $6, $7, $8, $9, $10, $11, $12)
+          VALUES ($1, $2, $3, $4, 'active', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
           RETURNING id, site_id AS "siteId", version, start_date AS "startDate", status,
                     tax_id AS "taxId", company_name AS "companyName", branch,
                     tax_address AS "taxAddress", billing_email AS "billingEmail", billing_phone AS "billingPhone"
         `;
         const res = await client.query(contractSql, [
-          contractId, targetSiteId, version, effectiveDate, paymentTerms, signerName,
-          taxId, companyName, branch, taxAddress, billingEmail, billingPhone
+          contractId, targetSiteId, version, effectiveDate, paymentTerms, providerName,
+          taxId, companyName, branch, taxAddress, billingEmail, billingPhone, providerTitle, body.customerSignerName?.trim()??'', body.customerSignerTitle?.trim()??''
         ]);
 
         // 2. Insert rate versions
@@ -246,7 +255,8 @@ export class BillingController {
         }
 
         await client.query('UPDATE contracts SET payment_term_days=$2,recipient_user_ids=$3 WHERE id=$1',[contractId,body.paymentTermDays??null,body.recipientUserIds??[]]);
-        createdContracts.push({...res.rows[0],paymentTermDays:body.paymentTermDays??null,recipientUserIds:body.recipientUserIds??[]});
+        const original=await this.contractPdfs.ensureInTransaction(client,contractId,actor);
+        createdContracts.push({...res.rows[0],documentId:original.documentId,contentHash:original.sha256,paymentTermDays:body.paymentTermDays??null,recipientUserIds:body.recipientUserIds??[]});
       }
 
       await client.query("COMMIT");
@@ -257,6 +267,13 @@ export class BillingController {
     } finally {
       client.release();
     }
+  }
+
+  @Get('operations/contracts/:id/original')
+  async contractOriginal(@Param('id') id:string,@Req() req:{user?:ScopedActor}) {
+    const original=await this.contractPdfs.ensureContractOriginal(id,req.user??{});
+    const url=`/v1/operations/documents/${original.documentId}/pdf`;
+    return {...original,contentHash:original.sha256,previewUrl:url,downloadUrl:url};
   }
 
   @Roles("owner", "accountant")

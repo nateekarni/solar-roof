@@ -1,3 +1,4 @@
+import { ContractPdfService } from '../documents/contract-pdf.service.js';
 import { LocalFinancialApplicationService } from './local-financial-application.service.js';
 import { LocalFinancialScheduler } from './local-financial-scheduler.js';
 import { FinancialReadinessService } from "./financial-readiness.service.js";
@@ -12,7 +13,7 @@ import { RateService } from "./rate.service.js";
 @Module({
   imports: [DatabaseModule],
   controllers: [BillingController],
-  providers: [LocalFinancialApplicationService, LocalFinancialScheduler, FinancialReadinessService, ContractService, RateService, BillingCalculationService, BillingCycleService],
+  providers: [ContractPdfService, LocalFinancialApplicationService, LocalFinancialScheduler, FinancialReadinessService, ContractService, RateService, BillingCalculationService, BillingCycleService],
   exports: [ContractService, RateService, BillingCalculationService, BillingCycleService],
 })
 export class BillingModule {}

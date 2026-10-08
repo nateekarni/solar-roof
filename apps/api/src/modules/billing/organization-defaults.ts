@@ -18,7 +18,11 @@ export function contractIdentity(input:{companyName?:string|null;taxId?:string|n
  companyName:value(input.companyName,defaults.legalName),taxId:value(input.taxId,defaults.taxId),branch:value(input.branch,defaults.taxBranch),
  taxAddress:value(input.taxAddress,defaults.taxAddress),billingEmail:value(input.billingEmail,defaults.documentEmail),billingPhone:value(input.billingPhone,defaults.phone),
  };
- if(!identity.companyName||!/^[0-9]{13}$/.test(identity.taxId)||!identity.taxAddress)throw new BadRequestException('Complete customer tax identity required: legal name, 13-digit tax ID and billing address');
+ const fields:Record<string,{th:string;en:string}>={};
+ if(!identity.companyName)fields.companyName={th:'กรุณาระบุชื่อนิติบุคคลลูกค้า',en:'Customer legal name required'};
+ if(!/^[0-9]{13}$/.test(identity.taxId))fields.taxId={th:'กรุณาระบุเลขผู้เสียภาษีลูกค้า 13 หลัก',en:'Customer 13-digit tax ID required'};
+ if(!identity.taxAddress)fields.taxAddress={th:'กรุณาระบุที่อยู่ลูกค้า',en:'Customer billing address required'};
+ if(Object.keys(fields).length)throw new BadRequestException({message:'ข้อมูลภาษีลูกค้าไม่ครบถ้วน / Complete customer tax identity required',fields});
  return identity;
 }
 

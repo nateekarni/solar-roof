@@ -43,16 +43,7 @@ export class ContractService {
     }
   }
 
-  async create(input: Omit<ContractRecord, "active">): Promise<ContractRecord> {
-    await this.validateNoOverlap(input.siteId, input);
-    const signer = input.signerName || input.signers?.[0] || "Solar Roof Owner";
-    await this.db.query(
-      `INSERT INTO contracts (id, site_id, version, start_date, end_date, status, payment_terms, signer_name)
-       VALUES ($1, $2, $3, $4, $5, 'active', $6, $7)`,
-      [input.id, input.siteId, input.version, input.startsAt, input.endsAt ?? null, input.paymentTerms, signer]
-    );
-    return { ...input, active: true };
-  }
+  // Creation is owned by BillingController: contract, rates and original PDF share one transaction.
 
   async listBySite(siteId: string): Promise<any[]> {
     const res = await this.db.query("SELECT * FROM contracts WHERE site_id = $1 ORDER BY start_date DESC", [siteId]);

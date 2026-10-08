@@ -10,6 +10,7 @@ import { Trash2, Calendar, FileText, Building2, UserCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import * as React from "react";
 import { useForm } from "react-hook-form";
+import { providerSignatoryPatch, type ProviderSignatoryField } from './provider-signatory-defaults';
 import { createContractSchema, type ContractFormValues } from "./contract-schema";
 import { createContractIdentityAutofill, type ContractIdentityField } from "./contract-identity-autofill";
 import { notify } from "../../components/feedback/notifications";
@@ -70,6 +71,8 @@ export function ContractFormDialog({
   const [loading, setLoading] = React.useState(false);
   const [loadingSites, setLoadingSites] = React.useState(false);
   const [loadingOrganization,setLoadingOrganization]=React.useState(false);
+  const [loadingIssuer,setLoadingIssuer]=React.useState(false);
+  const editedProviderFields=React.useRef(new Set<ProviderSignatoryField>());
   const [sites, setSites] = React.useState<SiteOption[]>([]);
   const [rateRows, setRateRows] = React.useState<RateRow[]>([
     {
@@ -83,6 +86,7 @@ export function ContractFormDialog({
     register,
     handleSubmit,
     setValue,
+    getValues,
     watch,
     reset,
     formState: { errors },
@@ -93,6 +97,9 @@ export function ContractFormDialog({
 
       paymentTerms: "",
       signerName: "",
+      signerTitle: "",
+      customerSignerName: "",
+      customerSignerTitle: "",
       taxId: "",
       companyName: "",
       branch: "",
@@ -126,6 +133,19 @@ export function ContractFormDialog({
     setLoading:setLoadingOrganization,
     onError:error=>notify.error(error instanceof Error?error.message:(localeRef.current==='th'?'โหลดข้อมูลเอกสารองค์กรไม่สำเร็จ':'Unable to load organization document defaults')),
   });
+  React.useEffect(()=>{
+    let active=true;
+    if(!open)return;
+    setLoadingIssuer(true);
+    void apiClient.get<{signatoryName?:string;signatoryTitle?:string}>('/v1/settings/company').then(profile=>{
+      if(!active)return;
+      const patch=providerSignatoryPatch(profile,getValues(),editedProviderFields.current);
+      for(const field of ['signerName','signerTitle'] as const)if(patch[field]!==undefined)setValue(field,patch[field]);
+    }).catch(error=>{if(active)notify.error(error instanceof Error?error.message:(localeRef.current==='th'?'โหลดข้อมูลผู้ลงนามไม่สำเร็จ':'Unable to load provider signatory defaults'));})
+      .finally(()=>{if(active)setLoadingIssuer(false);});
+    return ()=>{active=false;};
+  },[open,getValues,setValue]);
+  const registerProvider=(field:ProviderSignatoryField)=>register(field,{onChange:()=>editedProviderFields.current.add(field)});
   const registerIdentity=(field:ContractIdentityField)=>register(field,{onChange:()=>identityAutofill.current!.markEdited(field)});
   const selectedSiteId=watch('siteId');
   React.useEffect(()=>identityAutofill.current!.activate({open,siteId:selectedSiteId}),[open,selectedSiteId]);
@@ -167,7 +187,7 @@ export function ContractFormDialog({
   };
 
   const onSubmit = async (values: ContractFormValues) => {
-    if(loadingOrganization)return;
+    if(loadingOrganization||loadingIssuer)return;
     setLoading(true);
     try {
       const payload = {
@@ -177,6 +197,9 @@ export function ContractFormDialog({
         paymentTerms: values.paymentTerms,
         ...(localTestMode?financialContractInput(paymentTermDays,recipientUserId):(paymentTermDays?{paymentTermDays:Number(paymentTermDays)}:{})),
         signerName: values.signerName,
+        signerTitle: values.signerTitle,
+        customerSignerName: values.customerSignerName,
+        customerSignerTitle: values.customerSignerTitle,
         taxId: values.taxId?.trim() || null,
         companyName: values.companyName?.trim() || null,
         branch: values.branch?.trim() || null,
@@ -194,7 +217,7 @@ export function ContractFormDialog({
           ? "สร้างสัญญาและตารางอัตราค่าไฟสำเร็จ"
           : "Created contract and rate schedule successfully"
       );
-      reset();setPaymentTermDays('');setRecipientUserId('');
+      reset();editedProviderFields.current.clear();setPaymentTermDays('');setRecipientUserId('');
       onOpenChange(false);
       router.refresh();
     } catch (err: unknown) {
@@ -304,9 +327,21 @@ export function ContractFormDialog({
                   id="signer"
                   placeholder={locale === "th" ? "ชื่อผู้มีอำนาจลงนาม" : "Authorized signatory name"}
                   className="text-xs h-10 bg-card"
-                  {...register("signerName")}
+                  {...registerProvider("signerName")}
                 />
                 {errors.signerName && <p className="text-[11px] text-destructive">{errors.signerName.message}</p>}
+              </div>
+              <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="provider-signer-title">{locale==='th'?'ตำแหน่งผู้ลงนามฝ่ายผู้ให้บริการ':'Provider signatory title'}</Label>
+                <Input id="provider-signer-title" {...registerProvider('signerTitle')}/>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="customer-signer-name">{locale==='th'?'ชื่อผู้ลงนามฝ่ายลูกค้า (ไม่บังคับ)':'Customer signatory name (optional)'}</Label>
+                <Input id="customer-signer-name" {...register('customerSignerName')}/>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="customer-signer-title">{locale==='th'?'ตำแหน่งผู้ลงนามฝ่ายลูกค้า (ไม่บังคับ)':'Customer signatory title (optional)'}</Label>
+                <Input id="customer-signer-title" {...register('customerSignerTitle')}/>
               </div>
             </div>
           </div>
@@ -492,7 +527,7 @@ export function ContractFormDialog({
             >
               {t("common.cancel")}
             </Button>
-            <Button type="submit" size="sm" disabled={loading || loadingOrganization} className="text-xs h-10 px-5 font-semibold">
+            <Button type="submit" size="sm" disabled={loading || loadingOrganization || loadingIssuer} className="text-xs h-10 px-5 font-semibold">
               {loading ? t("common.saving") : locale === "th" ? "บันทึกสัญญาและอัตราค่าไฟ" : "Save Contract"}
             </Button>
           </DialogFooter>

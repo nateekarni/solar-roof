@@ -29,3 +29,9 @@ for (const [locale, messages] of [
     assert.deepEqual(createContractSchema(locale).parse(validContract), validContract);
   });
 }
+
+test('contract schema retains provider title and optional customer signer fields',()=>{
+ const input={...validContract,signerTitle:'Director',customerSignerName:'Customer Person',customerSignerTitle:'Manager'};
+ assert.deepEqual(createContractSchema('en').parse(input),input);
+ const blank={...validContract,signerTitle:'',customerSignerName:'',customerSignerTitle:''};assert.deepEqual(createContractSchema('th').parse(blank),blank);
+});
