@@ -26,7 +26,7 @@ Status: implementation, independent reviews and final integration verification p
 - Browser creation saved exactly one new site (`aad6dbc5-8552-4a2c-b213-47ff0a4ff42f`), opened the existing edit dialog using that saved ID, and required explicit cumulative field and physical purpose before binding. The resulting status correctly waits for actual readings. Organization edit exposes shared name/code/legal/tax/address/contact/email fields together.
 - Real browser field CRUD, independent extra devices, dirty-preset cancellation, original PDF preview/download/print source parity and creation/binding passed at 1440px and 390px. English/dark and Thai/light billing views passed with no page overflow or JavaScript page errors. Removed Topic helper text is absent. The test account preferences were restored.
 - All seven baseline original PDF hashes remain unchanged after the final new document flow.
-- Publication target: two draft PRs against the verified `codex/ui-financial-integration` base. No implicit main merge or deployment.
+- Published drafts: [PDF documents #6](https://github.com/nateekarni/solar-roof/pull/6) and [site/organization/billing source #7](https://github.com/nateekarni/solar-roof/pull/7), both against the verified `codex/ui-financial-integration` base. No main merge or deployment.
 
 Production financial policy and write gates remain unchanged. Synthetic recipients are delivered only to the local email capture service.
 
@@ -49,4 +49,5 @@ Production financial policy and write gates remain unchanged. Synthetic recipien
 7. When all agent slots were occupied, reuse an available agent for a corrective task and assign a separate reviewer. The cost is reduced context isolation; scoped review remains mandatory.
 8. Block historical organization reassignment rather than silently transfer document authorization. A future transfer feature needs explicit historical access and ownership rules.
 9. Compact only future financial PDF templates and bump their version; preserve contract layout and all issued originals. If spacing proves insufficient, change a future template while keeping saved PDFs intact.
+
 
