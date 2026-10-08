@@ -33,7 +33,7 @@ import { Badge } from "../../components/ui/badge";
 import { useLocale } from "../../providers/locale-provider";
 import { apiClient } from "../../lib/api-client";
 import { useFinancialCapabilities } from "../../lib/financial-capabilities";
-import { transferAmount } from "./payment-input";
+import { transferAmount,bangkokTransferWallTime,transferWallTimeToIso } from "./payment-input";
 
 interface PaymentDialogProps {
   open: boolean;
@@ -68,7 +68,7 @@ export function PaymentDialog({
     null,
   );
   const [paidAt, setPaidAt] = React.useState<string>(
-    new Date().toISOString().slice(0, 16),
+    bangkokTransferWallTime()
   );
   const [note, setNote] = React.useState<string>("");
   const submitting = React.useRef(false);
@@ -107,7 +107,7 @@ export function PaymentDialog({
         );
       setSlipFile(null);
       setSlipPreviewUrl(null);
-      setPaidAt(new Date().toISOString().slice(0, 16));
+      setPaidAt(bangkokTransferWallTime());
       setNote("");
       setErrorMsg(null);
       setSuccessMsg(null);
@@ -163,6 +163,8 @@ export function PaymentDialog({
 
     let actualTransfer:string;
     try{actualTransfer=transferAmount(enteredAmount);}catch{setErrorMsg(locale==="th"?"กรุณาระบุยอดโอนเป็นเงินบาทที่มากกว่าศูนย์และมีทศนิยมไม่เกิน 2 ตำแหน่ง":"Enter a positive THB transfer amount with at most two decimal places.");return;}
+    let transferInstant:string;
+    try{transferInstant=transferWallTimeToIso(paidAt);}catch{setErrorMsg(locale==="th"?"กรุณาระบุวันและเวลาที่โอนให้ถูกต้อง (เวลาไทย)":"Enter a valid transfer date and time in Bangkok time.");return;}
     submitting.current=true;
     setIsSubmitting(true);
     setErrorMsg(null);
@@ -170,7 +172,7 @@ export function PaymentDialog({
     try {
       await apiClient.post(`/v1/billing-cycles/${billingCycle.id}/pay`, {
         amount: capabilities.financialScope==="TEST"?actualTransfer:Number(actualTransfer),
-        paidAt: new Date(paidAt).toISOString(),
+        paidAt: transferInstant,
         slipUrl: slipPreviewUrl,
         note: note.trim() || undefined,
       });
@@ -372,7 +374,7 @@ export function PaymentDialog({
                     className="text-xs font-semibold flex items-center gap-1"
                   >
                     <Clock className="size-3 text-muted-foreground" />
-                    {text("วันและเวลาที่โอน", "Transfer date and time")}
+                    {locale==="th"?"วันและเวลาที่โอน (เวลาไทย)":"Transfer date and time (Asia/Bangkok)"}
                   </Label>
                   <DatePicker
                     id="paid-at"
