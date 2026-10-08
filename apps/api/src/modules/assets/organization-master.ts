@@ -46,4 +46,3 @@ export async function resolveSiteOrganization(client:Pick<DatabaseService,'query
  if(existing.rows[0])return existing.rows[0].id as string;
  return (await insertOrganization(client,input)).id as string;
 }
-

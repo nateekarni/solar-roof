@@ -73,4 +73,3 @@ export function OrganizationPicker({organizations,value,onChange,onRecordUpdated
   }}/>}
  </div>;
 }
-
