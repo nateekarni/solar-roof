@@ -22,7 +22,7 @@ try {
  const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
  for(const viewport of [{width:1440,height:900},{width:390,height:844}]) {
   await page.setViewportSize(viewport);await page.goto(web+'/billing?action=new');
-  await page.getByText('Financial workflows await verified accounting requirements and implementation readiness.',{exact:true}).first().waitFor();
+  await page.getByRole('status').filter({hasText: 'ยังไม่สามารถคำนวณยอดเรียกเก็บได้ในขณะนี้'}).first().waitFor();
   assert.equal(await page.getByRole('dialog').count(),0,'Disabled URL action cannot open calculation form');
   assert.equal(await page.getByRole('button',{name:/คำนวณ|Calculate/}).count(),0,'Unavailable calculation is not offered');
   await page.getByText('Financial Browser Site',{exact:true}).filter({visible:true}).first().waitFor();

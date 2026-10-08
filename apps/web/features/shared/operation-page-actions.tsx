@@ -14,6 +14,7 @@ import { apiClient } from "../../lib/api-client";
 import { useLocale, useT } from "../../providers/locale-provider";
 import { useFinancialCapabilities } from "../../lib/financial-capabilities";
 import { canCreateOperation } from "./business-operation-options";
+import { FinancialAvailabilityNotice } from "./financial-availability-notice";
 import { useSessionUser } from "../../providers/session-user-provider";
 
 // Import all 9 Dialogs
@@ -102,30 +103,34 @@ export function OperationActions({
   };
 
   return (
-    <div className="flex items-center gap-2">
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        disabled={exporting}
-        onClick={() => {setExportFrom(searchParams.get("from") ?? "");setExportTo(searchParams.get("to") ?? "");setExportOpen(true);}}
-        className="h-10 gap-2 px-4 text-sm"
-      >
-        <Download className="size-3.5" />
-          <span>{exporting ? t("common.loading") : locale === 'th' ? 'นำออกข้อมูล' : 'Export data'}</span>
-      </Button>
-
-      {financialAction && financial.unavailable[financialAction] && <p role="status" className="text-xs text-muted-foreground">{financial.unavailable[financialAction]}</p>}
-      {canCreate && action && action.trim() !== "" && (
-        <AddButton
+    <div className="flex flex-col items-end gap-2">
+      <div className="flex items-center gap-2">
+        <Button
           type="button"
-
-          onClick={handleActionClick}
-          className=" font-semibold shadow-xs cursor-pointer"
+          variant="outline"
+          size="sm"
+          disabled={exporting}
+          onClick={() => {setExportFrom(searchParams.get("from") ?? "");setExportTo(searchParams.get("to") ?? "");setExportOpen(true);}}
+          className="h-10 gap-2 px-4 text-sm"
         >
+          <Download className="size-3.5" />
+            <span>{exporting ? t("common.loading") : locale === 'th' ? 'นำออกข้อมูล' : 'Export data'}</span>
+        </Button>
 
-          <span>{action}</span>
-        </AddButton>
+        {canCreate && action && action.trim() !== "" && (
+          <AddButton
+            type="button"
+
+            onClick={handleActionClick}
+            className=" font-semibold shadow-xs cursor-pointer"
+          >
+
+            <span>{action}</span>
+          </AddButton>
+        )}
+</div>
+      {financialAction && financial.unavailable[financialAction] && (
+        <FinancialAvailabilityNotice locale={locale} role={user.role} resource={resource} />
       )}
 
       <Dialog open={exportOpen} onOpenChange={(open: boolean) => {if (!exporting) setExportOpen(open);}}>
