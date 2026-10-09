@@ -85,15 +85,15 @@ export function SiteDeleteDialog({
 
         <div className="space-y-3 py-2 text-xs">
           {hasLinkedError ? (
-            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3.5 space-y-2 text-amber-800 dark:text-amber-300">
+            <div className="rounded-xl border border-warning/30 bg-warning/10 p-3.5 space-y-2 text-warning-emphasis ">
               <div className="flex items-start gap-2">
-                <AlertTriangle className="size-4 shrink-0 mt-0.5 text-amber-600" />
+                <AlertTriangle className="size-4 shrink-0 mt-0.5 text-warning-emphasis" />
                 <div className="space-y-1">
                   <p className="font-semibold">ไม่สามารถลบข้อมูลถาวรได้</p>
                   <p className="text-[11px] leading-relaxed">{errorMessage}</p>
                 </div>
               </div>
-              <p className="text-[11px] text-muted-foreground pt-1 border-t border-amber-500/20">
+              <p className="text-[11px] text-muted-foreground pt-1 border-t border-warning/20">
                 ท่านสามารถเลือกระงับการใช้งาน (Archive) เพื่อคงประวัติบิลและสัญญาไว้ในระบบ โดยปิดการรับส่งข้อมูลโทรมาตรของเกตเวย์
               </p>
             </div>
@@ -102,7 +102,7 @@ export function SiteDeleteDialog({
               <p>
                 การลบไซต์งานจะทำการลบข้อมูลเกตเวย์, อุปกรณ์มิเตอร์ และประวัติการอ่านค่าที่เกี่ยวข้องของไซต์นี้ทั้งหมด
               </p>
-              <p className="text-[11px] text-amber-700 dark:text-amber-400 font-medium">
+              <p className="text-[11px] text-warning-emphasis font-medium">
                 * หากไซต์งานมีสัญญาหรือรอบบิลผูกอยู่ ระบบจะแจ้งให้ระงับการใช้งาน (Archive) แทนการลบถาวร
               </p>
             </div>
@@ -126,7 +126,7 @@ export function SiteDeleteDialog({
               size="sm"
               disabled={loading}
               onClick={() => handleDelete("archive")}
-              className="text-xs h-10 px-4 gap-1.5 font-semibold cursor-pointer bg-amber-600 text-white hover:bg-amber-700 shadow-xs"
+              className="text-xs h-10 px-4 gap-1.5 font-semibold cursor-pointer bg-warning text-warning-foreground hover:bg-warning/90 shadow-xs"
             >
               <Archive className="size-3.5" />
               <span>{locale === "th" ? "ระงับการใช้งาน (Archive)" : "Archive Site"}</span>

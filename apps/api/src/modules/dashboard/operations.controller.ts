@@ -4,7 +4,7 @@ import { type Response } from "express";
 import { OperationsService } from "./operations.service.js";
 
 export function toCsv(columns: string[], rows: Record<string, unknown>[], idKey = "id"): string {
-  const keys=rows[0] ? Object.keys(rows[0]).filter(key=>key!==idKey) : columns;
+  const keys=columns;
   const escape=(value:unknown)=>{
     let text=value===null||value===undefined?"":typeof value==="object"?JSON.stringify(value):String(value);
     if(typeof value==="string"&&/^\s*[=+@-]/.test(text))text="'"+text;
@@ -17,6 +17,21 @@ export function toCsv(columns: string[], rows: Record<string, unknown>[], idKey 
   });
   return [header, ...bodyLines].join("\r\n");
 }
+
+// Explicit projections prevent private/new API properties from silently becoming exports.
+export const operationExportColumns: Record<string,string[]> = {
+ schools:['code','name','region','capacityMwp','sitesCount','gatewaysCount','status'],
+ sites:['externalSiteId','name','schoolName','externalGatewayId','gateway','protocol','capacityMwp','productionKwh','lastUpdated','status'],
+ billing:['period','schoolName','externalSiteId','siteName','consumedKwh','rate','amount','status','invoiceNumber','receiptNumber'],
+ contracts:['contractNumber','schoolName','externalSiteId','siteName','version','startDate','endDate','rate','signers','status'],
+ documents:['documentNumber','type','schoolName','externalSiteId','siteName','issueDate','amount','status'],
+ receipts:['receiptNumber','taxInvoiceNumber','schoolName','externalSiteId','siteName','issueDate','amount','status'],
+ alerts:['title','detail','externalSiteId','siteName','severity','occurredAt','status'],
+ notifications:['title','channel','recipient','sentAt','status','jobId'],
+ reports:['title','category','scope','format','status','generatedAt','fileSize'],
+ users:['displayName','email','role','schoolName','lastActive','status'],
+ audit:['time','action','entityType','entityId','actor','reason','correlationId'],
+};
 
 @Controller("v1/operations")
 export class OperationsController {
@@ -43,7 +58,9 @@ export class OperationsController {
       data.rows.push(...batch.rows);
       page = batch.page;
     }
-    const csv = toCsv(data.columns, data.rows, data.idKey || "id");
+    const internalReferenceKeys: Record<string,string>={sites:'siteInternalReference',schools:'schoolInternalReference',billing:'billingInternalReference',contracts:'contractInternalReference',documents:'documentInternalReference',receipts:'documentInternalReference',alerts:'alertInternalReference',notifications:'notificationInternalReference',reports:'reportInternalReference',users:'userInternalReference',audit:'auditInternalReference'};
+    const referenceKey=internalReferenceKeys[resource]!;
+    const csv = toCsv([...operationExportColumns[resource]!,referenceKey],data.rows.map(row=>({...row,[referenceKey]:row[data.idKey || 'id']})));
     const filename = `${resource}-${filters.from ?? 'all'}-${filters.to ?? 'all'}.csv`;
 
     res.setHeader("Content-Type", "text/csv; charset=utf-8");

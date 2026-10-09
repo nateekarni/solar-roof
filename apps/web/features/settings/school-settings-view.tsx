@@ -1,6 +1,13 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { Input } from "../../components/ui/input";
+import { Checkbox } from "../../components/ui/checkbox";
+import { ChoiceSelect } from "../../components/ui/choice-select";
+import { Field, FieldLabel } from "../../components/ui/field";
+import { Card, CardHeader, CardTitle, CardContent } from "../../components/ui/card";
+import { Alert, AlertDescription } from "../../components/ui/alert";
+import { Empty, EmptyHeader, EmptyDescription } from "../../components/ui/empty";
 import { Button } from "../../components/ui/button";
 import { useTheme } from "next-themes";
 import { useAuth, authStore } from "../../stores/auth-store";
@@ -84,24 +91,25 @@ export function SchoolSettingsView() {
       setBusy(false);
     }
   }
-  const inputClass = "min-h-11 w-full max-w-md rounded-md border bg-card px-3";
+  const inputClass = "min-h-11 w-full max-w-md";
   return (
     <div className="w-full space-y-5 pb-8">
       <h1 className="text-2xl font-semibold">
         {text("การตั้งค่า", "Settings")}
       </h1>
       {loadError && (
-        <p role="alert" className="text-destructive">
+        <Alert variant="destructive"><AlertDescription>
           {text(
             "โหลดข้อมูลองค์กรหรือการแจ้งเตือนไม่สำเร็จ กรุณาโหลดหน้าใหม่",
             "Unable to load organization or notification settings. Reload this page.",
           )}
-        </p>
+        </AlertDescription></Alert>
       )}
-      <section className="space-y-4 rounded-xl border bg-card p-5">
-        <h2 className="font-semibold">
+      <Card>
+        <CardHeader className="px-5 pt-5"><CardTitle><h2>
           {text("บัญชีผู้ใช้งานองค์กร", "Organization account")}
-        </h2>
+        </h2></CardTitle></CardHeader>
+        <CardContent className="flex flex-col gap-4 px-5 pb-5">
         <form
           className="space-y-3"
           onSubmit={(event) => {
@@ -119,18 +127,19 @@ export function SchoolSettingsView() {
             });
           }}
         >
-          <label className="block space-y-1">
-            <span className="block text-sm">
+          <Field>
+            <FieldLabel htmlFor="organization-display-name">
               {text("ชื่อที่แสดง", "Display name")}
-            </span>
-            <input
+            </FieldLabel>
+            <Input
+              id="organization-display-name"
               required
               maxLength={120}
               value={name}
               onChange={(event) => setName(event.target.value)}
               className={inputClass}
             />
-          </label>
+          </Field>
           <p className="text-sm">
             {text("อีเมล", "Email")}: {user?.email || "—"}
           </p>
@@ -148,11 +157,13 @@ export function SchoolSettingsView() {
             {text("บันทึกชื่อ", "Save display name")}
           </Button>
         </form>
-      </section>
-      <section className="space-y-4 rounded-xl border bg-card p-5">
-        <h2 className="font-semibold">
+      </CardContent>
+      </Card>
+      <Card>
+        <CardHeader className="px-5 pt-5"><CardTitle><h2>
           {text("ข้อมูลนิติบุคคล", "Legal organization information")}
-        </h2>
+        </h2></CardTitle></CardHeader>
+        <CardContent className="flex flex-col gap-4 px-5 pb-5">
         <p className="text-sm text-muted-foreground">
           {text(
             "ข้อมูลตามสัญญา อ่านได้อย่างเดียว ติดต่อเจ้าหน้าที่ภายในเพื่อแก้ไข",
@@ -162,12 +173,12 @@ export function SchoolSettingsView() {
         {legal === null ? (
           <p>{text("กำลังโหลด", "Loading")}</p>
         ) : legal.length === 0 ? (
-          <p>
+          <Empty><EmptyHeader><EmptyDescription>
             {text(
               "ยังไม่มีข้อมูลนิติบุคคล",
               "No legal organization records available",
             )}
-          </p>
+          </EmptyDescription></EmptyHeader></Empty>
         ) : (
           legal.map((row) => (
             <dl
@@ -198,14 +209,17 @@ export function SchoolSettingsView() {
         >
           {text("เปิดเอกสาร", "Open documents")}
         </Link>
-      </section>
-      <section className="space-y-4 rounded-xl border bg-card p-5">
-        <h2 className="font-semibold">
+      </CardContent>
+      </Card>
+      <Card>
+        <CardHeader className="px-5 pt-5"><CardTitle><h2>
           {text("การแสดงผล", "Display preferences")}
-        </h2>
-        <label className="block space-y-1">
-          <span className="block text-sm">{text("ภาษา", "Language")}</span>
-          <select
+        </h2></CardTitle></CardHeader>
+        <CardContent className="flex flex-col gap-4 px-5 pb-5">
+        <Field>
+          <FieldLabel htmlFor="organization-language">{text("ภาษา", "Language")}</FieldLabel>
+          <ChoiceSelect
+            id="organization-language"
             disabled={busy}
             value={locale}
             className={inputClass}
@@ -221,11 +235,12 @@ export function SchoolSettingsView() {
           >
             <option value="th">ภาษาไทย</option>
             <option value="en">English</option>
-          </select>
-        </label>
-        <label className="block space-y-1">
-          <span className="block text-sm">{text("ธีม", "Theme")}</span>
-          <select
+          </ChoiceSelect>
+        </Field>
+        <Field>
+          <FieldLabel htmlFor="organization-theme">{text("ธีม", "Theme")}</FieldLabel>
+          <ChoiceSelect
+            id="organization-theme"
             disabled={!mounted || busy}
             value={mounted ? (theme ?? "system") : "system"}
             className={inputClass}
@@ -243,13 +258,15 @@ export function SchoolSettingsView() {
             <option value="system">{text("ตามระบบ", "System")}</option>
             <option value="light">{text("สว่าง", "Light")}</option>
             <option value="dark">{text("มืด", "Dark")}</option>
-          </select>
-        </label>
-      </section>
-      <section className="space-y-4 rounded-xl border bg-card p-5">
-        <h2 className="font-semibold">
+          </ChoiceSelect>
+        </Field>
+      </CardContent>
+      </Card>
+      <Card>
+        <CardHeader className="px-5 pt-5"><CardTitle><h2>
           {text("การแจ้งเตือน", "Notifications")}
-        </h2>
+        </h2></CardTitle></CardHeader>
+        <CardContent className="flex flex-col gap-4 px-5 pb-5">
         {notifications && (
           <form
             className="space-y-4"
@@ -260,37 +277,38 @@ export function SchoolSettingsView() {
               );
             }}
           >
-            <label className="flex min-h-11 items-center gap-3">
-              <input
-                type="checkbox"
+            <Field orientation="horizontal">
+              <Checkbox
+                id="critical-email-alert"
                 checked={notifications.criticalEmailAlert}
-                onChange={(event) =>
+                onCheckedChange={(checked) =>
                   setNotifications({
                     ...notifications,
-                    criticalEmailAlert: event.target.checked,
+                    criticalEmailAlert: checked === true,
                   })
                 }
               />
-              {text("อีเมลแจ้งเตือนสำคัญ", "Critical email alerts")}
-            </label>
-            <label className="flex min-h-11 items-center gap-3">
-              <input
-                type="checkbox"
+              <FieldLabel htmlFor="critical-email-alert">{text("อีเมลแจ้งเตือนสำคัญ", "Critical email alerts")}</FieldLabel>
+            </Field>
+            <Field orientation="horizontal">
+              <Checkbox
+                id="in-app-notification"
                 checked={notifications.inAppNotification}
-                onChange={(event) =>
+                onCheckedChange={(checked) =>
                   setNotifications({
                     ...notifications,
-                    inAppNotification: event.target.checked,
+                    inAppNotification: checked === true,
                   })
                 }
               />
-              {text("การแจ้งเตือนในระบบ", "In-app notifications")}
-            </label>
-            <label className="block space-y-1">
-              <span className="block text-sm">
+              <FieldLabel htmlFor="in-app-notification">{text("การแจ้งเตือนในระบบ", "In-app notifications")}</FieldLabel>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="organization-notification-email">
                 {text("อีเมลรับการแจ้งเตือน", "Notification email")}
-              </span>
-              <input
+              </FieldLabel>
+              <Input
+                id="organization-notification-email"
                 type="email"
                 value={notifications.emailAddress}
                 onChange={(event) =>
@@ -301,15 +319,17 @@ export function SchoolSettingsView() {
                 }
                 className={inputClass}
               />
-            </label>
+            </Field>
             <Button disabled={busy} type="submit" className="min-h-11">
               {text("บันทึกการแจ้งเตือน", "Save notifications")}
             </Button>
           </form>
         )}
-      </section>
-      <section className="space-y-4 rounded-xl border bg-card p-5">
-        <h2 className="font-semibold">{text("รหัสผ่าน", "Password")}</h2>
+      </CardContent>
+      </Card>
+      <Card>
+        <CardHeader className="px-5 pt-5"><CardTitle><h2>{text("รหัสผ่าน", "Password")}</h2></CardTitle></CardHeader>
+        <CardContent className="flex flex-col gap-4 px-5 pb-5">
         <form
           className="space-y-3"
           onSubmit={(event) => {
@@ -358,9 +378,10 @@ export function SchoolSettingsView() {
               auto: "new-password",
             },
           ].map((field) => (
-            <label key={field.auto + field.label} className="block space-y-1">
-              <span className="block text-sm">{field.label}</span>
-              <input
+            <Field key={field.auto + field.label}>
+              <FieldLabel htmlFor={field.auto + field.label}>{field.label}</FieldLabel>
+              <Input
+                id={field.auto + field.label}
                 className={inputClass}
                 type="password"
                 autoComplete={field.auto}
@@ -368,13 +389,14 @@ export function SchoolSettingsView() {
                 value={field.value}
                 onChange={(event) => field.set(event.target.value)}
               />
-            </label>
+            </Field>
           ))}
           <Button disabled={busy} type="submit" className="min-h-11">
             {text("เปลี่ยนรหัสผ่าน", "Change password")}
           </Button>
         </form>
-      </section>
+      </CardContent>
+      </Card>
       {error && (
         <p role="alert" className="text-destructive">
           {error}

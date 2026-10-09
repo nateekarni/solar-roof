@@ -14,9 +14,10 @@ export const organizationInput=z.object({
 export type OrganizationInput=z.input<typeof organizationInput>;
 export const organizationColumns='id, name, code, region, status, legal_name AS "legalName", tax_id AS "taxId", tax_branch AS "taxBranch", tax_address AS "taxAddress", contact_name AS "contactName", phone, document_email AS "documentEmail", updated_at::text AS "updatedAt"';
 export function parseOrganization(value:unknown) {
- const result=organizationInput.safeParse(value);
+ const normalized=value&&typeof value==='object'&&'code' in value&&typeof value.code==='string'&&!value.code.trim()?{...value,code:undefined}:value;
+ const result=organizationInput.safeParse(normalized);
  if(!result.success)throw new BadRequestException(result.error.issues.map(i=>i.message).join(', '));
- return {...result.data,code:result.data.code??'ORG-'+randomUUID().replaceAll('-','').slice(0,12).toUpperCase()};
+ return {...result.data,generatedCode:result.data.code===undefined,code:result.data.code??'ORG-'+randomUUID().replaceAll('-','').slice(0,12).toUpperCase()};
 }
 export function organizationCodeError(error:unknown):never {
  const e=error as {code?:string;constraint?:string};
@@ -24,12 +25,16 @@ export function organizationCodeError(error:unknown):never {
  throw error;
 }
 export async function insertOrganization(client:Pick<DatabaseService,'query'>,input:ReturnType<typeof parseOrganization>,region='ภาคกลาง'){
+ for(let attempt=0;attempt<5;attempt++) {
+ const code=attempt===0?input.code:'ORG-'+randomUUID().replaceAll('-','').slice(0,12).toUpperCase();
  const result=await client.query(`INSERT INTO schools (id,name,code,region,status,legal_name,tax_id,tax_branch,tax_address,contact_name,phone,document_email)
- VALUES($1,$2,$3,$4,'active',$5,$6,$7,$8,$9,$10,$11) RETURNING ${organizationColumns}`,
- [randomUUID(),input.name,input.code,region,input.legalName,input.taxId,input.taxBranch,input.taxAddress,input.contactName,input.phone,input.documentEmail]);
+ VALUES($1,$2,$3,$4,'active',$5,$6,$7,$8,$9,$10,$11) ${input.generatedCode?'ON CONFLICT (lower(btrim(code))) DO NOTHING':''} RETURNING ${organizationColumns}`,
+ [randomUUID(),input.name,code,region,input.legalName,input.taxId,input.taxBranch,input.taxAddress,input.contactName,input.phone,input.documentEmail]);
  const record=result.rows[0];
- if(!record)throw new Error("Organization insert returned no record");
- return record;
+ if(record)return record;
+ if(!input.generatedCode)throw new Error("Organization insert returned no record");
+ }
+ throw new ConflictException("Unable to allocate organization code; retry creation");
 }
 /** Runs on the site transaction so failed device/site creation cannot leave a customer behind. */
 export async function resolveSiteOrganization(client:Pick<DatabaseService,'query'>,body:{schoolId?:string|undefined;schoolName?:string|undefined;newOrganization?:OrganizationInput}){

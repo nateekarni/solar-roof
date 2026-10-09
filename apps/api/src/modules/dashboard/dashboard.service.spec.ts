@@ -8,7 +8,7 @@ test('selected site keeps authorized map coordinates without measurements from o
  const sites=[id,other].map((siteId,index)=>({id:siteId,name:`Site ${index}`,school_name:'School',capacity_mwp:'1',latitude:'13.7',longitude:'100.8',gateway_id:null,gateway_name:null,last_seen_at:null}));
  const db={query:async(sql:string,params:unknown[]=[])=>{calls.push({sql,params});return {rows:sql.includes('FROM sites s JOIN schools')?(params[2]?sites.filter(s=>s.id===params[2]):sites):[]};}};
  const result=await new DashboardService(db as any).getSummary({role:'owner'},'2026-10-01','2026-10-07',id);
- assert.equal(result.sites.length,1);assert.deepEqual((result as any).availableMapSites,sites.map(s=>({id:s.id,name:s.name,schoolName:s.school_name,latitude:13.7,longitude:100.8})));
+ assert.equal(result.sites.length,1);assert.deepEqual((result as any).availableMapSites,sites.map(s=>({id:s.id,externalSiteId:null,name:s.name,schoolName:s.school_name,latitude:13.7,longitude:100.8})));
  for(const call of calls.filter(c=>!c.sql.includes('FROM sites s JOIN schools')))assert.deepEqual(call.params[0],[id]);
  assert.ok(calls[0]?.sql.includes('ORDER BY created_at,id LIMIT 1'));
 });
@@ -17,6 +17,17 @@ function fixture(sites:Record<string,unknown>[]=[]){
   const db={query:async(sql:string,params:unknown[]=[])=>{calls.push({sql,params});return {rows:sql.includes('FROM sites s JOIN schools')?sites:[],rowCount:0};}};
   return {service:new DashboardService(db as unknown as DatabaseService),calls};
 }
+
+test('dashboard returns registered site and gateway codes while retaining navigation UUIDs',async()=>{
+ const {service}=fixture([{id,name:'A',external_site_id:'SITE-A',external_gateway_id:'GW-A',school_name:'School',capacity_mwp:'1',latitude:null,longitude:null,gateway_id:id,gateway_name:'Gateway',last_seen_at:null}]);
+ const result=await service.getSummary({role:'owner'},'2026-10-01','2026-10-07');
+ assert.equal(result.availableSites[0]?.externalSiteId,'SITE-A');
+ assert.equal(result.sites[0]?.externalGatewayId,'GW-A');
+ assert.equal(result.sites[0]?.id,id);
+ const flow=await service.getPowerFlow({role:'owner'});
+ assert.equal(flow.sites[0]?.externalSiteId,'SITE-A');
+ assert.equal(flow.sites[0]?.gatewayId,id);
+});
 test('empty authorized sites produce no invented telemetry or rankings',async()=>{
   const {service}=fixture();const result=await service.getSummary({role:'school_user',schoolId:id},'2026-01-01','2026-01-31');
   assert.equal(result.stats.currentMw,null);assert.equal(result.stats.periodKwh,null);assert.equal(result.stats.totalSites,0);

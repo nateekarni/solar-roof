@@ -1,6 +1,11 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { ChoiceSelect } from "../../components/ui/choice-select";
+import { Field, FieldLabel } from "../../components/ui/field";
+import { Card, CardHeader, CardTitle, CardContent } from "../../components/ui/card";
+import { Alert, AlertDescription } from "../../components/ui/alert";
+import { Empty, EmptyHeader, EmptyDescription } from "../../components/ui/empty";
 import { Button } from "../../components/ui/button";
 import { useLocale } from "../../providers/locale-provider";
 import { apiClient } from "../../lib/api-client";
@@ -91,16 +96,17 @@ export function OrganizationDocuments() {
 const documents = (rows: Document[]) =>
     filterDocuments(documentsForContract(rows, selected), month, status);
   const renderList = (rows: Document[], type: "invoice" | "receipt") => (
-    <section className="rounded-xl border bg-card p-4">
-      <h2 className="font-semibold">
+    <Card>
+      <CardHeader className="px-4 pt-4"><CardTitle><h2>
         {type === "invoice"
           ? text("ใบแจ้งหนี้", "Invoices")
           : text("ใบเสร็จรับเงิน", "Receipts")}
-      </h2>
+      </h2></CardTitle></CardHeader>
+      <CardContent className="px-4 pb-4">
       {rows.length === 0 ? (
-        <p className="py-5 text-sm text-muted-foreground">
+        <Empty className="py-5"><EmptyHeader><EmptyDescription>
           {text("ไม่มีเอกสารตรงกับตัวกรอง", "No documents match these filters")}
-        </p>
+        </EmptyDescription></EmptyHeader></Empty>
       ) : (
         <ul className="divide-y">
           {rows.map((row) => (
@@ -170,7 +176,8 @@ const documents = (rows: Document[]) =>
           ))}
         </ul>
       )}
-    </section>
+      </CardContent>
+    </Card>
   );
   return (
     <div className="content w-full min-w-0 space-y-5">
@@ -186,15 +193,15 @@ const documents = (rows: Document[]) =>
         </p>
       </header>
       {error ? (
-        <div role="alert">
-          <p>
+        <Alert variant="destructive">
+          <AlertDescription>
             {error === "access"
               ? text(
                   "ไม่มีสิทธิ์เข้าถึงเอกสาร กรุณาเข้าสู่ระบบด้วยบัญชีที่ได้รับอนุญาต",
                   "Document access denied. Sign in with an authorized account.",
                 )
               : text("โหลดเอกสารไม่สำเร็จ", "Unable to load documents")}
-          </p>
+          </AlertDescription>
           <Button
             type="button"
             variant="outline"
@@ -203,7 +210,7 @@ const documents = (rows: Document[]) =>
           >
             {text("ลองอีกครั้ง", "Retry")}
           </Button>
-        </div>
+        </Alert>
       ) : !data ? (
         <p role="status">{text("กำลังโหลดเอกสาร", "Loading documents")}</p>
       ) : (
@@ -213,11 +220,11 @@ const documents = (rows: Document[]) =>
             className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3"
           >
             {data.contracts.map((contract) => (
-              <button
+              <Button type="button" variant="outline"
                 key={contract.id}
                 aria-pressed={selected === contract.id}
                 onClick={() => setSelected(contract.id)}
-                className={`min-w-0 rounded-xl border bg-card p-4 text-left ${selected === contract.id ? "ring-2 ring-primary" : ""}`}
+                className={`h-auto! min-w-0 flex-col items-stretch whitespace-normal rounded-xl p-4 text-left ${selected === contract.id ? "ring-2 ring-primary" : ""}`}
               >
                 <p className="font-semibold break-all">
                   {contract.contractNumber || text("ยังไม่ออกเลขที่สัญญา", "Contract number unavailable")}
@@ -234,12 +241,12 @@ const documents = (rows: Document[]) =>
                     ? formatAppDate(contract.endDate, locale)
                     : text("ไม่ระบุวันสิ้นสุด", "End date unavailable")}
                 </p>
-              </button>
+              </Button>
             ))}
-            <button
+            <Button type="button" variant="outline"
               aria-pressed={selected === null}
               onClick={() => setSelected(null)}
-              className={`rounded-xl border bg-card p-4 text-left ${selected === null ? "ring-2 ring-primary" : ""}`}
+              className={`h-auto! flex-col items-stretch whitespace-normal rounded-xl p-4 text-left ${selected === null ? "ring-2 ring-primary" : ""}`}
             >
               <p className="font-semibold">
                 {text(
@@ -253,13 +260,15 @@ const documents = (rows: Document[]) =>
                   "The contract version for these records is unavailable.",
                 )}
               </p>
-            </button>
+            </Button>
           </section>
           <div className="flex flex-wrap gap-4">
-            <label className="space-y-1 text-sm">
-              <span className="block">{text("เดือน", "Month")}</span>
-              <select
-                className="min-h-11 rounded-md border bg-card px-3"
+            <Field className="w-auto">
+              <FieldLabel htmlFor="document-month">{text("เดือน", "Month")}</FieldLabel>
+              <ChoiceSelect
+                id="document-month"
+                aria-label={text("เดือน", "Month")}
+                className="min-h-11 w-full"
                 value={month}
                 onChange={(event) => setMonth(event.target.value)}
               >
@@ -269,12 +278,14 @@ const documents = (rows: Document[]) =>
                     {monthLabel(value)}
                   </option>
                 ))}
-              </select>
-            </label>
-            <label className="space-y-1 text-sm">
-              <span className="block">{text("สถานะ", "Status")}</span>
-              <select
-                className="min-h-11 rounded-md border bg-card px-3"
+              </ChoiceSelect>
+            </Field>
+            <Field className="w-auto">
+              <FieldLabel htmlFor="document-status">{text("สถานะ", "Status")}</FieldLabel>
+              <ChoiceSelect
+                id="document-status"
+                aria-label={text("สถานะ", "Status")}
+                className="min-h-11 w-full"
                 value={status}
                 onChange={(event) => setStatus(event.target.value)}
               >
@@ -284,8 +295,8 @@ const documents = (rows: Document[]) =>
                     {label(value)}
                   </option>
                 ))}
-              </select>
-            </label>
+              </ChoiceSelect>
+            </Field>
             <Button
               type="button"
               variant="outline"

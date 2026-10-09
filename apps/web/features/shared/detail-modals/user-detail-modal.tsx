@@ -102,10 +102,10 @@ export function UserDetailModal({
             <div
               className={`size-11 rounded-xl flex items-center justify-center shrink-0 ${
                 isOwner
-                  ? "bg-amber-500/15 text-amber-600 dark:text-amber-400"
+                  ? "bg-warning/15 text-warning-emphasis "
                   : isAdmin
                   ? "bg-primary/15 text-primary"
-                  : "bg-blue-500/15 text-blue-600 dark:text-blue-400"
+                  : "bg-info/15 text-info "
               }`}
             >
               {isOwner ? (
@@ -170,7 +170,7 @@ export function UserDetailModal({
                     onClick={() => copyToClipboard(user.email!, "email")}
                     title={locale === "th" ? "คัดลอกอีเมล" : "Copy Email"}
                   >
-                    {copiedKey === "email" ? <Check className="size-3 text-emerald-500" /> : <Copy className="size-3" />}
+                    {copiedKey === "email" ? <Check className="size-3 text-success" /> : <Copy className="size-3" />}
                   </Button>
                 )}
               </div>
@@ -217,7 +217,7 @@ export function UserDetailModal({
                 className="size-10 text-muted-foreground hover:text-foreground shrink-0"
                 onClick={() => copyToClipboard(user.id!, "userId")}
               >
-                {copiedKey === "userId" ? <Check className="size-3 text-emerald-500" /> : <Copy className="size-3" />}
+                {copiedKey === "userId" ? <Check className="size-3 text-success" /> : <Copy className="size-3" />}
               </Button>
             </div>
           )}

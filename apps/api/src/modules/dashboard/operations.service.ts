@@ -21,8 +21,8 @@ export class OperationsService {
           WHERE ${where} GROUP BY s.id ORDER BY s.name`;
         columns=["ชื่อโรงเรียน","ภูมิภาค","กำลังติดตั้ง (MWp)","จำนวนไซต์","Gateway","สถานะ"];break;
       case "sites":
-        sql=`SELECT si.id,to_char(si.created_at AT TIME ZONE 'Asia/Bangkok','YYYY-MM-DD') AS "createdAt",si.name,s.name AS "schoolName",si.capacity_mwp AS "capacityMwp",
-          g.id AS "gatewayId",g.name AS gateway,g.protocol,g.last_seen_at AS "lastSeenAt",g.last_seen_at AS "lastUpdated",
+        sql=`SELECT si.id,si.external_site_id AS "externalSiteId",to_char(si.created_at AT TIME ZONE 'Asia/Bangkok','YYYY-MM-DD') AS "createdAt",si.name,s.name AS "schoolName",si.capacity_mwp AS "capacityMwp",
+          g.external_gateway_id AS "externalGatewayId",g.id AS "gatewayId",g.name AS gateway,g.protocol,g.last_seen_at AS "lastSeenAt",g.last_seen_at AS "lastUpdated",
           CASE WHEN si.status IN ('inactive','archived') THEN si.status WHEN g.last_seen_at>=now()-interval '2 minutes' THEN 'online' ELSE 'offline' END AS status,
           energy.kwh AS "productionKwh" FROM sites si JOIN schools s ON s.id=si.school_id LEFT JOIN LATERAL (SELECT * FROM gateways WHERE site_id=si.id ORDER BY id LIMIT 1) g ON true
           LEFT JOIN LATERAL (SELECT sum(r.delta) AS kwh FROM (
@@ -34,7 +34,7 @@ export class OperationsService {
           WHERE ${where} ORDER BY si.name`;
         columns=["ชื่อไซต์","โรงเรียน","กำลังติดตั้ง (MWp)","Gateway","โพรโทคอล","พลังงานวันนี้ (kWh)","อัปเดตล่าสุด","สถานะ"];break;
       case "billing":
-        sql=`SELECT b.id,b.site_id AS "siteId",b.contract_id AS "contractId",to_char(b.period_start,'YYYY-MM-DD') AS "periodStart",to_char(b.period_end,'YYYY-MM-DD') AS "periodEnd",to_char(b.period_end,'YYYY-MM') AS period,s.name AS "schoolName",si.name AS "siteName",
+        sql=`SELECT b.id,b.site_id AS "siteId",b.contract_id AS "contractId",to_char(b.period_start,'YYYY-MM-DD') AS "periodStart",to_char(b.period_end,'YYYY-MM-DD') AS "periodEnd",to_char(b.period_end,'YYYY-MM') AS period,s.name AS "schoolName",si.external_site_id AS "externalSiteId",si.name AS "siteName",
           b.consumed_kwh AS "consumedKwh",b.rate,b.amount,b.status,b.quality,b.opening_energy AS "openingEnergy",b.closing_energy AS "closingEnergy",
           p.id AS "paymentId",p.status AS "paymentStatus",p.slip_url AS "slipUrl",p.slip_url AS "หลักฐานการชำระ",p.paid_at AS "paidAt",
           p.rejection_reason AS "rejectionReason",d.id AS "invoiceId",r.id AS "receiptId",d.document_number AS "invoiceNumber",r.document_number AS "receiptNumber"
@@ -45,7 +45,7 @@ export class OperationsService {
           WHERE ${where} ORDER BY b.period_end DESC,si.name`;
         columns=["รอบบิล","โรงเรียน","ไซต์","พลังงาน (kWh)","อัตรา (฿/kWh)","ยอดเงิน (฿)","หลักฐานการชำระ","สถานะ"];break;
       case "contracts":
-        sql=`SELECT c.id,c.site_id AS "siteId",(SELECT d.document_number FROM documents d WHERE d.contract_id=c.id AND d.document_type='contract') AS "contractNumber",(SELECT d.id FROM documents d WHERE d.contract_id=c.id AND d.document_type='contract') AS "documentId",s.name AS "schoolName",si.name AS "siteName",c.version,
+        sql=`SELECT c.id,c.site_id AS "siteId",(SELECT d.document_number FROM documents d WHERE d.contract_id=c.id AND d.document_type='contract') AS "contractNumber",(SELECT d.id FROM documents d WHERE d.contract_id=c.id AND d.document_type='contract') AS "documentId",s.name AS "schoolName",si.external_site_id AS "externalSiteId",si.name AS "siteName",c.version,
           to_char(c.start_date,'YYYY-MM-DD') AS "startDate",to_char(c.end_date,'YYYY-MM-DD') AS "endDate",r.rate,c.signer_name AS signers,c.status,
           c.tax_id AS "taxId",c.company_name AS "companyName",c.branch AS "taxBranch",c.tax_address AS "taxAddress",c.billing_email AS "taxEmail",c.billing_phone AS "taxPhone",
           (SELECT coalesce(jsonb_agg(jsonb_build_object('startDate',rv.effective_from,'endDate',rv.effective_to,'rate',rv.rate) ORDER BY rv.effective_from),'[]'::jsonb) FROM rate_versions rv WHERE rv.contract_id=c.id) AS rates
@@ -56,13 +56,13 @@ export class OperationsService {
         columns=["เลขที่สัญญา","โรงเรียน","เวอร์ชัน","วันเริ่มต้น","อัตราค่าไฟ (฿)","คู่สัญญา","สถานะ"];break;
       case "documents":case "receipts":
         sql=`SELECT d.id,d.site_id AS "siteId",d.billing_cycle_id AS "billingCycleId",(SELECT contract_id FROM billing_cycles WHERE id=d.billing_cycle_id) AS "contractId",d.document_number AS "documentNumber",
-          d.document_number AS "receiptNumber",CASE WHEN d.document_type='receipt' AND d.snapshot->'policy'->>'scope'='TEST' THEN d.document_number ELSE NULL END AS "taxInvoiceNumber",d.document_type AS type,s.name AS "schoolName",si.name AS "siteName",
+          d.document_number AS "receiptNumber",CASE WHEN d.document_type='receipt' AND d.snapshot->'policy'->>'scope'='TEST' THEN d.document_number ELSE NULL END AS "taxInvoiceNumber",d.document_type AS type,s.name AS "schoolName",si.external_site_id AS "externalSiteId",si.name AS "siteName",
           to_char(d.issue_date,'YYYY-MM-DD') AS "issueDate",d.amount,d.amount AS "totalAmount",d.status
           FROM documents d JOIN sites si ON si.id=d.site_id JOIN schools s ON s.id=si.school_id
           WHERE ${where} ${resource==="receipts"?"AND d.document_type='receipt'":""} ORDER BY d.issue_date DESC`;
         columns=resource==="receipts"?["เลขที่ใบเสร็จ","เลขที่ใบกำกับภาษี","โรงเรียน","วันที่ออก","ยอดเงินสุทธิ (฿)","สถานะ"]:["เลขที่เอกสาร","ประเภท","โรงเรียน","วันที่ออก","จำนวนเงิน (฿)","สถานะ"];break;
       case "alerts":
-        sql=`SELECT a.id,a.id::text AS "alertId",a.title,a.detail,a.severity,a.occurred_at AS "occurredAt",a.status FROM alerts a
+        sql=`SELECT a.id,si.external_site_id AS "externalSiteId",si.name AS "siteName",a.id::text AS "alertId",a.title,a.detail,a.severity,a.occurred_at AS "occurredAt",a.status FROM alerts a
           JOIN sites si ON si.id=a.site_id JOIN schools s ON s.id=si.school_id WHERE ${where} ORDER BY a.occurred_at DESC`;
         columns=["รหัสแจ้งเตือน","หัวข้อ","รายละเอียด","ระดับความรุนแรง","เวลาที่เกิด","สถานะ"];break;
       case "notifications":
@@ -143,11 +143,11 @@ export class OperationsService {
     const join=' JOIN sites si ON si.id=x.site_id JOIN schools s ON s.id=si.school_id';
     let source:string;
     switch(resource) {
-      case 'billing': source=`SELECT x.id,to_char(x.period_end,'YYYY-MM') AS period,s.name AS "schoolName",si.name AS "siteName",x.status,x.amount FROM billing_cycles x${join} WHERE ${where}`;break;
-      case 'documents':case 'receipts': source=`SELECT x.id,x.document_number AS "documentNumber",x.document_type AS type,s.name AS "schoolName",si.name AS "siteName",x.status,x.amount,to_char(x.issue_date,'YYYY-MM-DD') AS "issueDate" FROM documents x${join} WHERE ${where}${resource==='receipts'?" AND x.document_type='receipt'":''}`;break;
-      case 'sites':source=`SELECT si.id,to_char(si.created_at AT TIME ZONE 'Asia/Bangkok','YYYY-MM-DD') AS "createdAt",si.name,s.name AS "schoolName",si.capacity_mwp AS "capacityMwp",CASE WHEN si.status IN ('inactive','archived') THEN si.status WHEN g.last_seen_at>=now()-interval '2 minutes' THEN 'online' ELSE 'offline' END AS status FROM sites si JOIN schools s ON s.id=si.school_id LEFT JOIN LATERAL (SELECT last_seen_at FROM gateways WHERE site_id=si.id ORDER BY id LIMIT 1) g ON true WHERE ${where}`;break;
+      case 'billing': source=`SELECT x.id,to_char(x.period_end,'YYYY-MM') AS period,s.name AS "schoolName",si.external_site_id AS "externalSiteId",si.name AS "siteName",x.status,x.amount FROM billing_cycles x${join} WHERE ${where}`;break;
+      case 'documents':case 'receipts': source=`SELECT x.id,x.document_number AS "documentNumber",x.document_type AS type,s.name AS "schoolName",si.external_site_id AS "externalSiteId",si.name AS "siteName",x.status,x.amount,to_char(x.issue_date,'YYYY-MM-DD') AS "issueDate" FROM documents x${join} WHERE ${where}${resource==='receipts'?" AND x.document_type='receipt'":''}`;break;
+      case 'sites':source=`SELECT si.id,si.external_site_id AS "externalSiteId",to_char(si.created_at AT TIME ZONE 'Asia/Bangkok','YYYY-MM-DD') AS "createdAt",si.name,s.name AS "schoolName",si.capacity_mwp AS "capacityMwp",CASE WHEN si.status IN ('inactive','archived') THEN si.status WHEN g.last_seen_at>=now()-interval '2 minutes' THEN 'online' ELSE 'offline' END AS status FROM sites si JOIN schools s ON s.id=si.school_id LEFT JOIN LATERAL (SELECT last_seen_at FROM gateways WHERE site_id=si.id ORDER BY id LIMIT 1) g ON true WHERE ${where}`;break;
       case 'schools':source=`SELECT s.id,to_char(s.created_at AT TIME ZONE 'Asia/Bangkok','YYYY-MM-DD') AS "createdAt",s.name,s.code,s.region FROM schools s WHERE ${where}`;break;
-      case 'contracts':source=`SELECT x.id,(SELECT d.document_number FROM documents d WHERE d.contract_id=x.id AND d.document_type='contract') AS "contractNumber",s.name AS "schoolName",si.name AS "siteName",x.signer_name AS signers,x.status,to_char(x.start_date,'YYYY-MM-DD') AS "startDate" FROM contracts x${join} WHERE ${where}`;break;
+      case 'contracts':source=`SELECT x.id,(SELECT d.document_number FROM documents d WHERE d.contract_id=x.id AND d.document_type='contract') AS "contractNumber",s.name AS "schoolName",si.external_site_id AS "externalSiteId",si.name AS "siteName",x.signer_name AS signers,x.status,to_char(x.start_date,'YYYY-MM-DD') AS "startDate" FROM contracts x${join} WHERE ${where}`;break;
       case 'alerts':source=`SELECT x.id,x.title,x.detail,x.severity,x.status,x.occurred_at AS "occurredAt" FROM alerts x${join} WHERE ${where}`;break;
       case 'notifications':params.splice(0,params.length,user?.id);source='SELECT id,title,channel,recipient,status,created_at AS "sentAt" FROM notification_deliveries WHERE user_id=$1';break;
       case 'reports':params.splice(0,params.length,user?.id);source='SELECT id,title,report_type AS category,status,created_at AS "generatedAt" FROM generated_reports WHERE created_by=$1';break;

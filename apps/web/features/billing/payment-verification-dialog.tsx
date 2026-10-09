@@ -153,7 +153,7 @@ export function PaymentVerificationDialog({
 
         {successMsg ? (
           <div className="py-8 flex flex-col items-center text-center space-y-3">
-            <div className="size-14 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+            <div className="size-14 rounded-full bg-success/15 text-success flex items-center justify-center">
               <CheckCircle2 className="size-8" />
             </div>
             <h3 className="text-base font-bold text-foreground">ดำเนินการสำเร็จ</h3>
@@ -188,7 +188,7 @@ export function PaymentVerificationDialog({
             {/* Slip Preview Box */}
             <div className="space-y-2">
               <Label className="text-xs font-semibold">ภาพหลักฐานสลิปการโอน</Label>
-              <div className="border border-border/80 rounded-xl overflow-hidden bg-neutral-900/5 dark:bg-neutral-900/40 p-2 flex flex-col items-center justify-center min-h-[220px]">
+              <div className="border border-border/80 rounded-xl overflow-hidden bg-muted/5 p-2 flex flex-col items-center justify-center min-h-[220px]">
                 {billingCycle?.slipUrl ? (
                   <div className="space-y-2 w-full flex flex-col items-center">
                     <img
@@ -289,7 +289,7 @@ export function PaymentVerificationDialog({
                     type="button"
                     onClick={handleApprove}
                     disabled={isSubmitting||!reviewLoaded}
-                    className="h-10 text-xs bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 flex-1 sm:flex-initial"
+                    className="h-10 text-xs bg-success hover:bg-success/90 text-success-foreground gap-1.5 flex-1 sm:flex-initial"
                   >
                     {isSubmitting && <Loader2 className="size-3.5 animate-spin" />}
                     <FileCheck className="size-3.5" />

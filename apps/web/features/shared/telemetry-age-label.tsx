@@ -21,13 +21,13 @@ export function TelemetryAgeLabel({ value, locale, compact = false }: {
   }
   const age = telemetryAge(value, locale, now);
   if (compact) {
-    return <span className={age.fresh ? "text-emerald-600" : "text-muted-foreground"}>{age.text}</span>;
+    return <span className={age.fresh ? "text-success" : "text-muted-foreground"}>{age.text}</span>;
   }
   return (
     <div className="flex items-center gap-1.5 text-xs">
-      <span className={`size-2 rounded-full shrink-0 ${age.fresh ? "bg-emerald-500 animate-pulse" : "bg-amber-500"}`} />
+      <span className={`size-2 rounded-full shrink-0 ${age.fresh ? "bg-success animate-pulse" : "bg-warning"}`} />
       <span className={age.fresh ? "text-foreground font-medium" : "text-muted-foreground"}>{age.text}</span>
-      {!age.fresh && <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">(Offline)</span>}
+      {!age.fresh && <span className="text-[10px] text-warning-emphasis font-medium">(Offline)</span>}
     </div>
   );
 }

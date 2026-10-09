@@ -16,9 +16,12 @@ export function schoolScope(user: ScopePrincipal | undefined): string[] | null {
 export function routeAllowed(role: string, method: string, rawPath: string): boolean {
   if (!["owner", "admin", "operator", "accountant", "school_user"].includes(role)) return false;
   const path = rawPath.split("?")[0]!.replace(/\/$/, "");
+  if (path === "/v1/sites/identity-draft") return role === "admin" && method === "POST";
   if (/^\/v1\/sites\/[^/]+\/school-users(?:\/|$)/.test(path)) return role === 'admin';
   if (/^\/v1\/mqtt-brokers(?:\/|$)/.test(path)) return role === "admin";
   if (/^\/v1\/sites\/[^/]+\/billing-source(?:\/|$)/.test(path)) return role === 'admin' && /^\/v1\/sites\/[^/]+\/billing-source$/.test(path) && ['GET','POST'].includes(method);
+  if (path === "/v1/me/notification-feed") return method === "GET" || method === "HEAD";
+  if (["/v1/me/notification-feed/read", "/v1/me/notification-feed/read-all"].includes(path)) return method === "PUT";
   const read = method === "GET" || method === "HEAD";
   if(path === "/v1/operations/contracts/organization-defaults")return read&&["owner","admin"].includes(role);
   if (role === "owner" && ["/v1/dashboard/compare", "/v1/dashboard/power-flow"].includes(path)) return read;

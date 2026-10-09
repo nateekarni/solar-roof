@@ -73,7 +73,7 @@ export function NotificationDetailModal({
         {/* Header */}
         <DialogHeader className="shrink-0 pb-3 order/60">
           <div className="flex items-center gap-3">
-            <div className="size-11 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+            <div className="size-11 rounded-xl bg-info/10 text-info flex items-center justify-center shrink-0">
               <Bell className="size-6" />
             </div>
             <div className="min-w-0 flex-1">
@@ -114,7 +114,7 @@ export function NotificationDetailModal({
                 onClick={() => copyToClipboard(notification.detail || notification.title || "")}
                 title={locale === "th" ? "คัดลอกข้อความ" : "Copy Content"}
               >
-                {copied ? <Check className="size-3 text-emerald-500" /> : <Copy className="size-3" />}
+                {copied ? <Check className="size-3 text-success" /> : <Copy className="size-3" />}
               </Button>
             </div>
             <div className="p-3 rounded-lg bg-muted/30 border border-border/40 text-foreground text-xs leading-relaxed whitespace-pre-line select-text">
@@ -157,11 +157,11 @@ export function NotificationDetailModal({
 
             <div className="space-y-1 border-t pt-4">
               <div className="text-xs text-muted-foreground flex items-center gap-1.5">
-                <CheckCircle2 className="size-3.5 text-emerald-500" />
+                <CheckCircle2 className="size-3.5 text-success" />
                 <span>{locale === "th" ? "สถานะการนำส่ง" : "Delivery Status"}</span>
               </div>
               <div className="font-medium text-xs text-foreground flex items-center gap-1.5">
-                <span className={`inline-block size-2 rounded-full ${isDelivered ? "bg-emerald-500" : "bg-amber-500"}`} />
+                <span className={`inline-block size-2 rounded-full ${isDelivered ? "bg-success" : "bg-warning"}`} />
                 <span>{notification.status || "—"}</span>
               </div>
             </div>

@@ -11,8 +11,8 @@ type Device = { externalDeviceId:string;config:PayloadProfile };
 export class PayloadReceptionSettings {
  constructor(private readonly db:DatabaseService) {}
  async context(siteId:string) {
-  const gateway=(await this.db.query<{gatewayId:string;externalSiteId:string;externalGatewayId:string}>(`SELECT g.id AS "gatewayId",s.external_site_id AS "externalSiteId",g.external_gateway_id AS "externalGatewayId" FROM gateways g JOIN sites s ON s.id=g.site_id WHERE s.id=$1 AND s.status<>'archived' AND g.protocol='mqtt'`,[siteId])).rows[0];
-  if(!gateway?.externalSiteId || !gateway.externalGatewayId)throw new NotFoundException('Standard MQTT gateway not found');
+  const gateway=(await this.db.query<{gatewayId:string;externalSiteId:string;externalGatewayId:string;endpoint:string}>(`SELECT g.id AS "gatewayId",g.endpoint,s.external_site_id AS "externalSiteId",g.external_gateway_id AS "externalGatewayId" FROM gateways g JOIN sites s ON s.id=g.site_id WHERE s.id=$1 AND s.status<>'archived' AND g.protocol='mqtt' AND g.endpoint LIKE 'solar/v1/%'`,[siteId])).rows[0];
+  if(!gateway?.externalSiteId || !gateway.externalGatewayId || !gateway.endpoint?.startsWith("solar/v1/"))throw new NotFoundException('Standard MQTT gateway not found');
   const devices=(await this.db.query<Device>(`SELECT d.external_device_id AS "externalDeviceId",p.config FROM devices d JOIN payload_profile_revisions p ON p.id=d.payload_profile_revision_id WHERE d.gateway_id=$1 AND d.site_id=$2`,[gateway.gatewayId,siteId])).rows;
   return {...gateway,devices};
  }

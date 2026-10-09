@@ -83,10 +83,10 @@ export function AlertDetailModal({
             <div
               className={`size-10 rounded-xl flex items-center justify-center shrink-0 ${
                 isCritical
-                  ? "bg-rose-500/15 text-rose-600 dark:text-rose-400"
+                  ? "bg-destructive/15 text-destructive "
                   : isWarning
-                  ? "bg-amber-500/15 text-amber-600 dark:text-amber-400"
-                  : "bg-blue-500/15 text-blue-600 dark:text-blue-400"
+                  ? "bg-warning/15 text-warning-emphasis "
+                  : "bg-info/15 text-info "
               }`}
             >
               {isCritical ? (
@@ -109,10 +109,10 @@ export function AlertDetailModal({
               variant="outline"
               className={`shrink-0 font-semibold ${
                 isCritical
-                  ? "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30"
+                  ? "bg-destructive/10 text-destructive border-destructive/30"
                   : isWarning
-                  ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30"
-                  : "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30"
+                  ? "bg-warning/10 text-warning-emphasis border-warning/30"
+                  : "bg-info/10 text-info border-info/30"
               }`}
             >
               {isCritical
@@ -148,8 +148,8 @@ export function AlertDetailModal({
                   variant={isResolved ? "outline" : "secondary"}
                   className={
                     isResolved
-                      ? "text-emerald-600 dark:text-emerald-400 border-emerald-500/30 bg-emerald-500/10"
-                      : "bg-amber-500/15 text-amber-600 dark:text-amber-400"
+                      ? "text-success border-success/30 bg-success/10"
+                      : "bg-warning/15 text-warning-emphasis "
                   }
                 >
                   {isResolved
@@ -171,8 +171,8 @@ export function AlertDetailModal({
           </div>
 
           {/* Recommended Operational Action */}
-          <div className="p-3.5 rounded-xl bg-blue-500/5 dark:bg-blue-950/20 border border-blue-500/20 space-y-1.5">
-            <div className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 dark:text-blue-400">
+          <div className="p-3.5 rounded-xl bg-info/5 border border-info/20 space-y-1.5">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-info ">
               <Wrench className="size-3.5" />
               <span>{locale === "th" ? "คำแนะนำสำหรับทีมวิศวกร / ผู้ดูแลระบบ" : "Operational Guideline"}</span>
             </div>

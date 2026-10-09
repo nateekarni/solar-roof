@@ -106,7 +106,7 @@ export function SchoolDetailModal({
           <div className="grid grid-cols-3 gap-2.5">
             <div className="text-center space-y-1 border-t pt-4">
               <div className="text-[11px] text-muted-foreground flex items-center justify-center gap-1">
-                <Zap className="size-3 text-amber-500" />
+                <Zap className="size-3 text-warning-emphasis" />
                 <span>{locale === "th" ? "กำลังติดตั้ง" : "Capacity"}</span>
               </div>
               <div className="text-base font-bold text-foreground">
@@ -117,7 +117,7 @@ export function SchoolDetailModal({
 
             <div className="text-center space-y-1 border-t pt-4">
               <div className="text-[11px] text-muted-foreground flex items-center justify-center gap-1">
-                <Activity className="size-3 text-emerald-500" />
+                <Activity className="size-3 text-success" />
                 <span>{locale === "th" ? "ไซต์ระบบ" : "Solar Sites"}</span>
               </div>
               <div className="text-base font-bold text-foreground">
@@ -128,7 +128,7 @@ export function SchoolDetailModal({
 
             <div className="text-center space-y-1 border-t pt-4">
               <div className="text-[11px] text-muted-foreground flex items-center justify-center gap-1">
-                <Radio className="size-3 text-blue-500" />
+                <Radio className="size-3 text-info" />
                 <span>{locale === "th" ? "IOT Gateway" : "Gateways"}</span>
               </div>
               <div className="text-base font-bold text-foreground">
@@ -169,7 +169,7 @@ export function SchoolDetailModal({
                 className="size-10 text-muted-foreground hover:text-foreground shrink-0"
                 onClick={() => copyToClipboard(school.id!, "schoolId")}
               >
-                {copiedKey === "schoolId" ? <Check className="size-3 text-emerald-500" /> : <Copy className="size-3" />}
+                {copiedKey === "schoolId" ? <Check className="size-3 text-success" /> : <Copy className="size-3" />}
               </Button>
             </div>
           )}

@@ -284,7 +284,7 @@ export function BillingDetailModal({
         <DialogHeader className="pb-4 order/60">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-3">
-              <div className="size-11 rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+              <div className="size-11 rounded-xl bg-warning/15 text-warning-emphasis flex items-center justify-center shrink-0">
                 <Receipt className="size-6" />
               </div>
               <div>
@@ -294,7 +294,7 @@ export function BillingDetailModal({
                   </DialogTitle>
                   <Badge
                     variant={isPaid ? "default" : "secondary"}
-                    className={isPaid ? "bg-emerald-600 text-white" : ""}
+                    className={isPaid ? "bg-success text-success-foreground" : ""}
                   >
                     {isPaid
                       ? locale === "th" ? "ชำระแล้ว (Paid)" : "Paid"
@@ -336,7 +336,7 @@ export function BillingDetailModal({
                   variant="outline"
                   size="sm"
                   onClick={() => onOpenReceipt(data)}
-                  className="h-10 text-xs gap-1.5 cursor-pointer text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                  className="h-10 text-xs gap-1.5 cursor-pointer text-success border-success/30"
                 >
                   <FileCheck className="size-3.5" />
                   <span>{locale === "th" ? "ดูใบเสร็จรับเงิน" : "View Receipt"}</span>
@@ -356,7 +356,7 @@ export function BillingDetailModal({
             <div className="space-y-3 border-t pt-4">
               <div className="flex items-center justify-between text-xs font-semibold text-foreground">
                 <span className="flex items-center gap-1.5">
-                  <Zap className="size-4 text-amber-500" />
+                  <Zap className="size-4 text-warning-emphasis" />
                   <span>{locale === "th" ? "สรุปการผลิตและการใช้พลังงาน" : "Energy Consumption Details"}</span>
                 </span>
                 <span className="font-mono text-muted-foreground">
@@ -400,7 +400,7 @@ export function BillingDetailModal({
                 </div>
                 <div className="py-2.5 flex items-center justify-between border-t border-border font-bold text-sm text-foreground">
                   <span>{locale === "th" ? "ยอดเงินรวมทั้งสิ้นที่ต้องชำระ" : "Total Amount Due"}</span>
-                  <span className="font-mono text-base text-amber-600 dark:text-amber-400">฿{formatNumber(amountNum)}</span>
+                  <span className="font-mono text-base text-warning-emphasis ">฿{formatNumber(amountNum)}</span>
                 </div>
               </div>
             </div>
@@ -460,7 +460,7 @@ export function BillingDetailModal({
                       alt="Bank Transfer Slip"
                       className="w-full h-full object-contain p-1 group-hover:scale-105 transition-transform duration-200"
                     />
-                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-xs gap-1.5 transition-opacity">
+                    <div className="absolute inset-0 bg-overlay/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-primary-foreground text-xs gap-1.5 transition-opacity">
                       <Eye className="size-4" />
                       <span>{locale === "th" ? "คลิกเพื่อดูรูปขนาดเต็ม" : "Click to view full size"}</span>
                     </div>
@@ -473,7 +473,7 @@ export function BillingDetailModal({
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">{locale === "th" ? "ยอดเงินในสลิป:" : "Slip Amount:"}</span>
-                      <span className="font-bold text-emerald-600 dark:text-emerald-400">฿{payments.some(payment=>payment.id===data.paymentId)?formatTransferAmount(payments.find(payment=>payment.id===data.paymentId)!.amount):formatNumber(data.paidAmount)}</span>
+                      <span className="font-bold text-success ">฿{payments.some(payment=>payment.id===data.paymentId)?formatTransferAmount(payments.find(payment=>payment.id===data.paymentId)!.amount):formatNumber(data.paidAmount)}</span>
                     </div>
                   </div>
                   <div className="flex justify-end pt-1">
@@ -488,7 +488,7 @@ export function BillingDetailModal({
                       <UploadCloud className="size-3" />
                       <span>{locale === "th" ? "อัปโหลดสลิปใหม่" : "Re-upload Slip"}</span>
                     </Button>
-                    <input
+                    <Input
                       ref={fileInputRef}
                       type="file"
                       accept="image/*,application/pdf"
@@ -522,7 +522,7 @@ export function BillingDetailModal({
                       : "border-border/80 bg-muted/15 hover:bg-muted/25"
                   }`}
                 >
-                  <input
+                  <Input
                     ref={fileInputRef}
                     type="file"
                     accept="image/*,application/pdf"
@@ -555,8 +555,8 @@ export function BillingDetailModal({
 
               {/* Status Banner */}
               {isPaid && (
-                <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-start gap-2 text-emerald-950 dark:text-emerald-200 text-xs">
-                  <CheckCircle2 className="size-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                <div className="p-3 rounded-lg bg-success/10 border border-success/30 flex items-start gap-2 text-success text-xs">
+                  <CheckCircle2 className="size-4 text-success shrink-0 mt-0.5" />
                   <div>
                     <span className="font-semibold block">{locale === "th" ? "ตรวจสอบและอนุมัติแล้ว" : "Verified & Approved"}</span>
                     <span className="text-[11px] text-muted-foreground">
@@ -569,8 +569,8 @@ export function BillingDetailModal({
               )}
 
               {data.rejectionReason && (
-                <div className="text-rose-950 dark:text-rose-200 text-xs space-y-1 border-t pt-4">
-                  <div className="flex items-center gap-1.5 font-semibold text-rose-600 dark:text-rose-400">
+                <div className="text-destructive text-xs space-y-1 border-t pt-4">
+                  <div className="flex items-center gap-1.5 font-semibold text-destructive ">
                     <XCircle className="size-3.5" />
                     <span>{locale === "th" ? "เหตุผลการปฏิเสธหลักฐาน:" : "Rejection Reason:"}</span>
                   </div>
@@ -592,7 +592,7 @@ export function BillingDetailModal({
                         size="sm"
                         onClick={handleApprovePayment}
                         disabled={isSubmitting}
-                        className="h-10 text-xs font-semibold gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
+                        className="h-10 text-xs font-semibold gap-1.5 bg-success hover:bg-success/90 text-success-foreground cursor-pointer"
                       >
                         {isSubmitting ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
                         <span>{locale === "th" ? "อนุมัติการชำระเงิน" : "Approve Slip"}</span>
@@ -604,7 +604,7 @@ export function BillingDetailModal({
                         size="sm"
                         onClick={() => setShowRejectInput(true)}
                         disabled={isSubmitting}
-                        className="h-10 text-xs font-semibold gap-1.5 text-rose-600 border-rose-500/30 hover:bg-rose-500/10 cursor-pointer"
+                        className="h-10 text-xs font-semibold gap-1.5 text-destructive border-destructive/30 hover:bg-destructive/10 cursor-pointer"
                       >
                         <XCircle className="size-3.5" />
                         <span>{locale === "th" ? "ปฏิเสธสลิป" : "Reject"}</span>
@@ -634,7 +634,7 @@ export function BillingDetailModal({
                           size="sm"
                           onClick={handleRejectPayment}
                           disabled={isSubmitting || !rejectionReason.trim()}
-                          className="h-10 text-xs bg-rose-600 hover:bg-rose-700 text-white font-semibold"
+                          className="h-10 text-xs bg-destructive hover:bg-destructive/90 text-destructive-foreground font-semibold"
                         >
                           {isSubmitting ? <Loader2 className="size-3 animate-spin" /> : null}
                           <span>{locale === "th" ? "ยืนยันปฏิเสธ" : "Confirm Reject"}</span>
@@ -673,7 +673,7 @@ export function BillingDetailModal({
           <DialogContent className="sm:max-w-md w-full bg-card border-border">
             <DialogHeader>
               <DialogTitle className="text-base font-semibold flex items-center gap-2">
-                <Mail className="size-4 text-emerald-500" />
+                <Mail className="size-4 text-success" />
                 <span>{locale === "th" ? "ส่งอีเมลใบแจ้งหนี้" : "Send Invoice Email"}</span>
               </DialogTitle>
               <DialogDescription className="text-xs text-muted-foreground">
@@ -711,7 +711,7 @@ export function BillingDetailModal({
                 size="sm"
                 onClick={handleSendEmail}
                 disabled={isSendingEmail || !recipientEmail.trim()}
-                className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium gap-1.5"
+                className="text-xs bg-success hover:bg-success/90 text-success-foreground font-medium gap-1.5"
               >
                 {isSendingEmail ? <Loader2 className="size-3.5 animate-spin" /> : <Mail className="size-3.5" />}
                 <span>{locale === "th" ? "ยืนยันส่งอีเมล" : "Send Email"}</span>

@@ -26,6 +26,7 @@ import {
   DialogTitle,
 } from "../../components/ui/dialog";
 import { Button } from "../../components/ui/button";
+import { ChoiceSelect } from "../../components/ui/choice-select";
 import { Input } from "../../components/ui/input";
 import { DatePicker } from "../../components/ui/date-picker";
 import { Label } from "../../components/ui/label";
@@ -48,9 +49,9 @@ export function PaymentMetadataFields({locale,value,onChange,disabled=false}:{lo
     <Input id={'transfer-'+field} value={value[field]} maxLength={{payerName:200,originBank:120,originAccount:80}[field]} onChange={event=>onChange({...value,[field]:event.target.value})}/>
    </div>)}
    <div className="space-y-2"><Label htmlFor="transfer-method">{copy.paymentMethod} ({copy.optional})</Label>
-    <select id="transfer-method" className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={value.paymentMethod} onChange={event=>onChange({...value,paymentMethod:event.target.value})}>
+    <ChoiceSelect id="transfer-method" disabled={disabled} className="w-full" value={value.paymentMethod} onChange={event=>onChange({...value,paymentMethod:event.target.value})}>
      <option value="">{copy.unspecified}</option><option value="bank_transfer">{copy.bank_transfer}</option><option value="promptpay">{copy.promptpay}</option>
-    </select>
+    </ChoiceSelect>
    </div>
   </div>
  </fieldset>;
@@ -237,7 +238,7 @@ export function PaymentDialog({
       <DialogContent className="sm:max-w-md max-h-[92vh] overflow-y-auto p-5 sm:p-6 rounded-2xl">
         <DialogHeader className="pb-3 order/50">
           <div className="flex items-center gap-2">
-            <div className="size-8 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+            <div className="size-8 rounded-lg bg-success/10 text-success flex items-center justify-center">
               <QrCode className="size-4.5" />
             </div>
             <div>
@@ -254,7 +255,7 @@ export function PaymentDialog({
 
         {successMsg ? (
           <div className="py-8 flex flex-col items-center text-center space-y-3">
-            <div className="size-14 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+            <div className="size-14 rounded-full bg-success/15 text-success flex items-center justify-center">
               <CheckCircle2 className="size-8" />
             </div>
             <h3 className="text-base font-bold text-foreground">
@@ -282,7 +283,7 @@ export function PaymentDialog({
                 <span className="text-sm font-semibold text-foreground">
                   {text("ยอดชำระสุทธิ", "Total payable")}
                 </span>
-                <span className="text-xl font-extrabold text-emerald-600 dark:text-emerald-400">
+                <span className="text-xl font-extrabold text-success ">
                   ฿
                   {amount.toLocaleString(locale, {
                     minimumFractionDigits: 2,
@@ -294,7 +295,7 @@ export function PaymentDialog({
 
             {/* PromptPay QR Section */}
             <div className="flex flex-col items-center justify-center p-4 rounded-xl border border-dashed border-border/80 bg-card text-center space-y-2">
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 text-xs font-semibold">
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-info/10 text-info text-xs font-semibold">
                 <QrCode className="size-3.5" />
                 {text("บัญชีรับชำระ / Payment accounts", "Payment accounts")}
               </div>
@@ -340,7 +341,7 @@ export function PaymentDialog({
                 </Label>
 
                 <div className="relative border-2 border-dashed border-border/80 hover:border-primary/60 rounded-xl p-3 text-center transition-colors cursor-pointer bg-muted/20">
-                  <input
+                  <Input
                     id="slip-upload"
                     type="file"
                     accept="image/*,application/pdf"
@@ -349,7 +350,7 @@ export function PaymentDialog({
                   />
                   {slipPreviewUrl ? (
                     <div className="flex items-center gap-3">
-                      <div className="size-12 rounded-lg bg-emerald-500/10 border border-emerald-500/30 overflow-hidden shrink-0 flex items-center justify-center">
+                      <div className="size-12 rounded-lg bg-success/10 border border-success/30 overflow-hidden shrink-0 flex items-center justify-center">
                         {slipFile?.type.startsWith("image/") ? (
                           <img
                             src={slipPreviewUrl}
@@ -357,7 +358,7 @@ export function PaymentDialog({
                             className="size-full object-cover"
                           />
                         ) : (
-                          <FileText className="size-6 text-emerald-600" />
+                          <FileText className="size-6 text-success" />
                         )}
                       </div>
                       <div className="flex-1 text-left min-w-0">
@@ -365,7 +366,7 @@ export function PaymentDialog({
                           {slipFile?.name ||
                             text("สลิปการโอนเงิน", "Transfer receipt")}
                         </span>
-                        <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
+                        <span className="text-[10px] text-success font-medium">
                           {text(
                             "แนบไฟล์เรียบร้อยแล้ว (คลิกเพื่อเปลี่ยน)",
                             "File attached (select to replace)",
@@ -459,7 +460,7 @@ export function PaymentDialog({
               <Button
                 type="submit"
                 disabled={isSubmitting||!canSubmit}
-                className="w-full sm:w-auto h-10 text-xs bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5"
+                className="w-full sm:w-auto h-10 text-xs bg-success hover:bg-success/90 text-success-foreground gap-1.5"
               >
                 {isSubmitting && <Loader2 className="size-3.5 animate-spin" />}
                 {text("ยืนยันการชำระเงิน", "Submit payment evidence")}

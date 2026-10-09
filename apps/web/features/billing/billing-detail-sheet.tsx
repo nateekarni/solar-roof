@@ -179,7 +179,7 @@ export function BillingDetailSheet({
     const s = String(status || "").toLowerCase();
     if (s === "approved" || s === "อนุมัติแล้ว") {
       return (
-        <Badge variant="secondary" className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30">
+        <Badge variant="secondary" className="bg-success/15 text-success border-success/30">
           <CheckCircle className="size-3 mr-1" />
           {locale === "th" ? "อนุมัติแล้ว" : "Approved"}
         </Badge>
@@ -187,7 +187,7 @@ export function BillingDetailSheet({
     }
     if (s === "pending_review" || s === "รอตรวจสอบ" || s === "review" || s === "ต้องตรวจสอบ") {
       return (
-        <Badge variant="secondary" className="bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30">
+        <Badge variant="secondary" className="bg-warning/15 text-warning-emphasis border-warning/30">
           <AlertTriangle className="size-3 mr-1" />
           {locale === "th" ? "รอตรวจสอบ" : "Pending Review"}
         </Badge>
@@ -203,7 +203,7 @@ export function BillingDetailSheet({
     }
     if (s === "paid" || s === "ชำระแล้ว") {
       return (
-        <Badge variant="secondary" className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30">
+        <Badge variant="secondary" className="bg-success/15 text-success border-success/30">
           {locale === "th" ? "ชำระแล้ว" : "Paid"}
         </Badge>
       );
@@ -412,7 +412,7 @@ export function BillingDetailSheet({
                     size="sm"
                     disabled={actionLoading}
                     onClick={() => handleUpdateStatus("approved")}
-                    className="h-10 gap-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
+                    className="h-10 gap-1.5 text-xs font-semibold bg-success hover:bg-success/90 text-success-foreground cursor-pointer"
                   >
                     <CheckCircle className="size-3.5" />
                     <span>{locale === "th" ? "อนุมัติรอบบิล" : "Approve Cycle"}</span>

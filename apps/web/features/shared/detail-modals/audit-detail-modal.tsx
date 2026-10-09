@@ -77,7 +77,7 @@ export function AuditDetailModal({
             </div>
             <Badge
               variant="outline"
-              className="shrink-0 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 font-semibold"
+              className="shrink-0 bg-success/10 text-success border-success/30 font-semibold"
             >
               <CheckCircle2 className="size-3 mr-1" />
               {event.status || (locale === "th" ? "ไม่มีข้อมูลผลลัพธ์" : "Outcome unavailable")}
@@ -118,9 +118,9 @@ export function AuditDetailModal({
                   variant="secondary"
                   className={`font-mono text-xs font-semibold ${
                     isSecurityAction
-                      ? "bg-blue-500/15 text-blue-600 dark:text-blue-400"
+                      ? "bg-info/15 text-info "
                       : isBillingAction
-                      ? "bg-amber-500/15 text-amber-600 dark:text-amber-400"
+                      ? "bg-warning/15 text-warning-emphasis "
                       : "bg-primary/15 text-primary"
                   }`}
                 >
@@ -223,7 +223,7 @@ export function AuditDetailModal({
                   <span className="text-[11px] text-muted-foreground font-medium">
                     {locale === "th" ? "หลังแก้ไข (After)" : "After"}
                   </span>
-                  <pre className="p-3 rounded-xl bg-emerald-500/5 dark:bg-emerald-950/20 border border-emerald-500/30 text-[11px] font-mono overflow-x-auto max-h-48 text-emerald-800 dark:text-emerald-300">
+                  <pre className="p-3 rounded-xl bg-success/5 border border-success/30 text-[11px] font-mono overflow-x-auto max-h-48 text-success ">
                     {event.afterJson ? JSON.stringify(event.afterJson, null, 2) : "null"}
                   </pre>
                 </div>

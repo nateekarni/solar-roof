@@ -1,6 +1,6 @@
 /** Display fields have an explicit order; IDs and preview metadata remain on the row. */
 const fields:Record<string,string[]>={
- sites:['name','schoolName','capacityMwp','gateway','protocol','productionKwh','lastUpdated','status'],
+ sites:['name','externalSiteId','schoolName','capacityMwp','gateway','externalGatewayId','protocol','productionKwh','lastUpdated','status'],
  schools:['name','region','capacityMwp','sitesCount','gatewaysCount','status'],
  billing:['period','schoolName','siteName','consumedKwh','rate','amount','slipUrl','status'],
  contracts:['contractNumber','schoolName','version','startDate','rate','signers','status'],

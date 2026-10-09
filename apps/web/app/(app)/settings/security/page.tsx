@@ -104,7 +104,7 @@ export default function SecuritySettingsPage() {
           <CardContent className="p-0 pt-4">
             {passwordSuccess ? (
               <div className="py-6 flex flex-col items-center text-center space-y-2">
-                <CheckCircle2 className="size-10 text-emerald-500 animate-in zoom-in-50 duration-300" />
+                <CheckCircle2 className="size-10 text-success animate-in zoom-in-50 duration-300" />
                 <h4 className="text-sm font-bold text-foreground">
                   {locale === "th" ? "เปลี่ยนรหัสผ่านสำเร็จ!" : "Password Updated Successfully!"}
                 </h4>

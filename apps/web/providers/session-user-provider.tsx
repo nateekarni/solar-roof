@@ -1,5 +1,5 @@
 "use client";
-import { createContext, useContext, useLayoutEffect, type ReactNode } from "react";
+import React, { createContext, useContext, useLayoutEffect, type ReactNode } from "react";
 import type { AuthUser } from "../stores/auth-store";
 import { syncSessionUser } from "../lib/financial-session";
 const SessionUserContext = createContext<AuthUser | null>(null);

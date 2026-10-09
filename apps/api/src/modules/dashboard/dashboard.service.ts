@@ -5,7 +5,7 @@ import { schoolScope } from '../../common/auth/resource-scope.js';
 import { DatabaseService } from '../../database/database.service.js';
 
 export interface DashboardPrincipal { id?:string; role?:string; schoolId?:string; assignedSchoolIds?:readonly string[]; assignedSiteIds?:readonly string[] }
-interface SiteRow {id:string;name:string;school_name:string;capacity_mwp:string;latitude:string|null;longitude:string|null;gateway_id:string|null;gateway_name:string|null;last_seen_at:string|null}
+interface SiteRow {external_site_id:string|null;external_gateway_id:string|null;id:string;name:string;school_name:string;capacity_mwp:string;latitude:string|null;longitude:string|null;gateway_id:string|null;gateway_name:string|null;last_seen_at:string|null}
 const ENERGY_QUALITY_SEVERITY:Record<string,number>={complete:0,partial:1,missing:2,reset:3,preparing:4};
 // Ingested aggregates are cumulative meter snapshots, not energy increments. Calculate
 // consecutive per-device deltas once, with a bounded previous-day baseline. Never sum snapshots.
@@ -37,10 +37,10 @@ export class DashboardService {
     const schools = !global && user.role !== 'school_user' && schoolIds.length ? schoolIds : schoolScope(user);
     const assignedSites = !global && user.assignedSiteIds?.length ? [...user.assignedSiteIds] : null;
     if (siteId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(siteId)) throw new BadRequestException('Invalid site_id');
-    const result = await this.db.query<SiteRow>(`SELECT s.id,s.name,sc.name school_name,s.capacity_mwp,s.latitude,s.longitude,
-      g.id gateway_id,g.name gateway_name,g.last_seen_at::text
+    const result = await this.db.query<SiteRow>(`SELECT s.id,s.external_site_id,s.name,sc.name school_name,s.capacity_mwp,s.latitude,s.longitude,
+      g.id gateway_id,g.external_gateway_id,g.name gateway_name,g.last_seen_at::text
       FROM sites s JOIN schools sc ON sc.id=s.school_id
-      LEFT JOIN LATERAL (SELECT id,name,last_seen_at FROM gateways WHERE site_id=s.id ORDER BY created_at,id LIMIT 1) g ON true
+      LEFT JOIN LATERAL (SELECT id,name,external_gateway_id,last_seen_at FROM gateways WHERE site_id=s.id ORDER BY created_at,id LIMIT 1) g ON true
       WHERE ($1::uuid[] IS NULL OR s.school_id=ANY($1::uuid[]))
       AND ($2::uuid[] IS NULL OR s.id=ANY($2::uuid[]))
       AND ($3::uuid IS NULL OR s.id=$3::uuid) ORDER BY s.name`,[schools,assignedSites,siteId || null]);
@@ -89,9 +89,9 @@ export class DashboardService {
     const paid=billing.rows.filter(r=>r.paid).reduce((sum,r)=>sum+Number(r.amount),0);
     const online=(s:SiteRow)=>Boolean(s.last_seen_at && Date.now()-Date.parse(s.last_seen_at)>=0 && Date.now()-Date.parse(s.last_seen_at)<=120000);
     return {
-      range:{start,end},availableSites:availableSites.map(s=>({id:s.id,name:s.name})),
+      range:{start,end},availableSites:availableSites.map(s=>({id:s.id,externalSiteId:s.external_site_id??null,name:s.name})),
       // Navigation metadata only: do not expose measurements or gateway state for unselected sites.
-      availableMapSites:availableSites.map(s=>({id:s.id,name:s.name,schoolName:s.school_name,latitude:s.latitude===null?null:Number(s.latitude),longitude:s.longitude===null?null:Number(s.longitude)})),
+      availableMapSites:availableSites.map(s=>({id:s.id,externalSiteId:s.external_site_id??null,name:s.name,schoolName:s.school_name,latitude:s.latitude===null?null:Number(s.latitude),longitude:s.longitude===null?null:Number(s.longitude)})),
       stats:{totalSites:sites.length,onlineSites:sites.filter(online).length,installedMwp:sites.reduce((n,s)=>n+Number(s.capacity_mwp),0),
         currentMw:power.rows.length ? power.rows.reduce((n,r)=>n+Number(r.power_kw),0)/1000 : null,
         periodKwh:energy.rows.length && ![...production.values()].includes(null) ? [...production.values()].reduce<number>((a,b)=>a+(b??0),0) : null,periodAmount:total,
@@ -101,9 +101,9 @@ export class DashboardService {
       revenue:[...revenue].map(([date,value])=>({date,value})),
       rankings:sites.filter(s=>perSite.has(s.id)&&!unknownSites.has(s.id)).map(s=>({name:s.name,productionKwh:perSite.get(s.id)!})).sort((a,b)=>b.productionKwh-a.productionKwh).slice(0,5),
       alerts:alerts.rows.map(({active_count,...alert})=>alert),alertActiveCount:Number(alerts.rows[0]?.active_count??0),collection:{total,paid,pending:total-paid,paidPercent:total ? paid/total*100 : 0},
-      sites:sites.map(s=>({id:s.id,name:s.name,schoolName:s.school_name,latitude:s.latitude===null?null:Number(s.latitude),longitude:s.longitude===null?null:Number(s.longitude),
+      sites:sites.map(s=>({id:s.id,externalSiteId:s.external_site_id??null,name:s.name,schoolName:s.school_name,latitude:s.latitude===null?null:Number(s.latitude),longitude:s.longitude===null?null:Number(s.longitude),
         status:online(s)?'online':'offline',capacityMwp:Number(s.capacity_mwp),productionKwh:unknownSites.has(s.id)?null:perSite.get(s.id)??null,
-        gatewayId:s.gateway_id,gatewayName:s.gateway_name,lastUpdated:s.last_seen_at})),
+        externalGatewayId:s.external_gateway_id??null,gatewayId:s.gateway_id,gatewayName:s.gateway_name,lastUpdated:s.last_seen_at})),
     };
   }
 
@@ -127,7 +127,7 @@ export class DashboardService {
       for (const row of result.rows) values.set(row.site_id,Number(row.amount));
     }
     // Response identities are site IDs, including when display names are duplicated.
-    return selected.map(site=>({siteId:site.id,site:site.name,value:
+    return selected.map(site=>({siteId:site.id,externalSiteId:site.external_site_id??null,site:site.name,value:
       metric==='installedMwp'?Number(site.capacity_mwp):
       metric==='onlineSites'?(site.last_seen_at && Date.now()-Date.parse(site.last_seen_at)>=0 && Date.now()-Date.parse(site.last_seen_at)<=120000?1:0):
       values.get(site.id)??(metric==='periodAmount'?0:null)}));
@@ -150,7 +150,7 @@ export class DashboardService {
  FROM latest GROUP BY site_id`,[sites.map(site=>site.id)]);
     return {sites:sites.map(s=>{
       const reading=values.rows.find(r=>r.site_id===s.id);
-      return {siteId:s.id,siteName:s.name,gatewayId:s.gateway_id,gatewayName:s.gateway_name,
+      return {siteId:s.id,externalSiteId:s.external_site_id??null,siteName:s.name,externalGatewayId:s.external_gateway_id??null,gatewayId:s.gateway_id,gatewayName:s.gateway_name,
         timestamp:reading?.source_time??null,serverReceivedAt:reading?.received_time??null,lastUpdated:s.last_seen_at,
         meterPowerKw:reading?Number(reading.power_kw):null,
         solarKw:reading?Number(reading.power_kw):null, // Legacy generic billing meter field; never use as PV.

@@ -35,7 +35,7 @@ export function SiteTelemetryDialog({ open, onOpenChange, siteId, siteName }: {
     setLoading(true);
     try {
       const loadedConfig = await apiClient.get<PayloadConfig | null>(`/v1/sites/${siteId}/payload-config`).catch(failure => { setConfigError(failure instanceof Error ? failure.message : "โหลด Payload config ไม่สำเร็จ"); return null; });
-      const config = loadedConfig?.externalSiteId && loadedConfig.externalGatewayId ? loadedConfig : null;
+      const config = loadedConfig?.subscriptionTopic.startsWith("solar/v1/") ? loadedConfig : null;
       setPayloadConfig(config); if(config) setConfigError('');
       const result = await apiClient.get<LiveTelemetryData | null>(`/v1/sites/${siteId}/live-telemetry`);
       setData(result); setError('');

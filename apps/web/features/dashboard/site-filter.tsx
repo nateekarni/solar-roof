@@ -7,7 +7,7 @@ import { Button } from '../../components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '../../components/ui/popover';
 import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from '../../components/ui/command';
 
-export function SiteFilter({ sites }: { sites: { id: string; name: string }[] }) {
+export function SiteFilter({ sites }: { sites: { id: string; name: string; externalSiteId?: string | null }[] }) {
   const {selectedSiteId:selected,chooseSite}=useSiteSelection();
   const th = useLocale() === 'th';
   const [open, setOpen] = useState(false);
@@ -20,13 +20,13 @@ export function SiteFilter({ sites }: { sites: { id: string; name: string }[] })
     <span>{th ? 'ไซต์' : 'Site'}</span>
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild><Button variant="outline" role="combobox" aria-expanded={open} aria-label={th ? 'เลือกไซต์' : 'Select site'} className="w-48 justify-between">
-        <span className="truncate">{options.find(site => site.id === selected)?.name ?? (th ? 'เลือกไซต์' : 'Select site')}</span><ChevronsUpDown />
+        <span className="truncate">{options.find(site => site.id === selected)?.name ?? (th ? 'เลือกไซต์' : 'Select site')}{selected && <> · {sites.find(site=>site.id===selected)?.externalSiteId??(th?'ยังไม่มีรหัส':'No registered code')}</>}</span><ChevronsUpDown />
       </Button></PopoverTrigger>
       <PopoverContent className="w-64 p-0" align="end">
         <Command><CommandInput placeholder={th ? 'ค้นหาไซต์…' : 'Search sites…'} /><CommandList>
           <CommandEmpty>{th ? 'ไม่พบไซต์' : 'No sites found'}</CommandEmpty>
-          {options.map(site => <CommandItem key={site.id} value={`${site.name} ${site.id}`} onSelect={() => choose(site.id)}>
-            <Check className={selected === site.id ? 'opacity-100' : 'opacity-0'} />{site.name}
+          {options.map(site => <CommandItem key={site.id} value={`${site.name} ${site.externalSiteId??""}`} onSelect={() => choose(site.id)}>
+            <Check className={selected === site.id ? 'opacity-100' : 'opacity-0'} />{site.name}{site.id && <span className="text-muted-foreground">{site.externalSiteId??(th?"ยังไม่มีรหัส":"No registered code")}</span>}
           </CommandItem>)}
         </CommandList></Command>
       </PopoverContent>

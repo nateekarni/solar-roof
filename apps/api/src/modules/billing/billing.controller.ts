@@ -223,16 +223,16 @@ export class BillingController {
         const contractSql = `
           INSERT INTO contracts (
             id, site_id, version, start_date, status, payment_terms, signer_name,
-            tax_id, company_name, branch, tax_address, billing_email, billing_phone, signer_title, customer_signer_name, customer_signer_title
+            tax_id, company_name, branch, tax_address, billing_email, billing_phone, signer_title, customer_signer_name, customer_signer_title, payment_term_days, recipient_user_ids
           )
-          VALUES ($1, $2, $3, $4, 'active', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+          VALUES ($1, $2, $3, $4, 'active', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
           RETURNING id, site_id AS "siteId", version, start_date AS "startDate", status,
                     tax_id AS "taxId", company_name AS "companyName", branch,
                     tax_address AS "taxAddress", billing_email AS "billingEmail", billing_phone AS "billingPhone"
         `;
         const res = await client.query(contractSql, [
           contractId, targetSiteId, version, effectiveDate, paymentTerms, providerName,
-          taxId, companyName, branch, taxAddress, billingEmail, billingPhone, providerTitle, body.customerSignerName?.trim()??'', body.customerSignerTitle?.trim()??''
+          taxId, companyName, branch, taxAddress, billingEmail, billingPhone, providerTitle, body.customerSignerName?.trim()??'', body.customerSignerTitle?.trim()??'', body.paymentTermDays??null, body.recipientUserIds??[]
         ]);
 
         // 2. Insert rate versions
@@ -257,7 +257,6 @@ export class BillingController {
           );
         }
 
-        await client.query('UPDATE contracts SET payment_term_days=$2,recipient_user_ids=$3 WHERE id=$1',[contractId,body.paymentTermDays??null,body.recipientUserIds??[]]);
         const original=await this.contractPdfs.ensureInTransaction(client,contractId,actor);
         createdContracts.push({...res.rows[0],documentId:original.documentId,contractNumber:original.documentNumber,documentNumber:original.documentNumber,contentHash:original.sha256,paymentTermDays:body.paymentTermDays??null,recipientUserIds:body.recipientUserIds??[]});
       }
