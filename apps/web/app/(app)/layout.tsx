@@ -21,7 +21,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
         <AppSidebar />
         <SidebarInset className="flex flex-col h-svh overflow-hidden">
           <AppHeader />
-          <div className="flex-1 overflow-y-auto overflow-x-hidden w-full bg-neutral-100 dark:bg-background pb-20 md:pb-0">
+          <div className="flex-1 overflow-y-auto overflow-x-hidden w-full bg-muted dark:bg-background pb-20 md:pb-0">
             {children}
           </div>
           <MobileBottomNav />

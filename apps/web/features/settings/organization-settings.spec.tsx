@@ -9,6 +9,18 @@ test("settings keeps organization legal records read only and exposes account ed
   assert.match(html, /ข้อมูลนิติบุคคล|Legal organization information/);
   assert.doesNotMatch(html, /PPA Agreement|โรงเรียน/);
 });
+
+test("account fields and preference triggers retain explicit accessible label associations", () => {
+  const html = renderToStaticMarkup(<SchoolSettingsView />);
+  for (const id of ["organization-display-name", "organization-language", "organization-theme"]) {
+    assert.ok(html.includes(`for="${id}"`), `Missing label for ${id}`);
+    assert.ok(html.includes(`id="${id}"`), `Missing control ${id}`);
+  }
+  const passwordControls = [...html.matchAll(/<input(?=[^>]*type="password")(?=[^>]*id="([^"]+)")[^>]*>/g)];
+  assert.equal(passwordControls.length, 3);
+  assert.equal(new Set(passwordControls.map(match => match[1])).size, 3);
+  for (const match of passwordControls) assert.ok(html.includes(`for="${match[1]}"`));
+});
 test("password validation is localized and rejects mismatch before submission", () => {
   assert.equal(
     validateOrganizationPassword("short", "short", "en"),

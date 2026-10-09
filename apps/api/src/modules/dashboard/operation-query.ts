@@ -6,7 +6,7 @@ import type { ScopePrincipal } from '../../common/auth/resource-scope.js';
 // Identifiers only come from this server-owned vocabulary, never request text.
 export const operationQueries: Record<string, { sorts: string[]; search: string[]; date?: string; direction: 'asc' | 'desc' }> = {
   schools: { sorts: ["name", "code", "region", "capacityMwp", "sitesCount", "gatewaysCount", "status"], search: ['name', 'code', 'region'], date: 'createdAt', direction: 'asc' },
-  sites: { sorts: ["name", "schoolName", "capacityMwp", "gateway", "protocol", "productionKwh", "lastUpdated", "status"], search: ['name', 'schoolName'], date: 'createdAt', direction: 'asc' },
+  sites: { sorts: ["name", "schoolName", "capacityMwp", "gateway", "protocol", "productionKwh", "lastUpdated", "status"], search: ['name', 'schoolName', 'externalSiteId'], date: 'createdAt', direction: 'asc' },
   billing: { sorts: ["period", "schoolName", "siteName", "consumedKwh", "rate", "amount", "status"], search: ['period', 'schoolName', 'siteName', 'status'], date: 'period', direction: 'desc' },
   contracts: { sorts: ["startDate", "contractNumber", "schoolName", "version", "rate", "signers", "status"], search: ['contractNumber', 'schoolName', 'siteName', 'signers', 'status'], date: 'startDate', direction: 'desc' },
   documents: { sorts: ["issueDate", "documentNumber", "type", "schoolName", "amount", "status"], search: ['documentNumber', 'type', 'schoolName', 'siteName', 'status'], date: 'issueDate', direction: 'desc' },

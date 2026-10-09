@@ -29,7 +29,7 @@ export function validateDeviceProfile(config:PayloadProfile,billing:boolean,loca
  if(billing&&(config.deviceType==='solar-logger'||config.fields.filter(f=>f.role==='billing-import').length!==1))return fail('Main meter requires one cumulative billing field in kWh.','มิเตอร์หลักต้องมีฟิลด์พลังงานสะสมสำหรับบิลหนึ่งฟิลด์ หน่วย kWh');
  return null;
 }
-export function validateDeviceDraft(draft:DeviceDraft,billing:boolean,locale:string):string|null {
- if(!draft.name.trim()||!draft.model.trim()||!draft.serialNumber.trim()||!/^[-A-Za-z0-9_]{1,128}$/.test(draft.externalDeviceId))return locale==='th'?'กรอกชื่อ รุ่น ซีเรียลจริง และ Device ID (A–Z, a–z, 0–9, _ หรือ -)':'Enter name, model, actual serial and Device ID (letters, digits, _ or -).';
+export function validateDeviceDraft(draft:DeviceDraft,billing:boolean,locale:string,allowBlankCode=false):string|null {
+ if(!draft.name.trim()||!draft.model.trim()||!draft.serialNumber.trim()||!(allowBlankCode&&!draft.externalDeviceId.trim())&&!/^[-A-Za-z0-9_]{1,128}$/.test(draft.externalDeviceId))return locale==='th'?'กรอกชื่อ รุ่น ซีเรียลจริง และ Device ID (A–Z, a–z, 0–9, _ หรือ -)':'Enter name, model, actual serial and Device ID (letters, digits, _ or -).';
  return validateDeviceProfile(draft.config,billing,locale);
 }

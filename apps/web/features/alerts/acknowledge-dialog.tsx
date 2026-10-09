@@ -53,7 +53,7 @@ export function AcknowledgeDialog({
       <DialogContent className="sm:max-w-[400px]">
         <DialogHeader>
           <div className="flex items-center gap-2.5">
-            <div className="grid size-9 place-items-center rounded-lg bg-amber-500/15 text-amber-600 dark:text-amber-400">
+            <div className="grid size-9 place-items-center rounded-lg bg-warning/15 text-warning-emphasis ">
               <AlertTriangle className="size-5" />
             </div>
             <div>

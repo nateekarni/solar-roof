@@ -31,7 +31,10 @@ export interface DashboardSummaryStats {
   paidBillCount: number;
 }
 
+/** IDs are internal UUID references; external fields are registered operational codes. */
 export interface DashboardSummarySite {
+  externalSiteId?: string | null;
+  externalGatewayId?: string | null;
   gatewayId?: string | null;
   gatewayName?: string | null;
   lastUpdated?: string | null;
@@ -69,17 +72,18 @@ export interface DashboardSummaryCollection {
 }
 
 export interface DashboardCompareItem {
+  externalSiteId?: string | null;
   siteId: string;
   site: string;
   value: number | null;
 }
 
 export interface DashboardSummaryResponse {
-  availableMapSites?: Pick<DashboardSummarySite,'id'|'name'|'schoolName'|'latitude'|'longitude'>[];
+  availableMapSites?: Pick<DashboardSummarySite,'id'|'externalSiteId'|'name'|'schoolName'|'latitude'|'longitude'>[];
   alertActiveCount?: number;
   energyReadModel?: {enabled:boolean;status:'preparing'|'ready';watermark:string|null};
   range: {start: string; end: string};
-  availableSites: {id: string; name: string}[];
+  availableSites: {id: string; externalSiteId?: string | null; name: string}[];
   sites: DashboardSummarySite[];
   stats: DashboardSummaryStats;
   production: DashboardSummaryDataPoint[];

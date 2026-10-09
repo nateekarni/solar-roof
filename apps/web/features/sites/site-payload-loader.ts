@@ -21,7 +21,7 @@ export function createSitePayloadLoader(
    const request=++generation;
    try{
     const config=await load(siteId);
-    if(current(siteId,request))publish(config?.siteId===siteId&&config.externalSiteId&&config.externalGatewayId?config:null);
+    if(current(siteId,request))publish(config?.siteId===siteId&&config.subscriptionTopic.startsWith("solar/v1/")?config:null);
    }catch{
     if(current(siteId,request))publish(null);
    }

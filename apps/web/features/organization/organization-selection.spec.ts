@@ -38,3 +38,4 @@ test('keyboard organization selection starts at first or last row and wraps with
  assert.equal(organizationOptionIndex(0,3,'up'),2);
  assert.equal(organizationOptionIndex(-1,0,'down'),-1);
 });
+test('new customer defaults to a blank code for server allocation and retains manually entered case',()=>{assert.deepEqual(organizationSitePayload(selectOrganizationText([],'New customer')),{newOrganization:{name:'New customer',code:''}});assert.deepEqual(organizationSitePayload(selectOrganizationText([],'New customer','Org-Custom')),{newOrganization:{name:'New customer',code:'Org-Custom'}});});

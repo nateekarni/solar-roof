@@ -34,7 +34,7 @@ export function DashboardAlertsCard({alerts,role,locale}:{alerts:DashboardSummar
                             className={`grid size-6 shrink-0 place-items-center rounded-md mt-0.5 ${
                               isCritical
                                 ? "bg-destructive/10 text-destructive"
-                                : "bg-warning/15 text-warning"
+                                : "bg-warning/15 text-warning-emphasis"
                             }`}
                           >
                             <AlertTriangle className="size-3.5" />

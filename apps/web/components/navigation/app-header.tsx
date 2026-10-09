@@ -1,21 +1,14 @@
 "use client";
 import {BrandMark, BRAND_NAME} from "../brand/brand-mark";
 import {ProfilePreferences} from "./profile-preferences";
-import {acknowledgeAlertScope} from './acknowledge-alert-scope';
+import {NotificationBell} from './notification-bell';
 import {useSiteSelection} from '../../features/dashboard/site-selection-provider';
-import type {DashboardSummaryResponse} from '@solar/api-contracts';
-import { canVisitPage } from "@solar/domain";
 import { useSessionUser } from "../../providers/session-user-provider";
 
 import {
-  AlertTriangle,
-  Bell,
-  CheckCircle2,
-  CheckCheck,
   ChevronRight,
   Globe,
   Laptop,
-  Loader2,
   LogOut,
   Menu,
   Moon,
@@ -24,10 +17,9 @@ import {
   Shield,
   Sun,
   User,
-  X,
 } from "lucide-react";
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import * as React from "react";
 import { MobileMenuSheet } from "./mobile-menu-sheet";
@@ -47,7 +39,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "../../components/ui/popover";
-import { ResponsivePopover } from "../../components/ui/responsive-popover";
 import { Separator } from "../../components/ui/separator";
 import { SidebarTrigger } from "../../components/ui/sidebar";
 import { apiClient } from "../../lib/api-client";
@@ -55,25 +46,9 @@ import { cn } from "../../lib/utils";
 import { useLocale, useSetLocale, useT } from "../../providers/locale-provider";
 import { useAuth } from "../../stores/auth-store";
 
-interface AlertItem {
-  id: string;
-  severity: string;
-  title: string;
-  detail: string;
-  status: string;
-  occurredAt?: string;
-}
-
 export function AppHeader() {
   const pathname = usePathname();
-  const searchParams=useSearchParams();
   const {selectedSiteId}=useSiteSelection();
-  const scopedDashboard=pathname==='/'&&Boolean(selectedSiteId);
-  const notificationParams=new URLSearchParams();
-  if(scopedDashboard){notificationParams.set('site_id',selectedSiteId);for(const key of ['start_date','end_date','month','year']){const value=searchParams.get(key);if(value)notificationParams.set(key,value);}}
-  const notificationScope=scopedDashboard?notificationParams.toString():'global';
-  const notificationScopeRef=React.useRef(notificationScope);
-  notificationScopeRef.current=notificationScope;
   const router = useRouter();
   const t = useT();
   const locale = useLocale();
@@ -81,101 +56,9 @@ export function AppHeader() {
   const { theme, setTheme } = useTheme();
   const { clear } = useAuth();
   const user = useSessionUser();
-  const canViewAlerts = canVisitPage(user.role, "/alerts");
 
-  const [notificationOpen, setNotificationOpen] = React.useState(false);
   const [profileOpen, setProfileOpen] = React.useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
-  const [allAlerts, setAllAlerts] = React.useState<AlertItem[]>([]);
-  const [visibleCount, setVisibleCount] = React.useState(6);
-  const [loadingMore, setLoadingMore] = React.useState(false);
-  const [alerts, setAlerts] = React.useState<AlertItem[]>([]);
-  const [storedActiveAlertCount, setActiveAlertCount] = React.useState(0);
-  const [loadingAlerts, setLoadingAlerts] = React.useState(false);
-  const [loadedAlertScope,setLoadedAlertScope]=React.useState('');
-  const alertRequest=React.useRef(0);
-  const activeAlertCount=loadedAlertScope===notificationScope?storedActiveAlertCount:0;
-  const displayedAlerts=loadedAlertScope===notificationScope?alerts:[];
-
-  // Fetch active alerts count on mount and on open
-  const fetchAlerts = React.useCallback(async () => {
-    if (!canViewAlerts) return;
-    const request=++alertRequest.current;
-    setLoadingAlerts(true);
-    setLoadingMore(false);
-    setAllAlerts([]);setAlerts([]);setActiveAlertCount(0);
-    try {
-      if(scopedDashboard){
-        const summary=await apiClient.get<DashboardSummaryResponse>(`/v1/dashboard/summary?${notificationScope}`);
-        if(request!==alertRequest.current)return;
-        const rows=summary.alerts.map((alert,index)=>({...alert,id:alert.id||`${selectedSiteId}-${index}`}));
-        setAllAlerts(rows);setAlerts(rows.slice(0,6));setVisibleCount(6);setActiveAlertCount(summary.alertActiveCount??rows.filter(row=>row.status!=='acknowledged').length);setLoadedAlertScope(notificationScope);
-        return;
-      }
-      const [listRes, summaryRes] = await Promise.all([
-        apiClient.get<{ rows: AlertItem[] }>("/v1/operations/alerts").catch(() => ({ rows: [] })),
-        apiClient.get<{ label: string; value: number }[]>("/v1/operations/alerts/summary").catch(() => []),
-      ]);
-      if(request!==alertRequest.current)return;
-
-      const rows = listRes.rows || [];
-      setAllAlerts(rows);
-      setAlerts(rows.slice(0, 6));
-      setVisibleCount(6);
-      setLoadedAlertScope(notificationScope);
-      const activeItem = summaryRes.find((s) => s.label.includes("active") || s.label.includes("ใช้งาน"));
-      setActiveAlertCount(Number(activeItem?.value ?? rows.filter((r) => r.status !== "acknowledged").length));
-    } catch {
-      // ignore
-    } finally {
-      if(request===alertRequest.current){setLoadingAlerts(false);setLoadedAlertScope(notificationScope);}
-    }
-  }, [canViewAlerts,notificationScope,scopedDashboard,selectedSiteId]);
-
-  const handleMarkAllAsRead = async () => {
-    if(scopedDashboard)return;
-    try {
-      await acknowledgeAlertScope(apiClient,{scope:notificationScope,generation:alertRequest.current},()=>({scope:notificationScopeRef.current,generation:alertRequest.current}),()=>{
-      setActiveAlertCount(0);
-      setAllAlerts((prev) => prev.map((a) => ({ ...a, status: "acknowledged" })));
-      setAlerts((prev) => prev.map((a) => ({ ...a, status: "acknowledged" })));
-      void fetchAlerts();
-      });
-    } catch {
-      // ignore
-    }
-  };
-
-  const handleNotificationScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
-    if (scrollHeight - scrollTop - clientHeight < 25) {
-      if (visibleCount < allAlerts.length && !loadingMore) {
-        const request=alertRequest.current;
-        setLoadingMore(true);
-        setTimeout(() => {
-          if(request!==alertRequest.current)return;
-          setVisibleCount((prev) => {
-            const next = Math.min(prev + 6, allAlerts.length);
-            setAlerts(allAlerts.slice(0, next));
-            return next;
-          });
-          setLoadingMore(false);
-        }, 250);
-      }
-    }
-  };
-
-  React.useEffect(() => {
-    fetchAlerts();
-    return()=>{alertRequest.current++;};
-  }, [fetchAlerts]);
-
-  React.useEffect(() => {
-    if (notificationOpen) {
-      fetchAlerts();
-    }
-  }, [notificationOpen, fetchAlerts]);
-
   const handleLogout = async () => {
     try {
       await apiClient.post("/v1/auth/logout");
@@ -294,123 +177,7 @@ export function AppHeader() {
 
       <div className="flex items-center gap-1.5 md:gap-2">
         {/* Notification Popover (Responsive: Full-screen Sheet on Mobile, Popover on Desktop) */}
-        {canViewAlerts && <ResponsivePopover
-          open={notificationOpen}
-          onOpenChange={setNotificationOpen}
-          title={t("notifications.header")}
-          sheetHeaderClassName="sr-only"
-          showCloseButton={false}
-          popoverClassName="w-80 max-w-[calc(100vw-2rem)] gap-0 overflow-hidden rounded-xl border border-border p-0 shadow-lg ring-0"
-          sheetClassName="h-full max-h-screen inset-0 rounded-none w-full p-0 flex flex-col gap-0 bg-background overflow-hidden"
-          trigger={
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={t("navigation.alerts")}
-              className="relative size-10 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer"
-            >
-              <Bell className="size-4" />
-              {activeAlertCount > 0 && (
-                <span className="absolute top-1.5 right-1.5 size-2 rounded-full bg-destructive ring-2 ring-card animate-pulse" />
-              )}
-            </Button>
-          }
-        >
-          {/* Notification header with compact actions */}
-          <div className="flex h-12 shrink-0 items-center bg-card px-3">
-            <div className="flex w-full items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-sm sm:text-xs font-bold sm:font-semibold text-foreground">
-                  {t("notifications.header")}
-                </span>
-                {activeAlertCount > 0 ? (
-                  <Badge
-                    variant="secondary"
-                    className="h-5 px-1.5 text-[10px] font-medium rounded-full bg-destructive/15 text-destructive"
-                  >
-                    {t("notifications.badge", { count: activeAlertCount })}
-                  </Badge>
-                ) : (
-                  <Badge
-                    variant="secondary"
-                    className="h-5 px-1.5 text-[10px] font-medium rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
-                  >
-                    {t("notifications.allClear")}
-                  </Badge>
-                )}
-              </div>
-
-              <div className="flex shrink-0 items-center gap-1">
-              <Button variant="ghost" size="icon" type="button" onClick={handleMarkAllAsRead} disabled={scopedDashboard || activeAlertCount === 0} className="size-8 text-primary hover:bg-primary/10" aria-label={t("notifications.markAllAsRead")} title={t("notifications.markAllAsRead")}><CheckCheck aria-hidden="true" className="size-4" /></Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                type="button"
-                onClick={() => setNotificationOpen(false)}
-                className="size-8 rounded-full p-0 text-muted-foreground hover:text-foreground hover:bg-muted"
-                aria-label={locale === "th" ? "ปิด" : "Close"}
-              >
-                <X className="size-4" />
-              </Button>
-            </div>
-
-            </div>
-          </div>
-
-          <div
-            onScroll={handleNotificationScroll}
-            className="divide-y divide-border/60 flex-1 md:max-h-72 overflow-y-auto scrollbar-none [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          >
-            {loadingAlerts || loadedAlertScope !== notificationScope ? (
-              <div className="p-4 text-center text-xs text-muted-foreground">
-                {t("common.loading")}
-              </div>
-            ) : displayedAlerts.length === 0 ? (
-              <div className="flex flex-col items-center justify-center p-6 text-center">
-                <CheckCircle2 className="size-8 text-emerald-500/70 mb-2" />
-                <p className="text-xs text-muted-foreground">
-                  {t("notifications.noAlerts")}
-                </p>
-              </div>
-            ) : (
-              <>
-                {displayedAlerts.map((alert) => (
-                  <Link
-                    key={alert.id}
-                    href="/alerts"
-                    onClick={() => setNotificationOpen(false)}
-                    className="flex items-start gap-2.5 p-3.5 sm:p-3 hover:bg-muted/40 transition-colors"
-                  >
-                    <div className="grid size-6 shrink-0 place-items-center rounded-md bg-destructive/15 text-destructive mt-0.5">
-                      <AlertTriangle className="size-3.5" />
-                    </div>
-                    <div className="min-w-0 flex-1 flex flex-col gap-0.5">
-                      <div className="flex items-center justify-between gap-1">
-                        <strong className="truncate text-xs font-semibold text-foreground leading-tight">
-                          {alert.title}
-                        </strong>
-                        <span className="text-[10px] text-muted-foreground shrink-0">
-                          {alert.status === "acknowledged"
-                            ? t("notifications.acknowledged")
-                            : alert.severity || "alarm"}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-muted-foreground line-clamp-1 leading-tight">
-                        {alert.detail}
-                      </p>
-                    </div>
-                  </Link>
-                ))}
-                {loadingMore && (
-                  <div className="flex items-center justify-center p-2.5 text-xs text-muted-foreground gap-1.5 bg-muted/10">
-                    <Loader2 className="size-3.5 animate-spin text-primary" />
-                    <span>{t("common.loading")}</span>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        </ResponsivePopover>}
+        <NotificationBell siteId={pathname==='/'?selectedSiteId||undefined:undefined}/>
 
         {/* Profile Popover with Language & Theme Switches (Desktop) */}
         <div className="hidden md:block">

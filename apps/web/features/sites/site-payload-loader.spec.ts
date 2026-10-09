@@ -3,7 +3,7 @@ import test from "node:test";
 import {createSitePayloadLoader} from "./site-payload-loader";
 import type {PayloadConfig} from "./payload-contracts";
 function config(siteId:string,revision:string):PayloadConfig{return {
- siteId,externalSiteId:siteId,gatewayId:"gateway-"+siteId,externalGatewayId:"GW-"+siteId,subscriptionTopic:"solar/"+siteId,ackTopic:null,
+ siteId,externalSiteId:siteId,gatewayId:"gateway-"+siteId,externalGatewayId:"GW-"+siteId,subscriptionTopic:"solar/v1/"+siteId,ackTopic:null,
  devices:[{id:"device-"+siteId,name:"Main "+siteId,externalDeviceId:"meter-"+siteId,profileRevisionId:revision,profileId:"meter",profileVersion:"1.0.0",telemetryTopic:"solar/"+siteId,fixture:{},billingMeter:true}],
  receiveRevision:{id:null,version:0,config:{messagesPath:"payloads",fieldPaths:{},deviceAliases:[]},createdAt:null},bundleFixture:null,rejections:[],unmappedMessages:[]
 };}
@@ -54,3 +54,5 @@ test("closing then reopening the same site rejects the previous session's respon
  old.resolve(config("A","previous-session"));await first;
  assert.equal(shown?.devices[0]?.profileRevisionId,"reopened-profile");
 });
+
+test("legacy codes do not activate standard payload editor",async()=>{let shown:PayloadConfig|null=null;const legacy={...config("A","r"),subscriptionTopic:"energy/GW/#"};const loader=createSitePayloadLoader(async()=>legacy,()=>({open:true,siteId:"A"}),value=>{shown=value;});loader.activate("A");await loader.refresh();assert.equal(shown,null);});

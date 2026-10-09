@@ -9,11 +9,12 @@ import { IngestionDatabaseService } from './ingestion-database.service.js';
 import { PayloadIngestion, gatewayPrefix } from "./payload-ingestion.js";
 import { budget, IngestionLimiter, parseBoundedPayload } from './ingestion-limiter.js';
 
-export interface CanonicalLiveField {deviceId:string;deviceName:string;tag:string;value:number;unit:string;rawValue:number;rawUnit:string;polledAt:string;receivedAt:string;quality:string;communication:string;profileId:string;profileVersion:string;pollGroup:string;ageSeconds:number;stale:boolean}
+export interface CanonicalLiveField {deviceId:string;externalDeviceId?:string|null;deviceName:string;tag:string;value:number;unit:string;rawValue:number;rawUnit:string;polledAt:string;receivedAt:string;quality:string;communication:string;profileId:string;profileVersion:string;pollGroup:string;ageSeconds:number;stale:boolean}
 export interface LiveTelemetrySnapshot {
   canonicalFields?: CanonicalLiveField[];
   siteId: string; siteName?: string | undefined; gatewayId?: string | undefined;
   gatewayName?: string | undefined; endpoint?: string | undefined; deviceId: string;
+  externalSiteId?: string | null; externalGatewayId?: string | null; externalDeviceId?: string | null;
   deviceModel?: string | undefined; timestamp: string; sourceTime?: string | undefined;
   serverReceivedAt?: string | undefined; status: "online" | "degraded" | "offline";
   quality: "Good" | "Fair" | "Bad";
@@ -324,8 +325,9 @@ async handleIncomingMessage(topic: string, messageStr: string | Buffer, sourceCl
     const gateway=result.rows[0]!;
     const targetClient=gateway.brokerId?this.remote.get(gateway.brokerId)?.client:this.client;
     if(!targetClient?.connected)return false;
-    const topic = gateway.externalSiteId && gateway.externalGatewayId ? gatewayPrefix(gateway.externalSiteId,gateway.externalGatewayId)+'/config' : gateway.endpoint.replace(/\/#$/, '') + '/config';
-    await new Promise<void>((resolve, reject) => targetClient.publish(topic, JSON.stringify({ ...configData, gateway: gatewayName, timestamp: new Date().toISOString() }), { qos: 1, retain: true }, error => error ? reject(error) : resolve()));
+    const standard=gateway.endpoint.startsWith('solar/v1/');
+    const topic = standard && gateway.externalSiteId && gateway.externalGatewayId ? gatewayPrefix(gateway.externalSiteId,gateway.externalGatewayId)+'/config' : gateway.endpoint.replace(/\/#$/, '') + '/config';
+    await new Promise<void>((resolve, reject) => targetClient.publish(topic, JSON.stringify({ ...configData, gateway: gatewayName, ...(standard?{siteId:gateway.externalSiteId,gatewayId:gateway.externalGatewayId}:{}), timestamp: new Date().toISOString() }), { qos: 1, retain: true }, error => error ? reject(error) : resolve()));
     return true;
   }
   async getDeviceMappings(deviceId: string, sourceTime = new Date()): Promise<Mapping[]> {
@@ -337,17 +339,17 @@ async handleIncomingMessage(topic: string, messageStr: string | Buffer, sourceCl
   clearMappingCache(_deviceId: string) { /* mappings are selected at source time, never cached across versions */ }
   async getLatestTelemetry(siteId: string): Promise<LiveTelemetrySnapshot | null> {
     const result = await this.db.query(
-      `SELECT tr.*, s.name AS "siteName", d.model AS "deviceModel", g.id AS "gatewayId", g.name AS "gatewayName", g.endpoint
+      `SELECT tr.*, s.name AS "siteName",s.external_site_id AS "externalSiteId",g.external_gateway_id AS "externalGatewayId",d.external_device_id AS "externalDeviceId", d.model AS "deviceModel", g.id AS "gatewayId", g.name AS "gatewayName", g.endpoint
        FROM telemetry_raw tr JOIN sites s ON s.id = tr.site_id JOIN devices d ON d.id = tr.device_id JOIN gateways g ON g.id = d.gateway_id
        WHERE tr.site_id = $1 AND d.device_type<>'logger' AND (EXISTS(SELECT 1 FROM billing_meters b WHERE b.site_id=tr.site_id AND b.device_id=tr.device_id AND b.active) OR NOT EXISTS(SELECT 1 FROM billing_meters b WHERE b.site_id=tr.site_id AND b.active)) ORDER BY tr.source_time DESC, tr.received_time DESC LIMIT 1`, [siteId]);
     let row = result.rows[0];
-    const fields=await this.db.query(`SELECT DISTINCT ON (ps.device_id,ps.tag) ps.device_id AS "deviceId",d.name AS "deviceName",ps.tag,ps.value,ps.unit,ps.raw_value AS "rawValue",ps.raw_unit AS "rawUnit",ps.polled_at AS "polledAt",ps.received_at AS "receivedAt",ps.quality,ps.communication,p.profile_id AS "profileId",p.version AS "profileVersion",ps.poll_group AS "pollGroup",EXISTS(SELECT 1 FROM billing_meters b WHERE b.device_id=ps.device_id AND b.active) AS billing,(SELECT f->>'role' FROM jsonb_array_elements(p.config->'fields') f WHERE f->>'tag'=ps.tag) AS role
+    const fields=await this.db.query(`SELECT DISTINCT ON (ps.device_id,ps.tag) ps.device_id AS "deviceId",d.external_device_id AS "externalDeviceId",d.name AS "deviceName",ps.tag,ps.value,ps.unit,ps.raw_value AS "rawValue",ps.raw_unit AS "rawUnit",ps.polled_at AS "polledAt",ps.received_at AS "receivedAt",ps.quality,ps.communication,p.profile_id AS "profileId",p.version AS "profileVersion",ps.poll_group AS "pollGroup",EXISTS(SELECT 1 FROM billing_meters b WHERE b.device_id=ps.device_id AND b.active) AS billing,(SELECT f->>'role' FROM jsonb_array_elements(p.config->'fields') f WHERE f->>'tag'=ps.tag) AS role
       FROM payload_samples ps JOIN devices d ON d.id=ps.device_id JOIN payload_profile_revisions p ON p.id=ps.profile_revision_id WHERE ps.site_id=$1 ORDER BY ps.device_id,ps.tag,ps.polled_at DESC,ps.received_at DESC,ps.id DESC`,[siteId]);
     if(!row) {
       if(!fields.rows.length)return null;
       const newest=[...fields.rows].sort((a,b)=>new Date(b.polledAt).getTime()-new Date(a.polledAt).getTime())[0]!;
-      const context=(await this.db.query(`SELECT s.name AS "siteName",g.id AS "gatewayId",g.name AS "gatewayName",g.endpoint FROM sites s JOIN gateways g ON g.site_id=s.id WHERE s.id=$1`,[siteId])).rows[0]??{};
-      row={...context,device_id:newest.deviceId,source_time:newest.polledAt,received_time:newest.receivedAt,quality:'partial'};
+      const context=(await this.db.query(`SELECT s.name AS "siteName",s.external_site_id AS "externalSiteId",g.external_gateway_id AS "externalGatewayId",g.id AS "gatewayId",g.name AS "gatewayName",g.endpoint FROM sites s JOIN gateways g ON g.site_id=s.id WHERE s.id=$1`,[siteId])).rows[0]??{};
+      row={...context,externalDeviceId:newest.externalDeviceId,device_id:newest.deviceId,source_time:newest.polledAt,received_time:newest.receivedAt,quality:'partial'};
     }
     const canonicalFields=fields.rows.map(f=>{const {billing:_billing,role:_role,...publicField}=f;const ageSeconds=Math.max(0,(Date.now()-new Date(f.polledAt).getTime())/1000);return {...publicField,value:Number(f.value),rawValue:Number(f.rawValue),polledAt:new Date(f.polledAt).toISOString(),receivedAt:new Date(f.receivedAt).toISOString(),ageSeconds,stale:ageSeconds>120};}) as CanonicalLiveField[];
     const healthy=(f:Record<string,any>)=>['good','complete','ok'].includes(String(f.quality).toLowerCase())&&['online','ok','connected','success'].includes(String(f.communication).toLowerCase());
@@ -360,7 +362,7 @@ async handleIncomingMessage(topic: string, messageStr: string | Buffer, sourceCl
     const poor=billingFields.some(f=>!healthy(f));
     const numeric = (value: unknown) => value === null || value === undefined ? null : Number(value);
     return {
-      canonicalFields, siteId, siteName: row.siteName, deviceId: row.device_id, deviceModel: row.deviceModel, gatewayId: row.gatewayId, gatewayName: row.gatewayName, endpoint: row.endpoint,
+      canonicalFields, siteId, externalSiteId:row.externalSiteId,externalGatewayId:row.externalGatewayId,externalDeviceId:row.externalDeviceId, siteName: row.siteName, deviceId: row.device_id, deviceModel: row.deviceModel, gatewayId: row.gatewayId, gatewayName: row.gatewayName, endpoint: row.endpoint,
       timestamp: new Date(row.source_time).toISOString(), sourceTime: new Date(row.source_time).toISOString(), serverReceivedAt: new Date(row.received_time).toISOString(),
       status: poor ? 'degraded' : isFresh(row.source_time) ? 'online' : 'offline', quality: poor ? 'Bad' : row.quality === 'complete' ? 'Good' : 'Fair',
       metrics: { voltage: numeric(billingValue("electrical.voltage.l1_n",row.voltage_v)), current: numeric(billingValue("electrical.current.l1",row.current_a)), activePower: numeric(billingValue("power.active.total",row.active_power_w)), apparentPower: numeric(billingValue("power.apparent.total",row.apparent_power_va)),

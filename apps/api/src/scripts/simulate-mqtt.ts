@@ -1,5 +1,7 @@
 import "dotenv/config";
 import mqtt from "mqtt";
+import { Pool } from 'pg';
+import { legacyTelemetryTopic, registeredLegacyTargetsSql } from './registered-legacy-target.js';
 
 interface SimulatorConfig {
   mqttUrl: string;
@@ -15,9 +17,16 @@ const config: SimulatorConfig = {
   username: process.env.MQTT_USERNAME || "solar",
   password: process.env.MQTT_PASSWORD || "solar-mqtt-local-only",
   intervalMs: parseInt(process.env.SIMULATION_INTERVAL_MS || "5000", 10),
-  siteCount: 18,
+  siteCount: 0,
   once: process.argv.includes("--once"),
 };
+
+const selectedSite=process.env.SIMULATION_SITE_UUID;
+if(!selectedSite)throw new Error('Set SIMULATION_SITE_UUID to a registered legacy site internal reference.');
+const targetPool=new Pool({connectionString:process.env.DATABASE_URL});
+const targets=await targetPool.query<{siteId:string;gatewayId:string;deviceId:string;endpoint:string}>(registeredLegacyTargetsSql,[selectedSite]).finally(()=>targetPool.end());
+if(!targets.rows.length)throw new Error('No registered legacy MQTT devices found for the selected site.');
+config.siteCount=targets.rows.length;
 
 console.log("[MQTT Simulator] Starting solar telemetry simulation...");
 console.log(`[MQTT Simulator] Connecting to broker at ${config.mqttUrl}`);
@@ -85,17 +94,17 @@ function publishTelemetryBatch() {
   tickCount++;
 
   for (let i = 0; i < config.siteCount; i++) {
-    const siteCode = String(i + 1).padStart(3, "0");
-    const topic = `energy/site${siteCode}/telemetry`;
+    const target=targets.rows[i]!;
+    const topic = legacyTelemetryTopic(target.endpoint);
     const telemetry = calculateSolarOutput(i, now);
 
     const payload = {
-      siteId: `site-${siteCode}`,
-      gatewayId: `GW-${siteCode}`,
-      deviceId: `MTR-${String(i + 1).padStart(4, "0")}`,
+      siteId: target.siteId,
+      gatewayId: target.gatewayId,
+      deviceId: target.deviceId,
       timestamp: now.toISOString(),
       status: i === 7 ? "degraded" : "online",
-      metrics: telemetry,
+      metrics: {...telemetry,activePower:telemetry.activePowerKw*1000,totalEnergy:telemetry.totalEnergyKwh},
     };
 
     client.publish(topic, JSON.stringify(payload), { qos: 0 }, (err) => {
@@ -118,7 +127,7 @@ function publishTelemetryBatch() {
 
 client.on("connect", () => {
   console.log("[MQTT Simulator] Connected to MQTT broker successfully.");
-  console.log(`[MQTT Simulator] Publishing to 18 site topics every ${config.intervalMs / 1000}s`);
+  console.log(`[MQTT Simulator] Publishing to ${config.siteCount} registered devices every ${config.intervalMs / 1000}s`);
 
   // Publish immediate first tick
   publishTelemetryBatch();

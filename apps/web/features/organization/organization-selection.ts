@@ -9,7 +9,7 @@ const normalized=(text:string)=>text.trim().toLocaleLowerCase();
 export function filterOrganizations(organizations:OrganizationRecord[],text:string){
  const query=normalized(text);return organizations.filter(o=>normalized(o.name).includes(query)||normalized(o.code).includes(query));
 }
-export function selectOrganizationText(organizations:OrganizationRecord[],text:string,code:string):OrganizationSelection|null{
+export function selectOrganizationText(organizations:OrganizationRecord[],text:string,code:string=''):OrganizationSelection|null{
  const name=text.trim();if(!name)return null;
  const matches=organizations.filter(o=>normalized(o.name)===normalized(name));
  return matches.length===1?{kind:'existing',organization:matches[0]!}:{kind:'new',organization:{name,code}};
@@ -25,7 +25,7 @@ export function organizationDocumentComplete(organization:OrganizationDocumentDe
 export function contractOrganizationDefaults(organization:OrganizationDocumentDefaults){
  return {companyName:organization.legalName??'',taxId:organization.taxId??'',branch:organization.taxBranch??'',taxAddress:organization.taxAddress??'',billingPhone:organization.phone??'',billingEmail:organization.documentEmail??''};
 }
-export function generateOrganizationCode(){return 'ORG-'+crypto.randomUUID().replaceAll('-','').slice(0,12).toUpperCase();}
+
 
 
 export function organizationOptionIndex(current:number,count:number,direction:'up'|'down'){if(!count)return -1;if(current<0)return direction==='down'?0:count-1;return (current+(direction==='down'?1:-1)+count)%count;}

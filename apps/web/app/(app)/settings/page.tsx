@@ -121,7 +121,7 @@ export default function SettingsPage() {
                 href="/settings/company"
                 className="flex items-center gap-3 p-3.5 hover:bg-muted/50 transition-colors cursor-pointer"
               >
-                <div className="flex size-9 items-center justify-center rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 shrink-0">
+                <div className="flex size-9 items-center justify-center rounded-xl bg-info/10 text-info shrink-0">
                   <Sliders className="size-4.5" />
                 </div>
                 <div className="flex-1 min-w-0">
@@ -141,7 +141,7 @@ export default function SettingsPage() {
                 href="/settings/account"
                 className="flex items-center gap-3 p-3.5 hover:bg-muted/50 transition-colors cursor-pointer"
               >
-                <div className="flex size-9 items-center justify-center rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 shrink-0">
+                <div className="flex size-9 items-center justify-center rounded-xl bg-warning/10 text-warning-emphasis shrink-0">
                   <User className="size-4.5" />
                 </div>
                 <div className="flex-1 min-w-0">
@@ -162,7 +162,7 @@ export default function SettingsPage() {
                 href="/settings/security"
                 className="flex items-center gap-3 p-3.5 hover:bg-muted/50 transition-colors cursor-pointer"
               >
-                <div className="flex size-9 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 shrink-0">
+                <div className="flex size-9 items-center justify-center rounded-xl bg-success/10 text-success shrink-0">
                   <ShieldCheck className="size-4.5" />
                 </div>
                 <div className="flex-1 min-w-0">
@@ -214,7 +214,7 @@ export default function SettingsPage() {
                   href="/settings/meter-presets"
                   className="flex items-center gap-3 p-3.5 hover:bg-muted/50 transition-colors cursor-pointer"
                 >
-                  <div className="flex size-9 items-center justify-center rounded-xl bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 shrink-0">
+                  <div className="flex size-9 items-center justify-center rounded-xl bg-info/10 text-info shrink-0">
                     <Gauge className="size-4.5" />
                   </div>
                   <div className="flex-1 min-w-0">
@@ -235,7 +235,7 @@ export default function SettingsPage() {
                   href="/settings/audit"
                   className="flex items-center gap-3 p-3.5 hover:bg-muted/50 transition-colors cursor-pointer"
                 >
-                  <div className="flex size-9 items-center justify-center rounded-xl bg-orange-500/10 text-orange-600 dark:text-orange-400 shrink-0">
+                  <div className="flex size-9 items-center justify-center rounded-xl bg-warning/10 text-warning-emphasis shrink-0">
                     <History className="size-4.5" />
                   </div>
                   <div className="flex-1 min-w-0">
@@ -256,7 +256,7 @@ export default function SettingsPage() {
                   href="/settings/users"
                   className="flex items-center gap-3 p-3.5 hover:bg-muted/50 transition-colors cursor-pointer"
                 >
-                  <div className="flex size-9 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 shrink-0">
+                  <div className="flex size-9 items-center justify-center rounded-xl bg-chart-5/10 text-chart-5 shrink-0">
                     <Users className="size-4.5" />
                   </div>
                   <div className="flex-1 min-w-0">

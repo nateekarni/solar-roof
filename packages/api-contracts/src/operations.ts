@@ -15,8 +15,9 @@ export interface OperationPage<T> {
   page: { limit: number; nextCursor: string | null; hasMore: boolean };
 }
 
-/** Runtime operation rows share identity; billing artifacts remain nullable. */
-export interface OperationRow { id: string; [key: string]: unknown; }
+/** id/siteId/gatewayId/deviceId are internal UUID references for navigation and relationships.
+ * externalSiteId/externalGatewayId/externalDeviceId are registered codes; null means unregistered. */
+export interface OperationRow { id: string; externalSiteId?: string | null; externalGatewayId?: string | null; externalDeviceId?: string | null; [key: string]: unknown; }
 import type { PaymentTransferRow } from './payments.js';
 export interface BillingRow extends OperationRow {
  payments?: PaymentTransferRow[];

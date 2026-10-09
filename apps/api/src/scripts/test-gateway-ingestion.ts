@@ -1,6 +1,7 @@
 import "dotenv/config";
 import mqtt from "mqtt";
 import { Pool } from "pg";
+import { legacyTelemetryTopic, registeredLegacyTargetsSql } from "./registered-legacy-target.js";
 
 const API_BASE = "http://127.0.0.1:3001";
 const MQTT_URL = process.env.MQTT_URL || "mqtt://localhost:1883";
@@ -12,20 +13,14 @@ async function runVerification() {
   console.log("=== STARTING GATEWAY TELEMETRY & REGISTER MAPPING E2E TEST ===");
 
   // 1. Get first site and device from DB
-  const siteRes = await pool.query(
-    `SELECT s.id AS "siteId", s.name AS "siteName", g.id AS "gatewayId", d.id AS "deviceId", d.model AS "deviceModel"
-     FROM sites s
-     JOIN gateways g ON g.site_id = s.id
-     JOIN devices d ON d.site_id = s.id
-     ORDER BY s.created_at ASC
-     LIMIT 1`
-  );
+  if(!process.env.TEST_SITE_UUID)throw new Error('Set TEST_SITE_UUID to the selected registered legacy site internal reference.');
+  const siteRes = await pool.query(registeredLegacyTargetsSql,[process.env.TEST_SITE_UUID]);
 
-  if (siteRes.rows.length === 0) {
+if (siteRes.rows.length === 0) {
     throw new Error("No site/gateway/device found in database");
   }
 
-  const { siteId, siteName, gatewayId, deviceId, deviceModel } = siteRes.rows[0];
+  const { siteId, siteName, gatewayId, deviceId, deviceModel, endpoint } = siteRes.rows[0];
   console.log(`[Target Site]: ${siteName} (${siteId})`);
   console.log(`[Target Device]: ${deviceModel} (${deviceId})`);
 
@@ -46,9 +41,9 @@ async function runVerification() {
   });
 
   // 3. Publish PILOT SPM91 Raw Registers Telemetry (matching PDF screenshot exactly)
-  const topic = `energy/${siteId}/spm91/telemetry`;
+  const topic = legacyTelemetryTopic(endpoint);
   const rawPayload = {
-    gatewayId: "GW-001",
+    siteId, gatewayId,
     deviceId: deviceId,
     deviceType: "PILOT_SPM91",
     protocol: "modbus-tcp",

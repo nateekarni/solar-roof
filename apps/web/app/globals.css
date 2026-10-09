@@ -6,6 +6,44 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-overlay: var(--overlay);
+  --color-document-paper: var(--document-paper);
+  --color-document-ink: var(--document-ink);
+  --color-document-accent: var(--document-accent);
+  --color-document-border: var(--document-border);
+  --color-document-muted: var(--document-muted);
+  --color-document-subtle: var(--document-subtle);
+  --color-document-notice: var(--document-notice);
+  --color-flag-th-red: var(--flag-th-red);
+  --color-flag-th-white: var(--flag-th-white);
+  --color-flag-th-blue: var(--flag-th-blue);
+  --color-flag-gb-blue: var(--flag-gb-blue);
+  --color-flag-gb-red: var(--flag-gb-red);
+  --color-flag-white: var(--flag-white);
+  --color-scene-sky: var(--scene-sky);
+  --color-scene-horizon: var(--scene-horizon);
+  --color-scene-sun-glow: var(--scene-sun-glow);
+  --color-scene-sun-halo: var(--scene-sun-halo);
+  --color-scene-solar-flow: var(--scene-solar-flow);
+  --color-scene-energy-flow: var(--scene-energy-flow);
+  --color-scene-hill: var(--scene-hill);
+  --color-scene-ground: var(--scene-ground);
+  --color-scene-sun: var(--scene-sun);
+  --color-scene-rays: var(--scene-rays);
+  --color-scene-cloud: var(--scene-cloud);
+  --color-scene-shadow: var(--scene-shadow);
+  --color-scene-outline: var(--scene-outline);
+  --color-scene-wall: var(--scene-wall);
+  --color-scene-wall-side: var(--scene-wall-side);
+  --color-scene-roof: var(--scene-roof);
+  --color-scene-panel: var(--scene-panel);
+  --color-scene-panel-grid: var(--scene-panel-grid);
+  --color-scene-door: var(--scene-door);
+  --color-scene-window: var(--scene-window);
+  --color-scene-window-side: var(--scene-window-side);
+  --color-scene-tree: var(--scene-tree);
   --color-tabs-background: var(--tabs-background);
   --color-tabs-foreground: var(--tabs-foreground);
   --color-background: var(--background);
@@ -33,6 +71,7 @@
   --color-success: var(--success);
   --color-success-foreground: var(--success-foreground);
   --color-warning: var(--warning);
+  --color-warning-emphasis: var(--warning-emphasis);
   --color-warning-foreground: var(--warning-foreground);
   --color-energy: var(--energy);
   --color-solar: var(--solar);
@@ -60,6 +99,47 @@
 }
 
 :root {
+  --info: oklch(0.55 0.16 230);
+  --info-foreground: oklch(0.985 0 0);
+  --overlay: oklch(0 0 0);
+  --shadow-color: oklch(0 0 0);
+  --navigation-shadow: color-mix(in oklab, var(--shadow-color) 6%, transparent);
+  /* Flags and printed documents retain their identity independent of display theme. */
+  --document-paper: #fff;
+  --document-ink: #172b39;
+  --document-accent: #14718a;
+  --document-border: #dce5e9;
+  --document-muted: #607481;
+  --document-subtle: #edf4f6;
+  --document-notice: #fff5dc;
+  --flag-th-red: #a51931;
+  --flag-th-white: #f4f5f8;
+  --flag-th-blue: #2d2a4a;
+  --flag-gb-blue: #012169;
+  --flag-gb-red: #c8102e;
+  --flag-white: #fff;
+  --scene-sky: #29afe2;
+  --scene-horizon: #dcf7f5;
+  --scene-sun-glow: #fff7ba;
+  --scene-sun-halo: #ffe46a;
+  --scene-solar-flow: #e8a227;
+  --scene-energy-flow: #199e77;
+  --scene-hill: #c5e9df;
+  --scene-ground: #eef8f4;
+  --scene-sun: #ffdf54;
+  --scene-rays: #ffe276;
+  --scene-cloud: #fff;
+  --scene-shadow: #b9d5ce;
+  --scene-outline: #668996;
+  --scene-wall: #fffdf5;
+  --scene-wall-side: #dcebea;
+  --scene-roof: #edf5f2;
+  --scene-panel: #184e76;
+  --scene-panel-grid: #84c7ec;
+  --scene-door: #91bdc4;
+  --scene-window: #b5deed;
+  --scene-window-side: #a5d1dd;
+  --scene-tree: #59b797;
   --brand-primary-foreground: oklch(0.145 0 0);
   --tabs-background: color-mix(in oklab, var(--primary) 12%, var(--card));
   --tabs-foreground: var(--foreground);
@@ -85,6 +165,7 @@
   --success: oklch(0.55 0.17 152);
   --success-foreground: oklch(0.985 0 0);
   --warning: oklch(0.75 0.17 72);
+  --warning-emphasis: oklch(0.48 0.12 60);
   --warning-foreground: oklch(0.145 0 0);
   --energy: oklch(0.55 0.17 152);
   --solar: oklch(0.75 0.18 72);
@@ -111,6 +192,32 @@
 }
 
 .dark {
+  --info: oklch(0.72 0.15 230);
+  --info-foreground: oklch(0.145 0 0);
+  --navigation-shadow: color-mix(in oklab, var(--shadow-color) 30%, transparent);
+  /* Illustration surfaces dim with the dashboard while its energy paths stay distinct. */
+  --scene-sky: color-mix(in oklab, #29afe2 60%, var(--background));
+  --scene-horizon: color-mix(in oklab, #dcf7f5 60%, var(--background));
+  --scene-sun-glow: color-mix(in oklab, #fff7ba 60%, var(--background));
+  --scene-sun-halo: color-mix(in oklab, #ffe46a 60%, var(--background));
+  --scene-solar-flow: color-mix(in oklab, #e8a227 85%, var(--background));
+  --scene-energy-flow: color-mix(in oklab, #199e77 85%, var(--background));
+  --scene-hill: color-mix(in oklab, #c5e9df 60%, var(--background));
+  --scene-ground: color-mix(in oklab, #eef8f4 60%, var(--background));
+  --scene-sun: color-mix(in oklab, #ffdf54 85%, var(--background));
+  --scene-rays: color-mix(in oklab, #ffe276 85%, var(--background));
+  --scene-cloud: color-mix(in oklab, #fff 60%, var(--background));
+  --scene-shadow: color-mix(in oklab, #b9d5ce 60%, var(--background));
+  --scene-outline: color-mix(in oklab, #668996 60%, var(--background));
+  --scene-wall: color-mix(in oklab, #fffdf5 60%, var(--background));
+  --scene-wall-side: color-mix(in oklab, #dcebea 60%, var(--background));
+  --scene-roof: color-mix(in oklab, #edf5f2 60%, var(--background));
+  --scene-panel: color-mix(in oklab, #184e76 60%, var(--background));
+  --scene-panel-grid: color-mix(in oklab, #84c7ec 60%, var(--background));
+  --scene-door: color-mix(in oklab, #91bdc4 60%, var(--background));
+  --scene-window: color-mix(in oklab, #b5deed 60%, var(--background));
+  --scene-window-side: color-mix(in oklab, #a5d1dd 60%, var(--background));
+  --scene-tree: color-mix(in oklab, #59b797 60%, var(--background));
   --tabs-background: color-mix(in oklab, var(--primary) 12%, var(--card));
   --tabs-foreground: var(--foreground);
   --background: oklch(0.145 0 0);
@@ -133,6 +240,7 @@
   --success: oklch(0.67 0.16 152);
   --success-foreground: oklch(0.145 0 0);
   --warning: oklch(0.8 0.16 72);
+  --warning-emphasis: var(--warning);
   --warning-foreground: oklch(0.145 0 0);
   --energy: oklch(0.67 0.16 152);
   --solar: oklch(0.82 0.17 72);
@@ -265,7 +373,7 @@ a {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
-  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.04);
+  box-shadow: 0 1px 2px 0 color-mix(in oklab, var(--shadow-color) 4%, transparent);
 }
 
 .stat-card {
@@ -497,7 +605,7 @@ a {
   border-radius: 9999px;
   background: var(--success);
   border: 2.5px solid var(--card);
-  box-shadow: 0 2px 6px rgb(0 0 0 / 0.35);
+  box-shadow: 0 2px 6px color-mix(in oklab, var(--shadow-color) 35%, transparent);
   cursor: pointer;
   transition:
     transform 0.15s ease,
@@ -535,7 +643,7 @@ a {
 .map-marker.selected {
   transform: scale(1.35);
   z-index: 20;
-  box-shadow: 0 4px 12px rgb(0 0 0 / 0.4);
+  box-shadow: 0 4px 12px color-mix(in oklab, var(--shadow-color) 40%, transparent);
 }
 
 .map-marker.online {
@@ -558,7 +666,7 @@ a {
 .maplibregl-popup-content {
   border-radius: 12px !important;
   padding: 0 !important;
-  box-shadow: 0 8px 24px rgb(0 0 0 / 0.18) !important;
+  box-shadow: 0 8px 24px color-mix(in oklab, var(--shadow-color) 18%, transparent) !important;
   background: color-mix(in oklch, var(--card) 95%, transparent) !important;
   backdrop-filter: blur(8px);
   border: 1px solid var(--border);
@@ -983,7 +1091,7 @@ td.rdp-selected:not(.rdp-range_middle) .rdp-day_button {
   color: var(--primary-foreground) !important;
   font-weight: 700 !important;
   border-radius: 0.5rem !important;
-  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.15) !important;
+  box-shadow: 0 1px 3px 0 color-mix(in oklab, var(--shadow-color) 15%, transparent) !important;
 }
 
 /* Row end rounding for Range Middle */

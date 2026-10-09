@@ -40,6 +40,7 @@ import { useSessionUser } from "../../providers/session-user-provider";
 import { loadContractSites } from "../shared/business-operation-options";
 
 interface SiteOption {
+  externalSiteId?: string | null;
   id: string;
   name: string;
   schoolName?: string;
@@ -283,7 +284,7 @@ export function ContractFormDialog({
                   <SelectContent>
                     {sites.map((s) => (
                       <SelectItem key={s.id} value={s.id} className="text-xs">
-                        {s.name} {s.schoolName ? `(${s.schoolName})` : ""}
+                        {s.name} · {s.externalSiteId || (locale==='th'?'ยังไม่มีรหัส':'No registered code')} {s.schoolName ? `(${s.schoolName})` : ""}
                       </SelectItem>
                     ))}
                   </SelectContent>

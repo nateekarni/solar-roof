@@ -1,10 +1,19 @@
 import "reflect-metadata";
 import assert from "node:assert/strict";
 import test from "node:test";
-import { OperationsController } from "./operations.controller.js";
+import { OperationsController, toCsv } from "./operations.controller.js";
 import { OperationsService } from "./operations.service.js";
 import { operationPredicate, parseOperationQuery } from "./operation-query.js";
 import type { Response } from "express";
+
+test('CSV uses only explicit columns instead of exposing arbitrary row fields',()=>{
+ assert.equal(toCsv(['name','externalSiteId'],[{id:'uuid',name:'A',externalSiteId:'SITE-A',secret:'private',gatewayId:'gateway-uuid'}]),'"name","externalSiteId"\r\n"A","SITE-A"');
+});
+test('site code search uses a bound value while retaining the existing scope query',()=>{
+ const params:unknown[]=[];
+ assert.ok(operationPredicate('sites',parseOperationQuery('sites',{search:'SITE-A'}),params).join(' ').includes('q."externalSiteId"'));
+ assert.deepEqual(params,['%SITE-A%']);
+});
 
 test("export includes every cursor page and preserves date filters and principal", async () => {
   const calls: Record<string, unknown>[] = [];
@@ -15,7 +24,7 @@ test("export includes every cursor page and preserves date filters and principal
     calls.push(query);
     const offset = Number(query.cursor ?? 0);
     const count = offset < 200 ? 100 : 5;
-    return {columns:["name"],rows:Array.from({length:count},(_,i)=>({id:String(offset+i),name:`row-${offset+i}`})),page:{hasMore:offset<200,nextCursor:offset<200?String(offset+100):null}};
+    return {columns:["name"],rows:Array.from({length:count},(_,i)=>({id:String(offset+i),name:`row-${offset+i}`,externalSiteId:'SITE-A',externalGatewayId:'GW-A',privateValue:'must-not-export'})),page:{hasMore:offset<200,nextCursor:offset<200?String(offset+100):null}};
   };
   const headers = new Map(); let output="";
   const response = {setHeader:(name:string,value:string)=>headers.set(name,value),send:(body:string)=>{output=body;}};
@@ -24,6 +33,11 @@ test("export includes every cursor page and preserves date filters and principal
   for (const query of calls) {assert.equal(query.from,"2026-10-01");assert.equal(query.to,"2026-10-06");assert.equal(query.search,"solar");assert.equal(query.limit,"100");}
   assert.equal(output.split("\r\n").length,206);
   assert.ok(output.includes('"row-204"'));
+  assert.ok(output.includes('"externalSiteId"'));
+  assert.ok(output.includes('"externalGatewayId"'));
+  assert.ok(output.includes('"siteInternalReference"'));
+  assert.ok(output.includes('"SITE-A"'));
+  assert.ok(!output.includes('must-not-export'));
   assert.equal(headers.get("X-Export-Truncated"),"false");
 });
 

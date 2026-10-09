@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './select';
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from './select';
 
 /** Keeps native form registration and change events while displaying shadcn Select. */
 export const ChoiceSelect = React.forwardRef<HTMLSelectElement, React.ComponentPropsWithoutRef<'select'>>(
@@ -31,10 +31,10 @@ export const ChoiceSelect = React.forwardRef<HTMLSelectElement, React.ComponentP
         <SelectTrigger ref={triggerRef} id={id} aria-required={props.required} aria-label={props['aria-label']} aria-describedby={props['aria-describedby']} aria-invalid={props['aria-invalid']} className={className} onBlur={() => nativeRef.current?.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))}>
           <SelectValue />
         </SelectTrigger>
-        <SelectContent>{options.map((option, index) => {
+        <SelectContent><SelectGroup>{options.map((option, index) => {
           const optionValue = String(option.props.value ?? option.props.children ?? '');
           return <SelectItem key={`${optionValue}-${index}`} value={encode(optionValue)} disabled={Boolean(option.props.disabled)}>{option.props.children}</SelectItem>;
-        })}</SelectContent>
+        })}</SelectGroup></SelectContent>
       </Select>
     </>;
   }

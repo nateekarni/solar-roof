@@ -44,6 +44,7 @@ try {
     "infra/migrations/035_billing_source_binding.sql",
     "infra/migrations/036_contract_document_originals.sql",
     "infra/migrations/037_optional_payer_metadata.sql",
+    "infra/migrations/038_notification_feed.sql",
   ];
   for (const file of migrationFiles) {
     const sql = await readFile(new URL(`../../../../${file}`, import.meta.url), "utf8");
@@ -66,7 +67,3 @@ try {
   client.release();
   await pool.end();
 }
-
-
-
-

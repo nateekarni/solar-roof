@@ -1,10 +1,6 @@
 import type { Locale } from "@solar/i18n";
 
 const actionStatus: Record<string, Record<Locale, string>> = {
-  billing: {
-    en: "Billing calculation is currently unavailable.",
-    th: "ยังไม่สามารถคำนวณยอดเรียกเก็บได้ในขณะนี้",
-  },
   contracts: {
     en: "Contract creation is currently unavailable.",
     th: "ยังไม่สามารถสร้างสัญญาได้ในขณะนี้",
@@ -12,10 +8,6 @@ const actionStatus: Record<string, Record<Locale, string>> = {
   documents: {
     en: "Document issuance is currently unavailable.",
     th: "ยังไม่สามารถออกเอกสารได้ในขณะนี้",
-  },
-  receipts: {
-    en: "Receipt issuance is currently unavailable.",
-    th: "ยังไม่สามารถออกใบเสร็จรับเงินได้ในขณะนี้",
   },
 };
 

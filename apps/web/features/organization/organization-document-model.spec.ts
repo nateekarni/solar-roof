@@ -51,3 +51,16 @@ test("month and status filters combine without treating missing dates as a match
     ["a"],
   );
 });
+
+test("clearing document filters restores only the selected contract's documents", () => {
+  const rows = [
+    { id: "october", contractId: "chosen", period: "2026-10", status: "issued" },
+    { id: "september", contractId: "chosen", period: "2026-09", status: "paid" },
+    { id: "other", contractId: "other", period: "2026-10", status: "issued" },
+    { id: "unlinked", period: "2026-10", status: "issued" },
+  ];
+  const selected = documentsForContract(rows, "chosen");
+  assert.deepEqual(filterDocuments(selected, "2026-10", "issued").map(row => row.id), ["october"]);
+  assert.deepEqual(filterDocuments(selected, "", "").map(row => row.id), ["october", "september"]);
+  assert.deepEqual(filterDocuments(documentsForContract(rows, null), "", "").map(row => row.id), ["unlinked"]);
+});

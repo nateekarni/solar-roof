@@ -51,7 +51,7 @@ export class PlatformAccessGuard implements CanActivate {
       documents: "SELECT s.school_id FROM documents d JOIN sites s ON s.id=d.site_id WHERE d.id::text=$1",
       alerts: "SELECT s.school_id FROM alerts a JOIN sites s ON s.id=a.site_id WHERE a.id::text=$1",
     };
-    if (kind && id && queries[kind] && !["test-connection", "acknowledge-all", "payload-preview"].includes(id)) resources.push({sql:queries[kind]!,id});
+    if (kind && id && queries[kind] && !["test-connection", "acknowledge-all", "payload-preview", "identity-draft"].includes(id)) resources.push({sql:queries[kind]!,id});
     for (const [field, resource] of [["siteId", "sites"], ["schoolId", "schools"], ["deviceId", "devices"]]) {
       const value = req.body?.[field!];
       if (typeof value === "string" && value) resources.push({sql:queries[resource!]!,id:value});

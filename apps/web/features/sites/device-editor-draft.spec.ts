@@ -6,3 +6,16 @@ const preset:PayloadRevision={id:'r',profileId:'meter',version:'1.0.0',createdAt
 test('same preset makes independent device drafts with retained lineage',()=>{assert.equal(typeof values.newDeviceDraft,'function');const a=values.selectDevicePreset(values.newDeviceDraft(),preset,true)!,b=values.selectDevicePreset(values.newDeviceDraft(),preset,true)!;a.config.fields[0]!.displayName='Local A';assert.equal(b.config.fields[0]!.displayName,'Energy');assert.equal(preset.config.fields[0]!.displayName,'Energy');assert.equal(a.sourcePresetRevisionId,b.sourcePresetRevisionId);});
 test('dirty preset switch requires confirmation and retains device identity and serial',()=>{assert.equal(typeof values.newDeviceDraft,'function');const a=values.selectDevicePreset(values.newDeviceDraft(),preset,true)!;a.externalDeviceId='REAL-ID';a.serialNumber='REAL-SERIAL';a.model='Edited model';a.dirty=true;assert.equal(values.selectDevicePreset(a,preset,false),null);const next=values.selectDevicePreset(a,preset,true)!;assert.equal(next.externalDeviceId,'REAL-ID');assert.equal(next.serialNumber,'REAL-SERIAL');assert.equal(next.model,'Meter model');});
 test('manual config needs no preset and invalid duplicate fields cannot be saved',()=>{assert.equal(typeof values.newDeviceDraft,'function');const a=values.newDeviceDraft();a.name='Manual';a.model='Editable';a.serialNumber='ACTUAL';a.externalDeviceId='MANUAL';a.config=structuredClone(preset.config);assert.equal(values.validateDeviceDraft(a,true,'en'),null);assert.equal(values.deviceProfilePayload(a).payloadProfileRevisionId,undefined);assert.deepEqual(values.deviceProfilePayload(a).localOverrideConfig?.fields,preset.config.fields);a.config.fields.push({...a.config.fields[0]!});assert.match(values.validateDeviceDraft(a,true,'en')??'',/duplicate/i);assert.ok(values.validateDeviceDraft(a,true,'th'));});
+
+test('new device may omit its code but saved device requires a code',()=>{const draft=values.newDeviceDraft();draft.name='Meter';draft.model='Model';draft.serialNumber='ACTUAL';draft.config=structuredClone(preset.config);assert.equal(values.validateDeviceDraft(draft,true,'en',true),null);assert.ok(values.validateDeviceDraft(draft,true,'en'));draft.externalDeviceId='bad/code';assert.ok(values.validateDeviceDraft(draft,true,'en',true));});
+
+test('manual voltage field can be configured first but cannot complete a billing meter',()=>{
+ const draft=values.newDeviceDraft();draft.name='Manual meter';draft.model='Model';draft.serialNumber='SERIAL';
+ draft.config.pollGroups=['energy','realtime'];draft.config.fields=[{tag:'electrical.voltage.l1_n',displayName:'Voltage L1',pollGroup:'realtime',sourceUnit:'V',targetUnit:'V',conversion:'identity'}];
+ assert.equal(draft.payloadProfileRevisionId,'');
+ assert.equal(values.validateDeviceProfile(draft.config,false,'en'),null);
+ assert.match(values.validateDeviceDraft(draft,true,'en',true)??'',/cumulative billing field/);
+ draft.config.fields.push(structuredClone(preset.config.fields[0]!));
+ assert.equal(values.validateDeviceDraft(draft,true,'en',true),null);
+ draft.config.fields=[];assert.ok(values.validateDeviceDraft(draft,true,'en',true));
+});

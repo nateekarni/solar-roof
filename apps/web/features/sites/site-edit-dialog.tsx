@@ -95,6 +95,7 @@ export function SiteEditDialog({
   const organizationCatalog=useOrganizationCatalog(open);
   const [tab,setTab]=React.useState("settings");
   React.useEffect(()=>{if(open)setTab(billingSetupPending?"payload":"settings");},[open,siteId,billingSetupPending]);
+  const [registeredCodes,setRegisteredCodes]=React.useState<{siteId:string;externalSiteId:string|null;externalGatewayId:string|null}|null>(null);
   const [storedPayloadConfig,setPayloadConfig]=React.useState<PayloadConfig|null>(null);
   const payloadScope=React.useRef({open,siteId});
   payloadScope.current={open,siteId};
@@ -160,6 +161,7 @@ export function SiteEditDialog({
       apiClient.get<any>(`/v1/sites/${siteId}`)
         .then((siteData) => {
           if (current() && siteData) {
+            setRegisteredCodes({siteId:siteData.id,externalSiteId:siteData.externalSiteId??null,externalGatewayId:siteData.externalGatewayId??null});
             setOrganization({kind:"existing",organization:{id:siteData.schoolId,name:siteData.schoolName||"",code:siteData.schoolCode||""}});
             reset({
               name: siteData.name || "",
@@ -258,11 +260,11 @@ export function SiteEditDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[90svh] flex-col gap-4 overflow-hidden sm:w-[80vw] sm:max-w-none sm:rounded-2xl sm:p-6 sm:overflow-hidden">
         <DialogHeader className="pb-1">
-          <div className="flex items-center gap-2.5">
+          <div className="flex min-w-0 items-center gap-2.5">
             <div className="grid size-9 place-items-center rounded-lg bg-primary/10 text-primary">
               <Edit className="size-5 text-primary" />
             </div>
-            <div>
+            <div className="min-w-0">
               <DialogTitle className="text-base font-semibold">
                 {locale === "th" ? "แก้ไขข้อมูลไซต์งานและ Gateway" : "Edit Solar Site & Gateway"}
               </DialogTitle>
@@ -295,6 +297,7 @@ export function SiteEditDialog({
                 </Label>
                 <Input
                   id="edit-site-name"
+                  placeholder="เช่น Solar Site 020 - อาคารเรียน 1"
                   className="text-sm h-10"
                   {...register("name")}
                 />
@@ -303,7 +306,7 @@ export function SiteEditDialog({
                 )}
               </div>
 
-              {payloadConfig&&<div className="flex flex-col gap-2"><Label htmlFor="edit-site-id">Site ID</Label><Input id="edit-site-id" value={payloadConfig.externalSiteId??''} readOnly/></div>}
+              {<div className="flex flex-col gap-2"><Label htmlFor="edit-site-id">{locale === "th" ? "รหัสไซต์งาน" : "Site ID"}</Label><Input placeholder={locale==='th'?'ยังไม่ได้ลงทะเบียนรหัส':'No registered code'} id="edit-site-id" value={(registeredCodes?.siteId===siteId?registeredCodes.externalSiteId:null)??''} readOnly/></div>}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <OrganizationPicker {...organizationCatalog} value={organization} onChange={selectOrganization} locale={locale} canEdit={user?.role==="admin"} disabled={loading}/>
                 {organizationCatalog.error&&<p role="alert" className="text-sm text-destructive">{organizationCatalog.error}</p>}
@@ -315,6 +318,7 @@ export function SiteEditDialog({
                   </Label>
                   <Input
                     id="edit-capacity"
+                  placeholder="0.48"
                     type="number"
                     step="0.01"
                     className="text-sm h-10"
@@ -330,6 +334,7 @@ export function SiteEditDialog({
                   </Label>
                   <Input
                     id="edit-lat"
+                  placeholder="13.7563"
                     type="number"
                     step="0.0001"
                     className="text-sm h-10"
@@ -342,6 +347,7 @@ export function SiteEditDialog({
                   </Label>
                   <Input
                     id="edit-lng"
+                  placeholder="100.5018"
                     type="number"
                     step="0.0001"
                     className="text-sm h-10"
@@ -371,7 +377,7 @@ export function SiteEditDialog({
             </div>
 
             {/* Section 2: Gateway & Meter Config */}
-            <section className="space-y-4 border-t pt-5"><h3 className="flex items-center gap-2 text-sm font-semibold"><Radio className="size-4 text-primary"/>{locale === "th" ? "การตั้งค่า Gateway และมิเตอร์หลัก" : "Gateway & billing meter"}</h3>
+            <section className="space-y-4"><h3 className="flex items-center gap-2 text-sm font-semibold"><Radio className="size-4 text-primary"/>{locale === "th" ? "การตั้งค่า Gateway และมิเตอร์หลัก" : "Gateway & billing meter"}</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-2">
                   <Label htmlFor="edit-gw-name" required className="text-sm font-medium">
@@ -379,12 +385,13 @@ export function SiteEditDialog({
                   </Label>
                   <Input
                     id="edit-gw-name"
+                  placeholder="GW-020"
                     className="text-sm h-10 font-mono bg-card"
                     {...register("gatewayName", { onChange: (event) => { if (!formValues.endpoint || formValues.endpoint === `energy/${formValues.gatewayName}/#`) setValue("endpoint", `energy/${event.target.value}/#`); } })}
                   />
                 </div>
 
-                {payloadConfig&&<div className="flex flex-col gap-2"><Label htmlFor="edit-gateway-id">Gateway ID</Label><Input id="edit-gateway-id" value={payloadConfig.externalGatewayId??''} readOnly/></div>}
+                {<div className="flex flex-col gap-2"><Label htmlFor="edit-gateway-id">{locale === "th" ? "รหัส Gateway" : "Gateway ID"}</Label><Input placeholder={locale==='th'?'ยังไม่ได้ลงทะเบียนรหัส':'No registered code'} id="edit-gateway-id" value={(registeredCodes?.siteId===siteId?registeredCodes.externalGatewayId:null)??''} readOnly/></div>}
                 <div className="space-y-2">
                   <Label htmlFor="edit-gw-proto" required className="text-sm font-medium">
                     {locale === "th" ? "โปรโตคอล" : "Protocol"}
@@ -402,17 +409,18 @@ export function SiteEditDialog({
                     </SelectContent>
                   </Select>
                 </div>
-              </div>
-
-              <div className="space-y-2">
+              <div className="space-y-2 min-w-0">
                 <Label htmlFor="edit-gw-endpoint" required className="text-sm font-medium">
                   {locale === "th" ? "Endpoint / MQTT Topic" : "Telemetry Endpoint"}
                 </Label>
                 <Input
                   id="edit-gw-endpoint"
+                  placeholder="solar/v1/sites/SITE-001/gateways/GW-001/devices/+/telemetry"
                   className="text-sm h-10 font-mono bg-card"
                   {...register("endpoint")}
                 />
+              </div>
+
               </div>
 
               {!payloadConfig&&<><div className="space-y-2"><Label htmlFor="edit-device">Meter Device</Label><ChoiceSelect id="edit-device" value={formValues.deviceId ?? ""} className="h-10 w-full rounded-md border bg-card" onChange={event => {
@@ -425,7 +433,7 @@ export function SiteEditDialog({
                     {locale === "th" ? "รุ่นมิเตอร์" : "Meter Model"}
                   </Label>
                   <Input
-                    id="edit-dev-model"
+                    id="edit-dev-model" placeholder="เช่น Pilot SPM91"
                     className="text-sm h-10 bg-card"
                     {...register("deviceModel")}
                   />
@@ -435,7 +443,7 @@ export function SiteEditDialog({
                     {locale === "th" ? "รหัสซีเรียลมิเตอร์" : "Meter Serial Number"}
                   </Label>
                   <Input
-                    id="edit-dev-serial"
+                    id="edit-dev-serial" placeholder="ระบุซีเรียลบนตัวอุปกรณ์"
                     className="text-sm h-10 font-mono bg-card"
                     {...register("deviceSerial")}
                   />
@@ -446,7 +454,7 @@ export function SiteEditDialog({
               </div></>}
             </section>
 
-            {!payloadConfig && <div className="space-y-2 border-t pt-4">
+            {!payloadConfig && <div className="space-y-2">
               <h3 className="text-sm font-semibold">เพิ่มมิเตอร์ใน Gateway นี้</h3>
               <div className="grid grid-cols-2 gap-2">
                 <Input aria-label="New meter name" placeholder="Meter Name" value={newDevice.name} onChange={event => setNewDevice({ ...newDevice, name: event.target.value })} />
@@ -493,13 +501,13 @@ export function SiteEditDialog({
               </div>
 
               {pingStatus === "online" ? (
-                <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-2 text-sm">
+                <div className="flex items-center gap-2 text-success bg-success/10 border border-success/20 rounded-lg p-2 text-sm">
                   <CheckCircle2 className="size-4 shrink-0" />
                   <span className="font-medium">
                     {locale === "th" ? "เชื่อมต่อ Broker สำเร็จ · ยังไม่ได้ยืนยันการรับข้อมูล" : "Broker connected · Data receipt not yet verified"}
                   </span>
                   {pingLatency !== null && (
-                    <span className="text-sm bg-emerald-500/20 px-1.5 py-0.5 rounded font-mono ml-auto">
+                    <span className="text-sm bg-success/20 px-1.5 py-0.5 rounded font-mono ml-auto">
                       {pingLatency}ms
                     </span>
                   )}
@@ -538,7 +546,7 @@ export function SiteEditDialog({
             </DialogFooter>
           </form>{billingSetupPending&&!payloadConfig&&siteId&&<SiteBillingSource siteId={siteId} locale={locale} setupPending focusOnLoad/>}
             </TabsContent>
-            {payloadConfig && <TabsContent value="payload" className="min-h-0 overflow-y-auto p-1"><PayloadConnectionCard config={payloadConfig} onRefresh={refreshPayload} editable focusBilling={billingSetupPending} billingSetupPending={billingSetupPending}/></TabsContent>}
+            {payloadConfig && <TabsContent value="payload" className="min-h-0 overflow-y-auto p-1"><PayloadConnectionCard showAdvanced={false} edgeToEdge config={payloadConfig} onRefresh={refreshPayload} editable focusBilling={billingSetupPending} billingSetupPending={billingSetupPending}/></TabsContent>}
           </Tabs>
         )}
       </DialogContent>

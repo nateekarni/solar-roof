@@ -17,6 +17,7 @@ import {
 import { organizationColumns, parseOrganization, insertOrganization, resolveSiteOrganization, organizationCodeError, type OrganizationInput } from "./organization-master.js";
 import { siteHistoryFilter } from "./site-history.js";
 import { randomUUID } from "node:crypto";
+import { identityDraft, operationalCode, identityConflict, retryGeneratedIdentity, type IdentityDraftInput } from "./identity-allocation.js";
 
 import mqtt from "mqtt";
 import type {PoolClient} from "pg";
@@ -97,7 +98,7 @@ export class AssetsController {
     if(body.impactConfirmed!==true)throw new BadRequestException("Confirm the impact on all linked sites and future contracts");
     if(!body.expectedUpdatedAt||!Number.isFinite(Date.parse(body.expectedUpdatedAt)))throw new BadRequestException("Reload organization before saving");
     const input=parseOrganization(body);
-    if(!body.code)throw new BadRequestException("Organization code is required");
+    if(!body.code?.trim())throw new BadRequestException("Organization code is required");
     try {
       const result=await this.db.query(`UPDATE schools SET name=$2,code=$3,legal_name=$4,tax_id=$5,tax_branch=$6,tax_address=$7,contact_name=$8,phone=$9,document_email=$10,updated_at=now()
         WHERE id=$1 AND updated_at=$11::timestamptz RETURNING ${organizationColumns}`,
@@ -201,6 +202,7 @@ export class AssetsController {
     const sql = `
       SELECT
         si.id,
+        si.external_site_id AS "externalSiteId",
         si.school_id AS "schoolId",
         si.name,
         coalesce(round(si.capacity_mwp::numeric, 4), 0) AS "capacityMwp",
@@ -208,6 +210,7 @@ export class AssetsController {
         s.name AS "schoolName",
         s.code AS "schoolCode",
         g.id AS "gatewayId",
+        g.external_gateway_id AS "externalGatewayId",
         g.name AS "gatewayName",
         CASE WHEN g.last_seen_at >= now() - interval '120 seconds' THEN 'online' ELSE 'offline' END AS "gatewayStatus",
         g.last_seen_at AS "lastSeenAt",
@@ -240,6 +243,7 @@ export class AssetsController {
     const sql = `
       SELECT
         si.id,
+        si.external_site_id AS "externalSiteId",
         si.school_id AS "schoolId",
         si.name,
         coalesce(round(si.capacity_mwp::numeric, 4), 0) AS "capacityMwp",
@@ -249,6 +253,7 @@ export class AssetsController {
         s.name AS "schoolName",
         s.code AS "schoolCode",
         g.id AS "gatewayId",
+        g.external_gateway_id AS "externalGatewayId",
         g.name AS "gatewayName",
         coalesce(g.protocol, 'mqtt') AS protocol,
         coalesce(g.endpoint, '') AS endpoint,
@@ -257,6 +262,7 @@ export class AssetsController {
         g.alert_rules AS "alertRules",
         g.last_seen_at AS "lastSeenAt",
         d.id AS "deviceId",
+        d.external_device_id AS "externalDeviceId",
         d.model AS "deviceModel",
         coalesce(d.serial_number, '') AS "deviceSerial"
       FROM sites si
@@ -271,6 +277,16 @@ export class AssetsController {
       throw new NotFoundException(`ไม่พบข้อมูลไซต์งานรหัส ${id}`);
     }
     return res.rows[0];
+  }
+
+  @Post('sites/identity-draft')
+  async allocateIdentityDraft(@Body() body: IdentityDraftInput) {
+    for(let attempt=0;attempt<5;attempt++) {
+      const draft=identityDraft(body);
+      if(!(await this.db.query('SELECT id FROM sites WHERE external_site_id=$1',[draft.externalSiteId])).rows.length)return draft;
+      if(body.externalSiteId?.trim())throw new ConflictException('Site code already exists; choose another code and preview again');
+    }
+    throw new ConflictException('Unable to allocate site code; retry creation');
   }
 
   @Post('sites/payload-preview')
@@ -306,7 +322,7 @@ export class AssetsController {
       localOverrideConfig?: unknown;
       sourcePresetRevisionId?: string;
       receiveConfig?: unknown;
-      additionalDevices?: {name:string;model:string;serialNumber:string;externalDeviceId:string;payloadProfileRevisionId?:string;localOverrideConfig?:unknown;sourcePresetRevisionId?:string}[];
+      additionalDevices?: {name:string;model:string;serialNumber:string;externalDeviceId?:string;payloadProfileRevisionId?:string;localOverrideConfig?:unknown;sourcePresetRevisionId?:string}[];
       externalSiteId?: string;
       externalGatewayId?: string;
       externalDeviceId?: string;
@@ -314,8 +330,12 @@ export class AssetsController {
       interval?: number;
       alertRules?: Record<string, unknown>;
       status?: string;
-    }
-  ) {
+    },
+    allocationAttempt = 0
+  ): Promise<{id:string;schoolId:string;externalSiteId:string;configDelivery:string;[key:string]:unknown}> {
+    const originalBody = body;
+    const draft = identityDraft(body);
+    body = {...body,externalSiteId:draft.externalSiteId,externalGatewayId:draft.externalGatewayId,externalDeviceId:draft.externalDeviceId,...(body.additionalDevices?{additionalDevices:body.additionalDevices.map((device,index)=>({...device,externalDeviceId:draft.additionalDevices[index]!.externalDeviceId}))}:{})};
     const name = body.name?.trim();
     let schoolId = body.schoolId?.trim();
     const schoolName = body.schoolName?.trim();
@@ -342,10 +362,8 @@ export class AssetsController {
 
     const initialStatus = "offline";
 
-    const countRes = await this.db.query("SELECT count(*)::int AS count FROM gateways");
-    const gwCount = countRes.rows[0]?.count ?? 0;
     const gwId = randomUUID();
-    const gwName = body.gatewayName?.trim() || `GW-${String(gwCount + 1).padStart(3, "0")}`;
+    const gwName = body.gatewayName?.trim() || operationalCode(undefined, "GW");
     const protocol = "mqtt";
     const payloadRevision = await this.prepareDeviceProfile(body);
     if (payloadRevision && body.meterPresetId) throw new BadRequestException("Choose payload or register preset");
@@ -356,7 +374,7 @@ export class AssetsController {
     const additionalDevices = await Promise.all((body.additionalDevices ?? []).map(async device => {
       if (!device?.name?.trim() || !device.model?.trim() || !device.serialNumber?.trim() || (!device.payloadProfileRevisionId && !device.localOverrideConfig)) throw new BadRequestException('Complete every additional device');
       externalIdentifier(device.externalDeviceId);
-      return {...device, id:randomUUID(), revision: (await this.prepareDeviceProfile(device))!};
+      return {...device, externalDeviceId:device.externalDeviceId!, id:randomUUID(), revision: (await this.prepareDeviceProfile(device))!};
     }));
     const identifiers = [body.externalDeviceId, ...additionalDevices.map(d => d.externalDeviceId)];
     if (new Set(identifiers).size !== identifiers.length) throw new BadRequestException('Device IDs must be unique');
@@ -384,15 +402,15 @@ export class AssetsController {
       const siteSql = `
         INSERT INTO sites (id, school_id, name, capacity_mwp, latitude, longitude, status, external_site_id)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        RETURNING id, school_id AS "schoolId", name, capacity_mwp AS "capacityMwp", status
+        RETURNING id, school_id AS "schoolId", name, capacity_mwp AS "capacityMwp", status, external_site_id AS "externalSiteId"
       `;
-      const res = await client.query(siteSql, [siteId, schoolId, name, capacityMwp, lat, lng, initialStatus, payloadRevision ? body.externalSiteId : null]);
+      const res = await client.query(siteSql, [siteId, schoolId, name, capacityMwp, lat, lng, initialStatus, body.externalSiteId]);
 
       // 2. Create Gateway
       await client.query(
         `INSERT INTO gateways (id, site_id, name, protocol, endpoint, status, polling_interval_seconds, alert_rules, last_seen_at, external_gateway_id)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, NULL, $9)`,
-        [gwId, siteId, gwName, protocol, endpoint, initialStatus, intervalSec, alertRulesJson, payloadRevision ? body.externalGatewayId : null]
+        [gwId, siteId, gwName, protocol, endpoint, initialStatus, intervalSec, alertRulesJson, body.externalGatewayId]
       );
 
       if(body.mqttBrokerId)await client.query("UPDATE gateways SET mqtt_broker_id=$1 WHERE id=$2",[body.mqttBrokerId,gwId]);
@@ -402,7 +420,7 @@ export class AssetsController {
       await client.query(
         `INSERT INTO devices (id, gateway_id, site_id, name, device_type, model, serial_number, slave_id, status, external_device_id, payload_profile_revision_id)
          VALUES ($1, $2, $3, $4, 'meter', $5, $6, 1, $7, $8, $9)`,
-        [deviceId, gwId, siteId, devName, devModel, devSerial, initialStatus, payloadRevision ? body.externalDeviceId : null, payloadRevision?.id ?? null]
+        [deviceId, gwId, siteId, devName, devModel, devSerial, initialStatus, body.externalDeviceId, payloadRevision?.id ?? null]
       );
 
       // 4. Assign Billing Meter
@@ -462,7 +480,8 @@ export class AssetsController {
       return { ...res.rows[0], configDelivery: delivered ? "published" : "pending" };
     } catch (err) {
       await client.query("ROLLBACK");
-      organizationCodeError(err);
+      if(retryGeneratedIdentity(err,originalBody,allocationAttempt))return this.createSite(originalBody,allocationAttempt+1);
+      try { identityConflict(err); } catch(error) { organizationCodeError(error); }
     } finally {
       client.release();
     }
@@ -521,7 +540,7 @@ export class AssetsController {
       const gw = gateway.rows[0];
       if (gw && (body.gatewayName !== undefined || body.endpoint !== undefined)) {
         body.gatewayName = body.gatewayName?.trim() || gw.name;
-        if(gw.externalSiteId && gw.externalGatewayId) {
+        if(gw.endpoint?.startsWith("solar/v1/")) {
           gatewayTopic(body.gatewayName!);body.endpoint=payloadSubscription(gw.externalSiteId,gw.externalGatewayId,body.endpoint ?? gw.endpoint);
         }else body.endpoint = gatewayTopic(body.gatewayName!, body.endpoint);
       }
@@ -755,7 +774,9 @@ export class AssetsController {
   }
 
   @Post("sites/:id/devices")
-  async addDevice(@Param("id") siteId: string, @Body() body: { name?: string; model?: string; serialNumber?: string; slaveId?: number; meterPresetId?: string; payloadProfileRevisionId?: string; localOverrideConfig?: unknown; sourcePresetRevisionId?:string; externalDeviceId?: string }) {
+  async addDevice(@Param("id") siteId: string, @Body() body: { name?: string; model?: string; serialNumber?: string; slaveId?: number; meterPresetId?: string; payloadProfileRevisionId?: string; localOverrideConfig?: unknown; sourcePresetRevisionId?:string; externalDeviceId?: string }, allocationAttempt=0):Promise<{id:string;siteId:string;gatewayId:string;externalDeviceId:string|undefined}> {
+    const originalBody=body;
+    body={...body,externalDeviceId:operationalCode(body.externalDeviceId,"DEV")};
     if (!body.name?.trim() || !body.model?.trim() || !body.serialNumber?.trim()) throw new BadRequestException("Device name, model and meter serial are required");
     const revision = await this.prepareDeviceProfile(body);
     if (revision && body.meterPresetId) throw new BadRequestException("Choose payload or register preset");
@@ -765,13 +786,13 @@ export class AssetsController {
     const client = await this.db.pool.connect();
     try {
       await client.query("BEGIN");
-      const gateway = await client.query(`SELECT g.id,s.external_site_id AS "externalSiteId",g.external_gateway_id AS "externalGatewayId" FROM gateways g JOIN sites s ON s.id=g.site_id WHERE g.site_id = $1 FOR UPDATE OF g`, [siteId]);
+      const gateway = await client.query(`SELECT g.id,g.endpoint,s.external_site_id AS "externalSiteId",g.external_gateway_id AS "externalGatewayId" FROM gateways g JOIN sites s ON s.id=g.site_id WHERE g.site_id = $1 FOR UPDATE OF g`, [siteId]);
       if (gateway.rows.length !== 1) throw new BadRequestException("Site must have one configured gateway");
-      if (!revision && gateway.rows[0].externalSiteId && gateway.rows[0].externalGatewayId) throw new BadRequestException("Standard gateway devices require a payload profile");
-      if (revision && (!gateway.rows[0].externalSiteId || !gateway.rows[0].externalGatewayId)) throw new BadRequestException("Gateway lacks external payload identities");
+      if (!revision && gateway.rows[0].endpoint?.startsWith("solar/v1/")) throw new BadRequestException("Standard gateway devices require a payload profile");
+      if (revision && (!gateway.rows[0].endpoint?.startsWith("solar/v1/") || !gateway.rows[0].externalSiteId || !gateway.rows[0].externalGatewayId)) throw new BadRequestException("Legacy gateway requires coordinated standard commissioning before adding a payload profile");
       const deviceId = randomUUID();
       if(revision) await this.persistDeviceProfile(client,revision,deviceId);
-      await client.query(`INSERT INTO devices (id,gateway_id,site_id,name,model,serial_number,device_type,slave_id,status,external_device_id,payload_profile_revision_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'offline',$9,$10)`, [deviceId,gateway.rows[0].id,siteId,body.name.trim(),body.model.trim(),body.serialNumber.trim(),revision && revision.config.deviceType === 'solar-logger' ? 'logger' : 'meter',slaveId,revision ? body.externalDeviceId : null,revision?.id ?? null]);
+      await client.query(`INSERT INTO devices (id,gateway_id,site_id,name,model,serial_number,device_type,slave_id,status,external_device_id,payload_profile_revision_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'offline',$9,$10)`, [deviceId,gateway.rows[0].id,siteId,body.name.trim(),body.model.trim(),body.serialNumber.trim(),revision && revision.config.deviceType === 'solar-logger' ? 'logger' : 'meter',slaveId,body.externalDeviceId,revision?.id ?? null]);
       if (body.meterPresetId) {
         const preset = await client.query("SELECT registers FROM meter_presets WHERE id = $1", [body.meterPresetId]);
         if (!Array.isArray(preset.rows[0]?.registers)) throw new BadRequestException("Preset not found");
@@ -780,8 +801,8 @@ export class AssetsController {
           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now())`, [randomUUID(),deviceId,reg.semanticField ?? reg.semantic_field,String(reg.registerAddress ?? reg.register_address),reg.registerCount ?? reg.register_count ?? 1,reg.wordOrder ?? reg.word_order ?? 'little_word_first',reg.byteOrder ?? reg.byte_order ?? 'big_endian',reg.dataType ?? reg.data_type,reg.scale ?? 1,reg.unit ?? '']);
       }
       await client.query("COMMIT");
-      return { id: deviceId, siteId, gatewayId: gateway.rows[0].id };
-    } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
+      return { id: deviceId, siteId, gatewayId: gateway.rows[0].id, externalDeviceId:body.externalDeviceId };
+    } catch (error) { await client.query("ROLLBACK"); if(retryGeneratedIdentity(error,originalBody,allocationAttempt))return this.addDevice(siteId,originalBody,allocationAttempt+1); identityConflict(error); } finally { client.release(); }
   }
 
   private async getPayloadRevision(id: string, deviceId?:string, sharedOnly=false) {
@@ -859,11 +880,12 @@ export class AssetsController {
       return {...info,profileConfig:config,profileDeviceType:config.deviceType,sourceProfileId:config.sourceProfile?.id??config.id,sourceProfileVersion:config.sourceProfile?.version??config.version,fields:config.fields,telemetryTopic:payloadTopic(gateway.externalSiteId,gateway.externalGatewayId,d.externalDeviceId),fixture:{schemaVersion:'1.1',messageType:'telemetry',messageId:randomUUID(),sequence:1,lotNumber:1,siteId:gateway.externalSiteId,gatewayId:gateway.externalGatewayId,device:{deviceId:d.externalDeviceId,deviceType:config.deviceType,profileId:config.sourceProfile?.id??config.id,profileVersion:config.sourceProfile?.version??config.version},pollGroup:field.pollGroup,timestamps:{polledAt,sentAt:polledAt},data:{values:Object.fromEntries(config.fields.filter(f=>f.pollGroup===field.pollGroup).map(f=>[f.sourceTag??f.tag,1])),units:Object.fromEntries(config.fields.filter(f=>f.pollGroup===field.pollGroup).map(f=>[f.sourceTag??f.tag,f.sourceUnit]))},quality:{status:'good',communication:'online'}}};
     });
     const rejections=(await this.db.query(`SELECT topic,reason,received_at AS "receivedAt" FROM payload_rejections WHERE site_id=$1 ORDER BY received_at DESC,id DESC LIMIT 100`,[siteId])).rows;
-    const unmappedMessages=(await this.db.query(`SELECT device_id AS "deviceId",message_id AS "messageId",unmapped,accepted_at AS "receivedAt" FROM payload_messages WHERE gateway_id=$1 AND unmapped<>'[]'::jsonb ORDER BY accepted_at DESC,id DESC LIMIT 20`,[gateway.gatewayId])).rows;
+    const unmappedMessages=(await this.db.query(`SELECT pm.device_id AS "deviceId",d.external_device_id AS "externalDeviceId",d.name AS "deviceName",pm.message_id AS "messageId",pm.unmapped,pm.accepted_at AS "receivedAt" FROM payload_messages pm JOIN devices d ON d.id=pm.device_id WHERE pm.gateway_id=$1 AND pm.unmapped<>'[]'::jsonb ORDER BY pm.accepted_at DESC,pm.id DESC LIMIT 20`,[gateway.gatewayId])).rows;
     const reception=new PayloadReceptionSettings(this.db);
     const receiveRevision=await reception.read(gateway.gatewayId);
-    const bundleFixture=gateway.externalSiteId&&gateway.externalGatewayId?await reception.fixtures(siteId):null;
-    return {siteId,...gateway,ackTopic:gateway.externalSiteId && gateway.externalGatewayId ? gatewayPrefix(gateway.externalSiteId,gateway.externalGatewayId)+'/dataAcept' : null,devices,rejections,unmappedMessages,receiveRevision,bundleFixture};
+    const standard=gateway.subscriptionTopic?.startsWith("solar/v1/");
+    const bundleFixture=standard&&gateway.externalSiteId&&gateway.externalGatewayId?await reception.fixtures(siteId):null;
+    return {siteId,...gateway,protocolMode:standard?"standard":"legacy",ackTopic:standard && gateway.externalSiteId && gateway.externalGatewayId ? gatewayPrefix(gateway.externalSiteId,gateway.externalGatewayId)+'/dataAcept' : null,devices,rejections,unmappedMessages,receiveRevision,bundleFixture};
   }
 
   @Post('sites/:id/payload-import')
@@ -875,7 +897,7 @@ export class AssetsController {
     const client=await this.db.pool.connect();
     try {
       await client.query('BEGIN');
-      const gateway=(await client.query(`SELECT g.id FROM gateways g JOIN sites s ON s.id=g.site_id WHERE s.id=$1 AND s.status<>'archived' AND s.external_site_id IS NOT NULL AND g.external_gateway_id IS NOT NULL FOR UPDATE OF g`,[siteId])).rows[0];
+      const gateway=(await client.query(`SELECT g.id FROM gateways g JOIN sites s ON s.id=g.site_id WHERE s.id=$1 AND s.status<>'archived' AND s.external_site_id IS NOT NULL AND g.external_gateway_id IS NOT NULL AND g.endpoint LIKE 'solar/v1/%' FOR UPDATE OF g`,[siteId])).rows[0];
       if(!gateway)throw new BadRequestException('Standard gateway not found');
       const previous=(await client.query('SELECT version FROM gateway_payload_receive_revisions WHERE gateway_id=$1 ORDER BY version DESC LIMIT 1',[gateway.id])).rows[0];
       if((previous?.version??0)!==body.baseVersion)throw new BadRequestException('Configuration changed; reload before importing');

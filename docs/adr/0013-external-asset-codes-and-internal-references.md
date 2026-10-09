@@ -1,0 +1,3 @@
+# External asset codes and stable internal references
+
+Site, gateway and device codes are the identities presented to users and used by the standard telemetry protocol; internal record references remain stable for relationships, authorization and history. Preserve the existing internal UUIDs and legacy protocol contracts rather than replacing their meanings globally, because doing so would break historical references and commissioned devices. Codes already in use remain locked in ordinary edit forms; corrections require a coordinated identity and device migration. These boundaries were confirmed by the user on 2026-10-09; automatic allocation scope and legacy initialization remain separate decisions in the identity audit plan.

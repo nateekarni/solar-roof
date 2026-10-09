@@ -1,3 +1,4 @@
+import { NotificationFeedModule } from './modules/notifications/notification-feed.module.js';
 import { JobsModule } from './modules/jobs/jobs.module.js';
 import {HistoryModule} from './modules/history/history.module.js';
 import {PlatformObservabilityModule} from './common/observability/platform-observability.module.js';
@@ -24,6 +25,7 @@ import { RequestOriginGuard } from "./common/auth/request-origin.guard.js";
 @Module({
   imports: [
     DatabaseModule,
+    NotificationFeedModule,
     DashboardModule,
     HealthModule,
     IdentityModule,
