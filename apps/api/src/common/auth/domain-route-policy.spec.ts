@@ -11,6 +11,8 @@ test('operation customer and alert routes enforce the same permissions as their 
  }
 });
 test('technical managers cannot access site registry or financial company settings',()=>{
+ assert.equal(permissionForRoute('GET','/v1/sites/site-a/live-telemetry'),'technical.telemetry.view');
+ assert.equal(authorizedRoute({role:'admin'},'GET','/v1/sites/site-a/live-telemetry'),true);
  assert.equal(authorizedRoute({role:'admin'},'GET','/v1/sites'),false);
  assert.equal(authorizedRoute({role:'admin'},'PUT','/v1/settings/company'),false);
  assert.equal(authorizedRoute({role:'owner'},'GET','/v1/gateways'),false);
@@ -28,4 +30,10 @@ test('action matrix distinguishes view download edit and approval',()=>{
  const authorization=effectiveAuthorization('operator',0,[{domain:'business',preset:{'business.billing.view':true},overrides:{},scope:{mode:'all',siteIds:[]}}]);
  assert.equal(authorizedRoute({role:'operator',authorization},'GET','/v1/billing-cycles'),true);
  assert.equal(authorizedRoute({role:'operator',authorization},'PATCH','/v1/billing-cycles/a/verify-payment'),false);
+});
+test('managers can reach invitation lifecycle while service enforces who they may invite',()=>{
+ for(const [method,path] of [['POST','/v1/users/invite'],['GET','/v1/users/invitations'],['POST','/v1/users/invitations/a/resend']]){
+  for(const role of ['owner','admin'])assert.equal(authorizedRoute({role},method!,path!),true);
+  for(const role of ['operator','accountant','customer_user'])assert.equal(authorizedRoute({role},method!,path!),false);
+ }
 });

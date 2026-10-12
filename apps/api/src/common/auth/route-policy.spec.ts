@@ -41,9 +41,9 @@ test("customer scope never widens missing customer membership", () => {
   assert.deepEqual(customerScope(undefined), []);
 });
 
-test('business routes exclude operational configuration and user management', () => {
+test('business routes exclude technical configuration and user enumeration but allow owner invitations', () => {
  for(const role of ['owner','customer_user']) for(const path of ['/v1/mqtt-brokers','/v1/operations/users','/v1/operations/gateways','/v1/settings','/v1/settings/notifications']) assert.equal(routeAllowed(role,'GET',path),false);
- assert.equal(routeAllowed('owner','POST','/v1/users/invite'),false);
+ assert.equal(routeAllowed('owner','POST','/v1/users/invite'),true);
  assert.equal(routeAllowed('owner','PUT','/v1/settings/company'),true);
  assert.equal(routeAllowed('customer_user','GET','/v1/settings/bank-accounts'),true);
  assert.equal(routeAllowed('customer_user','PUT','/v1/me/preferences'),true);

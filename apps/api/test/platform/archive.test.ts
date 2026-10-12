@@ -77,39 +77,19 @@ test('verified archive generations preserve late readings and reject corrupted s
   }finally{await pool.end();client.destroy();}
 });
 
-test('history HTTP is scoped and idempotent, shares export quota, and downloads verified JSONL with preserved numeric evidence',{timeout:90000},async()=>{
- compose('stop','worker');const pool=new Pool({connectionString:process.env.READINESS_DATABASE_URL!,max:4}),s3=fixtureStorage();
- try{
-  const first=await siteFixture(pool),second=await siteFixture(pool),user=await actor(pool,first.customer),other=await actor(pool,second.customer);
-  await insertReading(pool,first.site,first.device);
-  const mapping=randomUUID();await pool.query("INSERT INTO register_mapping_versions(id,device_id,semantic_field,register_address,data_type,byte_order,scale,unit,effective_from) VALUES($1,$2,'voltage','0','uint16','big_endian',1.12345678,'V','2024-01-01')",[mapping,first.device]);
-  await pool.query('UPDATE telemetry_raw SET mapping_version_id=$2,mapping_version_ids=ARRAY[$2::uuid] WHERE site_id=$1',[first.site,mapping]);
-  const objects=new ArchiveObjectStore(s3,'solar-readiness');
-  await new ArchiveTelemetryJob(pool,objects).archive(first.site,'2025-01-01','2025-01-02');
-  const key=randomUUID(),body={siteId:first.site,from:'2025-01-01',to:'2025-01-02'};
-  const post=(value=body,identity=key,headers=user.headers)=>fetch(process.env.READINESS_API_URL+'/v1/history/restore',{method:'POST',headers:{...headers,'Idempotency-Key':identity},body:JSON.stringify(value)});
-  assert.equal((await post({...body,to:'2025-02-03'},randomUUID())).status,400);
-  assert.equal((await post(body,randomUUID(),other.headers)).status,403);
-  const response=await post();assert.equal(response.status,202,await response.clone().text());const queued=await response.json();
-  const repeated=await post();assert.equal(repeated.status,202);assert.equal((await repeated.json()).jobId,queued.jobId);
-  assert.equal((await post({...body,to:'2025-01-03'})).status,409);assert.equal((await post(body,randomUUID())).status,429);
-  const report=await fetch(process.env.READINESS_API_URL+'/v1/reports',{method:'POST',headers:{...user.headers,'Idempotency-Key':randomUUID()},body:JSON.stringify({type:'energy',format:'csv',dateFrom:'2025-01-01',dateTo:'2025-01-02'})});assert.equal(report.status,429,'Restore consumes the same per-user export quota');
-  const status=()=>fetch(process.env.READINESS_API_URL+`/v1/jobs/${queued.jobId}`,{headers:user.headers});
-  const record=await (await status()).json();assert.deepEqual(record.history,{...body,format:'jsonl.gz'});assert.equal(record.rowCount,null);
-  assert.equal((await fetch(process.env.READINESS_API_URL+`/v1/jobs/${queued.jobId}`,{headers:other.headers})).status,403);
-  const worker=new HistoryJobsWorker(pool,s3,'solar-readiness'),job=await worker.store.claim('restore','D1-http');assert.equal(job.id,queued.jobId);await worker.execute(job,'D1-http');
-  const stored=(await pool.query('SELECT * FROM platform_jobs WHERE id=$1',[queued.jobId])).rows[0];assert.equal(stored.status,'ready',stored.error_code);assert.equal(Number(stored.row_count),1);
-  const downloaded=await fetch(process.env.READINESS_API_URL+`/v1/jobs/${queued.jobId}/download`,{headers:user.headers});assert.equal(downloaded.status,200);assert.match(downloaded.headers.get('content-type')! ,/application\/gzip/);assert.match(downloaded.headers.get('content-disposition')!,/history-.*\.jsonl\.gz/);
-  const bytes=Buffer.from(await downloaded.arrayBuffer());assert.equal(createHash('sha256').update(bytes).digest('hex'),stored.manifest.checksum);
-  const content=gunzipSync(bytes).toString();assert.match(content,/100\.12345679/);assert.match(content,/12345678901234567890\.123456789/);assert.match(content,/01:00:00\.123456/);assert.ok(content.includes(mapping));assert.match(content,/1\.12345678/);
-  assert.equal(Number((await pool.query('SELECT count(*) FROM telemetry_raw WHERE site_id=$1',[first.site])).rows[0].count),1);
-  const reassigned=randomUUID();await pool.query("INSERT INTO customers(id,name,code,region) VALUES($1::uuid,'D1 reassigned',$1::text,'fixture')",[reassigned]);
-  await pool.query('UPDATE sites SET customer_id=$2 WHERE id=$1',[first.site,reassigned]);assert.equal((await status()).status,403,'Current site ownership is checked on status and download');
-  assert.equal((await fetch(process.env.READINESS_API_URL+`/v1/jobs/${queued.jobId}/download`,{headers:user.headers})).status,403);
- }finally{s3.destroy();await pool.end();}
+test('retired history HTTP rejects restore requests without creating work',async()=>{
+ const pool=new Pool({connectionString:process.env.READINESS_DATABASE_URL!});
+ try {
+  const site=await siteFixture(pool),user=await actor(pool,site.customer);
+  const before=(await pool.query('SELECT count(*) FROM platform_jobs WHERE created_by=$1',[user.id])).rows[0].count;
+  for(const [method,path] of [['GET','/v1/history/options'],['POST','/v1/history/restore']]){
+   const response=await fetch(process.env.READINESS_API_URL+path,{method,headers:user.headers,...(method==='POST'?{body:JSON.stringify({siteId:site.site,from:'2025-01-01',to:'2025-01-02'})}:{})});assert.equal(response.status,403);
+  }
+  assert.equal((await pool.query('SELECT count(*) FROM platform_jobs WHERE created_by=$1',[user.id])).rows[0].count,before);
+ }finally{await pool.end();}
 });
 
-test('actual child crashes after upload/publication reclaim the same verified generation; restore crash and revocation stay fenced',{timeout:180000},async()=>{
+test('archive child crashes reclaim the same verified generation; retired restores fail closed',{timeout:180000},async()=>{
  compose('stop','worker');const pool=new Pool({connectionString:process.env.READINESS_DATABASE_URL!,max:4}),s3=fixtureStorage();
  try{
   const site=await siteFixture(pool),user=await actor(pool,site.customer);await insertReading(pool,site.site,site.device);
@@ -122,10 +102,9 @@ test('actual child crashes after upload/publication reclaim the same verified ge
   const ready=(await pool.query('SELECT * FROM platform_jobs WHERE id=$1',[first])).rows[0];assert.equal(ready.status,'ready',ready.error_code);assert.equal(ready.object_key,crashed.manifest.key);
   const second=await make('archive');await child('crash-publish','archive');const published=(await pool.query('SELECT * FROM platform_jobs WHERE id=$1',[second])).rows[0];assert.equal(Number((await pool.query('SELECT count(*) FROM telemetry_archives WHERE id=$1',[published.manifest.id])).rows[0].count),1);
   await pool.query("UPDATE platform_jobs SET lease_until=now()-interval '1 second' WHERE id=$1",[second]);await worker.execute(await worker.store.claim('archive','D1-reclaim'),'D1-reclaim');assert.equal(Number((await pool.query('SELECT count(*) FROM telemetry_archives WHERE site_id=$1',[site.site])).rows[0].count),2,'Reclaim must not append another generation for the same publication');
-  const restore=await make('restore');await child('crash-upload','restore');const restoreCrash=(await pool.query('SELECT * FROM platform_jobs WHERE id=$1',[restore])).rows[0];
-  await pool.query("UPDATE platform_jobs SET lease_until=now()-interval '1 second' WHERE id=$1",[restore]);await worker.execute(await worker.store.claim('restore','D1-reclaim'),'D1-reclaim');const restored=(await pool.query('SELECT * FROM platform_jobs WHERE id=$1',[restore])).rows[0];assert.equal(restored.status,'ready',restored.error_code);assert.equal(restored.object_key,restoreCrash.manifest.key);assert.equal(Number(restored.row_count),1);
-  assert.equal(Number((await pool.query('SELECT count(*) FROM notification_deliveries WHERE job_id=$1',[restore])).rows[0].count),1);
-  const revoked=await make('restore'),claim=await worker.store.claim('restore','D1-revoked');assert.equal(claim.id,revoked);await pool.query("UPDATE users SET status='inactive' WHERE id=$1",[user.id]);await worker.execute(claim,'D1-revoked');assert.equal((await pool.query('SELECT error_code FROM platform_jobs WHERE id=$1',[revoked])).rows[0].error_code,'permission_revoked');
+  const restore=await make('restore'),claim=await worker.store.claim('restore','D1-retired');assert.equal(claim.id,restore);await worker.execute(claim,'D1-retired');
+  const denied=(await pool.query('SELECT * FROM platform_jobs WHERE id=$1',[restore])).rows[0];assert.equal(denied.status,'failed');assert.equal(denied.error_code,'permission_revoked');assert.equal(denied.object_key,null);
+
  }finally{s3.destroy();await pool.end();}
 });
 
@@ -157,42 +136,6 @@ test('overlapping windows restore the newest snapshot rather than lexicographic 
   const object=await s3.send(new GetObjectCommand({Bucket:'solar-readiness',Key:restored.key}));const lines=gunzipSync(await object.Body!.transformToByteArray()).toString().trim().split('\n');
   assert.equal(lines.length,1);assert.equal(JSON.parse(lines[0]).reading.quality,'reset');
  }finally{s3.destroy();await pool.end();}
-});
-
-test('slow real storage renews the lease, caps all history workers and rechecks revoked permission before publication',{timeout:90000},async()=>{
- compose('stop','worker');const pool=new Pool({connectionString:process.env.READINESS_DATABASE_URL!,max:4}),s3=fixtureStorage();let slow:ReturnType<typeof fork>|undefined;
- try{
-  const site=await siteFixture(pool),user=await actor(pool,site.customer);await insertReading(pool,site.site,site.device);
-  await new ArchiveTelemetryJob(pool,new ArchiveObjectStore(s3,'solar-readiness')).archive(site.site,'2025-01-01','2025-01-02');
-  const id=randomUUID();await pool.query("INSERT INTO platform_jobs(id,kind,payload,scope,created_by,payload_hash) VALUES($1,'restore',$2,$3,$4,'D1-slow')",[id,{siteId:site.site,from:'2025-01-01',to:'2025-01-02',format:'jsonl.gz'},[site.customer],user.id]);
-  slow=fork(new URL('./archive-child.mjs',import.meta.url),[],{execArgv:['--import','tsx'],env:{...process.env,ARCHIVE_CHILD_MODE:'slow',ARCHIVE_CHILD_KIND:'restore'},stdio:['ignore','pipe','pipe','ipc']});
-  let errors='';slow.stderr?.on('data',chunk=>{errors+=chunk;});const [message]=await once(slow,'message');assert.equal(message.event,'before-complete');
-  const lease=(await pool.query('SELECT lease_until FROM platform_jobs WHERE id=$1',[id])).rows[0].lease_until;
-  await new Promise(resolve=>setTimeout(resolve,16000));assert.ok((await pool.query('SELECT lease_until FROM platform_jobs WHERE id=$1',[id])).rows[0].lease_until>lease);
-  const competing=randomUUID();await pool.query("INSERT INTO platform_jobs(id,kind,payload,scope,payload_hash) VALUES($1,'archive',$2,$3,'D1-competing')",[competing,{siteId:site.site,from:'2025-01-01',to:'2025-01-02'},[site.customer]]);
-  assert.equal(await new HistoryJobsWorker(pool,s3,'solar-readiness').store.claim('archive','D1-competitor'),null,'One history execution across kinds/workers');
-  await pool.query("UPDATE platform_jobs SET status='cancelled' WHERE id=$1",[competing]);await pool.query("UPDATE users SET status='inactive' WHERE id=$1",[user.id]);
-  const done=once(slow,'exit');slow.send('release');assert.equal((await done)[0],0,errors);
-  const failed=(await pool.query('SELECT * FROM platform_jobs WHERE id=$1',[id])).rows[0];assert.equal(failed.status,'failed');assert.equal(failed.error_code,'permission_revoked');assert.equal(failed.object_key,null);
- }finally{if(slow&&slow.exitCode===null)slow.kill('SIGKILL');s3.destroy();await pool.end();}
-});
-
-test('actual worker PID1 SIGKILL retains the restore lease and restart completes the same durable request',{timeout:90000},async()=>{
- compose('stop','worker');const pool=new Pool({connectionString:process.env.READINESS_DATABASE_URL!,max:4}),s3=fixtureStorage();let paused=false;
- try{
-  const site=await siteFixture(pool),user=await actor(pool,site.customer);await insertReading(pool,site.site,site.device);
-  await new ArchiveTelemetryJob(pool,new ArchiveObjectStore(s3,'solar-readiness')).archive(site.site,'2025-01-01','2025-01-02');
-  controlledWorker();compose('stop','worker');
-  const id=randomUUID();await pool.query("INSERT INTO platform_jobs(id,kind,payload,scope,created_by,payload_hash) VALUES($1,'restore',$2,$3,$4,'D1-restart')",[id,{siteId:site.site,from:'2025-01-01',to:'2025-01-02',format:'jsonl.gz'},[site.customer],user.id]);
-  compose('pause','storage');paused=true;execFileSync('docker',['start',compose('ps','--all','-q','worker').toString().trim()],{stdio:'pipe'});
-  let row:any;for(let n=0;n<50;n++){row=(await pool.query('SELECT * FROM platform_jobs WHERE id=$1',[id])).rows[0];if(row.status==='running')break;await new Promise(resolve=>setTimeout(resolve,100));}
-  assert.equal(row.status,'running');assert.ok(row.worker_id);assert.match(compose('exec','-T','worker','node','-e',"process.stdout.write(require('fs').readFileSync('/proc/1/cmdline','utf8'))").toString(),/^node\u0000/);
-  compose('kill','-s','SIGKILL','worker');const killed=(await pool.query('SELECT * FROM platform_jobs WHERE id=$1',[id])).rows[0];assert.equal(killed.status,'running');assert.equal(killed.worker_id,row.worker_id);
-  compose('unpause','storage');paused=false;await pool.query("UPDATE platform_jobs SET lease_until=now()-interval '1 second' WHERE id=$1",[id]);
-  execFileSync('docker',['start',compose('ps','--all','-q','worker').toString().trim()],{stdio:'pipe'});for(let n=0;n<100;n++){row=(await pool.query('SELECT * FROM platform_jobs WHERE id=$1',[id])).rows[0];if(['ready','failed'].includes(row.status))break;await new Promise(resolve=>setTimeout(resolve,100));}
-  assert.equal(row.status,'ready',row.error_code);assert.equal(Number(row.row_count),1);assert.ok(row.manifest.checksum);assert.equal(Number((await pool.query('SELECT count(*) FROM telemetry_raw WHERE site_id=$1',[site.site])).rows[0].count),1);
-  assert.equal(Number((await pool.query('SELECT count(*) FROM notification_deliveries WHERE job_id=$1',[id])).rows[0].count),1);
- }finally{if(paused)compose('unpause','storage');compose('stop','worker');s3.destroy();await pool.end();}
 });
 
 test('enabled producer automatically queues old site-days and appends a generation after late correction',{timeout:90000},async()=>{

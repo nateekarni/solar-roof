@@ -24,7 +24,7 @@ workflow `platform-capacity.yml` ใช้ self-hosted labels `linux,capacity-is
 
 | ประเด็น | smoke | target |
 |---|---:|---:|
-| โรงเรียน / มิเตอร์ / admin users | 2 / 8 / 5 | 100 / 1,000 / 50 |
+| โรงเรียน / มิเตอร์ / business owner users | 2 / 8 / 5 | 100 / 1,000 / 50 |
 | raw history | 720 rows, sampling รายวัน 90 วัน | 129,600,000 rows, sampling ทุกนาที 90 วัน |
 | steady | 24/min เป็นเวลา 60s | 1,000/min เป็นเวลา 60s |
 | burst | 8 | 1,000 |
@@ -35,7 +35,7 @@ fixture สร้าง billing ย้อนหลัง 24 เดือนต�
 
 ส่ง MQTT QoS1 แต่ถือเฉพาะ `status=acknowledged` จากแอปเป็น ACK ตรวจ persistence ด้วย ingestion hash + source_time และตรวจ duplicate rows หลังส่ง payload เดิมซ้ำ. รอ initial app ACK ครบก่อนเริ่มรอบซ้ำ แล้วรอ ACK ที่ `duplicate=true` ครบทุก ID ของรอบซ้ำก่อน query แถว ไม่ใช้ PUBACK เป็น barrier. เก็บ ACK latency แยกจาก broker PUBACK. Replay rate เป็น stress profile ที่กำหนดเพื่อทดสอบ ไม่ใช่ firmware SLA
 
-เปิดหน้า `/`, `/sites`, `/billing`, `/settings/audit` พร้อมกันตามจำนวน users ผ่าน session จาก login จริง เวลาจบเมื่อข้อมูลสำคัญ/แถวข้อมูลแสดง ไม่ใช้ networkidle เก็บทุก sample, p50/p95/p99/max; sample ใดเกิน 2,000 ms ให้ smoke ล้มเหลวด้วย ห้ามลด budget เพื่อให้เขียว ใช้ admin ทุกคนเพื่อวัด global scope; ไม่อ้างเป็น role distribution ของผู้ใช้จริง
+เปิดหน้า `/`, `/sites`, `/billing`, `/settings/audit` พร้อมกันตามจำนวน users ผ่าน session จาก login จริง เวลาจบเมื่อข้อมูลสำคัญ/แถวข้อมูลแสดง ไม่ใช้ networkidle เก็บทุก sample, p50/p95/p99/max; sample ใดเกิน 2,000 ms ให้ smoke ล้มเหลวด้วย ห้ามลด budget เพื่อให้เขียว ใช้ business owner ทุกคนเพื่อวัด global scope; ไม่อ้างเป็น role distribution ของผู้ใช้จริง
 
 รายงาน `test/artifacts/platform-capacity.json` เก็บ revision, image IDs, hardware/disk, rows, scenario, page samples, ACK/persistence, query plans ของ source query billing/audit, lock observations และ container memory observations. หน่วยความจำยังเป็น sampled observations จึงไม่ใช่ peak ระดับทุก allocation
 
@@ -62,3 +62,7 @@ CI smoke snippet สำหรับผู้ดูแล shared workflow (ไม
 ```
 
 รันแบบ serial หลัง all-fast และ upload artifacts แม้ failure. ก่อน deploy ต้องแนบผลจริงและทบทวน gate ที่ยังไม่ผ่าน; ห้ามสรุป capacity จากการตรวจ syntax/unit เท่านั้น
+
+### Domain RBAC migration limitation
+
+Capacity browser actors are business owners because these routes measure the business domain. Legacy public report enqueue/download and production worker authorization remain denied. The harness asserts HTTP enqueue returns 403, then generates two artificial internal exports using a test-only worker subclass restricted to each fixture job ID and creator. The owned loopback database and storage contain fixture data only. Real worker claiming, extraction, multipart upload, checksum verification and completion run unchanged; status is read from the fixture database. Production report-worker polling is not enabled for capacity. Artifacts label this as isolated-internal-fixture; this measures export mechanism pressure in the launcher process, not supported public export authorization or worker-container resource usage. It cannot establish production or target capacity; the target release gate remains failed. No latency or durability threshold is relaxed.

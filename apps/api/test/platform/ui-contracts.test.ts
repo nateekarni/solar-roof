@@ -15,7 +15,7 @@ test('billing document identities are scoped persisted IDs; direct preview never
  try {
   await db.query("INSERT INTO customers(id,name,code,region) VALUES($1::uuid,'U1 Customer',$1::text,'fixture'),($2::uuid,'U1 Other',$2::text,'fixture')",[customer,other]);
   await db.query("INSERT INTO sites(id,customer_id,name,capacity_mwp) VALUES($1,$2,'U1 Site',0.1),($3,$4,'U1 Other',0.1)",[site,customer,otherSite,other]);
-  await db.query("INSERT INTO users(id,email,display_name,role,status,password_hash,customer_id) VALUES($1,$2,'U1 Actor','admin','active',$3,$4)",[user,email,auth.hashPassword(password),customer]);
+  await db.query("INSERT INTO users(id,email,display_name,role,status,password_hash,customer_id) VALUES($1,$2,'U1 Actor','owner','active',$3,$4)",[user,email,auth.hashPassword(password),customer]);
   await db.query("INSERT INTO billing_cycles(id,site_id,period_start,period_end,cutoff_time,status,quality,opening_energy,closing_energy,consumed_kwh,rate,amount) VALUES($1,$2,'2026-09-01','2026-09-30',now(),'approved','complete',100,110,10,1,10)",[cycle,site]);
   await db.query("INSERT INTO documents(id,site_id,billing_cycle_id,document_type,document_number,status,amount,issue_date,file_key) VALUES($1,$2,$3,'invoice','U1-INV','issued',10,'2020-01-01','legacy/original.pdf'),($4,$2,$3,'receipt','U1-RCT','issued',10,'2020-01-01','legacy/receipt.pdf'),($5,$6,NULL,'invoice','U1-FOREIGN','issued',10,'2020-01-01','legacy/foreign.pdf')",[invoice,site,cycle,receipt,foreign,otherSite]);
   await db.query("INSERT INTO documents(id,site_id,document_type,document_number,status,amount,issue_date) SELECT gen_random_uuid(),$1,'invoice',gen_random_uuid()::text,'draft',10,'2026-09-30' FROM generate_series(1,30)",[site]);
@@ -29,21 +29,25 @@ test('billing document identities are scoped persisted IDs; direct preview never
   await db.query(`CREATE FUNCTION u1_payment_race() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.billing_cycle_id='${cycle}'::uuid THEN PERFORM pg_sleep(0.1); END IF; RETURN NEW; END $$`);
   await db.query('CREATE TRIGGER u1_payment_race BEFORE INSERT ON payments FOR EACH ROW EXECUTE FUNCTION u1_payment_race()');
   try {
-   const replies=await Promise.all(Array.from({length:4},()=>req('/v1/billing-cycles/'+cycle+'/pay','POST',{amount:10,paidAt:'2026-09-30T10:00:00Z',slipUrl:'data:image/png;base64,aA=='})));
-   const payloads=await Promise.all(replies.map(async response=>{assert.equal(response.status,201);return response.json();}));
-   assert.equal(new Set(payloads.map(value=>value.paymentId)).size,1,'Concurrent evidence upserts retain one payment identity');
+   const replies=await Promise.all(Array.from({length:4},()=>req('/v1/billing-cycles/'+cycle+'/pay','POST',{amount:10,paidAt:'2026-09-30T10:00:00Z',slipUrl:'data:image/png;base64,'+Buffer.from(user).toString('base64')})));
+   assert.deepEqual(replies.map(response=>response.status).sort(),[201,409,409,409],'Concurrent duplicate evidence is accepted exactly once');
    assert.equal(Number((await db.query('SELECT count(*) FROM payments WHERE billing_cycle_id=$1',[cycle])).rows[0].count),1);
   } finally {await db.query('DROP TRIGGER u1_payment_race ON payments');await db.query('DROP FUNCTION u1_payment_race()');}
+  const evidence=(await db.query('SELECT amount,paid_at,declared_amount FROM payments WHERE billing_cycle_id=$1',[cycle])).rows[0];assert.equal(evidence.amount,null);assert.equal(evidence.paid_at,null);assert.equal(Number(evidence.declared_amount),10);
   await db.query(`CREATE FUNCTION u1_audit_failure() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.actor_id='${user}'::uuid AND NEW.action='billing_cycle.pay' THEN RAISE EXCEPTION 'U1 audit failure'; END IF; RETURN NEW; END $$`);
   await db.query('CREATE TRIGGER u1_audit_failure BEFORE INSERT ON audit_events FOR EACH ROW EXECUTE FUNCTION u1_audit_failure()');
   try {
-   assert.equal((await req('/v1/billing-cycles/'+cycle+'/pay','POST',{amount:20,slipUrl:'data:image/png;base64,aA=='})).status,500);
-   assert.equal(Number((await db.query('SELECT amount FROM payments WHERE billing_cycle_id=$1',[cycle])).rows[0].amount),10,'Audit failure rolls back evidence update');
+   assert.equal((await req('/v1/billing-cycles/'+cycle+'/pay','POST',{amount:20,slipUrl:'data:image/png;base64,'+Buffer.from('audit-'+user).toString('base64')})).status,500);
+   assert.equal(Number((await db.query('SELECT count(*) FROM payments WHERE billing_cycle_id=$1',[cycle])).rows[0].count),1,'Audit failure rolls back the new evidence row');
   } finally {await db.query('DROP TRIGGER u1_audit_failure ON audit_events');await db.query('DROP FUNCTION u1_audit_failure()');}
+  await db.query('INSERT INTO site_account_assignments(id,user_id,site_id) VALUES($1,$2,$3)',[randomUUID(),user,site]);
   for(const role of ['owner','admin','operator','accountant','customer_user']) {
    await db.query('UPDATE users SET role=$1 WHERE id=$2',[role,user]);
+   await db.query('DELETE FROM employee_domain_grants WHERE user_id=$1',[user]);
+   if(role==='accountant')await db.query(`INSERT INTO employee_domain_grants(user_id,domain,overrides,scope_mode,site_ids) VALUES($1,'business','{"business.billing.view":true,"business.billing.edit":true,"business.billing.approve":true,"business.documents.view":true}','selected',$2)`,[user,[site]]);
+   if(['admin','operator'].includes(role)){assert.equal((await req('/v1/operations/documents/'+invoice)).status,403);assert.equal((await req('/v1/billing-cycles/'+cycle+'/pay','POST',{amount:10})).status,403);continue;}
    const response=await req('/v1/operations/documents/'+invoice);assert.equal(response.status,200);const doc=await response.json();assert.equal(doc.id,invoice);assert.equal(doc.documentNumber,'U1-INV');assert.equal(doc.snapshot,undefined);assert.ok(doc.previewUnavailableReason,'No invented persisted snapshot');
-   assert.equal((await req('/v1/operations/documents/'+foreign)).status,['owner','admin'].includes(role)?200:404,'Tenant scope applies to direct ID');
+   assert.equal((await req('/v1/operations/documents/'+foreign)).status,role==='owner'?200:404,'Tenant scope applies to direct ID');
    const caps=await (await req('/v1/auth/capabilities')).json();assert.equal(caps.operationsActions.includes('submit_payment'),role!=='operator');assert.equal(caps.actions.includes('approve_payment'),false);
    assert.equal((await req('/v1/billing-cycles/'+cycle+'/verify-payment','PATCH',{status:'approved'})).status,['owner','accountant'].includes(role)?503:403);
   }

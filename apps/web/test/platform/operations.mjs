@@ -13,7 +13,7 @@ const browser=await launchFixtureBrowser();
 try {
  await db.query("INSERT INTO customers(id,name,code,region) VALUES($1,'Q1 Browser Customer',$2,'fixture')",[customer,customer]);
  await db.query("INSERT INTO sites(id,customer_id,name,capacity_mwp) VALUES($1,$2,'Q1 Browser Site',0.1)",[site,customer]);
- await db.query("INSERT INTO users(id,email,display_name,role,status,password_hash,customer_id) VALUES($1,$2,'Q1 Browser','admin','active',$3,$4)",[user,email,hash,customer]);
+ await db.query("INSERT INTO users(id,email,display_name,role,status,password_hash,customer_id) VALUES($1,$2,'Q1 Browser','owner','active',$3,$4)",[user,email,hash,customer]);
  await db.query("INSERT INTO billing_cycles(id,site_id,period_start,period_end,cutoff_time,status,quality,opening_energy,closing_energy,consumed_kwh,rate,amount) SELECT gen_random_uuid(),$1,date '2026-09-01'-n*interval '1 month',date '2026-09-30'-n*interval '1 month',now(),'pending_verification','complete',100,110,10,1,10 FROM generate_series(1,26) n",[site]);
  const oldest=(await db.query('SELECT id FROM billing_cycles WHERE site_id=$1 ORDER BY period_end ASC LIMIT 1',[site])).rows[0].id;
  const login=await fetch(api+'/v1/auth/login',{method:'POST',headers:{Origin:web,'Content-Type':'application/json'},body:JSON.stringify({email,password})});assert.equal(login.status,200);const tokens=await login.json();
@@ -25,8 +25,8 @@ try {
   await page.getByRole('button',{name:'Next operation page',exact:true}).click();
   await page.waitForFunction(()=>new URL(location.href).searchParams.has('cursor'));
   await page.getByText('Q1 Browser Site',{exact:true}).filter({visible:true}).first().waitFor();
-  await page.getByRole('button',{name:/เมนูการดำเนินการ|Open actions menu/}).click();await page.getByRole('menuitem',{name:/ดูรายละเอียดรอบบิล|View Billing Details/}).click();
-  await page.waitForURL(web+'/records/billing/'+oldest);await page.getByRole('heading',{level:1}).waitFor();await page.getByText('Q1 Browser Customer',{exact:true}).first().waitFor();
+  if(viewport.width>1000){await page.getByRole('button',{name:/เมนูการดำเนินการ|Open actions menu/}).click();await page.getByRole('menuitem',{name:/ดูรายละเอียดรอบบิล|View Billing Details/}).click();}else await page.getByRole('button',{name:/รายละเอียดรอบบิล|Billing Details/}).click();
+  await page.waitForURL(url=>url.pathname==='/records/billing/'+oldest);await page.getByRole('heading',{level:1}).waitFor();await page.getByText('Q1 Browser Customer',{exact:true}).first().waitFor();
   await page.goBack();await page.getByRole('searchbox').waitFor();
   // Hold a real HTTP result to reproduce a response arriving after a new
   // search. The payload still comes from the private PostgreSQL fixture.

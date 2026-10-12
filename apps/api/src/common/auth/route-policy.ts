@@ -46,6 +46,7 @@ export function routeAllowed(role: string, method: string, rawPath: string): boo
   if (path === "/v1/auth/password") return method === "PUT";
   // Audit is a read-only manager surface. Its service filters business/technical events.
   if (/^\/v1\/operations\/audit(?:\/|$)/.test(path)) return read && ["owner", "admin"].includes(role);
+  if ((path === '/v1/users/invite' && method === 'POST') || (path === '/v1/users/invitations' && read) || (/^\/v1\/users\/invitations\/[^/]+\/resend$/.test(path) && method === 'POST')) return ['owner','admin'].includes(role);
   if (isBusinessRole(role)) {
     if (/^\/v1\/(?:users|mqtt-brokers|platform|sites|customers|gateways|devices|meter-presets|alerts|reports|history|jobs)(?:\/|$)/.test(path)) return false;
     if (/^\/v1\/operations(?:\/|$)/.test(path) && !/^\/v1\/operations\/(?:contracts|billing|invoices|receipts|documents)(?:\/|$)/.test(path)) return false;

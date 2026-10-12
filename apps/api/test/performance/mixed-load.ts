@@ -11,6 +11,7 @@ import {profileConfig,assertTargetHost,evaluateCapacity,summary,DuplicateAckBarr
 import {verifyDockerExecution} from './docker-identity';
 import {assertPageBudget} from './page-budget';
 import {ownedPool,seedHistory} from './seed-history';
+import {fixtureExport} from './fixture-export';
 import {OperationsService} from '../../src/modules/dashboard/operations.service';
 import type {DatabaseService} from '../../src/database/database.service';
 // Browser dependency belongs to the web workspace.
@@ -77,13 +78,11 @@ try {
     for(let i=0;i<count;i++){await pause(Math.max(0,started+i*60000/rate-performance.now()));await send();}
     await pause(Math.max(0,started+seconds*1000-performance.now()));return count;
   }
-  async function report(i:number) {
-    const response=await fetch(api+'/v1/reports',{method:'POST',headers:{...headers(i),'Idempotency-Key':randomUUID()},body:JSON.stringify({type:'energy',format:'csv',dateFrom:new Date(Date.now()-89*86400000).toISOString().slice(0,10),dateTo:new Date().toISOString().slice(0,10)})});
-    assert.equal(response.status,202,'Report accepted by server');const {jobId}=await response.json();reportIds.push(jobId);
-    const started=performance.now();
-    while(performance.now()-started<1200000){const r=await fetch(api+`/v1/jobs/${jobId}`,{headers:headers(i)});assert.equal(r.status,200);const job=await r.json();if(job.status==='ready')return {jobId,ms:performance.now()-started};assert.ok(!['failed','cancelled'].includes(job.status),`Report ${job.status}`);await pause(1000);}
-    throw new Error('Report ready timeout');
-  }
+  // Public authorization stays denied; export pressure is internal fixture load.
+  const denied=await fetch(api+'/v1/reports',{method:'POST',headers:headers(0),body:JSON.stringify({type:'energy',format:'csv',dateFrom:'2026-01-01',dateTo:'2026-01-02'})});
+  assert.equal(denied.status,403,'Legacy report HTTP authorization remains denied');
+  artifact.exportMode='isolated-internal-fixture: production report authorization is unavailable';
+  const report=(i:number)=>fixtureExport(db,fixture.users[i].id,reportIds);
   const started=performance.now();
   console.log(`[capacity] phase=steady duration=${profile.steadySeconds}s; browser pages and two reports start concurrently`);
   await walSnapshot('beforeSteady');
@@ -131,7 +130,7 @@ try {
   const service=new OperationsService({query:async(sql:string,params:unknown[])=>{
     const plan=await db.query('EXPLAIN (ANALYZE,BUFFERS,FORMAT JSON) '+sql,params);plans.push({sql,plan:plan.rows});return db.query(sql,params);
   }} as unknown as DatabaseService);
-  for(const resource of ['billing','audit'])await service.list(resource,{id:fixture.users[0].id,role:'admin'});
+  for(const resource of ['billing','audit'])await service.list(resource,{id:fixture.users[0].id,role:'owner'});
   const errors=publishErrors+pages.filter((p:any)=>p.error).length+reports.filter(r=>r.status==='rejected').length;
   console.log(`[capacity] phase=validation samples=${pages.length} maxReadyMs=${summary(pages.map((p:any)=>p.ms)).max} errors=${errors}`);
   const evidence={profile,historyRows:fixture.historyRows,users:tokens.length,steadySent,steadySeconds,burstSent:profile.burst,burstSeconds,replaySent,replaySeconds,exportsReady:reports.filter(r=>r.status==='fulfilled').length,exportPeakOverlap:exportActivity.some(sample=>sample.at>=burstStart&&sample.at<=replayEnd&&sample.running===2),ackedButMissing,unexpectedDuplicateRows,unacked:sent.size-acked.size,errors,pageSamples:pages.map((p:any)=>p.ms),coldAndWarm:false,queryPlans:plans.length===2,hardwareProof:true};

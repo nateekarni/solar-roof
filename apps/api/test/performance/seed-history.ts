@@ -41,7 +41,7 @@ export async function seedHistory(db: Pool, profile: Profile) {
   for(let i=0;i<profile.users;i++) {
     const id=randomUUID(),email=`capacity-${id}@example.test`,password=`Fixture-${randomUUID()}!`,salt=randomBytes(16).toString('hex');
     const hash=`scrypt:${salt}:${scryptSync(password,salt,64).toString('hex')}`;
-    await db.query("INSERT INTO users(id,email,display_name,role,status,password_hash,preferred_language) VALUES($1,$2,'Capacity actor','admin','active',$3,'en')",[id,email,hash]);users.push({id,email,password});
+    await db.query("INSERT INTO users(id,email,display_name,role,status,password_hash,preferred_language) VALUES($1,$2,'Capacity actor','owner','active',$3,'en')",[id,email,hash]);users.push({id,email,password});
   }
   const perDevice=profile.historyRows/profile.meters;
   const intervalSeconds=profile.name==='target'?60:86400;
@@ -51,9 +51,9 @@ export async function seedHistory(db: Pool, profile: Profile) {
     await db.query(`INSERT INTO telemetry_raw(id,device_id,site_id,source_time,received_time,raw_payload,normalized_value,unit,quality,ingestion_id,total_energy_kwh,active_power_w,semantic_field)
       SELECT gen_random_uuid(),$1,$2,$3::timestamptz-(g*$4::int*interval '1 second'),now(),'{}',1000000-g,'kWh','complete',gen_random_uuid()::text,1000000-g,1000,'total_energy' FROM generate_series($5::int,$6::int) g`,[device.id,device.site,end,intervalSeconds,offset,offset+count-1]);
   }
-  await db.query(`INSERT INTO audit_events(id,action,entity_type,entity_id,occurred_at,correlation_id) SELECT gen_random_uuid(),'capacity.fixture','site',$1,now()-g*interval '1 minute',gen_random_uuid()::text FROM generate_series(1,$2::int) g`,[devices[0].site,profile.name==='target'?100000:100]);
+  await db.query(`INSERT INTO audit_events(id,action,entity_type,entity_id,occurred_at,correlation_id) SELECT gen_random_uuid(),'business.capacity.fixture','site',$1,now()-g*interval '1 minute',gen_random_uuid()::text FROM generate_series(1,$2::int) g`,[devices[0].site,profile.name==='target'?100000:100]);
   await db.query('ANALYZE telemetry_raw');await db.query('ANALYZE billing_cycles');await db.query('ANALYZE audit_events');
   const historyRows=Number((await db.query('SELECT count(*) AS n FROM telemetry_raw')).rows[0].n);
   assert.equal(historyRows,profile.historyRows);
-  return {devices,users,end:end.toISOString(),historyRows,seedTriggers:'enabled',roleDistribution:{admin:profile.users}};
+  return {devices,users,end:end.toISOString(),historyRows,seedTriggers:'enabled',roleDistribution:{owner:profile.users}};
 }

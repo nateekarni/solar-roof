@@ -12,7 +12,7 @@ assert.equal(web,'http://localhost:13000');
 assert.equal(process.env.READINESS_DATABASE_URL,'postgresql://solar:ci-only-password@127.0.0.1:15432/solar_readiness');
 const db=new Pool({connectionString:process.env.READINESS_DATABASE_URL});
 const customers=Array.from({length:100},()=>randomUUID());
-const customer=customers[0],user=randomUUID(),device=randomUUID(),job=randomUUID();
+const customer=customers[0],user=randomUUID(),device=randomUUID();
 const sites=Array.from({length:100},()=>randomUUID()),gateways=sites.map(()=>randomUUID());
 const email=`u3-${user}@example.test`,password='U3-isolated-password-123!';
 const salt=randomBytes(16).toString('hex'),hash=`scrypt:${salt}:${scryptSync(password,salt,64).toString('hex')}`;
@@ -27,6 +27,8 @@ try {
   await db.query("INSERT INTO billing_meters(id,site_id,device_id) VALUES(gen_random_uuid(),$1,$2)",[sites[0],device]);
   await db.query("INSERT INTO telemetry_raw(id,device_id,site_id,source_time,received_time,raw_payload,normalized_value,unit,quality,ingestion_id,total_energy_kwh,active_power_w) VALUES(gen_random_uuid(),$1,$2,now(),now(),'{}',100,'kWh','complete',gen_random_uuid(),100,1200)",[device,sites[0]]);
   await db.query("INSERT INTO alerts(id,site_id,severity,title,detail,status,occurred_at) VALUES(gen_random_uuid(),$1,'critical','U3 Critical alert','Investigate gateway','open',now())",[sites[0]]);
+  await db.query('INSERT INTO site_account_assignments(id,user_id,site_id) VALUES($1,$2,$3)',[randomUUID(),user,sites[0]]);
+  await db.query(`INSERT INTO employee_domain_grants(user_id,domain,overrides,scope_mode) VALUES($1,'technical','{"technical.dashboard.view":true,"technical.gateways.view":true,"technical.telemetry.view":true,"technical.alerts.view":true}','all')`,[user]);
   const login=await fetch(api+'/v1/auth/login',{method:'POST',headers:{Origin:web,'Content-Type':'application/json'},body:JSON.stringify({email,password})});
   assert.equal(login.status,200);const tokens=await login.json();
   const context=await browser.newContext({viewport:{width:390,height:844},timezoneId:'Asia/Bangkok'});
@@ -90,7 +92,7 @@ try {
        assert.equal(await compare.evaluate(element=>element===document.activeElement),true,'Dialog returns keyboard focus');}
     }
   }
-  await db.query("UPDATE users SET role='admin' WHERE id=$1",[user]);
+  await db.query("UPDATE users SET role='owner' WHERE id=$1",[user]);
   await page.setViewportSize({width:720,height:422});await page.goto(web+'/');
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'200% effective viewport reflows without page-level horizontal scrolling');
   await page.setViewportSize({width:1440,height:844});
@@ -102,22 +104,15 @@ try {
   await page.getByRole('menu').waitFor();await page.keyboard.press('Escape');await page.getByRole('menu').waitFor({state:'hidden'});
   await row.press('Enter');await page.waitForURL('**/records/sites/*');await page.getByRole('heading',{name:'Site details',exact:true}).waitFor();
   await page.getByRole('link',{name:'Back to list',exact:true}).focus();await page.keyboard.press('Enter');await page.waitForURL(web+'/sites');
-  // U2 carry: terminal jobs clear connectivity notices without restarting polling.
-  await db.query("INSERT INTO platform_jobs(id,kind,status,created_by,scope,payload,payload_hash) VALUES($1,'report','cancelled',$2,$3,'{}','fixture')",[job,user,[customer]]);
-  await page.goto(web+`/reports?job=${job}`);const card=page.locator(`[data-job-id="${job}"]`);
-  await card.getByRole('status').filter({hasText:/^Cancelled/}).waitFor();
-  let statusRequests=0;page.on('request',request=>{if(request.url()===web+`/v1/jobs/${job}`)statusRequests++;});
-  await context.setOffline(true);await card.getByRole('alert').waitFor();
-  await context.setOffline(false);await card.getByRole('alert').waitFor({state:'hidden',timeout:5000});
-  await page.waitForTimeout(3500);assert.equal(statusRequests,0,'Terminal job does not resume polling');
   assert.deepEqual(errors,[],'No page/console/hydration errors');
   await context.close();
-  console.log('PASS U3: power precision, 100-site hierarchy, five roles, responsive axe/keyboard and terminal reconnect');
+  console.log('PASS U3: power precision, 100-site hierarchy, five roles, responsive axe/keyboard');
 } finally {
   writeFileSync(new URL('../../../../test/artifacts/u3-accessibility-results.json',import.meta.url),JSON.stringify(checks,null,2));
   await browser.close();
   await db.query('DELETE FROM platform_jobs WHERE created_by=$1',[user]);
   await db.query('DELETE FROM audit_events WHERE actor_id=$1',[user]);
+  await db.query('DELETE FROM site_account_assignments WHERE user_id=$1',[user]);
   await db.query('DELETE FROM users WHERE id=$1',[user]);
   await db.query('DELETE FROM alerts WHERE site_id=ANY($1::uuid[])',[sites]);
   await db.query('DELETE FROM telemetry_raw WHERE site_id=ANY($1::uuid[])',[sites]);

@@ -37,8 +37,17 @@ import {Pool} from "pg";
 const db=new Pool({connectionString:process.env.DATABASE_URL});
 try {assert.equal((await db.query("SELECT count(*)::int AS n FROM users")).rows[0].n,0,"deployment does not create accounts");await db.query("INSERT INTO customers(id,name,code,region,status) VALUES($1,$2,$3,$4,$5)",[process.env.PILOT_CUSTOMER_ID,"Fixture customer","WEB-TEST","test","active"]);} finally {await db.end();}
 '
-"${compose[@]}" exec -T api pnpm --filter @solar/api db:seed:users
-"${compose[@]}" exec -T -e PILOT_OWNER_PASSWORD=Must-not-reset-123! -e PILOT_CUSTOMER_PASSWORD=Must-not-reset-123! api pnpm --filter @solar/api db:seed:users
+for attempt in first replay; do
+  for role in admin owner customer_user; do
+    case "$role" in
+      admin) email="$PILOT_ADMIN_EMAIL"; password="$PILOT_ADMIN_PASSWORD"; customer='' ;;
+      owner) email="$PILOT_OWNER_EMAIL"; password="$PILOT_OWNER_PASSWORD"; customer='' ;;
+      customer_user) email="$PILOT_CUSTOMER_EMAIL"; password="$PILOT_CUSTOMER_PASSWORD"; customer="$PILOT_CUSTOMER_ID" ;;
+    esac
+    if [[ "$attempt" == replay ]]; then password='Must-not-reset-123!'; fi
+    "${compose[@]}" exec -T -e USER_CREATE_ENABLED=true -e "USER_EMAIL=$email" -e "USER_PASSWORD=$password" -e "USER_ROLE=$role" -e "USER_CUSTOMER_ID=$customer" -e 'USER_NAME=Web fixture' api pnpm --filter @solar/api db:create:user
+  done
+done
 "${compose[@]}" exec -T api node --input-type=module -e '
 import assert from "node:assert/strict";
 for (const path of ["/health", "/ready", "/ready/mqtt"]) {

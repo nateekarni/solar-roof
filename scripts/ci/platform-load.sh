@@ -18,7 +18,7 @@ export CAPACITY_PROFILE="$profile" CAPACITY_HISTORY_DAYS="$history" PLATFORM_EDG
 # Read-only daemon identity check before lock/build/up or any workload mutation.
 node --import tsx --input-type=module -e 'import {verifyDockerExecution} from "./apps/api/test/performance/docker-identity.ts"; verifyDockerExecution(process.env.CAPACITY_PROFILE)'
 source scripts/ci/isolated-stack.sh
-compose+=(-f infra/ci/request-edge.yml -f infra/ci/energy-read-model.yml -f infra/ci/report-worker.yml)
+compose+=(-f infra/ci/request-edge.yml -f infra/ci/energy-read-model.yml)
 revision="$(git rev-parse HEAD)"
 if [[ "${CAPACITY_PREBUILT:-}" == true ]]; then
   for app in api worker web; do

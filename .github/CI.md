@@ -1,5 +1,11 @@
 # CI and staging deployment
 
+## Current workflow coverage (2026-10-12)
+
+Customer/site fixtures now use explicit domain grants and site-account assignments: owners manage business sites, admins manage technical gateways, and employee access comes from persisted grants. Integration preserves MQTT commit ACKs, duplicate replay and restart durability. Retired contracts, reports, jobs and history HTTP writes are checked for denial; they are not advertised as working end-user flows.
+
+Legacy report workers and user-requested restore jobs now fail closed. Their former successful HTTP/download/crash scenarios have been replaced with denial/no-publication assertions; archive integrity, archive crash recovery, retention refusal, archive generation and generic job lease tests remain. Capacity's two export jobs are explicitly artificial isolated internal workload using real extraction/S3 durability, not proof that production report authorization works. Performance limits and the unproven target-capacity gate remain unchanged. Older descriptions below of successful report UI/export flows describe the previous baseline and do not establish current feature availability.
+
 The 2026-10-06 capacity failure investigation, local before/after browser measurements, preserved gates and verification limits are recorded in [the performance follow-up](../docs/superpowers/plans/2026-10-06-ci-capacity-performance.md). Full workflow duration must be measured on a successful Ubuntu run; local smoke results do not establish target capacity.
 
 เพิ่มเติมสำหรับงานปรับปรุงแพลตฟอร์ม: CI สร้างและเผยแพร่ `postgres-backup` เป็น image ที่หก พร้อมซ้อมกู้ฐาน/เอกสาร/ค่าตั้งในชุดแยกหลัง regression เดิม แต่ auto deploy ยังคงอัปเดตเพียงห้า application images ผู้ดูแลต้องตรวจความเข้ากันได้และเลือก `POSTGRES_IMAGE` ผ่าน Coolify โดยตรง ห้ามตีความผล recovery fixture ว่าปลายทางสำรองของบริษัทหรือเวลา RPO/RTO จริงผ่านแล้ว

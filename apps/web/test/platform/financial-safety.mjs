@@ -31,10 +31,12 @@ try {
   else {assert.equal(await page.getByRole('button',{name:/ตรวจสลิป|Verify/}).count(),0);await page.getByRole('button',{name:/รายละเอียดรอบบิล|Billing Details/}).click();}
   await page.waitForURL('**/records/billing/*');await page.getByRole('heading',{level:1}).waitFor();await page.getByText('Financial Browser Customer',{exact:true}).first().waitFor();assert.equal(await page.getByRole('button',{name:/ส่งอีเมลใบแจ้งหนี้|Email Invoice|อนุมัติ|Approve/}).count(),0,'Unavailable send and approval never offered in readable detail');
  }
- await page.goto(web+'/contracts?action=new');await page.getByRole('dialog').waitFor();assert.equal(await page.locator('#terms').inputValue(),'','Contract terms start unspecified');assert.equal(await page.locator('#branch').inputValue(),'','Branch not assumed');assert.equal(await page.locator('#signer').inputValue(),'','Signed authority not inferred from logged-in account');assert.equal(await page.getByRole('spinbutton',{name:/อัตราค่าไฟที่ตกลง|Agreed tariff/}).inputValue(),'','Actual tariff required');
- await db.query("UPDATE users SET role='admin' WHERE id=$1",[user]);await page.goto(web+'/contracts?action=new');await page.getByRole('dialog').waitFor();assert.equal(await page.locator('#terms').inputValue(),'','Admin can author contracts with supplied data');
- await db.query("UPDATE users SET role='operator' WHERE id=$1",[user]);await page.goto(web+'/billing');await page.getByText('Financial Browser Site',{exact:true}).filter({visible:true}).first().waitFor();
- assert.equal(await page.getByRole('button',{name:/ตรวจสลิป|Verify|คำนวณ|Calculate/}).count(),0,'Unauthorized financial actions hidden');
- for(const role of ['operator','accountant','customer_user']) {await db.query('UPDATE users SET role=$1,customer_id=$2 WHERE id=$3',[role,customer,user]);await page.goto(web+'/contracts?action=new');await page.getByRole('heading',{level:1}).waitFor();assert.equal(await page.getByRole('dialog').count(),0,`${role} cannot open contract author form`);assert.equal(await page.getByRole('button',{name:/สร้างสัญญา|Create Contract/}).count(),0); }
+ for(const role of ['owner','admin','operator','accountant','customer_user']) {
+  await db.query('UPDATE users SET role=$1,customer_id=$2 WHERE id=$3',[role,customer,user]);
+  await page.goto(web+'/contracts?action=new');await page.getByRole('heading',{level:1}).waitFor();
+  assert.equal(await page.getByRole('dialog').count(),0,role+' cannot open retired contract author form');
+  assert.equal(await page.getByRole('button',{name:/สร้างสัญญา|Create Contract/}).count(),0);
+  if(['admin','operator','accountant'].includes(role)){await page.goto(web+'/billing');await page.getByRole('heading',{name:'404',exact:true}).waitFor();}
+ }
  assert.deepEqual(errors,[]);console.log('PASS: financial capabilities disable desktop/mobile and URL calculation action; unauthorized actions hidden');
 } finally {await browser.close();await db.query('DELETE FROM audit_events WHERE actor_id=$1',[user]);await db.query('DELETE FROM users WHERE id=$1',[user]);await db.query('DELETE FROM payments WHERE id=$1',[payment]);await db.query('DELETE FROM billing_cycles WHERE id=$1',[cycle]);await db.query('DELETE FROM sites WHERE id=$1',[site]);await db.query('DELETE FROM customers WHERE id=$1',[customer]);await db.end();}

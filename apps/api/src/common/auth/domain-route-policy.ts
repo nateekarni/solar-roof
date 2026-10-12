@@ -3,7 +3,8 @@ import { routeAllowed } from './route-policy.js';
 export function permissionForRoute(method:string,rawPath:string):string|undefined {
  const path=rawPath.split('?')[0]!.replace(/\/$/,'');
  let resource:string|undefined;
- if(/^\/v1\/(?:sites|gateways|devices)\/[^/]+\/.*(?:register)/.test(path))resource='technical.registers';
+ if(/^\/v1\/sites\/[^/]+\/live-telemetry$/.test(path))resource='technical.telemetry';
+ else if(/^\/v1\/(?:sites|gateways|devices)\/[^/]+\/.*(?:register)/.test(path))resource='technical.registers';
  else if(/^\/v1\/(?:sites|gateways|devices)\/[^/]+\/.*(?:fields)/.test(path))resource='technical.fields';
  else if(/^\/v1\/devices\/[^/]+\/cadence/.test(path))resource='technical.devices';
  else if(/^\/v1\/sites\/[^/]+\/payload/.test(path))resource='technical.reception';

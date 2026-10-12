@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {Pool} from 'pg';
 import mqtt from 'mqtt';
-import {createHash} from 'node:crypto';
+
 const database=process.env.READINESS_DATABASE_URL;
 if(!database)throw new Error('Isolated solar_readiness database required');
 const databaseUrl=new URL(database);
@@ -14,11 +14,14 @@ const broker=await mqtt.connectAsync('mqtt://127.0.0.1:18883');
 try {
  const response=await fetch(base+'/v1/auth/login',{method:'POST',headers:{'Content-Type':'application/json',Origin:'http://localhost:13000'},body:JSON.stringify({email:fixture.accounts.operator,password:fixture.password})});
  assert.equal(response.status,200);const {accessToken}=await response.json();
- const live=await fetch(base+'/v1/sites/'+fixture.siteId+'/live-telemetry',{headers:{Authorization:`Bearer ${accessToken}`}});
- assert.equal(live.status,200);assert.equal((await live.json()).metrics.activePower,1200);
- const job=await fetch(base+`/v1/jobs/${fixture.reportJobId}`,{headers:{Authorization:`Bearer ${accessToken}`}});assert.equal(job.status,200);assert.equal((await job.json()).status,'ready');
- const download=await fetch(base+`/v1/jobs/${fixture.reportJobId}/download`,{headers:{Authorization:`Bearer ${accessToken}`}});assert.equal(download.status,200);assert.equal(createHash('sha256').update(Buffer.from(await download.arrayBuffer())).digest('hex'),fixture.reportChecksum,'Published report survives API restart with identical bytes');
- await broker.subscribeAsync(`energy/${fixture.siteName}/response`);
+  const raw=await db.query('SELECT active_power_w FROM telemetry_raw WHERE device_id=$1',[fixture.device]);
+ assert.equal(raw.rows.length,1);assert.equal(Number(raw.rows[0].active_power_w),1200,'Durable telemetry survives restart');
+ const gateways=await fetch(base+'/v1/gateways',{headers:{Authorization:`Bearer ${accessToken}`}});
+ assert.equal(gateways.status,200);assert.deepEqual((await gateways.json()).map((row:{siteId:string})=>row.siteId),[fixture.siteId],'Live technical grant survives restart');
+ for(const path of ['/v1/reports','/v1/jobs/'+fixture.device,'/v1/jobs/'+fixture.device+'/download','/v1/history/options']) {
+  const denied=await fetch(base+path,{headers:{Authorization:`Bearer ${accessToken}`}});assert.equal(denied.status,403,'Legacy endpoint remains disabled after restart');
+ }
+await broker.subscribeAsync(`energy/${fixture.siteName}/response`);
  const ack=new Promise<void>((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('No replay ACK after API restart')),10000);broker.on('message',(_topic,message)=>{const data=JSON.parse(message.toString());if(data.ingestionId!==fixture.ingestionId)return;clearTimeout(timer);try{assert.equal(data.duplicate,true);resolve();}catch(e){reject(e);}});});
  await broker.publishAsync(`energy/${fixture.siteName}/telemetry`,fixture.payload,{qos:1});await ack;
  assert.equal((await db.query('SELECT count(*)::int AS count FROM telemetry_raw WHERE device_id=$1',[fixture.device])).rows[0].count,1);
