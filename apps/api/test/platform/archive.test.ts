@@ -24,17 +24,17 @@ const controlledWorker=()=>{
 };
 const fixtureStorage=()=>{const port=process.env.PLATFORM_CI_STORAGE_PORT??'19000';assert.ok(['19000','19001'].includes(port));return new S3Client({endpoint:`http://127.0.0.1:${port}`,region:'us-east-1',forcePathStyle:true,maxAttempts:1,credentials:{accessKeyId:'solar-ci',secretAccessKey:'ci-storage-only-password'}});};
 async function siteFixture(pool:Pool){
- const school=randomUUID(),site=randomUUID(),gateway=randomUUID(),device=randomUUID();
- await pool.query("INSERT INTO schools(id,name,code,region) VALUES($1::uuid,'D1 school',$1::text,'fixture')",[school]);
- await pool.query("INSERT INTO sites(id,school_id,name,capacity_mwp) VALUES($1,$2,'D1 archived site',1)",[site,school]);
+ const customer=randomUUID(),site=randomUUID(),gateway=randomUUID(),device=randomUUID();
+ await pool.query("INSERT INTO customers(id,name,code,region) VALUES($1::uuid,'D1 customer',$1::text,'fixture')",[customer]);
+ await pool.query("INSERT INTO sites(id,customer_id,name,capacity_mwp) VALUES($1,$2,'D1 archived site',1)",[site,customer]);
  await pool.query("INSERT INTO gateways(id,site_id,name,protocol,endpoint) VALUES($1::uuid,$2,$1::text,'mqtt','energy/'||$1::text||'/#')",[gateway,site]);
  await pool.query("INSERT INTO devices(id,gateway_id,site_id,name,device_type,model,serial_number) VALUES($1::uuid,$2,$3,'D1 meter','meter','fixture',$1::text)",[device,gateway,site]);
- return {school,site,device};
+ return {customer,site,device};
 }
-async function actor(pool:Pool,school:string){
+async function actor(pool:Pool,customer:string){
  const id=randomUUID(),email=`d1-${id}@example.test`,password='D1-fixture-password-123!';
  const auth=new AuthService('readiness-test-access-secret-000000000000','readiness-test-refresh-secret-000000000000');
- await pool.query("INSERT INTO users(id,email,display_name,role,status,school_id,password_hash) VALUES($1,$2,'D1 actor','operator','active',$3,$4)",[id,email,school,auth.hashPassword(password)]);
+ await pool.query("INSERT INTO users(id,email,display_name,role,status,customer_id,password_hash) VALUES($1,$2,'D1 actor','operator','active',$3,$4)",[id,email,customer,auth.hashPassword(password)]);
  const response=await fetch(process.env.READINESS_API_URL+'/v1/auth/login',{method:'POST',headers:{Origin:process.env.READINESS_WEB_URL!,'Content-Type':'application/json'},body:JSON.stringify({email,password})});assert.equal(response.status,200);
  return {id,headers:{Origin:process.env.READINESS_WEB_URL!,'Content-Type':'application/json',Authorization:`Bearer ${(await response.json()).accessToken}`}};
 }
@@ -48,10 +48,10 @@ test('verified archive generations preserve late readings and reject corrupted s
   const pool=new Pool({connectionString:process.env.READINESS_DATABASE_URL,max:2});
   const client=new S3Client({endpoint:`http://127.0.0.1:${storagePort}`,region:'us-east-1',forcePathStyle:true,credentials:{accessKeyId:'solar-ci',secretAccessKey:'ci-storage-only-password'}});
   const storage=new ArchiveObjectStore(client,'solar-readiness');
-  const site=randomUUID(),school=randomUUID(),gateway=randomUUID(),device=randomUUID();
+  const site=randomUUID(),customer=randomUUID(),gateway=randomUUID(),device=randomUUID();
   try{
-    await pool.query("INSERT INTO schools(id,name,code,region) VALUES($1::uuid,'Archive school',$1::text,'fixture')",[school]);
-    await pool.query("INSERT INTO sites(id,school_id,name,capacity_mwp) VALUES($1,$2,'Archive site',1)",[site,school]);
+    await pool.query("INSERT INTO customers(id,name,code,region) VALUES($1::uuid,'Archive customer',$1::text,'fixture')",[customer]);
+    await pool.query("INSERT INTO sites(id,customer_id,name,capacity_mwp) VALUES($1,$2,'Archive site',1)",[site,customer]);
     await pool.query("INSERT INTO gateways(id,site_id,name,protocol,endpoint) VALUES($1::uuid,$2,$1::text,'mqtt','energy/'||$1::text||'/#')",[gateway,site]);
     await pool.query("INSERT INTO devices(id,gateway_id,site_id,name,device_type,model,serial_number) VALUES($1::uuid,$2,$3,'Archive meter','meter','fixture',$1::text)",[device,gateway,site]);
     const insert=()=>pool.query("INSERT INTO telemetry_raw(id,device_id,site_id,source_time,received_time,raw_payload,normalized_value,unit,quality,ingestion_id,total_energy_kwh) VALUES(gen_random_uuid(),$1,$2,'2025-01-01T01:00:00Z',now(),'{\"evidence\":true}',100,'kWh','complete',gen_random_uuid()::text,100)",[device,site]);
@@ -80,7 +80,7 @@ test('verified archive generations preserve late readings and reject corrupted s
 test('history HTTP is scoped and idempotent, shares export quota, and downloads verified JSONL with preserved numeric evidence',{timeout:90000},async()=>{
  compose('stop','worker');const pool=new Pool({connectionString:process.env.READINESS_DATABASE_URL!,max:4}),s3=fixtureStorage();
  try{
-  const first=await siteFixture(pool),second=await siteFixture(pool),user=await actor(pool,first.school),other=await actor(pool,second.school);
+  const first=await siteFixture(pool),second=await siteFixture(pool),user=await actor(pool,first.customer),other=await actor(pool,second.customer);
   await insertReading(pool,first.site,first.device);
   const mapping=randomUUID();await pool.query("INSERT INTO register_mapping_versions(id,device_id,semantic_field,register_address,data_type,byte_order,scale,unit,effective_from) VALUES($1,$2,'voltage','0','uint16','big_endian',1.12345678,'V','2024-01-01')",[mapping,first.device]);
   await pool.query('UPDATE telemetry_raw SET mapping_version_id=$2,mapping_version_ids=ARRAY[$2::uuid] WHERE site_id=$1',[first.site,mapping]);
@@ -103,8 +103,8 @@ test('history HTTP is scoped and idempotent, shares export quota, and downloads 
   const bytes=Buffer.from(await downloaded.arrayBuffer());assert.equal(createHash('sha256').update(bytes).digest('hex'),stored.manifest.checksum);
   const content=gunzipSync(bytes).toString();assert.match(content,/100\.12345679/);assert.match(content,/12345678901234567890\.123456789/);assert.match(content,/01:00:00\.123456/);assert.ok(content.includes(mapping));assert.match(content,/1\.12345678/);
   assert.equal(Number((await pool.query('SELECT count(*) FROM telemetry_raw WHERE site_id=$1',[first.site])).rows[0].count),1);
-  const reassigned=randomUUID();await pool.query("INSERT INTO schools(id,name,code,region) VALUES($1::uuid,'D1 reassigned',$1::text,'fixture')",[reassigned]);
-  await pool.query('UPDATE sites SET school_id=$2 WHERE id=$1',[first.site,reassigned]);assert.equal((await status()).status,403,'Current site ownership is checked on status and download');
+  const reassigned=randomUUID();await pool.query("INSERT INTO customers(id,name,code,region) VALUES($1::uuid,'D1 reassigned',$1::text,'fixture')",[reassigned]);
+  await pool.query('UPDATE sites SET customer_id=$2 WHERE id=$1',[first.site,reassigned]);assert.equal((await status()).status,403,'Current site ownership is checked on status and download');
   assert.equal((await fetch(process.env.READINESS_API_URL+`/v1/jobs/${queued.jobId}/download`,{headers:user.headers})).status,403);
  }finally{s3.destroy();await pool.end();}
 });
@@ -112,9 +112,9 @@ test('history HTTP is scoped and idempotent, shares export quota, and downloads 
 test('actual child crashes after upload/publication reclaim the same verified generation; restore crash and revocation stay fenced',{timeout:180000},async()=>{
  compose('stop','worker');const pool=new Pool({connectionString:process.env.READINESS_DATABASE_URL!,max:4}),s3=fixtureStorage();
  try{
-  const site=await siteFixture(pool),user=await actor(pool,site.school);await insertReading(pool,site.site,site.device);
+  const site=await siteFixture(pool),user=await actor(pool,site.customer);await insertReading(pool,site.site,site.device);
   const worker=new HistoryJobsWorker(pool,s3,'solar-readiness');
-  const make=async(kind:'archive'|'restore')=>{const id=randomUUID();await pool.query('INSERT INTO platform_jobs(id,kind,payload,scope,created_by,payload_hash) VALUES($1::uuid,$2,$3,$4,$5,$1::text)',[id,kind,{siteId:site.site,from:'2025-01-01',to:'2025-01-02',format:'jsonl.gz'},[site.school],kind==='archive'?null:user.id]);return id;};
+  const make=async(kind:'archive'|'restore')=>{const id=randomUUID();await pool.query('INSERT INTO platform_jobs(id,kind,payload,scope,created_by,payload_hash) VALUES($1::uuid,$2,$3,$4,$5,$1::text)',[id,kind,{siteId:site.site,from:'2025-01-01',to:'2025-01-02',format:'jsonl.gz'},[site.customer],kind==='archive'?null:user.id]);return id;};
   const child=async(mode:string,kind:string)=>{const process=fork(new URL('./archive-child.mjs',import.meta.url),[],{execArgv:['--import','tsx'],env:{...globalThis.process.env,ARCHIVE_CHILD_MODE:mode,ARCHIVE_CHILD_KIND:kind},stdio:['ignore','pipe','pipe','ipc']});let errors='';process.stderr?.on('data',chunk=>{errors+=chunk;});const [code]=await once(process,'exit');assert.equal(code,mode==='crash-upload'?73:74,errors);};
   const first=await make('archive');await child('crash-upload','archive');
   const crashed=(await pool.query('SELECT * FROM platform_jobs WHERE id=$1',[first])).rows[0];assert.equal(crashed.status,'running');assert.ok(crashed.manifest.checksum);assert.equal(Number((await pool.query('SELECT count(*) FROM telemetry_archives WHERE id=$1',[crashed.manifest.id])).rows[0].count),0);
@@ -162,14 +162,14 @@ test('overlapping windows restore the newest snapshot rather than lexicographic 
 test('slow real storage renews the lease, caps all history workers and rechecks revoked permission before publication',{timeout:90000},async()=>{
  compose('stop','worker');const pool=new Pool({connectionString:process.env.READINESS_DATABASE_URL!,max:4}),s3=fixtureStorage();let slow:ReturnType<typeof fork>|undefined;
  try{
-  const site=await siteFixture(pool),user=await actor(pool,site.school);await insertReading(pool,site.site,site.device);
+  const site=await siteFixture(pool),user=await actor(pool,site.customer);await insertReading(pool,site.site,site.device);
   await new ArchiveTelemetryJob(pool,new ArchiveObjectStore(s3,'solar-readiness')).archive(site.site,'2025-01-01','2025-01-02');
-  const id=randomUUID();await pool.query("INSERT INTO platform_jobs(id,kind,payload,scope,created_by,payload_hash) VALUES($1,'restore',$2,$3,$4,'D1-slow')",[id,{siteId:site.site,from:'2025-01-01',to:'2025-01-02',format:'jsonl.gz'},[site.school],user.id]);
+  const id=randomUUID();await pool.query("INSERT INTO platform_jobs(id,kind,payload,scope,created_by,payload_hash) VALUES($1,'restore',$2,$3,$4,'D1-slow')",[id,{siteId:site.site,from:'2025-01-01',to:'2025-01-02',format:'jsonl.gz'},[site.customer],user.id]);
   slow=fork(new URL('./archive-child.mjs',import.meta.url),[],{execArgv:['--import','tsx'],env:{...process.env,ARCHIVE_CHILD_MODE:'slow',ARCHIVE_CHILD_KIND:'restore'},stdio:['ignore','pipe','pipe','ipc']});
   let errors='';slow.stderr?.on('data',chunk=>{errors+=chunk;});const [message]=await once(slow,'message');assert.equal(message.event,'before-complete');
   const lease=(await pool.query('SELECT lease_until FROM platform_jobs WHERE id=$1',[id])).rows[0].lease_until;
   await new Promise(resolve=>setTimeout(resolve,16000));assert.ok((await pool.query('SELECT lease_until FROM platform_jobs WHERE id=$1',[id])).rows[0].lease_until>lease);
-  const competing=randomUUID();await pool.query("INSERT INTO platform_jobs(id,kind,payload,scope,payload_hash) VALUES($1,'archive',$2,$3,'D1-competing')",[competing,{siteId:site.site,from:'2025-01-01',to:'2025-01-02'},[site.school]]);
+  const competing=randomUUID();await pool.query("INSERT INTO platform_jobs(id,kind,payload,scope,payload_hash) VALUES($1,'archive',$2,$3,'D1-competing')",[competing,{siteId:site.site,from:'2025-01-01',to:'2025-01-02'},[site.customer]]);
   assert.equal(await new HistoryJobsWorker(pool,s3,'solar-readiness').store.claim('archive','D1-competitor'),null,'One history execution across kinds/workers');
   await pool.query("UPDATE platform_jobs SET status='cancelled' WHERE id=$1",[competing]);await pool.query("UPDATE users SET status='inactive' WHERE id=$1",[user.id]);
   const done=once(slow,'exit');slow.send('release');assert.equal((await done)[0],0,errors);
@@ -180,10 +180,10 @@ test('slow real storage renews the lease, caps all history workers and rechecks 
 test('actual worker PID1 SIGKILL retains the restore lease and restart completes the same durable request',{timeout:90000},async()=>{
  compose('stop','worker');const pool=new Pool({connectionString:process.env.READINESS_DATABASE_URL!,max:4}),s3=fixtureStorage();let paused=false;
  try{
-  const site=await siteFixture(pool),user=await actor(pool,site.school);await insertReading(pool,site.site,site.device);
+  const site=await siteFixture(pool),user=await actor(pool,site.customer);await insertReading(pool,site.site,site.device);
   await new ArchiveTelemetryJob(pool,new ArchiveObjectStore(s3,'solar-readiness')).archive(site.site,'2025-01-01','2025-01-02');
   controlledWorker();compose('stop','worker');
-  const id=randomUUID();await pool.query("INSERT INTO platform_jobs(id,kind,payload,scope,created_by,payload_hash) VALUES($1,'restore',$2,$3,$4,'D1-restart')",[id,{siteId:site.site,from:'2025-01-01',to:'2025-01-02',format:'jsonl.gz'},[site.school],user.id]);
+  const id=randomUUID();await pool.query("INSERT INTO platform_jobs(id,kind,payload,scope,created_by,payload_hash) VALUES($1,'restore',$2,$3,$4,'D1-restart')",[id,{siteId:site.site,from:'2025-01-01',to:'2025-01-02',format:'jsonl.gz'},[site.customer],user.id]);
   compose('pause','storage');paused=true;execFileSync('docker',['start',compose('ps','--all','-q','worker').toString().trim()],{stdio:'pipe'});
   let row:any;for(let n=0;n<50;n++){row=(await pool.query('SELECT * FROM platform_jobs WHERE id=$1',[id])).rows[0];if(row.status==='running')break;await new Promise(resolve=>setTimeout(resolve,100));}
   assert.equal(row.status,'running');assert.ok(row.worker_id);assert.match(compose('exec','-T','worker','node','-e',"process.stdout.write(require('fs').readFileSync('/proc/1/cmdline','utf8'))").toString(),/^node\u0000/);

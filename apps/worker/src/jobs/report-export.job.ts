@@ -4,13 +4,13 @@ import { Pool } from 'pg';
 import { createHash,randomUUID } from 'node:crypto';
 import { S3Client,GetObjectCommand,CreateMultipartUploadCommand,UploadPartCommand,CompleteMultipartUploadCommand,AbortMultipartUploadCommand } from '@aws-sdk/client-s3';
 import { JobStore } from './job-store.js';
-const scoped='($3::uuid[] IS NULL OR s.school_id=ANY($3::uuid[]))';
+const scoped='($3::uuid[] IS NULL OR s.customer_id=ANY($3::uuid[]))';
 // Each source has a stable composite key; both timestamps are text to retain microseconds.
 const sources:Record<string,{select:string;from:string;where:string;time:string;id:string}>={
  energy:{select:'s.name AS site,d.serial_number AS meter,t.source_time,t.received_time,t.normalized_value AS cumulative_kwh,t.quality',from:'telemetry_raw t JOIN sites s ON s.id=t.site_id JOIN devices d ON d.id=t.device_id',where:`t.semantic_field='total_energy' AND t.source_time>=$1::date AND t.source_time<$2::date+interval '1 day' AND ${scoped}`,time:'t.source_time',id:'t.id'},
  billing:{select:'s.name AS site,b.period_start,b.period_end,b.consumed_kwh,b.rate,b.amount,b.status,b.quality',from:'billing_cycles b JOIN sites s ON s.id=b.site_id',where:`b.period_start>=$1::date AND b.period_end<=$2::date AND ${scoped}`,time:'b.period_start::timestamptz',id:'b.id'},
  payment:{select:'s.name AS site,b.period_start,b.amount,p.status,p.paid_at',from:'payments p JOIN billing_cycles b ON b.id=p.billing_cycle_id JOIN sites s ON s.id=b.site_id',where:`p.paid_at>=$1::date AND p.paid_at<$2::date+interval '1 day' AND ${scoped}`,time:'p.paid_at',id:'p.id'},
- audit:{select:'a.occurred_at,a.action,a.entity_type,a.entity_id,u.email AS actor,a.reason',from:'audit_events a LEFT JOIN users u ON u.id=a.actor_id',where:"a.occurred_at>=$1::date AND a.occurred_at<$2::date+interval '1 day' AND ($3::uuid[] IS NULL OR u.school_id=ANY($3::uuid[]))",time:'a.occurred_at',id:'a.id'},
+ audit:{select:'a.occurred_at,a.action,a.entity_type,a.entity_id,u.email AS actor,a.reason',from:'audit_events a LEFT JOIN users u ON u.id=a.actor_id',where:"a.occurred_at>=$1::date AND a.occurred_at<$2::date+interval '1 day' AND ($3::uuid[] IS NULL OR u.customer_id=ANY($3::uuid[]))",time:'a.occurred_at',id:'a.id'},
  device_health:{select:'s.name AS site,g.name AS gateway,d.name AS device,d.serial_number,t.source_time AS last_sample,t.received_time,t.quality',from:"devices d JOIN gateways g ON g.id=d.gateway_id JOIN sites s ON s.id=d.site_id LEFT JOIN LATERAL (SELECT source_time,received_time,quality FROM telemetry_raw WHERE device_id=d.id AND source_time>=($1::date::timestamp AT TIME ZONE 'Asia/Bangkok') AND source_time<(($2::date+1)::timestamp AT TIME ZONE 'Asia/Bangkok') ORDER BY source_time DESC,id DESC LIMIT 1) t ON true",where:scoped,time:"'2000-01-01'::timestamptz",id:'d.id'}
 };
 function csv(value:unknown):string{let text=value instanceof Date?value.toISOString():String(value??'');if(typeof value==='string'&&/^\s*[=+@-]/.test(text))text="'"+text;return '"'+text.replaceAll('"','""')+'"';}
@@ -27,7 +27,7 @@ export class ReportExportJob implements OnModuleInit,OnModuleDestroy {
  onModuleInit(){if(process.env.REPORT_WORKER_ENABLED==='true')this.schedule();}
  private schedule(){if(this.stopping)return;this.timer=setTimeout(()=>{this.pending=this.runOnce().catch(()=>this.logger.warn('Report polling failed')).finally(()=>{this.pending=undefined;this.schedule();});},500);this.timer.unref();}
  async onModuleDestroy(){this.stopping=true;this.activeAbort?.abort();clearTimeout(this.timer);await this.pending;if(this.ownsPool)await this.pool.end();this.storage.destroy();}
- async allowed(job:any){const user=(await this.pool.query('SELECT role,status,school_id FROM users WHERE id=$1',[job.created_by])).rows[0];return !!user&&user.status==='active'&&['owner','admin','operator','accountant','school_user'].includes(user.role)&&(job.payload.type!=='audit'||['owner','admin'].includes(user.role))&&(user.role==='owner'||(!user.school_id&&user.role!=='school_user')||Array.isArray(job.scope)&&job.scope.every((s:string)=>s===user.school_id));}
+ async allowed(job:any){return false; /* Legacy exports lack domain-scoped live authorization manifests. */}
  async runOnce(){const owner=randomUUID(),job=await this.store.claim('report',owner);if(!job)return false;await this.execute(job,owner);return true;}
  /** SHA256 is computed over the actual complete byte stream; ETag is only an opaque identity for conditional reads. */
  private async verifyArtifact(jobId:string,manifest:any,signal:AbortSignal):Promise<string> {

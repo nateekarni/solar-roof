@@ -15,17 +15,17 @@ const post=(path:string,body:unknown,token?:string,ip?:string)=>fetch(base+path,
 test('persistent invitation lifecycle uses local SMTP, atomic activation and current policy',async t=>{
   const db=new Pool({connectionString:assertIsolatedDatabase(process.env.READINESS_DATABASE_URL ?? '')});
   t.beforeEach(async()=>{await db.query("DELETE FROM invitation_rate_limits WHERE key LIKE 'activation:%'");});
-  const owner=randomUUID(),admin=randomUUID(),school=randomUUID(),otherSchool=randomUUID();
+  const owner=randomUUID(),admin=randomUUID(),customer=randomUUID(),otherCustomer=randomUUID();
   const tokens:string[]=[];const emails:string[]=[];let tokenSequence=0; const ipPrefix=`2001:db8:${owner.slice(0,4)}:${owner.slice(4,8)}`;
-  await db.query("INSERT INTO schools(id,name,code,region) VALUES($1::uuid,'Invite school',$1::text,'fixture'),($2::uuid,'Other invite school',$2::text,'fixture')",[school,otherSchool]);
-  await db.query("INSERT INTO users(id,email,display_name,role,status,school_id,password_hash) VALUES($1,$2,'Owner','owner','active',NULL,$3),($4,$5,'Admin','admin','active',$6,$3)",[owner,`owner-${owner}@example.test`,auth.hashPassword(password),admin,`admin-${admin}@example.test`,school]);
+  await db.query("INSERT INTO customers(id,name,code,region) VALUES($1::uuid,'Invite customer',$1::text,'fixture'),($2::uuid,'Other invite customer',$2::text,'fixture')",[customer,otherCustomer]);
+  await db.query("INSERT INTO users(id,email,display_name,role,status,customer_id,password_hash) VALUES($1,$2,'Owner','owner','active',NULL,$3),($4,$5,'Admin','admin','active',$6,$3)",[owner,`owner-${owner}@example.test`,auth.hashPassword(password),admin,`admin-${admin}@example.test`,customer]);
   const login=async(email:string)=>{const r=await post('/v1/auth/login',{email,password});assert.equal(r.status,200);return (await r.json()).accessToken;};
   const ownerToken=await login(`owner-${owner}@example.test`),adminToken=await login(`admin-${admin}@example.test`);
   const activate=(token:string,extras={})=>post('/v1/auth/activate',{token,password,...extras},undefined,`${ipPrefix}::${++tokenSequence}`);
-  const invite=async(role='school_user',issuer=adminToken,schoolId:string|null=school)=>{
+  const invite=async(role='customer_user',issuer=adminToken,customerId:string|null=customer)=>{
     await fetch(capture+'/ok',{method:'POST'});
     const email=`invite-${randomUUID()}@example.test`;emails.push(email);
-    const r=await post('/v1/users/invite',{email,displayName:'Recipient',role,schoolId},issuer);assert.equal(r.status,201);
+    const r=await post('/v1/users/invite',{email,displayName:'Recipient',role,customerId},issuer);assert.equal(r.status,201);
     const result=await r.json();assert.equal(result.status,'sent');assert.ok(result.invitationId);assert.equal('token' in result,false);assert.equal('tempPassword' in result,false);
     const messages=(await (await fetch(capture)).json()).map((message:string)=>message.replace(/=\r\n/g,'').replace(/=3D/g,'='));assert.equal(messages.length,1);
     assert.equal(/password|Solar#/i.test(messages[0]),false);
@@ -39,7 +39,7 @@ test('persistent invitation lifecycle uses local SMTP, atomic activation and cur
       const i=await invite();assert.equal((await post('/v1/auth/login',{email:i.email,password})).status,401);
       const rows=(await db.query('SELECT status,password_hash FROM users WHERE email=$1',[i.email])).rows[0];assert.equal(rows.status,'invited');assert.equal(rows.password_hash,null);
       const responses=await Promise.all([activate(i.token,{role:'owner'}),activate(i.token)]);assert.deepEqual(responses.map(r=>r.status).sort(),[200,401]);
-      assert.equal((await activate(i.token)).status,401);assert.equal((await db.query('SELECT role FROM users WHERE email=$1',[i.email])).rows[0].role,'school_user');assert.ok(await login(i.email));
+      assert.equal((await activate(i.token)).status,401);assert.equal((await db.query('SELECT role FROM users WHERE email=$1',[i.email])).rows[0].role,'customer_user');assert.ok(await login(i.email));
     });
     await t.test('expired token rejected and resend revokes original token',async()=>{
       const i=await invite();await db.query("UPDATE user_invitations SET expires_at=now()-interval '1 second' WHERE id=$1",[i.invitationId]);assert.equal((await activate(i.token)).status,401);
@@ -48,19 +48,19 @@ test('persistent invitation lifecycle uses local SMTP, atomic activation and cur
     });
     await t.test('SMTP rejection returns truthful delivery_failed and invalidates undelivered token',async()=>{
       await fetch(capture+'/fail',{method:'POST'});const email=`failed-${randomUUID()}@example.test`;emails.push(email);
-      const r=await post('/v1/users/invite',{email,displayName:'Fail',role:'school_user',schoolId:school},adminToken);assert.equal(r.status,201);const i=await r.json();assert.equal(i.status,'delivery_failed');
+      const r=await post('/v1/users/invite',{email,displayName:'Fail',role:'customer_user',customerId:customer},adminToken);assert.equal(r.status,201);const i=await r.json();assert.equal(i.status,'delivery_failed');
       const row=(await db.query('SELECT delivery_status,revoked_at FROM user_invitations WHERE id=$1',[i.invitationId])).rows[0];assert.equal(row.delivery_status,'delivery_failed');assert.ok(row.revoked_at);
     });
-    await t.test('only Super Admin can grant invitations across schools',async()=>{
-      for(const body of [{schoolId:otherSchool,role:'school_user'},{schoolId:school,role:'owner'}]) assert.equal((await post('/v1/users/invite',{email:`deny-${randomUUID()}@example.test`,displayName:'Denied',...body},ownerToken)).status,403);
-      const i=await invite('school_user',adminToken,otherSchool);assert.equal((await post(`/v1/users/invitations/${i.invitationId}/resend`,{},ownerToken)).status,403);
+    await t.test('only Super Admin can grant invitations across customers',async()=>{
+      for(const body of [{customerId:otherCustomer,role:'customer_user'},{customerId:customer,role:'owner'}]) assert.equal((await post('/v1/users/invite',{email:`deny-${randomUUID()}@example.test`,displayName:'Denied',...body},ownerToken)).status,403);
+      const i=await invite('customer_user',adminToken,otherCustomer);assert.equal((await post(`/v1/users/invitations/${i.invitationId}/resend`,{},ownerToken)).status,403);
     });
-    await t.test('activation rejects changed recipient role/status/school and revoked issuer authority',async()=>{
-      for(const mutation of ["role='admin'","status='disabled'",`school_id='${otherSchool}'`]){const i=await invite();await db.query(`UPDATE users SET ${mutation} WHERE email=$1`,[i.email]);assert.equal((await activate(i.token)).status,401);}
-      const i=await invite('school_user',adminToken);await db.query("UPDATE users SET role='school_user' WHERE id=$1",[admin]);assert.equal((await activate(i.token)).status,401);await db.query("UPDATE users SET role='admin' WHERE id=$1",[admin]);
+    await t.test('activation rejects changed recipient role/status/customer and revoked issuer authority',async()=>{
+      for(const mutation of ["role='admin'","status='disabled'",`customer_id='${otherCustomer}'`]){const i=await invite();await db.query(`UPDATE users SET ${mutation} WHERE email=$1`,[i.email]);assert.equal((await activate(i.token)).status,401);}
+      const i=await invite('customer_user',adminToken);await db.query("UPDATE users SET role='customer_user' WHERE id=$1",[admin]);assert.equal((await activate(i.token)).status,401);await db.query("UPDATE users SET role='admin' WHERE id=$1",[admin]);
     });
     await t.test('outstanding invitation can be found after reload only within current grant scope',async()=>{
-      const i=await invite('school_user',adminToken,otherSchool);
+      const i=await invite('customer_user',adminToken,otherCustomer);
       const path=`/v1/users/invitations?email=${encodeURIComponent(i.email)}`;
       const found=await fetch(base+path,{headers:{Authorization:`Bearer ${adminToken}`}});assert.equal(found.status,200);const value=await found.json();assert.equal(value.invitationId,i.invitationId);assert.equal(value.status,'sent');assert.equal('token' in value,false);
       assert.equal((await fetch(base+path,{headers:{Authorization:`Bearer ${ownerToken}`}})).status,403);
@@ -102,6 +102,6 @@ test('persistent invitation lifecycle uses local SMTP, atomic activation and cur
     await db.query('DELETE FROM audit_events WHERE actor_id=ANY($1::uuid[])',[ [owner,admin] ]);
     await db.query('DELETE FROM user_invitations WHERE issuer_id=ANY($1::uuid[])',[[owner,admin]]);
     await db.query('DELETE FROM users WHERE email=ANY($1::text[]) OR id=ANY($2::uuid[])',[emails,[owner,admin]]);
-    await db.query('DELETE FROM schools WHERE id=ANY($1::uuid[])',[[school,otherSchool]]);await db.end();
+    await db.query('DELETE FROM customers WHERE id=ANY($1::uuid[])',[[customer,otherCustomer]]);await db.end();
   }
 });

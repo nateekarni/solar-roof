@@ -2,6 +2,8 @@ import { type CanActivate, type ExecutionContext, ForbiddenException, Inject, In
 import { Reflector } from "@nestjs/core";
 import type { PlatformRole } from "@solar/domain";
 import { ROLES_KEY } from "./roles.decorator.js";
+import { permissionForRoute } from './auth/domain-route-policy.js';
+import { hasPermission } from './auth/authorization.js';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
@@ -19,12 +21,14 @@ export class RolesGuard implements CanActivate {
 
     const request = context.switchToHttp().getRequest();
     const user = request.user;
+    const permission=permissionForRoute(request.method??'',request.path??request.url??'');
+    if(user?.authorization&&permission&&hasPermission(user,permission))return true;
 
     if (!user || !user.role) {
       throw new ForbiddenException("Access denied: unauthenticated or invalid user role");
     }
 
-    const hasRole = user.role === "admin" || requiredRoles.includes(user.role);
+    const hasRole = requiredRoles.includes(user.role);
     if (!hasRole) {
       throw new ForbiddenException(`Access denied: required roles [${requiredRoles.join(", ")}]`);
     }

@@ -21,6 +21,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     let message = "Internal server error";
     let error: string | undefined;
     let code: string | undefined;
+    let details:Record<string,unknown>={};
 
     if (exception instanceof HttpException) {
       status = exception.getStatus();
@@ -32,7 +33,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
         message = (r.message as string) || exception.message;
         error = (r.error as string) || undefined;
         if (typeof r.code === "string") code = r.code;
+        if(code==='FUTURE_RATE_REPLACEMENT_REQUIRED')details={siteId:r.siteId,effectiveDate:r.effectiveDate,futureRates:r.futureRates,documents:r.documents};
       }
+    } else if(exception instanceof Error && 'type' in exception && exception.type==='entity.too.large'){
+      status=HttpStatus.PAYLOAD_TOO_LARGE;message='ไฟล์แนบมีขนาดเกินที่ระบบรองรับ';
     } else if (exception instanceof Error) {
       this.logger.error(`Unhandled error: ${exception.message}`, exception.stack);
     }
@@ -40,6 +44,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     response.status(status).json({
       statusCode: status,
       ...(code ? { code } : {}),
+      ...details,
       message,
       ...(error ? { error } : {}),
       path: request.url,

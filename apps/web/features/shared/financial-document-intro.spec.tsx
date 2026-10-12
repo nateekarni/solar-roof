@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {FinancialDocumentIntro} from './financial-document-intro';
-test('school financial summary explains own documents and evidence without management instructions',()=>{
- const html=renderToStaticMarkup(<FinancialDocumentIntro resource="billing" role="school_user" locale="en"/>);
+test('customer financial summary explains own documents and evidence without management instructions',()=>{
+ const html=renderToStaticMarkup(<FinancialDocumentIntro resource="billing" role="customer_user" locale="en"/>);
  assert.match(html,/your organization/);assert.match(html,/payment evidence/);assert.doesNotMatch(html,/Create|approve|version|Site/);
 });
 test('owner documents explain company financial work in plain language',()=>{

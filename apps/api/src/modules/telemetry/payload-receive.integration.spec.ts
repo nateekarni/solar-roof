@@ -26,11 +26,11 @@ test('real local MQTT + PostgreSQL bundle ACK, unit conversion, replay and parti
  try {
   await Promise.all([connected(receiver),connected(sender)]);
   await admin.query(`CREATE SCHEMA ${schema}`);
-  for(const table of ['schools','sites','gateways','devices','payload_profile_revisions','billing_meters','payload_messages','payload_samples','telemetry_raw','payload_rejections','gateway_payload_receive_revisions'])await pool.query(`CREATE TABLE ${table} (LIKE public.${table} INCLUDING DEFAULTS INCLUDING CONSTRAINTS INCLUDING INDEXES)`);
+  for(const table of ['customers','sites','gateways','devices','payload_profile_revisions','billing_meters','payload_messages','payload_samples','telemetry_raw','payload_rejections','gateway_payload_receive_revisions'])await pool.query(`CREATE TABLE ${table} (LIKE public.${table} INCLUDING DEFAULTS INCLUDING CONSTRAINTS INCLUDING INDEXES)`);
   const siteId=randomUUID(),gatewayId=randomUUID(),meterId=randomUUID(),loggerId=randomUUID(),meterRevision=randomUUID(),loggerRevision=randomUUID();
   const site=`SITE-${suffix}`,gateway=`GW-${suffix}`;
   const topic=`solar/v1/sites/${site}/gateways/${gateway}/devices/METER-TEST/telemetry`,ackTopic=`solar/v1/sites/${site}/gateways/${gateway}/dataAcept`;
-  await pool.query('INSERT INTO sites(id,school_id,name,capacity_mwp,external_site_id) VALUES($1,$2,$3,1,$4)',[siteId,randomUUID(),'Isolated reception test',site]);
+  await pool.query('INSERT INTO sites(id,customer_id,name,capacity_mwp,external_site_id) VALUES($1,$2,$3,1,$4)',[siteId,randomUUID(),'Isolated reception test',site]);
   await pool.query('INSERT INTO gateways(id,site_id,name,protocol,endpoint,external_gateway_id) VALUES($1,$2,$3,\'mqtt\',$4,$3)',[gatewayId,siteId,gateway,topic.replace('/METER-TEST/','/+/')]);
   const meter={...DEFAULT_PAYLOAD_PROFILES[0]!,version:'1.0.1'},logger=DEFAULT_PAYLOAD_PROFILES[1]!;
   for(const [id,profile] of [[meterRevision,meter],[loggerRevision,logger]] as const)await pool.query('INSERT INTO payload_profile_revisions(id,profile_id,version,config) VALUES($1,$2,$3,$4)',[id,profile.id,profile.version,JSON.stringify(profile)]);
@@ -47,7 +47,7 @@ test('real local MQTT + PostgreSQL bundle ACK, unit conversion, replay and parti
   await sender.publishAsync(topic,JSON.stringify(bundle),{qos:1,retain:false});await waitFor(4);
   assert.equal((await pool.query('SELECT count(*)::int AS count FROM payload_messages')).rows[0].count,4);
   const provisioner=new AssetsController(db as any,{refreshSubscriptions:async()=>{},publishHardwareConfig:async()=>false} as any);
-  const planned={name:'Provisioned '+suffix,schoolName:'School '+suffix,capacityMwp:0.5,gatewayName:'GW-P-'+suffix,deviceSerial:'SERIAL-P-'+suffix,payloadProfileRevisionId:meterRevision,externalSiteId:'SITE-P-'+suffix,externalGatewayId:'GW-P-'+suffix,externalDeviceId:'METER-P',additionalDevices:[{name:'Planned logger',model:'SmartLogger',serialNumber:'LOGGER-P-'+suffix,externalDeviceId:'LOGGER-P',payloadProfileRevisionId:loggerRevision}],receiveConfig:{messagesPath:'payloads',deviceAliases:[{source:'SOURCE-LOGGER',target:'LOGGER-P'}]}};
+  const planned={name:'Provisioned '+suffix,customerName:'Customer '+suffix,capacityMwp:0.5,gatewayName:'GW-P-'+suffix,deviceSerial:'SERIAL-P-'+suffix,payloadProfileRevisionId:meterRevision,externalSiteId:'SITE-P-'+suffix,externalGatewayId:'GW-P-'+suffix,externalDeviceId:'METER-P',additionalDevices:[{name:'Planned logger',model:'SmartLogger',serialNumber:'LOGGER-P-'+suffix,externalDeviceId:'LOGGER-P',payloadProfileRevisionId:loggerRevision}],receiveConfig:{messagesPath:'payloads',deviceAliases:[{source:'SOURCE-LOGGER',target:'LOGGER-P'}]}};
   const created=await provisioner.createSite(planned);
   assert.equal((await pool.query('SELECT count(*)::int AS count FROM devices WHERE site_id=$1',[created.id])).rows[0].count,2);
   assert.equal((await pool.query('SELECT version FROM gateway_payload_receive_revisions r JOIN gateways g ON g.id=r.gateway_id WHERE g.site_id=$1',[created.id])).rows[0].version,1);
@@ -58,9 +58,9 @@ test('real local MQTT + PostgreSQL bundle ACK, unit conversion, replay and parti
   assert.equal((await pool.query('SELECT count(*)::int AS count FROM devices WHERE site_id=$1',[created.id])).rows[0].count,3);
   assert.equal((await pool.query('SELECT max(version) AS version FROM gateway_payload_receive_revisions r JOIN gateways g ON g.id=r.gateway_id WHERE g.site_id=$1',[created.id])).rows[0].version,2);
   const before=(await pool.query('SELECT count(*)::int AS count FROM sites')).rows[0].count;
-  await assert.rejects(provisioner.createSite({...planned,schoolName:'Rollback '+suffix,externalSiteId:'SITE-R-'+suffix,externalGatewayId:'GW-R-'+suffix,gatewayName:'GW-R-'+suffix,deviceSerial:'SERIAL-R-'+suffix}));
+  await assert.rejects(provisioner.createSite({...planned,customerName:'Rollback '+suffix,externalSiteId:'SITE-R-'+suffix,externalGatewayId:'GW-R-'+suffix,gatewayName:'GW-R-'+suffix,deviceSerial:'SERIAL-R-'+suffix}));
   assert.equal((await pool.query('SELECT count(*)::int AS count FROM sites')).rows[0].count,before);
-  assert.equal((await pool.query('SELECT count(*)::int AS count FROM schools WHERE name=$1',['Rollback '+suffix])).rows[0].count,0);
+  assert.equal((await pool.query('SELECT count(*)::int AS count FROM customers WHERE name=$1',['Rollback '+suffix])).rows[0].count,0);
 
   assert.equal((await pool.query('SELECT count(*)::int AS count FROM payload_samples')).rows[0].count,26);
   const assets=new AssetsController(db as any,{} as any);

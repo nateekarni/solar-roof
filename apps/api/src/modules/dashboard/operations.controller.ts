@@ -20,16 +20,16 @@ export function toCsv(columns: string[], rows: Record<string, unknown>[], idKey 
 
 // Explicit projections prevent private/new API properties from silently becoming exports.
 export const operationExportColumns: Record<string,string[]> = {
- schools:['code','name','region','capacityMwp','sitesCount','gatewaysCount','status'],
- sites:['externalSiteId','name','schoolName','externalGatewayId','gateway','protocol','capacityMwp','productionKwh','lastUpdated','status'],
- billing:['period','schoolName','externalSiteId','siteName','consumedKwh','rate','amount','status','invoiceNumber','receiptNumber'],
- contracts:['contractNumber','schoolName','externalSiteId','siteName','version','startDate','endDate','rate','signers','status'],
- documents:['documentNumber','type','schoolName','externalSiteId','siteName','issueDate','amount','status'],
- receipts:['receiptNumber','taxInvoiceNumber','schoolName','externalSiteId','siteName','issueDate','amount','status'],
+ customers:['code','name','region','capacityMwp','sitesCount','gatewaysCount','status'],
+ sites:['externalSiteId','name','customerName','externalGatewayId','gateway','protocol','capacityMwp','productionKwh','lastUpdated','status'],
+ billing:['period','customerName','externalSiteId','siteName','consumedKwh','rate','amount','status','invoiceNumber','receiptNumber'],
+ contracts:['contractNumber','customerName','externalSiteId','siteName','version','startDate','endDate','rate','signers','status'],
+ documents:['documentNumber','type','customerName','externalSiteId','siteName','issueDate','amount','status'],
+ receipts:['receiptNumber','taxInvoiceNumber','customerName','externalSiteId','siteName','issueDate','amount','status'],
  alerts:['title','detail','externalSiteId','siteName','severity','occurredAt','status'],
  notifications:['title','channel','recipient','sentAt','status','jobId'],
  reports:['title','category','scope','format','status','generatedAt','fileSize'],
- users:['displayName','email','role','schoolName','lastActive','status'],
+ users:['displayName','email','role','customerName','lastActive','status'],
  audit:['time','action','entityType','entityId','actor','reason','correlationId'],
 };
 
@@ -58,7 +58,7 @@ export class OperationsController {
       data.rows.push(...batch.rows);
       page = batch.page;
     }
-    const internalReferenceKeys: Record<string,string>={sites:'siteInternalReference',schools:'schoolInternalReference',billing:'billingInternalReference',contracts:'contractInternalReference',documents:'documentInternalReference',receipts:'documentInternalReference',alerts:'alertInternalReference',notifications:'notificationInternalReference',reports:'reportInternalReference',users:'userInternalReference',audit:'auditInternalReference'};
+    const internalReferenceKeys: Record<string,string>={sites:'siteInternalReference',customers:'customerInternalReference',billing:'billingInternalReference',contracts:'contractInternalReference',documents:'documentInternalReference',receipts:'documentInternalReference',alerts:'alertInternalReference',notifications:'notificationInternalReference',reports:'reportInternalReference',users:'userInternalReference',audit:'auditInternalReference'};
     const referenceKey=internalReferenceKeys[resource]!;
     const csv = toCsv([...operationExportColumns[resource]!,referenceKey],data.rows.map(row=>({...row,[referenceKey]:row[data.idKey || 'id']})));
     const filename = `${resource}-${filters.from ?? 'all'}-${filters.to ?? 'all'}.csv`;

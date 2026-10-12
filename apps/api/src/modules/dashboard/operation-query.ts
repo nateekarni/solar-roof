@@ -1,20 +1,21 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import type { OperationQuery } from '@solar/api-contracts';
+import {operationFilters} from '@solar/api-contracts';
 import type { ScopePrincipal } from '../../common/auth/resource-scope.js';
 
 // Identifiers only come from this server-owned vocabulary, never request text.
 export const operationQueries: Record<string, { sorts: string[]; search: string[]; date?: string; direction: 'asc' | 'desc' }> = {
-  schools: { sorts: ["name", "code", "region", "capacityMwp", "sitesCount", "gatewaysCount", "status"], search: ['name', 'code', 'region'], date: 'createdAt', direction: 'asc' },
-  sites: { sorts: ["name", "schoolName", "capacityMwp", "gateway", "protocol", "productionKwh", "lastUpdated", "status"], search: ['name', 'schoolName', 'externalSiteId'], date: 'createdAt', direction: 'asc' },
-  billing: { sorts: ["period", "schoolName", "siteName", "consumedKwh", "rate", "amount", "status"], search: ['period', 'schoolName', 'siteName', 'status'], date: 'period', direction: 'desc' },
-  contracts: { sorts: ["startDate", "contractNumber", "schoolName", "version", "rate", "signers", "status"], search: ['contractNumber', 'schoolName', 'siteName', 'signers', 'status'], date: 'startDate', direction: 'desc' },
-  documents: { sorts: ["issueDate", "documentNumber", "type", "schoolName", "amount", "status"], search: ['documentNumber', 'type', 'schoolName', 'siteName', 'status'], date: 'issueDate', direction: 'desc' },
-  receipts: { sorts: ["issueDate", "documentNumber", "taxInvoiceNumber", "schoolName", "amount", "status"], search: ['documentNumber', 'type', 'schoolName', 'siteName', 'status'], date: 'issueDate', direction: 'desc' },
+  customers: { sorts: ["name", "code", "region", "capacityMwp", "sitesCount", "gatewaysCount", "status"], search: ['name', 'code', 'region'], date: 'createdAt', direction: 'asc' },
+  sites: { sorts: ["name", "customerName", "capacityMwp", "region", "serviceStartDate", "status"], search: ['name', 'customerName', 'externalSiteId'], date: 'createdAt', direction: 'asc' },
+  billing: { sorts: ["period", "customerName", "siteName", "consumedKwh", "rate", "amount", "status"], search: ['period', 'customerName', 'siteName', 'status'], date: 'period', direction: 'desc' },
+  contracts: { sorts: ["startDate", "contractNumber", "customerName", "version", "rate", "signers", "status"], search: ['contractNumber', 'customerName', 'siteName', 'signers', 'status'], date: 'startDate', direction: 'desc' },
+  documents: { sorts: ["issueDate", "documentNumber", "type", "customerName", "amount", "status"], search: ['documentNumber', 'type', 'customerName', 'siteName', 'status'], date: 'issueDate', direction: 'desc' },
+  receipts: { sorts: ["issueDate", "documentNumber", "taxInvoiceNumber", "customerName", "amount", "status"], search: ['documentNumber', 'type', 'customerName', 'siteName', 'status'], date: 'issueDate', direction: 'desc' },
   alerts: { sorts: ["occurredAt", "alertId", "title", "detail", "severity", "status"], search: ['title', 'detail', 'severity', 'status'], date: 'occurredAt', direction: 'desc' },
   notifications: { sorts: ["sentAt", "title", "channel", "recipient", "status"], search: ['title', 'channel', 'recipient', 'status'], date: 'sentAt', direction: 'desc' },
   reports: { sorts: ["generatedAt", "title", "category", "scope", "format", "status"], search: ['title', 'category', 'status'], date: 'generatedAt', direction: 'desc' },
-  users: { sorts: ["displayName", "email", "role", "schoolName", "lastActive", "status"], search: ['displayName', 'email', 'role', 'status'], date: 'createdAt', direction: 'asc' },
+  users: { sorts: ["displayName", "email", "role", "customerName", "lastActive", "status"], search: ['displayName', 'email', 'role', 'status'], date: 'createdAt', direction: 'asc' },
   audit: { sorts: ["time", "action", "entityType", "entityId", "actor", "reason"], search: ['action', 'entityType', 'entityId', 'actor', 'reason', 'correlationId'], date: 'time', direction: 'desc' },
 };
 
@@ -22,7 +23,7 @@ export function parseOperationQuery(resource: string, raw: Record<string, unknow
   const config = operationQueries[resource];
   if (!config) throw new NotFoundException('Unknown resource');
   for (const [key, value] of Object.entries(raw)) {
-    if (!['limit', 'cursor', 'search', 'sort', 'direction', 'from', 'to'].includes(key) || typeof value !== 'string') throw new BadRequestException('Invalid operation query');
+    if (!['limit', 'cursor', 'search', 'sort', 'direction', 'from', 'to',...(['billing','receipts'].includes(resource)?['siteId','collectionStatus']:[]),...(operationFilters[resource]??[]).map(filter=>filter.key)].includes(key) || typeof value !== 'string') throw new BadRequestException('Invalid operation query');
   }
   const limit = raw.limit === undefined ? 25 : Number(raw.limit);
   if (!Number.isInteger(limit) || limit < 1 || limit > 100 || (raw.limit !== undefined && !/^\d+$/.test(String(raw.limit)))) throw new BadRequestException('Limit must be 1–100');
@@ -38,25 +39,40 @@ export function parseOperationQuery(resource: string, raw: Record<string, unknow
   if (from && to && from > to) throw new BadRequestException('Invalid date range');
   const cursor = raw.cursor as string | undefined;
   if (cursor !== undefined && (cursor.length > 2048 || !/^[A-Za-z0-9_-]+$/.test(cursor))) throw new BadRequestException('Invalid cursor');
-  return { limit, sort, direction: direction as 'asc' | 'desc', ...(search ? { search } : {}), ...(cursor ? { cursor } : {}), ...(from ? { from } : {}), ...(to ? { to } : {}) };
+  const filters:Partial<OperationQuery>={};
+  if(raw.siteId!==undefined){if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(raw.siteId)))throw new BadRequestException('Invalid site filter');filters.siteId=String(raw.siteId);}
+  if(raw.collectionStatus!==undefined){if(!['paid','pending_review','overdue','awaiting_payment'].includes(String(raw.collectionStatus)))throw new BadRequestException('Invalid collection filter');filters.collectionStatus=raw.collectionStatus as NonNullable<OperationQuery['collectionStatus']>;}
+  for(const filter of operationFilters[resource]??[]){
+    const value=raw[filter.key];
+    if(value===undefined||value==='')continue;
+    if(!filter.options.some(option=>option.value===value))throw new BadRequestException('Invalid operation filter');
+    filters[filter.key]=String(value);
+  }
+  return { limit, sort, direction: direction as 'asc' | 'desc', ...(search ? { search } : {}), ...(cursor ? { cursor } : {}), ...(from ? { from } : {}), ...(to ? { to } : {}),...filters };
 }
 
 function fingerprint(resource: string, query: OperationQuery, user: ScopePrincipal | undefined, scope: string[] | null) {
-  return createHash('sha256').update(JSON.stringify([resource, query.sort, query.direction, query.search ?? '', query.from ?? '', query.to ?? '', user?.id, user?.role, scope])).digest('hex');
+  return createHash('sha256').update(JSON.stringify([resource, query.sort, query.direction, query.search ?? '', query.from ?? '', query.to ?? '',query.siteId,query.collectionStatus,(operationFilters[resource]??[]).map(filter=>query[filter.key]??''), user?.id, user?.role, scope])).digest('hex');
 }
 
 export function operationPredicate(resource: string, query: OperationQuery, params: unknown[]) {
   const config = operationQueries[resource]!;
   const clauses: string[] = [];
   const bind = (value: unknown) => { params.push(value); return `$${params.length}`; };
+  if(query.siteId)clauses.push(`q."siteId" = ${bind(query.siteId)}::uuid`);
+  if(query.collectionStatus)clauses.push(`q."collectionStatus" = ${bind(query.collectionStatus)}`);
+  for(const filter of operationFilters[resource]??[]){
+    const value=query[filter.key];
+    if(value)clauses.push(`q."${filter.key}"::text = ${bind(value)}`);
+  }
   if (query.search) {
     // Literal substring search: wildcard characters supplied by users remain literal.
     const term = query.search.replace(/[\\%_]/g, '\\$&');
     clauses.push(`concat_ws(' ',${config.search.map(key => `q."${key}"::text`).join(',')}) ILIKE ${bind('%' + term + '%')} ESCAPE '\\'`);
   }
-  const dateExpression = ["occurredAt", "sentAt", "generatedAt", "time"].includes(config.date ?? "") ? `(q."${config.date}" AT TIME ZONE 'Asia/Bangkok')::date::text` : `q."${config.date}"::text`;
-  if (query.from) clauses.push(`${dateExpression} >= ${bind(resource === 'billing' ? query.from.slice(0, 7) : query.from)}`);
-  if (query.to) clauses.push(`${dateExpression} < ${bind(resource === 'billing' ? new Date(Date.UTC(Number(query.to.slice(0, 4)), Number(query.to.slice(5, 7)), 1)).toISOString().slice(0, 7) : new Date(Date.parse(query.to) + 86400000).toISOString().slice(0, 10))}`);
+  const dateExpression = resource==='billing'||resource==='receipts'&&query.collectionStatus?`q."periodStart"::text`:["occurredAt", "sentAt", "generatedAt", "time"].includes(config.date ?? "") ? `(q."${config.date}" AT TIME ZONE 'Asia/Bangkok')::date::text` : `q."${config.date}"::text`;
+  if (query.from) clauses.push(`${dateExpression} >= ${bind(query.from)}`);
+  if (query.to) clauses.push(`${dateExpression} < ${bind(new Date(Date.parse(query.to) + 86400000).toISOString().slice(0, 10))}`);
   return clauses;
 }
 

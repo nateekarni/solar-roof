@@ -1,9 +1,13 @@
 import { createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 
-export interface AuthUser { id: string; email: string; role: "owner" | "admin" | "operator" | "accountant" | "school_user"; schoolId?: string | undefined; }
+export interface AuthUser { id: string; email: string; role: "owner" | "admin" | "operator" | "accountant" | "customer_user"; customerId?: string | undefined; }
 export interface TokenPair { accessToken: string; refreshToken: string; expiresInSeconds: number; }
 
 function encode(input: string): string { return Buffer.from(input).toString("base64url"); }
+/** Compatibility only at the signed-token boundary; newly issued tokens use customer terminology. */
+function customerClaims(payload: Record<string, unknown>): Record<string, unknown> {
+  return {...payload, role:payload.role==='school_user'?'customer_user':payload.role, customerId:payload.customerId??payload.schoolId};
+}
 function sign(payload: Record<string, unknown>, secret: string): string {
   const body = encode(JSON.stringify(payload));
   const signature = createHmac("sha256", secret).update(body).digest("base64url");
@@ -35,17 +39,17 @@ export class AuthService {
   }
   issueTokens(user: AuthUser, sessionId: string): TokenPair {
     const now = Math.floor(Date.now() / 1000);
-    const claims = { sub: user.id, email: user.email, role: user.role, schoolId: user.schoolId, sid: sessionId };
+    const claims = { sub: user.id, email: user.email, role: user.role, customerId: user.customerId, sid: sessionId };
     return { accessToken: sign({ ...claims, iat: now, exp: now + this.accessTtlSeconds, typ: "access" }, this.accessSecret), refreshToken: sign({ ...claims, iat: now, exp: now + this.refreshTtlSeconds, typ: "refresh", nonce: randomBytes(32).toString("base64url") }, this.refreshSecret), expiresInSeconds: this.accessTtlSeconds };
   }
   verifyAccessToken(token: string): AuthUser & { sessionId: string } {
-    const payload = verify(token, this.accessSecret);
+    const payload = customerClaims(verify(token, this.accessSecret));
     if (payload.typ !== "access" || typeof payload.sub !== "string" || typeof payload.email !== "string" || typeof payload.role !== "string" || typeof payload.sid !== "string") throw new Error("Invalid access claims");
-    return { id: payload.sub, email: payload.email, role: payload.role as AuthUser["role"], schoolId: typeof payload.schoolId === "string" ? payload.schoolId : undefined, sessionId: payload.sid };
+    return { id: payload.sub, email: payload.email, role: payload.role as AuthUser["role"], customerId: typeof payload.customerId === "string" ? payload.customerId : undefined, sessionId: payload.sid };
   }
   verifyRefreshToken(token: string): AuthUser & { sessionId: string; expiresAt: Date } {
-    const payload = verify(token, this.refreshSecret);
+    const payload = customerClaims(verify(token, this.refreshSecret));
     if (payload.typ !== "refresh" || typeof payload.sub !== "string" || typeof payload.email !== "string" || typeof payload.role !== "string" || typeof payload.sid !== "string") throw new Error("Invalid refresh claims");
-    return { id: payload.sub, email: payload.email, role: payload.role as AuthUser["role"], schoolId: typeof payload.schoolId === "string" ? payload.schoolId : undefined, sessionId: payload.sid, expiresAt: new Date(Number(payload.exp) * 1000) };
+    return { id: payload.sub, email: payload.email, role: payload.role as AuthUser["role"], customerId: typeof payload.customerId === "string" ? payload.customerId : undefined, sessionId: payload.sid, expiresAt: new Date(Number(payload.exp) * 1000) };
   }
 }

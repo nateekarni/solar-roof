@@ -63,7 +63,7 @@ interface PaymentDialogProps {
   billingCycle: {
     id: string;
     period?: string;
-    schoolName?: string;
+    customerName?: string;
     siteName?: string;
     consumedKwh?: number;
     rate?: number;
@@ -85,15 +85,11 @@ export function PaymentDialog({
   const [payerMetadata,setPayerMetadata]=React.useState({payerName:"",paymentMethod:"",originBank:"",originAccount:""});
   const capabilities=useFinancialCapabilities();
   const canSubmit=(capabilities.operationsActions??[]).includes("submit_payment");
-  const [enteredAmount,setEnteredAmount]=React.useState("");
-  React.useEffect(()=>{if(open)setEnteredAmount(String(billingCycle?.amount??"").replace(/(\.\d{2})0+$/, "$1"));},[open,billingCycle?.id]);
   const [slipFile, setSlipFile] = React.useState<File | null>(null);
   const [slipPreviewUrl, setSlipPreviewUrl] = React.useState<string | null>(
     null,
   );
-  const [paidAt, setPaidAt] = React.useState<string>(
-    bangkokTransferWallTime()
-  );
+
   const [note, setNote] = React.useState<string>("");
   const submitting = React.useRef(false);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
@@ -131,7 +127,6 @@ export function PaymentDialog({
         );
       setSlipFile(null);
       setSlipPreviewUrl(null);
-      setPaidAt(bangkokTransferWallTime());
       setNote("");
       setPayerMetadata({payerName:"",paymentMethod:"",originBank:"",originAccount:""});
       setErrorMsg(null);
@@ -186,21 +181,12 @@ export function PaymentDialog({
       return;
     }
 
-    let actualTransfer:string;
-    try{actualTransfer=transferAmount(enteredAmount);}catch{setErrorMsg(locale==="th"?"กรุณาระบุยอดโอนเป็นเงินบาทที่มากกว่าศูนย์และมีทศนิยมไม่เกิน 2 ตำแหน่ง":"Enter a positive THB transfer amount with at most two decimal places.");return;}
-    let transferInstant:string;
-    try{transferInstant=transferWallTimeToIso(paidAt);}catch{setErrorMsg(locale==="th"?"กรุณาระบุวันและเวลาที่โอนให้ถูกต้อง (เวลาไทย)":"Enter a valid transfer date and time in Bangkok time.");return;}
-    let metadata:PaymentMetadata;
-    try{metadata=normalizePaymentMetadata(payerMetadata);}catch{setErrorMsg(copy.invalid);return;}
     submitting.current=true;
     setIsSubmitting(true);
     setErrorMsg(null);
 
     try {
       await apiClient.post(`/v1/billing-cycles/${billingCycle.id}/pay`, {
-        amount: capabilities.financialScope==="TEST"?actualTransfer:Number(actualTransfer),
-        ...metadata,
-        paidAt: transferInstant,
         slipUrl: slipPreviewUrl,
         note: note.trim() || undefined,
       });
@@ -247,7 +233,7 @@ export function PaymentDialog({
               </DialogTitle>
               <DialogDescription className="text-xs text-muted-foreground">
                 {text("รอบบิล:", "Billing period:")}{" "}
-                {billingCycle?.period || "-"} · {billingCycle?.schoolName}
+                {billingCycle?.period || "-"} · {billingCycle?.customerName}
               </DialogDescription>
             </div>
           </div>
@@ -327,11 +313,7 @@ export function PaymentDialog({
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="transfer-amount" required>{locale==='th'?'ยอดที่โอนครั้งนี้ (บาท)':'This transfer amount (THB)'}</Label>
-              <Input id="transfer-amount" inputMode="decimal" value={enteredAmount} onChange={event=>setEnteredAmount(event.target.value)} required aria-describedby="transfer-amount-help" disabled={isSubmitting}/>
-              <p id="transfer-amount-help" className="text-xs text-muted-foreground">{locale==='th'?'ส่งหลักฐานแยกสำหรับแต่ละครั้งที่โอน ยอดโอนที่รอตรวจสอบรวมกันต้องเท่ากับยอดบิลก่อนอนุมัติ':'Submit separate evidence for each transfer. Pending transfers must add up to the bill total before approval.'}</p>
-            </div>
+
             {/* Slip Upload & Transfer Information */}
             <div className="space-y-3 pt-1">
               <div className="space-y-2">
@@ -394,28 +376,9 @@ export function PaymentDialog({
                 </div>
               </div>
 
-              <PaymentMetadataFields locale={locale} value={payerMetadata} onChange={setPayerMetadata} disabled={isSubmitting}/>
 
-              {/* Transfer Date Time */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                <div className="space-y-2">
-                  <Label
-                    htmlFor="paid-at"
-                    className="text-xs font-semibold flex items-center gap-1"
-                  >
-                    <Clock className="size-3 text-muted-foreground" />
-                    {locale==="th"?"วันและเวลาที่โอน (เวลาไทย)":"Transfer date and time (Asia/Bangkok)"}
-                  </Label>
-                  <DatePicker
-                    id="paid-at"
-                    includeTime
-                    value={paidAt}
-                    onValueChange={setPaidAt}
-                    className="h-10 text-xs"
-                    required
-                  />
-                </div>
-
+              {slipFile?.type === 'application/pdf' && slipPreviewUrl && <iframe title={text('ตัวอย่างหลักฐาน PDF','PDF evidence preview')} src={slipPreviewUrl} className="w-full h-80 border rounded-lg"/>}
+              <div className="grid grid-cols-1 gap-2.5">
                 <div className="space-y-2">
                   <Label htmlFor="note" className="text-xs font-semibold">
                     {text(

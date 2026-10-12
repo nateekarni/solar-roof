@@ -18,7 +18,7 @@ test("own profile changes display name using session id, never supplied identity
   });
   assert.deepEqual(statements[0]?.params, ["Saved", "current"]);
   assert.match(statements[0]!.sql, /WHERE id = \$2/);
-  assert.doesNotMatch(statements[0]!.sql, /email\s*=|role\s*=|school_id\s*=/);
+  assert.doesNotMatch(statements[0]!.sql, /email\s*=|role\s*=|customer_id\s*=/);
   await assert.rejects(
     () => controller.updateProfile({} as never, { displayName: "Saved" }),
     /authenticated/i,

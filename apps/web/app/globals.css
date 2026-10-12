@@ -836,6 +836,7 @@ a {
 
 .table-wrap > table {
   border-collapse: collapse;
+  background: var(--card);
   width: 100%;
   min-width: 650px;
   text-align: left;
@@ -854,7 +855,7 @@ a {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  background: color-mix(in oklch, var(--muted) 40%, transparent);
+  background: var(--card);
 }
 
 .table-wrap > table td:last-child {

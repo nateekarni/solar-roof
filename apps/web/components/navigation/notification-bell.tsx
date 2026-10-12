@@ -15,7 +15,7 @@ import {accessibleFeedRows,markFeedRead,type NotificationFeed} from './notificat
 
 export function NotificationBell({siteId}:{siteId?:string|undefined}) {
  const user=useSessionUser(),th=useLocale()==='th';
- const scope=JSON.stringify([user.id,user.role,user.schoolId,siteId]);
+ const scope=JSON.stringify([user.id,user.role,user.customerId,siteId]);
  const currentScope=React.useRef(scope);currentScope.current=scope;
  const generation=React.useRef(0);
  const [open,setOpen]=React.useState(false),[loading,setLoading]=React.useState(true),[busy,setBusy]=React.useState(false),[error,setError]=React.useState('');

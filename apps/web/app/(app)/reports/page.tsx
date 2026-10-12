@@ -1,3 +1,2 @@
-import { OperationPage } from '../../../features/shared/operation-page';
-export const dynamic = 'force-dynamic';
-export default function Page() { return <OperationPage resource='reports' />; }
+import {notFound} from 'next/navigation';
+export default function Page(){notFound();}

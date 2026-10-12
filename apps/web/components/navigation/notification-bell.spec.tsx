@@ -7,7 +7,7 @@ import {SessionUserProvider} from '../../providers/session-user-provider';
 import {LocaleProvider} from '../../providers/locale-provider';
 import type {AuthUser} from '../../stores/auth-store';
 
-for(const role of ['owner','admin','operator','accountant','school_user'] satisfies AuthUser['role'][]) {
+for(const role of ['owner','admin','operator','accountant','customer_user'] satisfies AuthUser['role'][]) {
  test(`${role} receives the notification trigger even without access to technical alerts`,()=>{
   const user:AuthUser={id:role,email:role+'@example.test',displayName:role,role};
   const html=renderToStaticMarkup(<SessionUserProvider user={user}><LocaleProvider initialLocale="th"><NotificationBell/></LocaleProvider></SessionUserProvider>);

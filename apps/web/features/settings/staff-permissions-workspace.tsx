@@ -1,0 +1,157 @@
+'use client';
+import {useEffect,useState,type FormEvent} from 'react';
+import {accountRoleLabel} from './account-presentation';
+import {apiClient} from '../../lib/api-client';
+import {useLocale} from '../../providers/locale-provider';
+import {useSessionUser} from '../../providers/session-user-provider';
+import {Button} from '../../components/ui/button';
+import {Input} from '../../components/ui/input';
+import {SearchInput} from '../../components/ui/search-input';
+import {MoreHorizontal} from 'lucide-react';
+import {DropdownMenu,DropdownMenuTrigger,DropdownMenuContent,DropdownMenuItem} from '../../components/ui/dropdown-menu';
+import {Label} from '../../components/ui/label';
+import {ChoiceSelect} from '../../components/ui/choice-select';
+import {DataTable} from '../../components/ui/data-table';
+import type {ColumnDef} from '@tanstack/react-table';
+import {Table,TableHeader,TableHead,TableBody,TableRow,TableCell} from '../../components/ui/table';
+import {Tabs,TabsList,TabsTrigger,TabsContent} from '../../components/ui/tabs';
+import {effectiveRule,domainOverrides,filterEmployees,filterPositions,staffDraftChanged,canDismissStaffDialog,staffStatusLabel,type RuleValue} from './staff-permissions-model';
+import {Dialog,DialogContent,DialogHeader,DialogTitle,DialogDescription} from '../../components/ui/dialog';
+type Domain='business'|'technical';type Scope={mode:'all'|'selected';siteIds:string[]};
+type Position={id:string;name:string;rules:Record<string,RuleValue>;revision:number};
+type Employee={id:string;email:string;displayName:string;avatarData?:string|null;role:string;status:string;revision:number;grant:{positionId:string|null;overrides:Record<string,RuleValue>;scope:Scope}|null};
+export function StaffPermissionsWorkspace(){
+ const user=useSessionUser(),th=useLocale()==='th',domain:Domain=user.role==='owner'?'business':'technical';
+ const [employees,setEmployees]=useState<Employee[]>([]),[positions,setPositions]=useState<Position[]>([]),[permissions,setPermissions]=useState<string[]>([]),[sites,setSites]=useState<{id:string;name:string}[]>([]),[selected,setSelected]=useState<Employee|null>(null),[selectedPosition,setSelectedPosition]=useState<Position|null>(null),[error,setError]=useState(''),[revision,setRevision]=useState(0);
+ useEffect(()=>{let active=true;setError('');Promise.all([apiClient.get<{employees:Employee[]}>(`/v1/team/employees?domain=${domain}`),apiClient.get<{positions:Position[]}>(`/v1/team/positions?domain=${domain}`),apiClient.get<{permissions:string[]}>(`/v1/team/catalog?domain=${domain}`),apiClient.get<{id:string;name:string}[]>(domain==='business'?'/v1/sites':'/v1/gateways/site-options?includeAssigned=true')]).then(([e,p,c,s])=>{if(active){setEmployees(e.employees);setPositions(p.positions);setPermissions(c.permissions);setSites(s);}}).catch(e=>{if(active)setError(e.message);});return()=>{active=false;};},[domain,revision]);
+ const [inviting,setInviting]=useState(false),[search,setSearch]=useState(''),[status,setStatus]=useState('all'),[positionFilter,setPositionFilter]=useState('all');
+ const [tab,setTab]=useState('employees'),[positionSearch,setPositionSearch]=useState(''),[positionUsage,setPositionUsage]=useState('all');
+ const filteredPositions=filterPositions(positions,employees,positionSearch,positionUsage);
+ const statusLabel=(status:string)=>staffStatusLabel(status,th?'th':'en');
+ const statusBadge=(status:string)=><span className={status==='active'?'inline-flex rounded-full px-2 py-1 text-xs bg-emerald-500/10 text-emerald-700 dark:text-emerald-400':'inline-flex rounded-full px-2 py-1 text-xs bg-muted text-muted-foreground'}>{statusLabel(status)}</span>;
+ const employeeActions=(employee:Employee)=><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" aria-label={(th?'การจัดการพนักงาน: ':'Employee actions: ')+employee.displayName}><MoreHorizontal className="size-4"/></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onSelect={()=>setSelected(employee)}>{th?'จัดการสิทธิ์':'Manage permissions'}</DropdownMenuItem></DropdownMenuContent></DropdownMenu>;
+ const positionActions=(position:Position)=><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" aria-label={(th?'การจัดการตำแหน่ง: ':'Position actions: ')+position.name}><MoreHorizontal className="size-4"/></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onSelect={()=>setSelectedPosition(position)}>{th?'จัดการสิทธิ์':'Manage permissions'}</DropdownMenuItem></DropdownMenuContent></DropdownMenu>;
+ const filtered=filterEmployees(employees,search,status,positionFilter);
+ const refresh=()=>{setInviting(false);setSelected(null);setSelectedPosition(null);setRevision(n=>n+1);window.dispatchEvent(new Event('permissions-updated'));};
+const employeeColumns:ColumnDef<Employee>[]=[
+ {accessorKey:'displayName',header:th?'พนักงาน':'Employee'}, {accessorKey:'email',header:th?'อีเมล':'Email'},
+ {id:'position',accessorFn:e=>positions.find(p=>p.id===e.grant?.positionId)?.name??'—',header:th?'ตำแหน่ง':'Position'},
+ {id:'scope',accessorFn:e=>e.grant?.scope.mode==='all'?(th?'ทุกไซต์':'All sites'):e.grant?.scope.siteIds.map(id=>sites.find(s=>s.id===id)?.name??id).join(', ')||'—',header:th?'ขอบเขตไซต์':'Site scope'},
+ {accessorKey:'status',header:th?'สถานะ':'Status',cell:({row})=>statusBadge(row.original.status)},
+ {id:'actions',header:'',enableSorting:false,cell:({row})=>employeeActions(row.original)}];
+ const positionColumns:ColumnDef<Position>[]=[{accessorKey:'name',header:th?'ตำแหน่ง':'Position'},{id:'employees',header:th?'พนักงาน':'Employees',accessorFn:p=>employees.filter(e=>e.grant?.positionId===p.id).length},{id:'actions',header:'',enableSorting:false,cell:({row})=>positionActions(row.original)}];
+ return <main className="content space-y-5"><header className="flex flex-wrap items-start justify-between gap-3"><div><h1 className="text-2xl font-semibold">{th?'ทีมงานและสิทธิ์':'Staff and permissions'}</h1><p className="text-sm text-muted-foreground">{domain==='business'?(th?'จัดการสิทธิ์ธุรกิจและขอบเขตไซต์งาน':'Manage business permissions and site scope'):(th?'จัดการสิทธิ์เทคนิคและขอบเขตไซต์งาน':'Manage technical permissions and site scope')}</p></div>{tab==='employees'?<Button onClick={()=>setInviting(true)}>{th?'เพิ่มพนักงาน':'Add employee'}</Button>:<Button onClick={()=>setSelectedPosition({id:'',name:'',rules:{},revision:0})}>{th?'เพิ่มตำแหน่ง':'Add position'}</Button>}</header>{inviting&&<StaffInvitation domain={domain} onSaved={refresh} onClose={()=>setInviting(false)}/>}{error&&<p role="alert">{error}</p>}<Tabs value={tab} onValueChange={setTab}><TabsContent value="employees" className="space-y-4"><div className="flex flex-wrap items-center justify-between gap-3"><TabsList className="h-10 shrink-0" style={{height:40,minHeight:40}}><TabsTrigger className="h-full" style={{minHeight:0}} value="employees">{th?'พนักงาน':'Employees'}</TabsTrigger><TabsTrigger className="h-full" style={{minHeight:0}} value="positions">{th?'ตำแหน่งและสิทธิ์':'Positions and permissions'}</TabsTrigger></TabsList><SearchInput className="w-full sm:max-w-xs" aria-label={th?'ค้นหาพนักงาน':'Search employees'} placeholder={th?'ค้นหาพนักงาน':'Search employees'} value={search} onChange={e=>setSearch(e.target.value)}/><div className="flex flex-wrap gap-2 sm:ml-auto"><ChoiceSelect className="w-[160px] max-w-full" aria-label={th?'สถานะพนักงาน':'Employee status'} value={status} onChange={e=>setStatus(e.target.value)}><option value="all">{th?'ทุกสถานะ':'All statuses'}</option>{[...new Set(employees.map(employee=>employee.status))].sort().map(value=><option key={value} value={value}>{statusLabel(value)}</option>)}</ChoiceSelect><ChoiceSelect className="w-[220px] max-w-full" aria-label={th?'ตำแหน่งพนักงาน':'Employee position'} value={positionFilter} onChange={e=>setPositionFilter(e.target.value)}><option value="all">{th?'ทุกตำแหน่ง':'All positions'}</option><option value="unassigned">{th?'ไม่มีตำแหน่ง':'Unassigned'}</option>{positions.map(position=><option key={position.id} value={position.id}>{position.name}</option>)}</ChoiceSelect></div></div><div className="hidden md:block"><DataTable columns={employeeColumns} data={filtered} getRowId={row=>row.id} hideSearch/></div><div className="space-y-3 md:hidden">{filtered.map(employee=><article key={employee.id} className="rounded-xl border bg-card p-4 space-y-2"><h2 className="font-medium">{employee.displayName}</h2><p className="break-all text-sm">{employee.email}</p><p className="text-sm">{positions.find(p=>p.id===employee.grant?.positionId)?.name??(th?'ไม่มีตำแหน่ง':'Unassigned')}</p>{statusBadge(employee.status)}<p className="text-sm">{employee.grant?.scope.mode==='all'?(th?'ทุกไซต์':'All sites'):employee.grant?.scope.siteIds.map(id=>sites.find(s=>s.id===id)?.name??id).join(', ')||'—'}</p>{employeeActions(employee)}</article>)}{!filtered.length&&<p className="rounded-xl border p-4">{th?'ไม่พบพนักงาน':'No employees found'}</p>}</div></TabsContent><TabsContent value="positions" className="space-y-4"><div className="flex flex-wrap items-center justify-between gap-3"><TabsList className="h-10 shrink-0" style={{height:40,minHeight:40}}><TabsTrigger className="h-full" style={{minHeight:0}} value="employees">{th?'พนักงาน':'Employees'}</TabsTrigger><TabsTrigger className="h-full" style={{minHeight:0}} value="positions">{th?'ตำแหน่งและสิทธิ์':'Positions and permissions'}</TabsTrigger></TabsList><SearchInput className="w-full sm:max-w-xs" aria-label={th?'ค้นหาตำแหน่ง':'Search positions'} placeholder={th?'ค้นหาตำแหน่ง':'Search positions'} value={positionSearch} onChange={e=>setPositionSearch(e.target.value)}/><ChoiceSelect className="w-[200px] max-w-full sm:ml-auto" aria-label={th?'การใช้ตำแหน่ง':'Position assignment'} value={positionUsage} onChange={e=>setPositionUsage(e.target.value)}><option value="all">{th?'ทุกตำแหน่ง':'All positions'}</option><option value="assigned">{th?'มีพนักงานใช้':'Assigned'}</option><option value="unused">{th?'ยังไม่มีพนักงานใช้':'Unused'}</option></ChoiceSelect></div><div className="hidden md:block"><DataTable columns={positionColumns} data={filteredPositions} getRowId={row=>row.id} hideSearch/></div><div className="space-y-3 md:hidden">{filteredPositions.map(position=><article key={position.id} className="rounded-xl border bg-card p-4"><div className="flex items-center justify-between gap-3"><h2 className="font-medium">{position.name}</h2>{positionActions(position)}</div><p className="text-sm text-muted-foreground">{th?'พนักงาน':'Employees'}: {employees.filter(employee=>employee.grant?.positionId===position.id).length}</p></article>)}{!filteredPositions.length&&<p className="rounded-xl border p-4">{th?'ไม่พบตำแหน่ง':'No positions found'}</p>}</div></TabsContent></Tabs>{selected&&<EmployeeEditor key={selected.id+'-'+selected.revision} employee={selected} domain={domain} positions={positions} permissions={permissions} sites={sites} onSaved={refresh} onClose={()=>setSelected(null)} canDeactivate={user.role==='owner'}/>}{selectedPosition&&<PositionEditor key={selectedPosition.id+'-'+selectedPosition.revision} position={selectedPosition} domain={domain} permissions={permissions} onSaved={refresh} onClose={()=>setSelectedPosition(null)}/>}</main>;
+}
+export function RuleMatrix({permissions,rules,overrides,onChange,inherit=true}:{permissions:string[];rules:Record<string,RuleValue>;overrides:Record<string,RuleValue>;onChange:(permission:string,value:RuleValue)=>void;inherit?:boolean}){const th=useLocale()==='th';const groups=[...new Set(permissions.map(p=>p.split('.')[1]!))];const actions=['view','edit','approve','download'];const actionLabels=th?['ดู','แก้ไข','อนุมัติ','ดาวน์โหลด']:['View','Edit','Approve','Download'];const resourceLabels:Record<string,[string,string]>={dashboard:['ภาพรวม','Dashboard'],sites:['ไซต์งาน','Sites'],customers:['ลูกค้า','Customers'],billing:['ใบวางบิล','Billing'],receipts:['ใบเสร็จ','Receipts'],documents:['เอกสาร','Documents'],tariffs:['อัตราค่าไฟ','Tariffs'],settings:['ตั้งค่า','Settings'],audit:['ประวัติ','Audit'],gateways:['เกตเวย์','Gateways'],devices:['อุปกรณ์','Devices'],fields:['รายการข้อมูล','Fields'],profiles:['โปรไฟล์','Profiles'],registers:['รีจิสเตอร์','Registers'],reception:['การรับข้อมูล','Reception'],brokers:['การเชื่อมต่อ','Brokers'],alerts:['การแจ้งเตือน','Alerts'],telemetry:['ข้อมูลเทคนิค','Telemetry']};return <div className="min-w-0 max-w-full overflow-x-auto rounded-xl border"><Table><TableHeader><TableRow><TableHead>{th?'งาน':'Resource'}</TableHead>{actionLabels.map(label=><TableHead key={label}>{label}</TableHead>)}</TableRow></TableHeader><TableBody>{groups.map(group=><TableRow key={group}><TableCell>{resourceLabels[group]?.[th?0:1]??group}</TableCell>{actions.map((action,index)=>{const permission=permissions.find(p=>p.endsWith('.'+group+'.'+action));return <TableCell key={action}>{permission?<div className="flex items-center gap-2"><ChoiceSelect className="min-w-28" aria-label={`${resourceLabels[group]?.[th?0:1]??group} ${actionLabels[index]}`} value={overrides[permission]===true?'allow':overrides[permission]===false?'deny':'inherit'} onChange={e=>onChange(permission,e.target.value==='inherit'?null:e.target.value==='allow')}><option value="inherit">{inherit?(th?'ตามตำแหน่ง':'Inherit'):(th?'ไม่อนุญาต':'No grant')}</option><option value="allow">{th?'อนุญาต':'Allow'}</option><option value="deny">{th?'ปฏิเสธ':'Deny'}</option></ChoiceSelect><span className="shrink-0 rounded-full bg-muted px-2 py-1 text-xs" role="status">{effectiveRule(permission,rules,overrides)?(th?'มีสิทธิ์':'Effective: allowed'):(th?'ไม่มีสิทธิ์':'Effective: denied')}</span></div>:<span>—</span>}</TableCell>;})}</TableRow>)}</TableBody></Table></div>;}
+function EmployeeEditor({employee,domain,positions,permissions,sites,onSaved,onClose,canDeactivate}:{employee:Employee;domain:Domain;positions:Position[];permissions:string[];sites:{id:string;name:string}[];onSaved:()=>void;onClose:()=>void;canDeactivate:boolean}){
+ const th=useLocale()==='th';const [positionId,setPositionId]=useState(employee.grant?.positionId??''),[overrides,setOverrides]=useState(employee.grant?.overrides??{}),[scope,setScope]=useState<Scope>(employee.grant?.scope??{mode:'selected',siteIds:[]}),[error,setError]=useState(''),[busy,setBusy]=useState(false),[impact,setImpact]=useState<{activeSessions:number;domains:{domain:string;scopeMode:string;siteIds:string[]}[]}|null>(null);
+ const [editorTab,setEditorTab]=useState('profile'),[siteSearch,setSiteSearch]=useState('');
+ const dirty=staffDraftChanged({positionId:employee.grant?.positionId??'',overrides:employee.grant?.overrides??{},scope:employee.grant?.scope??{mode:'selected',siteIds:[]}},{positionId,overrides,scope});
+ const close=()=>{if(!busy&&(!dirty||window.confirm(th?'ละทิ้งการเปลี่ยนแปลงที่ยังไม่บันทึก?':'Discard unsaved changes?')))onClose();};
+ const rules=positions.find(p=>p.id===positionId)?.rules??{};
+ async function save(e:FormEvent){e.preventDefault();setBusy(true);setError('');try{await apiClient.patch(`/v1/team/employees/${employee.id}/${domain}`,{revision:employee.revision,positionId:positionId||null,overrides:domainOverrides(domain,overrides),scope});onSaved();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
+ async function revoke(){setBusy(true);setError('');try{await apiClient.delete(`/v1/team/employees/${employee.id}/${domain}`,{headers:{"Content-Type":"application/json"},body:JSON.stringify({revision:employee.revision})});onSaved();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
+ async function deactivate(){setBusy(true);setError('');try{if(!impact)setImpact(await apiClient.get(`/v1/team/employees/${employee.id}/deactivation-impact`));else{await apiClient.post(`/v1/team/employees/${employee.id}/deactivate`,{revision:employee.revision,impactConfirmed:true});onSaved();}}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
+  return (
+  <Dialog open onOpenChange={(open:boolean)=>{if(!open)close();}}>
+   <DialogContent className="min-w-0 gap-5 overflow-x-hidden sm:max-w-5xl">
+    <DialogHeader className="pr-8">
+     <DialogTitle>{th?'จัดการพนักงาน':'Manage employee'}</DialogTitle>
+     <DialogDescription>{domain==='business'?(th?'สิทธิ์ธุรกิจ':'Business permissions'):(th?'สิทธิ์เทคนิค':'Technical permissions')}</DialogDescription>
+    </DialogHeader>
+    <div className="flex items-center gap-4 rounded-xl border bg-muted/20 p-4">
+     <div className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary/10 font-semibold text-primary">
+      {employee.avatarData?<img src={employee.avatarData} alt="" className="size-full object-cover"/>:<span className="text-lg">{employee.displayName.slice(0,1)||'?'}</span>}
+     </div>
+     <div className="min-w-0 flex-1">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+       <p className="break-words font-semibold">{employee.displayName}</p>
+       <span className={employee.status==='active'?'inline-flex rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-700 dark:text-emerald-400':'inline-flex rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground'}>{staffStatusLabel(employee.status,th?'th':'en')}</span>
+      </div>
+      <p className="mt-1 break-all text-sm text-muted-foreground">{employee.email}</p>
+     </div>
+    </div>
+    <form onSubmit={save} className="min-w-0 space-y-5">
+     <Tabs className="min-w-0" value={editorTab} onValueChange={setEditorTab}>
+      <TabsList className="h-10">
+       <TabsTrigger value="profile">{th?'โปรไฟล์':'Profile'}</TabsTrigger>
+       <TabsTrigger value="permissions">{th?'สิทธิ์':'Permissions'}</TabsTrigger>
+      </TabsList>
+      <TabsContent value="profile" className="min-w-0 space-y-6 pt-4">
+       <section className="min-w-0 space-y-3">
+        <h3 className="text-sm font-semibold">{th?'ข้อมูลบัญชี':'Account details'}</h3>
+        <dl className="divide-y rounded-xl border px-4">
+         {[[th?'ชื่อ':'Name',employee.displayName],[th?'อีเมล':'Email',employee.email],[th?'บทบาท':'Role',accountRoleLabel(employee.role,th?'th':'en')]].map(([label,value])=>(
+          <div key={label} className="grid gap-1 py-3 sm:grid-cols-[140px_minmax(0,1fr)] sm:gap-4">
+           <dt className="text-sm text-muted-foreground">{label}</dt>
+           <dd className="min-w-0 break-words text-sm font-medium">{value}</dd>
+          </div>
+         ))}
+        </dl>
+       </section>
+       <section className="min-w-0 space-y-3">
+        <div>
+         <h3 className="text-sm font-semibold">{th?'ตำแหน่งและสิทธิ์เริ่มต้น':'Position assignment'}</h3>
+         <p className="mt-1 text-sm text-muted-foreground">{th?'เลือกตำแหน่งเพื่อใช้สิทธิ์เริ่มต้น แล้วปรับสิทธิ์เฉพาะบุคคลในแท็บสิทธิ์':'Choose a position for default access, then customize individual access in Permissions.'}</p>
+        </div>
+        <div className="grid gap-2 rounded-xl border bg-muted/20 p-4 sm:grid-cols-[140px_minmax(0,1fr)] sm:items-center sm:gap-4">
+         <Label htmlFor="staff-position">{th?'ตำแหน่ง':'Position'}</Label>
+         <ChoiceSelect id="staff-position" className="w-full sm:max-w-sm" value={positionId} onChange={e=>setPositionId(e.target.value)}>
+          <option value="">{th?'ไม่ใช้ตำแหน่ง':'No preset'}</option>
+          {positions.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+         </ChoiceSelect>
+        </div>
+       </section>
+      </TabsContent>
+      <TabsContent value="permissions" className="min-w-0 space-y-6 pt-4">
+       <section className="min-w-0 space-y-3">
+        <div>
+         <h3 className="text-sm font-semibold">{th?'สิทธิ์การใช้งาน':'Access permissions'}</h3>
+         <p className="mt-1 text-sm text-muted-foreground">{th?'ใช้สิทธิ์ตามตำแหน่ง หรือกำหนดสิทธิ์เพิ่มเติมสำหรับพนักงานคนนี้':'Inherit position permissions or customize access for this employee.'}</p>
+        </div>
+        <RuleMatrix permissions={permissions} rules={rules} overrides={overrides} onChange={(permission,value)=>setOverrides({...overrides,[permission]:value})}/>
+       </section>
+       <fieldset className="min-w-0 space-y-3">
+        <legend className="text-sm font-semibold">{th?'ขอบเขตข้อมูลของเขตนี้':'Data scope for this domain'}</legend>
+        <ChoiceSelect className="w-full sm:max-w-xs" aria-label={th?'ขอบเขตไซต์':'Site scope'} value={scope.mode} onChange={e=>setScope({...scope,mode:e.target.value as Scope['mode']})}>
+         <option value="all">{th?'ทุกไซต์':'All sites'}</option>
+         <option value="selected">{th?'ไซต์ที่เลือก':'Selected sites'}</option>
+        </ChoiceSelect>
+        {scope.mode==='selected'&&<SiteScopeTable sites={sites} scope={scope} search={siteSearch} onSearch={setSiteSearch} onChange={setScope}/>}
+       </fieldset>
+      </TabsContent>
+     </Tabs>
+     <section className="space-y-3 rounded-xl border border-destructive/20 bg-destructive/[0.03] p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+       <div>
+        <h3 className="text-sm font-semibold">{th?'การเข้าถึงบัญชี':'Account access'}</h3>
+        <p className="mt-1 text-xs text-muted-foreground">{th?'ถอนสิทธิ์ในเขตนี้ หรือดูผลกระทบก่อนปิดบัญชี':'Remove domain access or review the impact of closing this account.'}</p>
+       </div>
+       <div className="flex flex-wrap gap-2">
+        <Button type="button" variant="outline" className="text-destructive" disabled={busy||!employee.grant} onClick={()=>void revoke()}>{th?'ถอนสิทธิ์เขตนี้':'Revoke this domain'}</Button>
+        {canDeactivate&&<Button type="button" variant="destructive" disabled={busy} onClick={()=>void deactivate()}>{impact?(th?'ยืนยันปิดบัญชีทั้งหมด':'Confirm account deactivation'):(th?'ตรวจผลกระทบการปิดบัญชี':'Preview account deactivation')}</Button>}
+       </div>
+      </div>
+      {impact&&<div role="status" className="space-y-2 rounded-lg border border-destructive/20 bg-background p-3 text-sm">
+       <p>{th?'การปิดบัญชีจะถอนสิทธิ์ทั้งสองเขตและยุติเซสชัน':'Deactivation removes access across both domains and ends sessions'}: {impact.activeSessions}</p>
+       {impact.domains.map(item=><p key={item.domain} className="break-words text-muted-foreground">{item.domain}: {item.scopeMode} · {item.siteIds.join(', ')}</p>)}
+       <Button type="button" variant="ghost" disabled={busy} onClick={()=>setImpact(null)}>{th?'ยกเลิก':'Cancel'}</Button>
+      </div>}
+     </section>
+     {error&&<p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{error}</p>}
+     <div className="flex justify-end gap-2 border-t pt-4">
+      <Button type="button" variant="outline" disabled={busy} onClick={close}>{th?'ยกเลิก':'Cancel'}</Button>
+      <Button type="submit" disabled={busy}>{th?'บันทึกสิทธิ์':'Save permissions'}</Button>
+     </div>
+    </form>
+   </DialogContent>
+  </Dialog>
+  );
+}
+function PositionEditor({position,domain,permissions,onSaved,onClose}:{position:Position;domain:Domain;permissions:string[];onSaved:()=>void;onClose:()=>void}){const th=useLocale()==='th';const [name,setName]=useState(position.name),[rules,setRules]=useState(position.rules),[impact,setImpact]=useState<{employees:{id:string;displayName:string;changes:{permission:string;before:boolean;after:boolean}[]}[]}|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false);const dirty=name!==position.name||staffDraftChanged({positionId:'',overrides:position.rules,scope:{mode:'all',siteIds:[]}},{positionId:'',overrides:rules,scope:{mode:'all',siteIds:[]}});const close=()=>{if(!busy&&(!dirty||window.confirm(th?'ละทิ้งการเปลี่ยนแปลงที่ยังไม่บันทึก?':'Discard unsaved changes?')))onClose();};async function save(e:FormEvent){e.preventDefault();setBusy(true);setError('');try{if(position.id&&!impact){setImpact(await apiClient.post(`/v1/team/positions/${position.id}/${domain}/impact`,{rules:domainOverrides(domain,rules)}));return;}if(position.id)await apiClient.patch(`/v1/team/positions/${position.id}/${domain}`,{revision:position.revision,name,rules:domainOverrides(domain,rules)});else await apiClient.post(`/v1/team/positions/${domain}`,{name,rules:domainOverrides(domain,rules)});onSaved();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}return <Dialog open onOpenChange={(open:boolean)=>{if(!open)close();}}><DialogContent className="sm:max-w-5xl"><DialogHeader><DialogTitle>{position.id?(th?'จัดการตำแหน่ง':'Manage position'):(th?'เพิ่มตำแหน่ง':'Add position')}</DialogTitle><DialogDescription>{th?'กำหนดสิทธิ์และตรวจผลกระทบก่อนบันทึก':'Set permissions and review employee impact before saving'}</DialogDescription></DialogHeader><form onSubmit={save} className="space-y-4"><Label htmlFor="position-name">{th?'ชื่อตำแหน่ง':'Position name'}</Label><Input id="position-name" value={name} required readOnly={!!position.id} onChange={e=>setName(e.target.value)}/><RuleMatrix permissions={permissions} rules={{}} overrides={rules} inherit={false} onChange={(permission,value)=>{setRules({...rules,[permission]:value});setImpact(null);}}/>{impact&&<div role="status"><h3>{th?'ผลกระทบต่อพนักงาน':'Employee impact'}</h3>{impact.employees.map(employee=><div key={employee.id}><p>{employee.displayName}</p>{employee.changes.map(change=><p key={change.permission} className="text-xs">{change.permission}: {String(change.before)} → {String(change.after)}</p>)}</div>)}{!impact.employees.length&&<p>{th?'ไม่มีสิทธิ์พนักงานเปลี่ยน':'No employee permission changes'}</p>}</div>}{error&&<p role="alert">{error}</p>}<Button type="submit" disabled={busy}>{position.id&&!impact?(th?'ตรวจผลกระทบ':'Preview impact'):(th?'บันทึกตำแหน่ง':'Save position')}</Button></form></DialogContent></Dialog>;}
+function StaffInvitation({domain,onSaved,onClose}:{domain:Domain;onSaved:()=>void;onClose:()=>void}){const th=useLocale()==='th';const [email,setEmail]=useState(''),[name,setName]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false);const close=()=>{if(canDismissStaffDialog(busy,Boolean(email||name),()=>window.confirm(th?'ละทิ้งการเปลี่ยนแปลงที่ยังไม่บันทึก?':'Discard unsaved changes?')))onClose();};async function invite(e:FormEvent){e.preventDefault();setBusy(true);setError('');try{await apiClient.post('/v1/users/invite',{email,displayName:name,role:'operator'});setEmail('');setName('');onSaved();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}return <Dialog open onOpenChange={(open:boolean)=>{if(!open)close();}}><DialogContent><DialogHeader><DialogTitle>{th?'เพิ่มพนักงาน':'Add employee'}</DialogTitle><DialogDescription>{th?'ส่งคำเชิญให้พนักงานสร้างบัญชี':'Invite an employee to create an account'}</DialogDescription></DialogHeader><form onSubmit={invite} className="grid gap-3 mt-3 sm:grid-cols-2"><div><Label htmlFor="staff-name">{th?'ชื่อ':'Name'}</Label><Input id="staff-name" value={name} required onChange={e=>setName(e.target.value)}/></div><div><Label htmlFor="staff-email">{th?'อีเมล':'Email'}</Label><Input id="staff-email" type="email" value={email} required onChange={e=>setEmail(e.target.value)}/></div><Button disabled={busy} type="submit">{th?'ส่งคำเชิญ':'Send invitation'}</Button>{error&&<p role="alert">{error}</p>}</form></DialogContent></Dialog>;}
+
+
+
+
+export function SiteScopeTable({sites,scope,search,onSearch,onChange}:{sites:{id:string;name:string}[];scope:Scope;search:string;onSearch:(value:string)=>void;onChange:(scope:Scope)=>void}){const th=useLocale()==='th';const term=search.trim().toLocaleLowerCase();const visible=sites.filter(site=>site.name.toLocaleLowerCase().includes(term));return <div className="space-y-3"><SearchInput aria-label={th?'ค้นหาไซต์':'Search sites'} placeholder={th?'ค้นหาไซต์':'Search sites'} value={search} onChange={e=>onSearch(e.target.value)}/><p className="text-sm text-muted-foreground">{th?'ไซต์ที่เลือก':'Selected sites'}: {scope.siteIds.length}</p><div className="max-h-64 overflow-auto rounded-xl border"><Table><TableHeader><TableRow><TableHead className="w-16">{th?'เลือก':'Select'}</TableHead><TableHead>{th?'ไซต์งาน':'Site'}</TableHead></TableRow></TableHeader><TableBody>{visible.map(site=><TableRow key={site.id}><TableCell><input type="checkbox" aria-label={(th?'เลือกไซต์ ':'Select site ')+site.name} checked={scope.siteIds.includes(site.id)} onChange={e=>onChange({...scope,siteIds:e.target.checked?[...scope.siteIds,site.id]:scope.siteIds.filter(id=>id!==site.id)})}/></TableCell><TableCell>{site.name}</TableCell></TableRow>)}{!visible.length&&<TableRow><TableCell colSpan={2}>{th?'ไม่พบไซต์':'No sites found'}</TableCell></TableRow>}</TableBody></Table></div></div>;}

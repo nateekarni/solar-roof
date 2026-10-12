@@ -1,13 +1,13 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import type { DatabaseService } from '../../database/database.service.js';
 export interface OrganizationDefaults {
- id:string; name:string; code:string; schoolId:string;
+ id:string; name:string; code:string; customerId:string;
  legalName:string;taxId:string;taxBranch:string;taxAddress:string;documentEmail:string;phone:string;
 }
 export async function readOrganizationDefaults(client:Pick<DatabaseService,'query'>,siteId:string):Promise<OrganizationDefaults>{
- const result=await client.query<OrganizationDefaults>(`SELECT sc.id,sc.name,sc.code,s.school_id AS "schoolId",
+ const result=await client.query<OrganizationDefaults>(`SELECT sc.id,sc.name,sc.code,s.customer_id AS "customerId",
   sc.legal_name AS "legalName",sc.tax_id AS "taxId",sc.tax_branch AS "taxBranch",sc.tax_address AS "taxAddress",sc.document_email AS "documentEmail",sc.phone
-  FROM sites s JOIN schools sc ON sc.id=s.school_id WHERE s.id=$1`,[siteId]);
+  FROM sites s JOIN customers sc ON sc.id=s.customer_id WHERE s.id=$1`,[siteId]);
  if(!result.rows[0])throw new NotFoundException('Site organization not found');
  return result.rows[0];
 }

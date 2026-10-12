@@ -14,12 +14,27 @@ export interface PaymentSubmission extends PaymentMetadata {
  note?: string;
 }
 export interface PaymentTransferRow extends PaymentMetadata {
- id: string; amount: string; status: string;
+ id: string; amount: string | null; status: string;
+ verifiedAmount?: string | null;
+ verifiedTransferAt?: string | null;
+ declaredAmount?: string | null;
+ declaredTransferAt?: string | null;
+ slipUrl?: string | null;
+ note?: string | null;
+ submittedBy?: string | null;
+ submittedByName?: string | null;
+ transferReference?: string | null;
  transferDate?: string | null;
  submittedAt?: string | null;
  verifiedAt?: string | null;
  rejectionReason?: string | null;
  evidenceKey?: string | null;
+}
+export interface PaymentReview extends PaymentMetadata {
+ paymentId: string;
+ verifiedAmount?: string | number;
+ verifiedTransferAt?: string;
+ transferReference?: string;
 }
 /** Blank and omitted fields mean unspecified; never infer payer details from receiving accounts. */
 export function normalizePaymentMetadata(input: Record<string, unknown>): PaymentMetadata {

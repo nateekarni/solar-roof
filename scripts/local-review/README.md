@@ -1,9 +1,25 @@
 # Local synthetic Dashboard review
 
+Before any seed, load the dedicated environment and run the read-only Docker preflight:
+
+```powershell
+. ./scripts/local-review/environment.ps1
+node scripts/local-review/verify-target.mjs review
+node scripts/local-review/seed.mjs
+```
+
+Each seed independently verifies a local named-pipe/Unix-socket Docker daemon,
+the running Compose PostgreSQL service ownership, exact database, and loopback
+published port. Remote Docker contexts, production/staging environments and
+connection URL query overrides are rejected before database connection. Repeating
+this seed refuses existing customers and preserves their data; never reset it
+to rerun. Display names use existing fixture names without bracketed test labels.
+User names are readable role labels because verified personal names were not supplied.
+
 Open http://localhost:13009 on Nateekarn-PC. API: http://localhost:13019/health.
 Use `admin@review.local` or `owner@review.local`, password `ReviewSolar2026!`.
-Other roles: `operator`, `accountant`, `school_user` at the same domain/password.
-All identities, schools, amounts and readings are synthetic. These credentials are local review fixtures only.
+Other roles: `operator`, `accountant`, `customer_user` at the same domain/password.
+All identities, customers, amounts and readings are synthetic. These credentials are local review fixtures only.
 
 ## Isolated data
 
@@ -12,7 +28,7 @@ The compose project is `solar-dashboard-review`. PostgreSQL is exclusively
 containers/volumes. MQTT and default broker connections are disabled. Existing
 solar containers, production data and the original checkout are not modified.
 
-The seed creates18 schools/sites,17 gateways,34 devices,5 users,576 billing cycles,
+The seed creates18 customers/sites,17 gateways,34 devices,5 users,576 billing cycles,
 invoices/payments, alerts, profile variants and approximately36,000 cumulative
 readings across October2025–October2027. Dates in the future are intentional fixtures.
 Site14 has missing days/bad latest quality;15 has stale readings;13 has measured
@@ -31,7 +47,7 @@ node scripts/local-review/seed.mjs
 node scripts/local-review/refresh.mjs --watch
 ```
 
-The seed refuses an existing database with schools and never truncates or deletes.
+The seed refuses an existing database with customers and never truncates or deletes.
 Do not run the repository's general `db:seed` command: it is not this safe fixture.
 Refresh verifies the exact database and ownership marker; it is repeatable and
 inserts synthetic samples every30seconds. Stop its terminal with Ctrl+C to let

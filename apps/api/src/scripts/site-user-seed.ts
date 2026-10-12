@@ -7,15 +7,15 @@ export function parseSiteUserSeed(input:Record<string,string|undefined>){
  const result=schema.safeParse(input);if(!result.success)throw Error(`Invalid site user seed fields: ${[...new Set(result.error.issues.map(issue=>issue.path.join('.')))].join(', ')}`);
  const value=result.data;return {databaseUrl:value.DATABASE_URL,siteId:value.SITE_USER_SEED_SITE_ID,email:value.SITE_USER_SEED_EMAIL,password:value.SITE_USER_SEED_PASSWORD,name:value.SITE_USER_SEED_NAME};
 }
-export async function seedSchoolUserForSite(client:PoolClient,config:ReturnType<typeof parseSiteUserSeed>){
- const site=(await client.query("SELECT s.school_id FROM sites s JOIN schools sc ON sc.id=s.school_id WHERE s.id=$1 AND s.status<>'archived' AND sc.status='active' FOR SHARE OF s,sc",[config.siteId])).rows[0];
- if(!site)throw Error('Site user seed requires a non-archived site with an active school');
- const users=await client.query('SELECT id,role,school_id,status,password_hash FROM users WHERE lower(email)=$1 FOR UPDATE',[config.email]);
+export async function seedCustomerUserForSite(client:PoolClient,config:ReturnType<typeof parseSiteUserSeed>){
+ const site=(await client.query("SELECT s.customer_id FROM sites s JOIN customers sc ON sc.id=s.customer_id WHERE s.id=$1 AND s.status<>'archived' AND sc.status='active' FOR SHARE OF s,sc",[config.siteId])).rows[0];
+ if(!site)throw Error('Site user seed requires a non-archived site with an active customer');
+ const users=await client.query('SELECT id,role,customer_id,status,password_hash FROM users WHERE lower(email)=$1 FOR UPDATE',[config.email]);
  const existing=users.rows[0];
- if(users.rows.length>1||existing&&(existing.role!=='school_user'||existing.school_id!==site.school_id||existing.status!=='active'||!existing.password_hash))throw Error('Site user seed email belongs to an incompatible account; no user changed');
- if(existing)return {id:existing.id,email:config.email,schoolId:site.school_id,created:false};
+ if(users.rows.length>1||existing&&(existing.role!=='customer_user'||existing.customer_id!==site.customer_id||existing.status!=='active'||!existing.password_hash))throw Error('Site user seed email belongs to an incompatible account; no user changed');
+ if(existing)return {id:existing.id,email:config.email,customerId:site.customer_id,created:false};
  const id=randomUUID(),hash=new AuthService('','').hashPassword(config.password);
- await client.query("INSERT INTO users(id,email,display_name,role,status,school_id,password_hash) VALUES($1,$2,$3,'school_user','active',$4,$5)",[id,config.email,config.name,site.school_id,hash]);
- await client.query("INSERT INTO audit_events(id,action,entity_type,entity_id,after_json,correlation_id) VALUES($1,'site.school_user.seeded','user',$2,$3::jsonb,$4)",[randomUUID(),id,JSON.stringify({role:'school_user',siteId:config.siteId,schoolId:site.school_id}),randomUUID()]);
- return {id,email:config.email,schoolId:site.school_id,created:true};
+ await client.query("INSERT INTO users(id,email,display_name,role,status,customer_id,password_hash) VALUES($1,$2,$3,'customer_user','active',$4,$5)",[id,config.email,config.name,site.customer_id,hash]);
+ await client.query("INSERT INTO audit_events(id,action,entity_type,entity_id,after_json,correlation_id) VALUES($1,'site.customer_user.seeded','user',$2,$3::jsonb,$4)",[randomUUID(),id,JSON.stringify({role:'customer_user',siteId:config.siteId,customerId:site.customer_id}),randomUUID()]);
+ return {id,email:config.email,customerId:site.customer_id,created:true};
 }

@@ -20,14 +20,16 @@ export function TelemetryAgeLabel({ value, locale, compact = false }: {
     return <span className="text-xs text-muted-foreground">—</span>;
   }
   const age = telemetryAge(value, locale, now);
+  const timestamp=typeof value==='string'?Date.parse(value):value instanceof Date?value.getTime():NaN;
+  const hasReceipt=Number.isFinite(timestamp)&&timestamp<=now;
   if (compact) {
     return <span className={age.fresh ? "text-success" : "text-muted-foreground"}>{age.text}</span>;
   }
   return (
     <div className="flex items-center gap-1.5 text-xs">
-      <span className={`size-2 rounded-full shrink-0 ${age.fresh ? "bg-success animate-pulse" : "bg-warning"}`} />
+      <span aria-hidden="true" className={`size-2 rounded-full shrink-0 ${age.fresh ? "bg-success motion-safe:animate-pulse" : hasReceipt ? "bg-warning" : "bg-muted-foreground"}`} />
       <span className={age.fresh ? "text-foreground font-medium" : "text-muted-foreground"}>{age.text}</span>
-      {!age.fresh && <span className="text-[10px] text-warning-emphasis font-medium">(Offline)</span>}
+      {!age.fresh && hasReceipt && <span className="text-[10px] text-warning-emphasis font-medium">{locale==='th'?'ข้อมูลเก่า':'Stale data'}</span>}
     </div>
   );
 }

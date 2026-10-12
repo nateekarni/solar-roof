@@ -40,8 +40,8 @@ export class ReportJobService {
    if(job.kind==='restore'){
     if(process.env.HISTORY_RESTORE_ENABLED!=='true')throw new ServiceUnavailableException('History restoration is currently unavailable');
     try{validateRestoreWindow(job.payload.from,job.payload.to,restoreLimits());}catch{throw new BadRequestException('Invalid history window');}
-    const site=(await c.query('SELECT school_id FROM sites WHERE id=$1',[job.payload.siteId])).rows[0];
-    if(!site||!Array.isArray(job.scope)||job.scope.length!==1||job.scope[0]!==site.school_id)throw new ForbiddenException();
+    const site=(await c.query('SELECT customer_id FROM sites WHERE id=$1',[job.payload.siteId])).rows[0];
+    if(!site||!Array.isArray(job.scope)||job.scope.length!==1||job.scope[0]!==site.customer_id)throw new ForbiddenException();
    }
    if(job.status!=='failed'||job.attempt>=4)throw new ConflictException('Only failed jobs with remaining attempts may retry');
    await this.quota(c,userId);

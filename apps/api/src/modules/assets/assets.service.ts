@@ -1,7 +1,7 @@
 import { ConflictException, Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { DatabaseService } from "../../database/database.service.js";
 
-export interface SchoolRecord {
+export interface CustomerRecord {
   id: string;
   name: string;
   status: "active" | "inactive";
@@ -9,7 +9,7 @@ export interface SchoolRecord {
 
 export interface SiteRecord {
   id: string;
-  schoolId: string;
+  customerId: string;
   name: string;
   timezone: string;
   status: "active" | "inactive";
@@ -44,7 +44,7 @@ export interface BillingMeterRecord {
 
 @Injectable()
 export class AssetsService {
-  private readonly schools = new Map<string, SchoolRecord>();
+  private readonly customers = new Map<string, CustomerRecord>();
   private readonly sites = new Map<string, SiteRecord>();
   private readonly gateways = new Map<string, GatewayRecord>();
   private readonly devices = new Map<string, DeviceRecord>();
@@ -52,16 +52,16 @@ export class AssetsService {
 
   constructor(@Optional() @Inject(DatabaseService) private readonly db?: DatabaseService) {}
 
-  createSchool(input: { id: string; name: string }): SchoolRecord {
-    if (this.schools.has(input.id)) throw new ConflictException("School already exists");
+  createCustomer(input: { id: string; name: string }): CustomerRecord {
+    if (this.customers.has(input.id)) throw new ConflictException("Customer already exists");
     const name = input.name.trim();
-    if (!name) throw new ConflictException("School name is required");
+    if (!name) throw new ConflictException("Customer name is required");
     const r = { id: input.id, name, status: "active" as const };
-    this.schools.set(r.id, r);
+    this.customers.set(r.id, r);
 
     if (this.db) {
       this.db.query(
-        "INSERT INTO schools (id, name, code, region, status) VALUES ($1, $2, $3, 'ภาคกลาง', 'active') ON CONFLICT (id) DO NOTHING",
+        "INSERT INTO customers (id, name, code, region, status) VALUES ($1, $2, $3, 'ภาคกลาง', 'active') ON CONFLICT (id) DO NOTHING",
         [input.id, name, `SCH-${input.id.slice(0, 4)}`]
       ).catch(() => {});
     }
@@ -69,12 +69,12 @@ export class AssetsService {
     return r;
   }
 
-  createSite(input: { id: string; schoolId: string; name: string; timezone?: string }): SiteRecord {
-    if (!this.schools.has(input.schoolId)) throw new NotFoundException("School not found");
+  createSite(input: { id: string; customerId: string; name: string; timezone?: string }): SiteRecord {
+    if (!this.customers.has(input.customerId)) throw new NotFoundException("Customer not found");
     if (this.sites.has(input.id)) throw new ConflictException("Site already exists");
     const r = {
       id: input.id,
-      schoolId: input.schoolId,
+      customerId: input.customerId,
       name: input.name.trim(),
       timezone: input.timezone ?? "Asia/Bangkok",
       status: "active" as const,
@@ -83,8 +83,8 @@ export class AssetsService {
 
     if (this.db) {
       this.db.query(
-        "INSERT INTO sites (id, school_id, name, capacity_mwp, timezone, status) VALUES ($1, $2, $3, 0.5, $4, 'online') ON CONFLICT (id) DO NOTHING",
-        [input.id, input.schoolId, r.name, r.timezone]
+        "INSERT INTO sites (id, customer_id, name, capacity_mwp, timezone, status) VALUES ($1, $2, $3, 0.5, $4, 'online') ON CONFLICT (id) DO NOTHING",
+        [input.id, input.customerId, r.name, r.timezone]
       ).catch(() => {});
     }
 
@@ -164,7 +164,7 @@ export class AssetsService {
     return r;
   }
 
-  listSchools(): SchoolRecord[] {
-    return [...this.schools.values()];
+  listCustomers(): CustomerRecord[] {
+    return [...this.customers.values()];
   }
 }

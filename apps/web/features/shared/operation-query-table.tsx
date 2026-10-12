@@ -4,17 +4,18 @@ import { ChoiceSelect } from '../../components/ui/choice-select';
 import * as React from 'react';
 import { useSearchParams } from 'next/navigation';
 import type { OperationPage,OperationRow,OperationQuery } from '@solar/api-contracts';
+import {operationFilters} from '@solar/api-contracts';
 import {useOperationQuery} from "./use-operation-query";
+import {readCursorHistory,saveCursorHistory} from './operation-cursor-history';
 import { apiClient } from '../../lib/api-client';
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
-import { Label } from '../../components/ui/label';
 import { Button } from '../../components/ui/button';
-import { DatePicker } from "../../components/ui/date-picker";
+import {ListPeriodPicker} from './list-period-picker';
 import { SearchInput } from '../../components/ui/search-input';
 import { OperationTable, type OperationTableProps } from './operation-table';
 import { useLocale } from '../../providers/locale-provider';
 
-const queryKeys=['search','sort','direction','from','to','limit','cursor'];
+const queryKeys=['search','sort','direction','from','to','limit','cursor','siteId','collectionStatus','status','severity','type','role','entityType','channel','category','format'];
 
 export function OperationQueryTable({ initial, ...props }: Omit<OperationTableProps,'rows'|'columns'> & {initial:OperationPage<OperationRow>}) {
   const th=useLocale()==='th';
@@ -25,13 +26,20 @@ export function OperationQueryTable({ initial, ...props }: Omit<OperationTablePr
   const [search,setSearch]=React.useState(searchParams.get('search')??'');
   const [loading,setLoading]=React.useState(false),[error,setError]=React.useState('');
   const history=React.useRef<string[]>([]);
+  const [,refreshHistory]=React.useReducer(value=>value+1,0);
   const revision=React.useRef(0);
-  const filterKey = React.useMemo(() => { const params = new URLSearchParams(query); params.delete("cursor"); return params.toString(); }, [query]);
-  React.useEffect(() => { history.current = []; }, [filterKey]);
+  React.useEffect(() => {
+    try{history.current=readCursorHistory(sessionStorage,props.resource,query);}catch{history.current=[];}
+    refreshHistory();
+  }, [props.resource,query]);
   const update=React.useCallback((changes:Partial<OperationQuery>,reset=true)=>{
     if(reset)history.current=[];
+    const next=new URLSearchParams(query);
+    if(Object.keys(changes).some(key=>key!=='cursor'))next.delete('cursor');
+    for(const [key,value] of Object.entries(changes)){if(value===undefined||value==='')next.delete(key);else next.set(key,String(value));}
+    try{saveCursorHistory(sessionStorage,props.resource,next.toString(),history.current);}catch{/* Storage may be unavailable. */}
     setQuery(changes);
-  },[setQuery]);
+  },[setQuery,props.resource,query]);
   React.useEffect(()=>{setSearch(searchParams.get('search')??'');},[searchParams]);
   React.useEffect(()=>{
     if(search===(searchParams.get('search')??''))return;
@@ -74,8 +82,12 @@ export function OperationQueryTable({ initial, ...props }: Omit<OperationTablePr
     finally { if (revision.current === current) setLoading(false); }
   };
   const toolbar = <div className="flex flex-wrap items-end justify-between gap-3">
-    <div className="w-full max-w-xs space-y-2"><Label htmlFor={`${props.resource}-search`}>{th?'ค้นหา':'Search'}</Label><SearchInput id={`${props.resource}-search`} placeholder={th?'ค้นหา…':'Search…'} value={search} onChange={e=>setSearch(e.target.value)} /></div>
-    {!['schools','sites','users'].includes(props.resource)&&<div className="ml-auto flex flex-wrap items-end gap-2"><div className="space-y-2"><Label htmlFor={`${props.resource}-from`}>{th?'วันที่เริ่มต้น':'From date'}</Label><DatePicker id={`${props.resource}-from`} value={searchParams.get('from')??''} onValueChange={value=>update({from:value})} max={searchParams.get('to')||undefined}/></div><div className="space-y-2"><Label htmlFor={`${props.resource}-to`}>{th?'วันที่สิ้นสุด':'To date'}</Label><DatePicker id={`${props.resource}-to`} value={searchParams.get('to')??''} onValueChange={value=>update({to:value})} min={searchParams.get('from')||undefined}/></div></div>}
+    <div className="w-full max-w-xs"><SearchInput id={`${props.resource}-search`} aria-label={th?'ค้นหา':'Search'} placeholder={th?'ค้นหา…':'Search…'} value={search} onChange={e=>setSearch(e.target.value)} /></div>
+    <div className='ml-auto flex flex-wrap items-center justify-end gap-2'>
+     {['billing','receipts'].includes(props.resource)&&<ChoiceSelect aria-label={th?'สถานะการชำระเงิน':'Collection status'} className='h-10 min-w-32 w-auto' value={searchParams.get('collectionStatus')??''} onChange={event=>update({collectionStatus:(event.target.value||undefined) as OperationQuery['collectionStatus']})}><option value=''>{th?'สถานะการชำระเงิน: ทั้งหมด':'Collection status: All'}</option>{[['paid','ชำระแล้ว','Paid'],['pending_review','รอตรวจสอบ','Pending review'],['overdue','ค้างชำระ','Overdue'],['awaiting_payment','รอชำระ','Awaiting payment']].filter(option=>props.resource==='billing'||option[0]==='paid').map(option=><option key={option[0]} value={option[0]}>{option[th?1:2]}</option>)}</ChoiceSelect>}
+     {(operationFilters[props.resource]??[]).map(filter=><ChoiceSelect key={filter.key} aria-label={filter.label[th?0:1]} className='h-10 min-w-32 w-auto' value={searchParams.get(filter.key)??''} onChange={event=>update({[filter.key]:event.target.value})}><option value=''>{filter.label[th?0:1]}: {th?'ทั้งหมด':'All'}</option>{filter.options.map(option=><option key={option.value} value={option.value}>{option.label[th?0:1]}</option>)}</ChoiceSelect>)}
+     {!['customers','sites','users'].includes(props.resource)&&<ListPeriodPicker from={searchParams.get('from')??''} to={searchParams.get('to')??''} onValueChange={period=>update(period)}/>}
+    </div>
   </div>;
 return <div className="space-y-3" aria-busy={loading}>
     {error&&<p role="alert">{error}</p>}

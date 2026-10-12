@@ -11,6 +11,8 @@ export interface OrganizationDocument {
   invoiceNumber?: string | null;
   receiptNumber?: string;
   documentId?: string;
+  documentNumber?: string;
+  description?: string;
 }
 export function outstandingInvoices<T extends OrganizationDocument>(
   rows: T[],
@@ -33,10 +35,12 @@ export function filterDocuments<T extends OrganizationDocument>(
   rows: T[],
   month: string,
   status: string,
+  search = "",
 ): T[] {
   return rows.filter(
     (row) =>
       (!month || (row.period || row.issueDate || "").slice(0, 7) === month) &&
-      (!status || row.status === status || row.paymentStatus === status),
+      (!status || row.status === status || row.paymentStatus === status) &&
+      (!search.trim() || [row.documentNumber,row.invoiceNumber,row.receiptNumber,row.siteName,row.description,row.period].filter(Boolean).join(" ").toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())),
   );
 }

@@ -5,7 +5,7 @@ export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   if(pathname==='/session/refresh')return NextResponse.next();
 
-  if (pathname === "/activate") {
+  if (["/activate","/forgot-password","/reset-password"].includes(pathname)) {
     const response=NextResponse.next();
     response.headers.set("Referrer-Policy","no-referrer");
     response.headers.set("Cache-Control","no-store");

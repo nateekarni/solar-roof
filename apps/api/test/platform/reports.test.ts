@@ -33,13 +33,13 @@ test('report POST durably queues a normalized request and enforces idempotency a
 test('worker exports more than 100000 filtered rows and neutralizes CSV formulas',async()=>{
  compose('stop','worker');
  const db=new Pool({connectionString:assertIsolatedDatabase(process.env.READINESS_DATABASE_URL!)});
- const school=randomUUID(),site=randomUUID(),gateway=randomUUID(),device=randomUUID();
+ const customer=randomUUID(),site=randomUUID(),gateway=randomUUID(),device=randomUUID();
  try {
-  await db.query("INSERT INTO schools(id,name,code,region) VALUES($1::uuid,'Q4 school',$1::text,'fixture')",[school]);
-  await db.query("INSERT INTO sites(id,school_id,name,capacity_mwp) VALUES($1,$2,'=Q4 formula',0.1)",[site,school]);
+  await db.query("INSERT INTO customers(id,name,code,region) VALUES($1::uuid,'Q4 customer',$1::text,'fixture')",[customer]);
+  await db.query("INSERT INTO sites(id,customer_id,name,capacity_mwp) VALUES($1,$2,'=Q4 formula',0.1)",[site,customer]);
   await db.query("INSERT INTO gateways(id,site_id,name,protocol,endpoint) VALUES($1::uuid,$2,$1::text,'mqtt','energy/'||$1::text||'/#')",[gateway,site]);
   await db.query("INSERT INTO devices(id,gateway_id,site_id,name,device_type,model,serial_number) VALUES($1::uuid,$2,$3,'meter','meter','fixture',$1::text)",[device,gateway,site]);
-  const user=await actor(db,'operator',school);
+  const user=await actor(db,'operator',customer);
   const fixture=await db.connect();try{await fixture.query('BEGIN');await fixture.query('SET LOCAL session_replication_role=replica');
   await fixture.query(`INSERT INTO telemetry_raw(id,device_id,site_id,source_time,received_time,raw_payload,normalized_value,unit,quality,ingestion_id,total_energy_kwh,semantic_field) SELECT gen_random_uuid(),$1,$2,'2026-01-01T00:00:00Z'::timestamptz+n*interval '1 second',now(),'{}',n,'kWh','complete',gen_random_uuid()::text,n,'total_energy' FROM generate_series(1,100005) n`,[device,site]);
   await fixture.query('COMMIT');}catch(error){await fixture.query('ROLLBACK');throw error;}finally{fixture.release();}
@@ -75,26 +75,26 @@ test('leases cap reports across workers, reject stale owners, and support archiv
 
 
 
-async function actor(db:Pool,role='admin',school:string|null=null){
+async function actor(db:Pool,role='admin',customer:string|null=null){
  const id=randomUUID(),email=`${id}@example.test`,password='Q4-test-password-123!';
  const auth=new AuthService('readiness-test-access-secret-000000000000','readiness-test-refresh-secret-000000000000');
- await db.query("INSERT INTO users(id,email,display_name,role,status,school_id,password_hash) VALUES($1,$2,'Q4 actor',$3,'active',$4,$5)",[id,email,role,school,auth.hashPassword(password)]);
+ await db.query("INSERT INTO users(id,email,display_name,role,status,customer_id,password_hash) VALUES($1,$2,'Q4 actor',$3,'active',$4,$5)",[id,email,role,customer,auth.hashPassword(password)]);
  const res=await fetch(process.env.READINESS_API_URL+'/v1/auth/login',{method:'POST',headers:{Origin:process.env.READINESS_WEB_URL!,'Content-Type':'application/json'},body:JSON.stringify({email,password})});assert.equal(res.status,200);
  const token=(await res.json()).accessToken;
  return {id,headers:{Authorization:`Bearer ${token}`,Origin:process.env.READINESS_WEB_URL!,'Content-Type':'application/json'}};
 }
 
-test('legacy downloads fail closed after school membership or audit permission changes',async()=>{
+test('legacy downloads fail closed after customer membership or audit permission changes',async()=>{
  const db=new Pool({connectionString:assertIsolatedDatabase(process.env.READINESS_DATABASE_URL!)});
  try {
-  const user=await actor(db),id=randomUUID(),school=randomUUID();
-  await db.query("INSERT INTO schools(id,name,code,region) VALUES($1::uuid,'Q4 legacy',$1::text,'fixture')",[school]);
+  const user=await actor(db),id=randomUUID(),customer=randomUUID();
+  await db.query("INSERT INTO customers(id,name,code,region) VALUES($1::uuid,'Q4 legacy',$1::text,'fixture')",[customer]);
   await db.query("INSERT INTO generated_reports(id,created_by,title,report_type,date_from,date_to,format,status,content,content_type) VALUES($1,$2,'legacy','audit','2026-01-01','2026-01-02','csv','ready',$3,'text/csv')",[id,user.id,Buffer.from('legacy file')]);
   const download=()=>fetch(process.env.READINESS_API_URL+`/v1/reports/${id}/download`,{headers:user.headers});
   assert.equal((await download()).status,200);
   await db.query("UPDATE users SET role='operator' WHERE id=$1",[user.id]);assert.equal((await download()).status,403);
   await db.query("UPDATE generated_reports SET report_type='energy' WHERE id=$1",[id]);assert.equal((await download()).status,200);
-  await db.query('UPDATE users SET school_id=$2 WHERE id=$1',[user.id,school]);const denied=await download();assert.equal(denied.status,403);assert.equal((await denied.json()).code,'legacy_scope_unknown');
+  await db.query('UPDATE users SET customer_id=$2 WHERE id=$1',[user.id,customer]);const denied=await download();assert.equal(denied.status,403);assert.equal((await denied.json()).code,'legacy_scope_unknown');
  }finally{await db.end();}
 });
 

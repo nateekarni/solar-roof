@@ -14,18 +14,19 @@ import { CollectionChart } from "./collection-chart";
 import { CompareModal } from "./compare-modal";
 import { DashboardAutoRefresh } from "./dashboard-auto-refresh";
 import { DashboardStatsClient } from "./dashboard-stats-client";
+import { SelectedSiteSummary } from "./selected-site-summary";
 import { PeriodPicker } from "./period-picker";
 import { PowerFlowCard } from "./power-flow-card";
 import { ProductionChart } from "./production-chart";
 
-import { RevenueChart } from "./revenue-chart";
+import { AgingCard } from "./aging-card";
 import { SiteFilter } from "./site-filter";
 import { SiteMap } from "./site-map";
 import { GatewayStatusSummary } from "./gateway-status-summary";
 import { SummaryStatus } from "./summary-status";
 import { BusinessDashboard } from "./business-dashboard";
 import { requirePageAccess } from "../../lib/session-user";
-import type { SchoolInvoice } from "./school-dashboard";
+import type { CustomerInvoice as SchoolInvoice } from "./customer-dashboard";
 
 type DashboardData = DashboardSummaryResponse;
 async function getDashboardData(
@@ -84,7 +85,7 @@ export async function Dashboard({
     resolvedParams?.site_id,
   );
 
-  if (user.role === "school_user") {
+  if (user.role === "customer_user") {
     const parts = new Intl.DateTimeFormat("en", {timeZone:"Asia/Bangkok",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date());
     const part = (type:string) => parts.find(value=>value.type===type)?.value;
     const today = `${part("year")}-${part("month")}-${part("day")}`;
@@ -101,6 +102,7 @@ export async function Dashboard({
 
   const presentation=dashboardLayout(user.role);
   const alerts = data.alerts || [];
+  const selectedSite=resolvedParams?.site_id?data.sites.find(site=>site.id===resolvedParams.site_id):undefined;
 
   return (
     <div className="content dashboard-content w-full min-w-0 max-w-full overflow-x-hidden space-y-4">
@@ -121,7 +123,7 @@ export async function Dashboard({
 
       {/* Summary Stat Cards (Customizable) */}
       <DashboardScope siteId={resolvedParams?.site_id}>
-      <DashboardStatsClient role={user.role} stats={data.stats} totalSites={data.sites?.length} />
+      {selectedSite?<SelectedSiteSummary site={selectedSite} detail={data.selectedSite} locale={locale} showTechnical={user.role==='owner'||user.role==='admin'||user.role==='operator'}/>:<DashboardStatsClient role={user.role} stats={data.stats} totalSites={data.sites?.length} />}
       <SummaryStatus model={data.energyReadModel} locale={locale} />
       </DashboardScope>
 
@@ -145,32 +147,21 @@ export async function Dashboard({
           />
           </DashboardScope>
           <DashboardScope siteId={resolvedParams?.site_id} className="dashboard-revenue">
-          <RevenueChart
-            initialData={data.revenue}
-            hasCustomRange={Boolean(
-              resolvedParams?.start_date && resolvedParams?.end_date
-            )}
-            startDate={data.range.start}
-            endDate={data.range.end}
-          />
+          <AgingCard insights={data.financialInsights} locale={locale} startDate={data.range.start} endDate={data.range.end} />
           </DashboardScope>
           <DashboardScope siteId={resolvedParams?.site_id} className="dashboard-collection">
-          <CollectionChart collection={data.collection} startDate={data.range.start} endDate={data.range.end} />
+          <CollectionChart siteId={resolvedParams?.site_id} collection={data.collection} startDate={data.range.start} endDate={data.range.end} />
           </DashboardScope>
         </div>
       </section>
 
-      {/* Live Power Flow Diagram & System Overview */}
-      <DashboardScope siteId={resolvedParams?.site_id} className="mb-4 w-full min-w-0">
+      <DashboardScope siteId={resolvedParams?.site_id} className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-2">
         <SolarGenerationDiagram key={`solar-${resolvedParams?.site_id||'all'}`} locale={locale} siteId={resolvedParams?.site_id} />
-        {presentation.meteredPower && <PowerFlowCard key={`meter-${resolvedParams?.site_id||'all'}`} siteId={resolvedParams?.site_id} summaryMw={data.stats.currentMw}/>}
+        <DashboardAlertsCard alerts={alerts} role={user.role} locale={locale}/>
       </DashboardScope>
-
-      <DashboardScope siteId={resolvedParams?.site_id} className={`grid grid-cols-1 items-stretch gap-4 ${presentation.gateway?"lg:grid-cols-2":""}`}>
-          <DashboardAlertsCard alerts={alerts} role={user.role} locale={locale}/>
-
-
-      {presentation.gateway && <GatewayStatusSummary sites={data.sites || []} locale={locale} />}
+      <DashboardScope siteId={resolvedParams?.site_id} className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {presentation.meteredPower && <PowerFlowCard key={`meter-${resolvedParams?.site_id||'all'}`} siteId={resolvedParams?.site_id} summaryMw={data.stats.currentMw}/>}
+        {presentation.gateway && <GatewayStatusSummary sites={data.sites || []} locale={locale} />}
       </DashboardScope>
     </div>
   );

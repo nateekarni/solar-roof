@@ -1,20 +1,11 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { DatabaseService } from '../../database/database.service.js';
-import { schoolScope } from '../../common/auth/resource-scope.js';
+import { customerScope } from '../../common/auth/resource-scope.js';
 @Injectable()
 export class JobAccessService {
  constructor(@Inject(DatabaseService) private readonly db:DatabaseService) {}
- async current(userId:string,job?:any,query=this.db.query.bind(this.db)) {
-  const user=(await query('SELECT id,role,status,school_id AS "schoolId" FROM users WHERE id=$1',[userId])).rows[0];
-  if(!user || user.status!=='active')throw new ForbiddenException();
-  const scope=schoolScope(user);
-  if(scope?.length===0)throw new ForbiddenException();
-  if(job && (job.created_by!==userId || (job.payload.type==='audit'&&!['owner','admin'].includes(user.role)) || (scope!==null&&(job.scope===null||job.scope.some((id:string)=>!scope.includes(id))))))throw new ForbiddenException();
-  if(job?.kind==='restore'){
-   const site=(await query('SELECT school_id FROM sites WHERE id=$1',[job.payload.siteId])).rows[0];
-   if(!site||!Array.isArray(job.scope)||job.scope.length!==1||job.scope[0]!==site.school_id)throw new ForbiddenException();
-  }
-  return {user,scope};
+ async current(userId:string,job?:any,query=this.db.query.bind(this.db)):Promise<{user:any;scope:string[]|null}> {
+  throw new ForbiddenException('Legacy export and restore jobs require domain-scoped authorization manifests');
  }
  async get(userId:string,id:string) {
   const job=(await this.db.query('SELECT * FROM platform_jobs WHERE id::text=$1',[id])).rows[0];

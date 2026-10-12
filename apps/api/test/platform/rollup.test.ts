@@ -27,14 +27,14 @@ test('late readings replace both days, duplicates stay idempotent, resets unknow
   const { EnergyReadService } = await import('../../src/modules/dashboard/energy-read.service.js');
   const job = new RefreshEnergySummaryJob(db);
   const reader = new EnergyReadService({query: db.query.bind(db)} as any);
-  const sites:string[]=[], devices:string[]=[], schools:string[]=[], gateways:string[]=[];
+  const sites:string[]=[], devices:string[]=[], customers:string[]=[], gateways:string[]=[];
   try {
     assert.ok((await db.query("SELECT name FROM schema_migrations WHERE name='infra/migrations/020_energy_read_models.sql'")).rows.length,'Migration registry must apply read models');
     for(let i=0;i<2;i++) {
-      const school=randomUUID(),site=randomUUID(),device=randomUUID(),gateway=randomUUID();
-      schools.push(school);sites.push(site);devices.push(device);gateways.push(gateway);
-      await db.query("INSERT INTO schools(id,name,code,region) VALUES($1::uuid,'Q3 fixture',$1::text,'fixture')",[school]);
-      await db.query("INSERT INTO sites(id,school_id,name,capacity_mwp) VALUES($1,$2,'Q3 fixture',0.1)",[site,school]);
+      const customer=randomUUID(),site=randomUUID(),device=randomUUID(),gateway=randomUUID();
+      customers.push(customer);sites.push(site);devices.push(device);gateways.push(gateway);
+      await db.query("INSERT INTO customers(id,name,code,region) VALUES($1::uuid,'Q3 fixture',$1::text,'fixture')",[customer]);
+      await db.query("INSERT INTO sites(id,customer_id,name,capacity_mwp) VALUES($1,$2,'Q3 fixture',0.1)",[site,customer]);
       await db.query("INSERT INTO gateways(id,site_id,name,protocol,endpoint) VALUES($1::uuid,$2,$1::text,'mqtt','energy/'||$1::text||'/#')",[gateway,site]);
       await db.query("INSERT INTO devices(id,gateway_id,site_id,name,device_type,model,serial_number) VALUES($1::uuid,$2,$3,'Q3 meter','meter','fixture',$1::text)",[device,gateway,site]);
       await db.query('INSERT INTO billing_meters(id,site_id,device_id) VALUES($1,$2,$3)',[randomUUID(),site,device]);
@@ -82,7 +82,7 @@ test('late readings replace both days, duplicates stay idempotent, resets unknow
     const user=randomUUID(),owner=randomUUID(),email=`q3-${user}@example.test`,ownerEmail=`q3-owner-${owner}@example.test`,password='Q3-fixture-password-123!';
     const { AuthService }=await import('../../src/modules/identity/auth.service.js');
     const auth=new AuthService('readiness-test-access-secret-000000000000','readiness-test-refresh-secret-000000000000');
-    await db.query("INSERT INTO users(id,email,display_name,role,status,password_hash,school_id) VALUES($1,$2,'Q3 actor','school_user','active',$3,$4)",[user,email,auth.hashPassword(password),schools[0]]);
+    await db.query("INSERT INTO users(id,email,display_name,role,status,password_hash,customer_id) VALUES($1,$2,'Q3 actor','customer_user','active',$3,$4)",[user,email,auth.hashPassword(password),customers[0]]);
     await db.query("INSERT INTO users(id,email,display_name,role,status,password_hash) VALUES($1,$2,'Q3 owner','owner','active',$3)",[owner,ownerEmail,auth.hashPassword(password)]);
     try {
       const base=process.env.READINESS_API_URL!,origin=process.env.READINESS_WEB_URL!;
@@ -110,7 +110,7 @@ test('late readings replace both days, duplicates stay idempotent, resets unknow
       assert.equal(limited.status,200);const unavailable=await limited.json();assert.equal(unavailable[0].value,null);assert.equal(unavailable[0].reason,'sample_limit');
       assert.equal((await get(`/v1/dashboard/summary?site_id=${sites[1]}&start_date=2026-01-02&end_date=2026-01-02`)).status,403);
       assert.equal((await get(`/v1/dashboard/compare?metric=periodKwh&site_ids=${sites[1]}&start_date=2026-01-02&end_date=2026-01-02`)).status,403);
-      await db.query('UPDATE users SET school_id=$1 WHERE id=$2',[schools[1],user]);
+      await db.query('UPDATE users SET customer_id=$1 WHERE id=$2',[customers[1],user]);
       const changed=await get('/v1/dashboard/summary?start_date=2026-01-02&end_date=2026-01-02');
       assert.equal(changed.status,200);const other=await changed.json();
       assert.equal(other.stats.periodKwh,null);assert.deepEqual(other.sites.map((s:any)=>s.id),[sites[1]]);assert.deepEqual(other.production,[{date:'2026-01-02',...missing}]);
@@ -212,7 +212,7 @@ test('late readings replace both days, duplicates stay idempotent, resets unknow
     await db.query('DELETE FROM devices WHERE id=ANY($1::uuid[])',[devices]);
     await db.query('DELETE FROM gateways WHERE id=ANY($1::uuid[])',[gateways]);
     await db.query('DELETE FROM sites WHERE id=ANY($1::uuid[])',[sites]);
-    await db.query('DELETE FROM schools WHERE id=ANY($1::uuid[])',[schools]);await db.end();
+    await db.query('DELETE FROM customers WHERE id=ANY($1::uuid[])',[customers]);await db.end();
   }
 });
 
@@ -243,12 +243,12 @@ async function withFix1Fixture(count:number,run:(fixture:{db:Pool;sites:string[]
   const db=new Pool({connectionString:assertIsolatedDatabase(process.env.READINESS_DATABASE_URL!)});
   const compose=(...args:string[])=>execFileSync('docker',['compose','-f','infra/ci/compose.yml',...args],{cwd:new URL('../../../../',import.meta.url),stdio:'pipe'});
   assert.match(process.env.COMPOSE_PROJECT_NAME??'',/^solar-ci-[a-f0-9-]{36}$/);compose('stop','worker');
-  const schools:string[]=[],sites:string[]=[],gateways:string[]=[],devices:string[]=[],mappings:string[][]=[];
+  const customers:string[]=[],sites:string[]=[],gateways:string[]=[],devices:string[]=[],mappings:string[][]=[];
   try {
     for(let i=0;i<count;i++) {
-      const school=randomUUID(),site=randomUUID(),gateway=randomUUID(),device=randomUUID();schools.push(school);sites.push(site);gateways.push(gateway);devices.push(device);
-      await db.query("INSERT INTO schools(id,name,code,region) VALUES($1::uuid,'Q3 fix1',$1::text,'fixture')",[school]);
-      await db.query("INSERT INTO sites(id,school_id,name,capacity_mwp) VALUES($1,$2,'Q3 fix1',0.1)",[site,school]);
+      const customer=randomUUID(),site=randomUUID(),gateway=randomUUID(),device=randomUUID();customers.push(customer);sites.push(site);gateways.push(gateway);devices.push(device);
+      await db.query("INSERT INTO customers(id,name,code,region) VALUES($1::uuid,'Q3 fix1',$1::text,'fixture')",[customer]);
+      await db.query("INSERT INTO sites(id,customer_id,name,capacity_mwp) VALUES($1,$2,'Q3 fix1',0.1)",[site,customer]);
       await db.query("INSERT INTO gateways(id,site_id,name,protocol,endpoint) VALUES($1::uuid,$2,$1::text,'mqtt','energy/'||$1::text||'/#')",[gateway,site]);
       await db.query("INSERT INTO devices(id,gateway_id,site_id,name,device_type,model,serial_number) VALUES($1::uuid,$2,$3,'Q3 fix1 meter','meter','fixture',$1::text)",[device,gateway,site]);
       await db.query('INSERT INTO billing_meters(id,site_id,device_id) VALUES($1,$2,$3)',[randomUUID(),site,device]);
@@ -264,7 +264,7 @@ async function withFix1Fixture(count:number,run:(fixture:{db:Pool;sites:string[]
     await db.query('DELETE FROM billing_meters WHERE device_id=ANY($1::uuid[])',[devices]);
     await db.query('DELETE FROM register_mapping_versions WHERE device_id=ANY($1::uuid[])',[devices]);
     await db.query('DELETE FROM devices WHERE id=ANY($1::uuid[])',[devices]);await db.query('DELETE FROM gateways WHERE id=ANY($1::uuid[])',[gateways]);
-    await db.query('DELETE FROM sites WHERE id=ANY($1::uuid[])',[sites]);await db.query('DELETE FROM schools WHERE id=ANY($1::uuid[])',[schools]);await db.end();
+    await db.query('DELETE FROM sites WHERE id=ANY($1::uuid[])',[sites]);await db.query('DELETE FROM customers WHERE id=ANY($1::uuid[])',[customers]);await db.end();
   }
 }
 

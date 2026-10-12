@@ -2,24 +2,26 @@ import React from "react";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { renderToStaticMarkup } from "react-dom/server";
-import { SchoolSettingsView } from "./school-settings-view";
+import { CustomerSettingsView } from "./customer-settings-view";
 import { validateOrganizationPassword } from "./organization-settings-model";
+import AccountSettingsPage from '../../app/(app)/settings/account/page';
 test("settings keeps organization legal records read only and exposes account editing", () => {
-  const html = renderToStaticMarkup(<SchoolSettingsView />);
-  assert.match(html, /ข้อมูลนิติบุคคล|Legal organization information/);
-  assert.doesNotMatch(html, /PPA Agreement|โรงเรียน/);
+  const html = renderToStaticMarkup(<CustomerSettingsView />);
+  assert.match(html, /ข้อมูลลูกค้าสำหรับเอกสาร|Customer document information/);
+  assert.doesNotMatch(html, /PPA Agreement/);
 });
 
-test("account fields and preference triggers retain explicit accessible label associations", () => {
-  const html = renderToStaticMarkup(<SchoolSettingsView />);
-  for (const id of ["organization-display-name", "organization-language", "organization-theme"]) {
-    assert.ok(html.includes(`for="${id}"`), `Missing label for ${id}`);
-    assert.ok(html.includes(`id="${id}"`), `Missing control ${id}`);
-  }
-  const passwordControls = [...html.matchAll(/<input(?=[^>]*type="password")(?=[^>]*id="([^"]+)")[^>]*>/g)];
-  assert.equal(passwordControls.length, 3);
-  assert.equal(new Set(passwordControls.map(match => match[1])).size, 3);
-  for (const match of passwordControls) assert.ok(html.includes(`for="${match[1]}"`));
+test("customer settings points to the merged account without duplicate profile or security forms", () => {
+  const html = renderToStaticMarkup(<CustomerSettingsView />);
+  assert.match(html,/href="\/settings\/account"/);
+  assert.doesNotMatch(html,/type="password"|id="own-display-name"|id="organization-theme"/);
+});
+test('My Account starts with display values and separate accessible edit controls',()=>{
+ const html=renderToStaticMarkup(<AccountSettingsPage/>);
+ for(const text of ['บัญชีของฉัน','โปรไฟล์ของคุณ','แก้ไขโปรไฟล์','เลือกภาษา','เลือกธีม','เปลี่ยนรหัสผ่าน','ลืมรหัสผ่าน','เปลี่ยนรูปโปรไฟล์','บัญชีที่เชื่อมต่อ']){
+  assert.ok(html.includes(text),`Missing account control ${text}`);
+ }
+ assert.doesNotMatch(html,/type="password"|id="own-display-name"|device session|ยังไม่รองรับ/);
 });
 test("password validation is localized and rejects mismatch before submission", () => {
   assert.equal(
@@ -41,10 +43,10 @@ test("password validation is localized and rejects mismatch before submission", 
 });
 
 test("Settings actions pair semantic filled surfaces with their foreground tokens", () => {
-  const html = renderToStaticMarkup(<SchoolSettingsView />);
+  const html = renderToStaticMarkup(<CustomerSettingsView />);
   assert.match(
     html,
-    /data-variant="default"[^>]*class="[^"]*bg-primary[^"]*text-primary-foreground/,
+    /<a(?=[^>]*href="\/settings\/account")(?=[^>]*class="[^"]*text-primary)[^>]*>/,
   );
   assert.match(
     html,
@@ -53,6 +55,6 @@ test("Settings actions pair semantic filled surfaces with their foreground token
 });
 
 test("Filled signout retains its semantic background in dark mode", () => {
-  const html = renderToStaticMarkup(<SchoolSettingsView />);
+  const html = renderToStaticMarkup(<CustomerSettingsView />);
   assert.doesNotMatch(html, /dark:bg-destructive\/20/);
 });

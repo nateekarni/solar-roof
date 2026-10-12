@@ -8,7 +8,7 @@ async function main(){
  try{const client=await pool.connect();try{
   await client.query('BEGIN');await client.query('SELECT pg_advisory_xact_lock(73501931)');
   const user=await createManualUser(client,config);await client.query('COMMIT');
-  console.log(`${user.role}: ${user.email} — ${user.created?'created':'preserved; password unchanged'}${user.schoolId?` — school ${user.schoolId}`:''}`);
+  console.log(`${user.role}: ${user.email} — ${user.created?'created':'preserved; password unchanged'}${user.customerId?` — customer ${user.customerId}`:''}`);
  }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}}
  finally{await pool.end();}
 }

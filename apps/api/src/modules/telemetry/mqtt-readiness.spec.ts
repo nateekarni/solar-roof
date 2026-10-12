@@ -26,7 +26,7 @@ test('registered external broker mode reports subscriptions and never connects a
   try {
     await service.onModuleInit(); await flush();
     assert.deepEqual(service.getConnectionHealth(), { status: 'not_configured', configuredBrokers: 0, readyBrokers: 0 });
-    brokers = [{ id: 'external', url: 'mqtts://external.example:8883', username: '', password_cipher: null, topics: ['school/#'] }];
+    brokers = [{ id: 'external', url: 'mqtts://external.example:8883', username: '', password_cipher: null, topics: ['customer/#'] }];
     await service.refreshSubscriptions();
     assert.deepEqual(connections, ['mqtts://external.example:8883']);
     assert.equal(service.getConnectionHealth().status, 'not_ready');

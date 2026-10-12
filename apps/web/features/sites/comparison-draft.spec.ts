@@ -1,0 +1,3 @@
+import assert from 'node:assert/strict';import test from 'node:test';import {comparisonDraft} from './comparison-draft';
+test('new pairs start with confirmed tolerance defaults and a window at least twice slow source cadence',()=>{assert.deepEqual(comparisonDraft('energy',600),{kind:'energy',relativeTolerance:0.05,absoluteFloor:0.1,windowSeconds:1200});assert.equal(comparisonDraft('power',10).windowSeconds,900);});
+test('new pair defaults follow central settings with separate power and energy floors',()=>{assert.deepEqual(comparisonDraft('power',10,{comparisonRelativeTolerance:0.08,comparisonPowerAbsoluteFloor:0.2,comparisonEnergyAbsoluteFloor:0.3,comparisonWindowSeconds:1800}),{kind:'power',relativeTolerance:0.08,absoluteFloor:0.2,windowSeconds:1800});});

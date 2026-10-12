@@ -2,7 +2,7 @@ import React from "react";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { renderToStaticMarkup } from "react-dom/server";
-import { SchoolDashboard } from "./school-dashboard";
+import { CustomerDashboard } from "./customer-dashboard";
 import type { DashboardSummaryResponse } from "@solar/api-contracts";
 const data: DashboardSummaryResponse = {
   range: { start: "2026-10-01", end: "2026-10-08" },
@@ -26,10 +26,10 @@ const data: DashboardSummaryResponse = {
 };
 test("Home identifies unpaid invoices as a list and keeps totals independent of latest bill", () => {
   const html = renderToStaticMarkup(
-    <SchoolDashboard data={data} locale="en" />,
+    <CustomerDashboard data={data} locale="en" />,
   );
   assert.match(html, /Outstanding invoices/);
   assert.match(html, /Generated energy/);
   assert.match(html, /123/);
-  assert.doesNotMatch(html, /Latest invoice|school’s|School documents/);
+  assert.doesNotMatch(html, /Latest invoice|customer’s|Customer documents/);
 });

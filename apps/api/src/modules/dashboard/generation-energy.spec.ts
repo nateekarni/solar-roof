@@ -39,3 +39,12 @@ test('current-month future days are omitted while current measured day remains p
  const missing=generationDays(['a'],'2026-09-01','2026-09-30',input.filter(row=>Date.parse(row.polled_at)!==start),now);
  assert.equal(missing[0]?.value,null);assert.equal(missing[0]?.quality,'missing');
 });
+
+test('observed subtotal retains measured increments with missing daily boundaries but never crosses resets',()=>{
+ const input=[1,2,3].map(hour=>({site_id:'a',device_id:'a',polled_at:new Date(start+hour*3600000).toISOString(),value:String(hour*1000)}));
+ const row=generationDays(['a'],'2026-09-01','2026-09-01',input,start+86400000)[0]!;
+ assert.equal(row.value,null);assert.equal((row as any).observedValue,'2');
+ const reset=generationDays(['a'],'2026-09-01','2026-09-01',[input[0]!,{...input[1]!,value:'0'},input[2]!],start+86400000)[0]!;
+ assert.equal((reset as any).observedValue,null);
+ assert.equal((generationDays(['a'],'2026-09-01','2026-09-01',[],start+86400000)[0] as any).observedValue,null);
+});

@@ -116,13 +116,13 @@ try {
  await s3.send(new CreateBucketCommand({Bucket:'stale-documents'}));
  compose(['up','-d','--wait','--wait-timeout','240','api','worker']);
  db=new Pool({connectionString:process.env.READINESS_DATABASE_URL});
- const school=randomUUID(),other=randomUUID(),site=randomUUID(),foreignSite=randomUUID(),document=randomUUID(),foreignDoc=randomUUID();
- await db.query("INSERT INTO schools(id,name,code,region) VALUES($1::uuid,'D2 School',$1::text,'fixture'),($2::uuid,'D2 Other',$2::text,'fixture')",[school,other]);
- await db.query("INSERT INTO sites(id,school_id,name,capacity_mwp) VALUES($1,$2,'D2 Site',0.1),($3,$4,'D2 Foreign',0.1)",[site,school,foreignSite,other]);
+ const customer=randomUUID(),other=randomUUID(),site=randomUUID(),foreignSite=randomUUID(),document=randomUUID(),foreignDoc=randomUUID();
+ await db.query("INSERT INTO customers(id,name,code,region) VALUES($1::uuid,'D2 Customer',$1::text,'fixture'),($2::uuid,'D2 Other',$2::text,'fixture')",[customer,other]);
+ await db.query("INSERT INTO sites(id,customer_id,name,capacity_mwp) VALUES($1,$2,'D2 Site',0.1),($3,$4,'D2 Foreign',0.1)",[site,customer,foreignSite,other]);
  const password='D2-recovery-password-123!',salt=randomBytes(16).toString('hex'),hash=`scrypt:${salt}:${scryptSync(password,salt,64).toString('hex')}`;
- const roles=['owner','admin','operator','accountant','school_user'];
+ const roles=['owner','admin','operator','accountant','customer_user'];
  const users=[];
- for(const role of roles){const id=randomUUID(),email=`d2-${id}@example.test`;users.push({role,email});await db.query("INSERT INTO users(id,email,display_name,role,status,password_hash,school_id) VALUES($1,$2,'D2 Actor',$3,'active',$4,$5)",[id,email,role,hash,school]);}
+ for(const role of roles){const id=randomUUID(),email=`d2-${id}@example.test`;users.push({role,email});await db.query("INSERT INTO users(id,email,display_name,role,status,password_hash,customer_id) VALUES($1,$2,'D2 Actor',$3,'active',$4,$5)",[id,email,role,hash,customer]);}
  // Synthetic original bytes are fixture-only, never published as a real issued artifact.
  const original=Buffer.from('%PDF-1.4\nD2 isolated original-byte preservation fixture\n%%EOF\n');
  await s3.send(new PutObjectCommand({Bucket:'solar-readiness',Key:'original/d2-fixture.pdf',Body:original}));

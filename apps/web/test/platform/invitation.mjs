@@ -8,7 +8,7 @@ assert.equal(api,'http://127.0.0.1:13001');assert.equal(web,'http://localhost:13
 const connection=process.env.READINESS_DATABASE_URL;
 assert.equal(connection,'postgresql://solar:ci-only-password@127.0.0.1:15432/solar_readiness');
 const db=new Pool({connectionString:connection});
-const owner=randomUUID(),school=randomUUID(),ownerEmail=`browser-owner-${owner}@example.test`,password='Browser-local-password-123!';
+const owner=randomUUID(),customer=randomUUID(),ownerEmail=`browser-owner-${owner}@example.test`,password='Browser-local-password-123!';
 const emails=[];const fixtureIp=`2001:db8:${owner.slice(0,4)}:${owner.slice(4,8)}::bbbb`;
 const salt=randomBytes(16).toString('hex'),hash=`scrypt:${salt}:${scryptSync(password,salt,64).toString('hex')}`;
 const capture='http://127.0.0.1:18025';
@@ -16,12 +16,12 @@ const post=(path,body,token)=>fetch(api+path,{method:'POST',headers:{'Content-Ty
 const browser=await launchFixtureBrowser();
 const errors=[];
 try {
-  await db.query("INSERT INTO schools(id,name,code,region) VALUES($1,'Browser invite school',$2,'fixture')",[school,school]);
+  await db.query("INSERT INTO customers(id,name,code,region) VALUES($1,'Browser invite customer',$2,'fixture')",[customer,customer]);
   await db.query("INSERT INTO users(id,email,display_name,role,status,password_hash) VALUES($1,$2,'Browser Admin','admin','active',$3)",[owner,ownerEmail,hash]);
   const login=await post('/v1/auth/login',{email:ownerEmail,password});assert.equal(login.status,200);const tokens=await login.json();
   const invite=async()=>{
     await fetch(capture+'/ok',{method:'POST'});const email=`browser-recipient-${randomUUID()}@example.test`;emails.push(email);
-    const response=await post('/v1/users/invite',{email,displayName:'Browser Recipient',role:'school_user',schoolId:school},tokens.accessToken);assert.equal(response.status,201);const invitation=await response.json();assert.equal(invitation.status,'sent');
+    const response=await post('/v1/users/invite',{email,displayName:'Browser Recipient',role:'customer_user',customerId:customer},tokens.accessToken);assert.equal(response.status,201);const invitation=await response.json();assert.equal(invitation.status,'sent');
     const message=(await (await fetch(capture)).json())[0].replace(/=\r\n/g,'').replace(/=3D/g,'=');const link=message.match(/http:\/\/localhost:13000\/activate\?token=[\w-]+/)[0];
     return {...invitation,email,link};
   };
@@ -57,5 +57,5 @@ try {
   await db.query('DELETE FROM audit_events WHERE actor_id=ANY($1::uuid[])',[[owner,...recipients]]);
   await db.query('DELETE FROM user_invitations WHERE issuer_id=$1',[owner]);
   await db.query('DELETE FROM users WHERE email=ANY($1::text[]) OR id=$2',[emails,owner]);
-  await db.query('DELETE FROM schools WHERE id=$1',[school]);await db.end();
+  await db.query('DELETE FROM customers WHERE id=$1',[customer]);await db.end();
 }

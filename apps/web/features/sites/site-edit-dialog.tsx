@@ -1,4 +1,5 @@
 "use client";
+import { focusInvalidFields } from "../../lib/form-feedback";
 import { OrganizationPicker, useOrganizationCatalog } from "../organization/organization-picker";
 import { organizationSitePayload, type OrganizationSelection } from "../organization/organization-selection";
 import { BrokerSelect } from "./broker-select";
@@ -54,7 +55,7 @@ import { useLocale, useT } from "../../providers/locale-provider";
 
 const editSiteSchema = z.object({
   name: z.string().min(2, "ชื่อไซต์งานต้องมีอย่างน้อย 2 ตัวอักษร"),
-  schoolName: z.string().min(1, "กรุณาเลือกองค์กรสังกัด"),
+  customerName: z.string().min(1, "กรุณาเลือกองค์กรสังกัด"),
   capacityMwp: z.number().min(0.01, "กำลังติดตั้งต้องมากกว่า 0"),
   latitude: z.number().optional(),
   longitude: z.number().optional(),
@@ -71,7 +72,7 @@ const editSiteSchema = z.object({
 
 type EditSiteFormValues = z.infer<typeof editSiteSchema>;
 
-interface SchoolOption {
+interface CustomerOption {
   id: string;
   name: string;
 }
@@ -134,7 +135,7 @@ export function SiteEditDialog({
     resolver: zodResolver(editSiteSchema),
     defaultValues: {
       name: "",
-      schoolName: "",
+      customerName: "",
       status: "online",
       gatewayName: "",
       protocol: "mqtt",
@@ -145,7 +146,7 @@ export function SiteEditDialog({
   });
 
   const formValues = watch();
-  const selectOrganization=React.useCallback((selection:OrganizationSelection|null)=>{setOrganization(selection);setValue("schoolName",selection?.organization.name??"",{shouldValidate:true});},[setValue]);
+  const selectOrganization=React.useCallback((selection:OrganizationSelection|null)=>{setOrganization(selection);setValue("customerName",selection?.organization.name??"",{shouldValidate:true});},[setValue]);
 
   React.useEffect(() => {
     let active=true;
@@ -162,11 +163,11 @@ export function SiteEditDialog({
         .then((siteData) => {
           if (current() && siteData) {
             setRegisteredCodes({siteId:siteData.id,externalSiteId:siteData.externalSiteId??null,externalGatewayId:siteData.externalGatewayId??null});
-            setOrganization({kind:"existing",organization:{id:siteData.schoolId,name:siteData.schoolName||"",code:siteData.schoolCode||""}});
+            setOrganization({kind:"existing",organization:{id:siteData.customerId,name:siteData.customerName||"",code:siteData.customerCode||""}});
             reset({
               name: siteData.name || "",
               deviceId: siteData.deviceId,
-              schoolName: siteData.schoolName || "",
+              customerName: siteData.customerName || "",
               capacityMwp: Number(siteData.capacityMwp),
               latitude: siteData.latitude == null ? undefined : Number(siteData.latitude),
               longitude: siteData.longitude == null ? undefined : Number(siteData.longitude),
@@ -225,7 +226,7 @@ export function SiteEditDialog({
     if (!siteId) return;
     setLoading(true);
     try {
-      const {schoolName:_displayName,deviceId,deviceModel,deviceSerial,...siteValues}=values;
+      const {customerName:_displayName,deviceId,deviceModel,deviceSerial,...siteValues}=values;
       const result = await apiClient.patch<{ configDelivery: string }>(`/v1/sites/${siteId}`, { ...siteValues,...(!payloadConfig?{deviceId,deviceModel,deviceSerial}:{}),...organizationSitePayload(organization),
 
       });
@@ -283,7 +284,7 @@ export function SiteEditDialog({
           <Tabs value={payloadConfig?tab:"settings"} onValueChange={setTab} className={`min-h-0 gap-4 overflow-hidden ${siteControlsClassName}`}>
             {payloadConfig && <TabsList className={siteTabsListClassName}><TabsTrigger value="settings" className={siteTabsTriggerClassName}>{locale === "th" ? "ข้อมูลไซต์และ Gateway" : "Site & Gateway"}</TabsTrigger><TabsTrigger value="payload" className={siteTabsTriggerClassName}>{locale === "th" ? "การเชื่อมต่อและ Preset" : "Connection & Preset"}</TabsTrigger></TabsList>}
             <TabsContent value="settings" className="min-h-0 overflow-y-auto px-1">
-          <form onSubmit={handleSubmit(onSubmit)} className={siteFormClassName}>
+          <form onSubmit={handleSubmit(onSubmit, errors => focusInvalidFields(errors))} className={siteFormClassName}>
             {/* Section 1: Site Info */}
             <div className="space-y-3">
               <div className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
@@ -310,7 +311,7 @@ export function SiteEditDialog({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <OrganizationPicker {...organizationCatalog} value={organization} onChange={selectOrganization} locale={locale} canEdit={user?.role==="admin"} disabled={loading}/>
                 {organizationCatalog.error&&<p role="alert" className="text-sm text-destructive">{organizationCatalog.error}</p>}
-                {errors.schoolName&&<p className="text-sm text-destructive">{errors.schoolName.message}</p>}
+                {errors.customerName&&<p className="text-sm text-destructive">{errors.customerName.message}</p>}
 
                 <div className="space-y-2">
                   <Label htmlFor="edit-capacity" required className="text-sm font-medium">

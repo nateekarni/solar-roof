@@ -1,6 +1,8 @@
 "use client"
 
 import * as React from "react"
+import { observeFormErrors } from "../../lib/form-feedback"
+import { FormErrorSummary } from "../feedback/form-feedback"
 import { Dialog as DialogPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
@@ -56,17 +58,38 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  ref,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
 }) {
+  const contentRef = React.useRef<HTMLDivElement | null>(null);
+  const [submitError, setSubmitError] = React.useState('');
+  const cleanupRef = React.useRef<(() => void) | null>(null);
+  const attachContent = React.useCallback((node: HTMLDivElement | null) => {
+    cleanupRef.current?.();
+    contentRef.current = node;
+    if(!node) setSubmitError('');
+    cleanupRef.current = node ? observeFormErrors(node) : null;
+    if(typeof ref === 'function') ref(node); else if(ref) ref.current = node;
+  }, [ref]);
+  React.useEffect(() => {
+    const onError = (event: Event) => {
+      if(contentRef.current?.contains(document.activeElement)) setSubmitError((event as CustomEvent<string>).detail);
+    };
+    window.addEventListener('form-submit-error', onError);
+    return () => { window.removeEventListener('form-submit-error', onError); cleanupRef.current?.(); };
+  }, []);
   return (
     <DialogPortal>
       <DialogOverlay />
       <DialogPrimitive.Content
         data-slot="dialog-content"
+        ref={attachContent}
+        onInputCapture={() => setSubmitError('')}
+        onSubmitCapture={() => setSubmitError('')}
         className={cn(
-          "fixed z-50 grid w-full bg-popover text-sm text-popover-foreground shadow-xl ring-1 ring-foreground/10 outline-none duration-200",
+          "fixed z-50 grid gap-5 [&_div:not([data-slot=field])>label+input]:mt-2 [&_div:not([data-slot=field])>label+textarea]:mt-2 [&_div:not([data-slot=field])>label+[data-slot=select-trigger]]:mt-2 w-full bg-popover text-sm text-popover-foreground shadow-xl ring-1 ring-foreground/10 outline-none duration-200",
           // Mobile: Bottom Sheet full width, max 92vh, slide up from bottom
           "max-sm:inset-x-0 max-sm:bottom-0 max-sm:top-auto max-sm:max-w-full max-sm:rounded-b-none max-sm:rounded-t-2xl max-sm:p-4.5 max-sm:max-h-[92svh] max-sm:overflow-y-auto",
           "data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
@@ -80,6 +103,7 @@ function DialogContent({
       >
         {/* Mobile drag handle */}
         <div className="mx-auto -mt-1.5 mb-1 h-1.5 w-10 shrink-0 rounded-full bg-muted-foreground/25 sm:hidden" />
+        {submitError && <FormErrorSummary>{submitError}</FormErrorSummary>}
         {children}
         {showCloseButton && (
           <DialogPrimitive.Close data-slot="dialog-close" asChild>
@@ -102,7 +126,7 @@ function DialogHeader({ className, children, ...props }: React.ComponentProps<"d
   return (
     <HeaderIconContext.Provider value={containsIcon(children)}><div
       data-slot="dialog-header"
-      className={cn("flex flex-col gap-1.5 text-left", className)}
+      className={cn("flex flex-col gap-2 pr-7 text-left", className)}
       {...props}
     >{children}</div></HeaderIconContext.Provider>
   )

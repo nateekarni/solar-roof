@@ -9,7 +9,7 @@ function fixture(){
  let current={legalName:'Current legal',taxId:'1234567890123',taxBranch:'00000',taxAddress:'Bangkok',documentEmail:'bill@example.com',phone:'02'};
  const saved:unknown[][]=[]; const oldSnapshot={companyName:'Historical legal',taxId:'9999999999999',taxAddress:'Historical address'};
  const query=async(sql:string,values:unknown[]=[])=>{
-  if(sql.includes('FROM sites')&&sql.includes('JOIN schools'))return {rows:values[0]==='site-a'?[{id:'school-a',name:'Customer',code:'ORG-A',schoolId:'school-a',...current}]:[]};
+  if(sql.includes('FROM sites')&&sql.includes('JOIN customers'))return {rows:values[0]==='site-a'?[{id:'customer-a',name:'Customer',code:'ORG-A',customerId:'customer-a',...current}]:[]};
   if(sql.includes('INSERT INTO contracts')){saved.push(values);return {rows:[{id:values[0],companyName:values[7],taxId:values[6],taxAddress:values[9]}]};}
   return {rows:[]};
  };
@@ -32,16 +32,16 @@ test('incomplete customer identity blocks new contracts but does not rewrite exi
  await assert.rejects(f.c.createContract({...input,taxId:'',companyName:'Override',taxAddress:'Address'},{user:{role:'owner'}}),/tax identity/i);
 });
 test('organization defaults endpoint permits only contract authors and rejects other roles',()=>{
- for(const role of ['owner','admin'])assert.equal(routeAllowed(role,'GET','/v1/operations/contracts/organization-defaults'),true);
- for(const role of ['school_user','operator','accountant','unknown'])assert.equal(routeAllowed(role,'GET','/v1/operations/contracts/organization-defaults'),false);
+ for(const role of ['owner'])assert.equal(routeAllowed(role,'GET','/v1/operations/contracts/organization-defaults'),true);
+ for(const role of ['admin','customer_user','operator','accountant','unknown'])assert.equal(routeAllowed(role,'GET','/v1/operations/contracts/organization-defaults'),false);
  assert.equal(routeAllowed('admin','POST','/v1/operations/contracts/organization-defaults'),false);
 });
 
 
 test('contract preparation reads current defaults only for authors and rejects nonexistent sites',async()=>{
- const f=fixture();const defaults=await f.c.contractOrganizationDefaults('site-a',{user:{role:'admin',schoolId:'legacy-other'}});
- assert.deepEqual(defaults,{organization:{id:'school-a',name:'Customer',code:'ORG-A'},companyName:'Current legal',taxId:'1234567890123',branch:'00000',taxAddress:'Bangkok',billingEmail:'bill@example.com',billingPhone:'02'});
- for(const role of ['school_user','operator','accountant','unknown'])await assert.rejects(f.c.contractOrganizationDefaults('site-a',{user:{role,schoolId:'school-a'}}),/not permitted/i);
+ const f=fixture();const defaults=await f.c.contractOrganizationDefaults('site-a',{user:{role:'owner',customerId:'legacy-other'}});
+ assert.deepEqual(defaults,{organization:{id:'customer-a',name:'Customer',code:'ORG-A'},companyName:'Current legal',taxId:'1234567890123',branch:'00000',taxAddress:'Bangkok',billingEmail:'bill@example.com',billingPhone:'02'});
+ for(const role of ['customer_user','operator','accountant','unknown'])await assert.rejects(f.c.contractOrganizationDefaults('site-a',{user:{role,customerId:'customer-a'}}),/not permitted/i);
  await assert.rejects(f.c.contractOrganizationDefaults('',{user:{role:'owner'}}),/siteId is required/);
  await assert.rejects(f.c.contractOrganizationDefaults('missing-site',{user:{role:'owner'}}),/not found/i);
 });

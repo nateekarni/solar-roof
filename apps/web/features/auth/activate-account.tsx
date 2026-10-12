@@ -1,4 +1,5 @@
 "use client";
+import {FormErrorSummary} from "../../components/feedback/form-feedback";
 import {useEffect,useState,useRef, type FormEvent} from 'react';
 import Link from 'next/link';
 import {Button} from '../../components/ui/button';
@@ -33,7 +34,7 @@ export function ActivateAccount() {
         <p className="text-sm text-muted-foreground">ตั้งรหัสผ่านใหม่อย่างน้อย 12 ตัวอักษร / Choose a password with at least 12 characters.</p>
         <div className="space-y-2"><Label htmlFor="activate-password">รหัสผ่าน / Password</Label><Input id="activate-password" type="password" autoComplete="new-password" required minLength={12} maxLength={128} value={password} onChange={event=>setPassword(event.target.value)} /></div>
         <div className="space-y-2"><Label htmlFor="activate-confirm">ยืนยันรหัสผ่าน / Confirm password</Label><Input id="activate-confirm" type="password" autoComplete="new-password" required minLength={12} maxLength={128} value={confirm} onChange={event=>setConfirm(event.target.value)} /></div>
-        {error&&<p role="alert" className="text-sm text-destructive">{error}</p>}
+        {error&&<FormErrorSummary>{error}</FormErrorSummary>}
         <Button type="submit" disabled={!ready||!token||busy} className="w-full">{busy?'กำลังดำเนินการ / Activating…':'เปิดใช้งานบัญชี / Activate account'}</Button>
       </form>}
   </main>;

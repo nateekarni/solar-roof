@@ -4,8 +4,10 @@ import {execFileSync} from 'node:child_process';
 import {Pool} from 'pg';
 import {assertIsolatedDatabase} from '../platform/fixtures';
 import type {Profile} from './capacity-policy';
+import {assertLocalDockerDaemon} from '../../../../scripts/local-review/guard.mjs';
 
 export function ownedPool() {
+  assertLocalDockerDaemon();
   assert.match(process.env.COMPOSE_PROJECT_NAME??'',/^solar-ci-[a-f0-9-]{36}$/);
   const ids=execFileSync('docker',['ps','--filter',`label=com.docker.compose.project=${process.env.COMPOSE_PROJECT_NAME}`,'--filter','label=com.docker.compose.service=postgres','-q'],{encoding:'utf8'}).trim().split(/\s+/);
   assert.equal(ids.length,1);assert.ok(ids[0]);
@@ -14,15 +16,17 @@ export function ownedPool() {
   return new Pool({connectionString:assertIsolatedDatabase(process.env.READINESS_DATABASE_URL!),max:10});
 }
 export async function seedHistory(db: Pool, profile: Profile) {
+  assertLocalDockerDaemon();
+  assertIsolatedDatabase(db.options.connectionString??'');
   assert.equal(Number((await db.query('SELECT count(*) AS n FROM telemetry_raw')).rows[0].n),0,'Capacity requires an empty owned fixture');
   const devices:{id:string;site:string;gateway:string}[]=[],users:{id:string;email:string;password:string}[]=[];
   const end=new Date(Math.floor(Date.now()/60000)*60000-60000);
-  for(let school=0;school<profile.schools;school++) {
-    const schoolId=randomUUID(),site=randomUUID(),gateway=randomUUID();
-    await db.query("INSERT INTO schools(id,name,code,region) VALUES($1::uuid,$2,$1::text,'capacity-fixture')",[schoolId,`Capacity school ${school}`]);
-    await db.query("INSERT INTO sites(id,school_id,name,capacity_mwp) VALUES($1,$2,$3,0.1)",[site,schoolId,`Capacity site ${school}`]);
+  for(let customer=0;customer<profile.customers;customer++) {
+    const customerId=randomUUID(),site=randomUUID(),gateway=randomUUID();
+    await db.query("INSERT INTO customers(id,name,code,region) VALUES($1::uuid,$2,$1::text,'capacity-fixture')",[customerId,`Capacity customer ${customer}`]);
+    await db.query("INSERT INTO sites(id,customer_id,name,capacity_mwp) VALUES($1,$2,$3,0.1)",[site,customerId,`Capacity site ${customer}`]);
     await db.query("INSERT INTO gateways(id,site_id,name,protocol,endpoint) VALUES($1::uuid,$2,$1::text,'mqtt',$3)",[gateway,site,`energy/${gateway}/#`]);
-    for(let meter=0;meter<profile.meters/profile.schools;meter++) {
+    for(let meter=0;meter<profile.meters/profile.customers;meter++) {
       const id=randomUUID();devices.push({id,site,gateway});
       await db.query("INSERT INTO devices(id,gateway_id,site_id,name,device_type,model,serial_number) VALUES($1::uuid,$2,$3,'Capacity meter','meter','fixture',$1::text)",[id,gateway,site]);
       await db.query("INSERT INTO billing_meters(id,site_id,device_id) VALUES($1,$2,$3)",[randomUUID(),site,id]);

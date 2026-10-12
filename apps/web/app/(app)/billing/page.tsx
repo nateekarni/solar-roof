@@ -1,3 +1,5 @@
+import { OrganizationDocuments } from '../../../features/organization/organization-documents';
+import { getSessionUser } from '../../../lib/session-user';
 import { OperationPage } from '../../../features/shared/operation-page';
 export const dynamic = 'force-dynamic';
-export default function Page() { return <OperationPage resource='billing' eyebrow='BILLING & INVOICES' title='ใบแจ้งหนี้และรอบการเรียกเก็บเงิน' description='ตรวจสอบและจัดการใบแจ้งหนี้ รอบการเรียกเก็บเงิน ตรวจหลักฐานสลิป และติดตามสถานะการชำระเงิน' action='สร้างรอบบิล' />; }
+export default async function Page() { const user=await getSessionUser(); if(user.role === "customer_user") return <OrganizationDocuments kind="invoice"/>; return <OperationPage resource='billing' eyebrow='BILLING & INVOICES' title='ใบวางบิล' description='ตรวจสอบและจัดการใบวางบิล รอบการเรียกเก็บเงิน ตรวจหลักฐานสลิป และติดตามสถานะการชำระเงิน' action='สร้างใบวางบิลเพิ่มเติม' />; }

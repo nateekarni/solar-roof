@@ -1,4 +1,6 @@
+import {RecordNavigationControls} from '../../../../../features/shared/record-navigation-controls';
 import {recordBackLink} from '../../../../../features/shared/record-back-link';
+import {SiteBillingSettings} from '../../../../../features/sites/site-service-dialog';
 import {SiteDetailTabs} from '../../../../../features/sites/site-detail-tabs';
 import { requirePageAccess } from "../../../../../lib/session-user";
 import {SiteConfigurationDetails} from '../../../../../features/sites/site-configuration-details';
@@ -12,7 +14,7 @@ import {RecordDetails} from '../../../../../features/shared/record-details';
 export const dynamic='force-dynamic';
 export default async function Page({params}:{params:Promise<{resource:string;id:string}>}) {
   const {resource,id}=await params;
-  const back:Record<string,string>={sites:'/sites',schools:'/schools',billing:'/billing',contracts:'/contracts',documents:'/billing',receipts:'/receipts',alerts:'/alerts',notifications:'/notifications',reports:'/reports',users:'/settings/users',audit:'/settings/audit'};
+  const back:Record<string,string>={sites:'/sites',customers:'/customers',billing:'/billing',contracts:'/contracts',documents:'/billing',receipts:'/receipts',alerts:'/alerts',notifications:'/notifications',reports:'/reports',users:'/settings/users',audit:'/settings/audit'};
   if(!back[resource])notFound();
   const user=await requirePageAccess(back[resource]);
   const res=await serverFetch(`${getApiBaseUrl()}/v1/operations/${resource}/records/${encodeURIComponent(id)}`,{cache:'no-store'});
@@ -22,5 +24,6 @@ export default async function Page({params}:{params:Promise<{resource:string;id:
   const th=(await cookies()).get('locale')?.value!=='en';
   const backLink=recordBackLink(resource,user.role,back[resource]!,th?'th':'en');
   const fields=operationKeys(resource,row);
-  return <main className="content"><div className="ops-content w-full space-y-4"><Link href={backLink.href} className="text-sm text-foreground underline underline-offset-4">{backLink.label}</Link><h1 className="text-2xl font-bold">{resource==='sites' ? (th?'รายละเอียดไซต์งาน':'Site details') : (th?'รายละเอียดรายการ':'Record details')}</h1>{resource === 'sites' ? <SiteDetailTabs siteId={id} canManageUsers={user.role === 'admin'}><Card><CardHeader className="py-5"><CardTitle>{row.name||row.title||row.displayName||row.documentNumber||row.period||id}</CardTitle></CardHeader><CardContent className="pb-6"><RecordDetails resource={resource} row={row} fields={fields} columns={columns}/></CardContent></Card>{resource==='sites'&&<SiteConfigurationDetails siteId={id}/>}</SiteDetailTabs> : <><Card><CardHeader className="py-5"><CardTitle>{row.name||row.title||row.displayName||row.documentNumber||row.period||id}</CardTitle></CardHeader><CardContent className="pb-6"><RecordDetails resource={resource} row={row} fields={fields} columns={columns}/></CardContent></Card>{resource==='sites'&&<SiteConfigurationDetails siteId={id}/>}</>}</div></main>;
+  if(resource==='billing'||resource==='receipts')return <main className="content"><div className="ops-content w-full space-y-5"><RecordNavigationControls resource={resource} id={id} locale={th?'th':'en'} siteName={row.siteName} period={row.period}/><RecordDetails resource={resource} row={row} fields={fields} columns={columns}/></div></main>;
+  return <main className="content"><div className="ops-content w-full space-y-4">{resource==="billing"||resource==="receipts"?<RecordNavigationControls resource={resource} id={id} locale={th?"th":"en"}/>:<Link href={backLink.href} className="text-sm text-foreground underline underline-offset-4">{backLink.label}</Link>}<h1 className="text-2xl font-bold">{resource==='sites' ? (th?'รายละเอียดไซต์งาน':'Site details') : (th?'รายละเอียดรายการ':'Record details')}</h1>{resource === 'sites' ? <SiteDetailTabs siteId={id} canManageUsers={user.role === 'admin'}><Card><CardHeader className="py-5"><CardTitle>{row.name||row.title||row.displayName||row.documentNumber||row.period||id}</CardTitle></CardHeader><CardContent className="pb-6"><RecordDetails resource={resource} row={row} fields={fields} columns={columns}/></CardContent></Card>{user.role==='owner'||user.role==='accountant'?<SiteBillingSettings siteId={id}/>:<SiteConfigurationDetails siteId={id}/>}</SiteDetailTabs> : <><Card><CardHeader className="py-5"><CardTitle>{row.name||row.title||row.displayName||row.documentNumber||row.period||id}</CardTitle></CardHeader><CardContent className="pb-6"><RecordDetails resource={resource} row={row} fields={fields} columns={columns}/></CardContent></Card>{resource==='sites'&&<SiteConfigurationDetails siteId={id}/>}</>}</div></main>;
 }

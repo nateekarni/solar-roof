@@ -9,13 +9,13 @@ import {assertIsolatedDatabase} from './fixtures.js';
 test('billing document identities are scoped persisted IDs; direct preview never invents legacy evidence and forbidden mutations remain denied',async()=>{
  const db=new Pool({connectionString:assertIsolatedDatabase(process.env.READINESS_DATABASE_URL!)});
  const base=process.env.READINESS_API_URL!,origin=process.env.READINESS_WEB_URL!;
- const school=randomUUID(),other=randomUUID(),site=randomUUID(),otherSite=randomUUID(),user=randomUUID(),cycle=randomUUID(),invoice=randomUUID(),receipt=randomUUID(),foreign=randomUUID();
+ const customer=randomUUID(),other=randomUUID(),site=randomUUID(),otherSite=randomUUID(),user=randomUUID(),cycle=randomUUID(),invoice=randomUUID(),receipt=randomUUID(),foreign=randomUUID();
  const email=`u1-${user}@example.test`,password='U1-contract-password-123!';
  const auth=new AuthService('readiness-test-access-secret-000000000000','readiness-test-refresh-secret-000000000000');
  try {
-  await db.query("INSERT INTO schools(id,name,code,region) VALUES($1::uuid,'U1 School',$1::text,'fixture'),($2::uuid,'U1 Other',$2::text,'fixture')",[school,other]);
-  await db.query("INSERT INTO sites(id,school_id,name,capacity_mwp) VALUES($1,$2,'U1 Site',0.1),($3,$4,'U1 Other',0.1)",[site,school,otherSite,other]);
-  await db.query("INSERT INTO users(id,email,display_name,role,status,password_hash,school_id) VALUES($1,$2,'U1 Actor','admin','active',$3,$4)",[user,email,auth.hashPassword(password),school]);
+  await db.query("INSERT INTO customers(id,name,code,region) VALUES($1::uuid,'U1 Customer',$1::text,'fixture'),($2::uuid,'U1 Other',$2::text,'fixture')",[customer,other]);
+  await db.query("INSERT INTO sites(id,customer_id,name,capacity_mwp) VALUES($1,$2,'U1 Site',0.1),($3,$4,'U1 Other',0.1)",[site,customer,otherSite,other]);
+  await db.query("INSERT INTO users(id,email,display_name,role,status,password_hash,customer_id) VALUES($1,$2,'U1 Actor','admin','active',$3,$4)",[user,email,auth.hashPassword(password),customer]);
   await db.query("INSERT INTO billing_cycles(id,site_id,period_start,period_end,cutoff_time,status,quality,opening_energy,closing_energy,consumed_kwh,rate,amount) VALUES($1,$2,'2026-09-01','2026-09-30',now(),'approved','complete',100,110,10,1,10)",[cycle,site]);
   await db.query("INSERT INTO documents(id,site_id,billing_cycle_id,document_type,document_number,status,amount,issue_date,file_key) VALUES($1,$2,$3,'invoice','U1-INV','issued',10,'2020-01-01','legacy/original.pdf'),($4,$2,$3,'receipt','U1-RCT','issued',10,'2020-01-01','legacy/receipt.pdf'),($5,$6,NULL,'invoice','U1-FOREIGN','issued',10,'2020-01-01','legacy/foreign.pdf')",[invoice,site,cycle,receipt,foreign,otherSite]);
   await db.query("INSERT INTO documents(id,site_id,document_type,document_number,status,amount,issue_date) SELECT gen_random_uuid(),$1,'invoice',gen_random_uuid()::text,'draft',10,'2026-09-30' FROM generate_series(1,30)",[site]);
@@ -40,7 +40,7 @@ test('billing document identities are scoped persisted IDs; direct preview never
    assert.equal((await req('/v1/billing-cycles/'+cycle+'/pay','POST',{amount:20,slipUrl:'data:image/png;base64,aA=='})).status,500);
    assert.equal(Number((await db.query('SELECT amount FROM payments WHERE billing_cycle_id=$1',[cycle])).rows[0].amount),10,'Audit failure rolls back evidence update');
   } finally {await db.query('DROP TRIGGER u1_audit_failure ON audit_events');await db.query('DROP FUNCTION u1_audit_failure()');}
-  for(const role of ['owner','admin','operator','accountant','school_user']) {
+  for(const role of ['owner','admin','operator','accountant','customer_user']) {
    await db.query('UPDATE users SET role=$1 WHERE id=$2',[role,user]);
    const response=await req('/v1/operations/documents/'+invoice);assert.equal(response.status,200);const doc=await response.json();assert.equal(doc.id,invoice);assert.equal(doc.documentNumber,'U1-INV');assert.equal(doc.snapshot,undefined);assert.ok(doc.previewUnavailableReason,'No invented persisted snapshot');
    assert.equal((await req('/v1/operations/documents/'+foreign)).status,['owner','admin'].includes(role)?200:404,'Tenant scope applies to direct ID');

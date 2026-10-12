@@ -2,11 +2,15 @@ import * as React from 'react';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {renderToStaticMarkup} from 'react-dom/server';
-import {BillingRecordPanel} from './billing-record-panel';
+import {BillingRecordPanel,billingRecordTransfers} from './billing-record-panel';
+test('attachment-only pending evidence remains visible without declared amount',()=>{
+ const evidence={id:'new',amount:null,status:'pending_verification',slipUrl:'data:image/png;base64,AA=='};
+ assert.equal(billingRecordTransfers([evidence]).length,1);
+});
 const row={id:'cycle-a',status:'pending_verification',payments:[{id:'a',amount:'2000.00000000',status:'pending_verification'},{id:'b',amount:'2623.45000000',status:'pending_verification'}]};
 test('customer billing record exposes additional payment and exact persisted history',()=>{
  const html=renderToStaticMarkup(<BillingRecordPanel row={row} locale="en" capabilities={{financialScope:'TEST',actions:[],unavailable:{},operationsActions:['submit_payment']}} onPay={()=>{}} onVerify={()=>{}}/>);
- assert.match(html,/Submit transfer evidence/);assert.match(html,/2,000.00/);assert.match(html,/2,623.45/);assert.match(html,/Total pending transfers: .*4,623.45/);assert.doesNotMatch(html,/Verify pending transfers/);
+ assert.match(html,/Submit transfer evidence/);assert.match(html,/Awaiting amount verification/);assert.doesNotMatch(html,/Total pending transfers|2,000.00|2,623.45/);assert.doesNotMatch(html,/Verify pending transfers/);
 });
 test('staff billing record exposes verification only with current financial capability',()=>{
  const html=renderToStaticMarkup(<BillingRecordPanel row={row} locale="en" capabilities={{financialScope:'TEST',actions:['approve_payment'],unavailable:{}}} onPay={()=>{}} onVerify={()=>{}}/>);assert.match(html,/Verify pending transfers/);

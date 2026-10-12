@@ -22,10 +22,10 @@ async function chooseDate(page,id,value) {
  throw new Error('Unable to reach fixture calendar month');
 }
 try{
- const user=randomUUID(),school=randomUUID(),site=randomUUID(),email=`d1-browser-${user}@example.test`,password='D1-browser-password-123!';
+ const user=randomUUID(),customer=randomUUID(),site=randomUUID(),email=`d1-browser-${user}@example.test`,password='D1-browser-password-123!';
  const salt=randomBytes(16).toString('hex'),hash=`scrypt:${salt}:${scryptSync(password,salt,64).toString('hex')}`;
- await db.query("INSERT INTO schools(id,name,code,region) VALUES($1::uuid,'D1 browser',$1::text,'fixture')",[school]);await db.query("INSERT INTO sites(id,school_id,name,capacity_mwp) VALUES($1,$2,'D1 browser site',1)",[site,school]);
- await db.query("INSERT INTO users(id,email,display_name,role,status,password_hash,school_id,preferred_language) VALUES($1,$2,'D1 Browser','operator','active',$3,$4,'en')",[user,email,hash,school]);
+ await db.query("INSERT INTO customers(id,name,code,region) VALUES($1::uuid,'D1 browser',$1::text,'fixture')",[customer]);await db.query("INSERT INTO sites(id,customer_id,name,capacity_mwp) VALUES($1,$2,'D1 browser site',1)",[site,customer]);
+ await db.query("INSERT INTO users(id,email,display_name,role,status,password_hash,customer_id,preferred_language) VALUES($1,$2,'D1 Browser','operator','active',$3,$4,'en')",[user,email,hash,customer]);
  const login=await fetch(api+'/v1/auth/login',{method:'POST',headers:{Origin:web,'Content-Type':'application/json'},body:JSON.stringify({email,password})});assert.equal(login.status,200);const tokens=await login.json(),headers={Origin:web,'Content-Type':'application/json',Authorization:`Bearer ${tokens.accessToken}`};
  const options=await (await fetch(api+'/v1/history/options',{headers})).json();assert.equal(options.available,process.env.D1_HISTORY_EXPECT_AVAILABLE!=='false');
  const context=await browser.newContext();await context.addCookies([{name:'access_token',value:tokens.accessToken,domain:'localhost',path:'/',httpOnly:true},{name:'locale',value:'en',domain:'localhost',path:'/'}]);const page=await context.newPage();await page.goto(web+'/reports');await page.getByRole('button',{name:'Request archived detail',exact:true}).click();
@@ -33,7 +33,7 @@ try{
  if(!options.available){
   await dialog.getByRole('status').filter({hasText:'History restoration is currently unavailable.'}).waitFor();assert.equal(await dialog.getByRole('button',{name:'Submit request',exact:true}).isDisabled(),true);
   assert.equal((await fetch(api+'/v1/history/restore',{method:'POST',headers:{...headers,'Idempotency-Key':randomUUID()},body:JSON.stringify({siteId:site,from:'2025-01-01',to:'2025-01-02'})})).status,503);console.log('PASS D1 browser: real disabled options + unavailable UI + HTTP503, no queued request');
-  const failed=randomUUID();await db.query("INSERT INTO platform_jobs(id,kind,payload,scope,created_by,payload_hash,status,error_code) VALUES($1,'restore',$2,$3,$4,'D1-disabled-retry','failed','storage_unavailable')",[failed,{siteId:site,from:'2025-01-01',to:'2025-01-02',format:'jsonl.gz'},[school],user]);
+  const failed=randomUUID();await db.query("INSERT INTO platform_jobs(id,kind,payload,scope,created_by,payload_hash,status,error_code) VALUES($1,'restore',$2,$3,$4,'D1-disabled-retry','failed','storage_unavailable')",[failed,{siteId:site,from:'2025-01-01',to:'2025-01-02',format:'jsonl.gz'},[customer],user]);
   assert.equal((await fetch(api+`/v1/jobs/${failed}/retry`,{method:'POST',headers})).status,503);const retained=(await db.query('SELECT status,attempt FROM platform_jobs WHERE id=$1',[failed])).rows[0];assert.equal(retained.status,'failed');assert.equal(retained.attempt,1);
  }else{
   // Seed one immutable archive fixture. The real worker restores it; no ready job is fabricated.

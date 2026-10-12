@@ -151,7 +151,7 @@ export function formatAppDateTime(
   const hours = String(d.getUTCHours()).padStart(2, "0");
   const minutes = String(d.getUTCMinutes()).padStart(2, "0");
 
-  return `${dateStr} ${hours}:${minutes} (Asia/Bangkok)`;
+  return `${dateStr} ${hours}:${minutes} (${locale === "th" ? "เวลาไทย" : "Asia/Bangkok"})`;
 }
 
 /**

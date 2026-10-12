@@ -1,334 +1,44 @@
 "use client";
-import { useEffect, useState } from "react";
-import Link from "next/link";
-import { ChoiceSelect } from "../../components/ui/choice-select";
-import { Field, FieldLabel } from "../../components/ui/field";
-import { Card, CardHeader, CardTitle, CardContent } from "../../components/ui/card";
-import { Alert, AlertDescription } from "../../components/ui/alert";
-import { Empty, EmptyHeader, EmptyDescription } from "../../components/ui/empty";
-import { Button } from "../../components/ui/button";
-import { useLocale } from "../../providers/locale-provider";
-import { apiClient } from "../../lib/api-client";
-import { formatAppDate } from "../../lib/date-format";
-import {
-  DocumentPreviewModal,
-  type DocumentPreviewData,
-} from "../shared/document-preview-modal";
-import {
-  documentsForContract,
-  filterDocuments,
-  type OrganizationDocument,
-} from "./organization-document-model";
-import { organizationDocumentStatus } from './organization-document-status';
-import { formatOrganizationMonth } from "./organization-month-format";
-import { loadOrganizationRows } from "./organization-document-loader";
-interface Contract extends OrganizationDocument {
-  contractNumber?: string;
-  startDate?: string;
-  endDate?: string;
-  schoolName?: string;
-  companyName?: string;
-  taxId?: string;
-  taxAddress?: string;
+import React,{useEffect,useState} from 'react';
+import {useRouter} from 'next/navigation';
+import {renderReceiptStatusBadge,renderStatusBadge} from '../../lib/status-badge';
+import {recordDetailHref,saveRecordNavigation} from '../shared/record-navigation';
+import {apiClient} from '../../lib/api-client';
+import {useLocale} from '../../providers/locale-provider';
+import {formatAppDate} from '../../lib/date-format';
+import {loadOrganizationRows} from './organization-document-loader';
+import {filterDocuments,type OrganizationDocument} from './organization-document-model';
+import {organizationDocumentStatus,receiptDocumentStatus} from './organization-document-status';
+import {ChoiceSelect} from '../../components/ui/choice-select';
+import {Table,TableBody,TableCell,TableHead,TableHeader,TableRow} from '../../components/ui/table';
+import {Button} from '../../components/ui/button';
+import {SearchInput} from '../../components/ui/search-input';
+import {MoreHorizontal} from 'lucide-react';
+import {DropdownMenu,DropdownMenuTrigger,DropdownMenuContent,DropdownMenuItem} from '../../components/ui/dropdown-menu';
+import {DocumentPreviewModal,type DocumentPreviewData} from '../shared/document-preview-modal';
+interface DocumentRow extends OrganizationDocument {invoiceId?:string;receiptId?:string;documentNumber?:string;rate?:string|number;description?:string;customerName?:string;}
+export function OrganizationDocuments({kind='invoice'}:{kind?:'invoice'|'receipt'}) {
+ const locale=useLocale();const th=locale==='th';const resource=kind==='invoice'?'billing':'receipts';
+ const router=useRouter();
+ const [navigationError,setNavigationError]=useState(false);
+ const [rows,setRows]=useState<DocumentRow[]|null>(null);const [error,setError]=useState(false);const [retry,setRetry]=useState(0);
+ const [search,setSearch]=useState('');
+ const [month,setMonth]=useState('');const [status,setStatus]=useState('');const [preview,setPreview]=useState<DocumentPreviewData|null>(null);
+ useEffect(()=>{const restore=()=>{const params=new URLSearchParams(window.location.search);setSearch(params.get('search')??'');setMonth(params.get('month')??'');setStatus(params.get('status')??'');};restore();window.addEventListener('popstate',restore);return()=>window.removeEventListener('popstate',restore);},[]);
+ const setFilter=(key:string,value:string)=>{const params=new URLSearchParams(window.location.search);if(value)params.set(key,value);else params.delete(key);window.history.replaceState(null,'',window.location.pathname+(params.size?'?'+params:''));if(key==='search')setSearch(value);else if(key==='month')setMonth(value);else setStatus(value);};
+ const displayRows:DocumentRow[]=(rows??[]).map(row=>{if(kind!=='receipt')return row;const {paymentStatus,...document}=row;return document;});
+ const visible=filterDocuments(displayRows,month,status,search);
+ const openDetail=(row:DocumentRow)=>{try{const token=saveRecordNavigation({resource,ids:visible.map(item=>item.id),query:window.location.search.slice(1)});router.push(recordDetailHref(resource,row.id,token));}catch{setNavigationError(true);}};
+ const statusValue=(row:DocumentRow)=>kind==='receipt'?row.status:row.paymentStatus||row.status;
+ const statusBadge=(row:DocumentRow)=>kind==='receipt'?renderReceiptStatusBadge(row.status??'',locale):renderStatusBadge(['approved','issued','finalized'].includes(statusValue(row)??'')?'pending':statusValue(row)??'',locale);
+ useEffect(()=>{let active=true;setRows(null);setError(false);loadOrganizationRows<DocumentRow>(resource,apiClient.get).then(value=>{if(active)setRows(value);}).catch(()=>{if(active)setError(true);});return()=>{active=false;};},[resource,retry]);
+ const months=Array.from(new Set((rows??[]).map(row=>(row.period||row.issueDate||'').slice(0,7)).filter(value=>/^\d{4}-\d{2}$/.test(value)))).sort().reverse();
+ const statuses=Array.from(new Set(displayRows.map(row=>row.paymentStatus||row.status).filter((value):value is string=>!!value)));
+ const title=kind==='invoice'?(th?'ใบวางบิล':'Billing statements'):(th?'ใบเสร็จรับเงิน':'Receipts');
+ const documentActions=(row:DocumentRow)=>{const documentId=kind==='invoice'?(row.invoiceId||row.documentId):(row.receiptId||row.documentId||row.id);return <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" aria-label={(th?'การจัดการเอกสาร: ':'Document actions: ')+(row.documentNumber||row.invoiceNumber||row.receiptNumber||row.id)}><MoreHorizontal className="size-4"/></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem disabled={!documentId} onSelect={()=>{if(documentId)setPreview({type:kind,documentId,documentNumber:row.documentNumber||row.invoiceNumber||row.receiptNumber||''});}}>{documentId?(th?'ต้นฉบับ PDF':'Original PDF'):(th?'ไม่มีต้นฉบับ':'Original unavailable')}</DropdownMenuItem><DropdownMenuItem onSelect={()=>openDetail(row)}>{th?'รายละเอียด':'Details'}</DropdownMenuItem></DropdownMenuContent></DropdownMenu>;};
+ return <div className="content min-w-0 space-y-5"><header><h1 className="text-2xl font-semibold">{title}</h1><p className="text-muted-foreground">{rows?.[0]?.customerName} {rows?.[0]?.siteName}</p></header>
+ {navigationError&&<p role="alert">{th?'เปิดรายละเอียดไม่สำเร็จ กรุณาลองอีกครั้ง':'Unable to open details. Please try again.'}</p>}{error?<div role="alert"><p>{th?'ไม่มีสิทธิ์หรือโหลดเอกสารไม่สำเร็จ':'Access denied or unable to load documents'}</p><Button onClick={()=>setRetry(value=>value+1)}>{th?'ลองอีกครั้ง':'Retry'}</Button></div>:rows===null?<p role="status">{th?'กำลังโหลดเอกสาร':'Loading documents'}</p>:<>
+ <div className="flex flex-wrap items-center justify-between gap-3"><SearchInput aria-label={th?'ค้นหาเอกสาร':'Search documents'} placeholder={th?'ค้นหาเอกสาร':'Search documents'} value={search} onChange={event=>setFilter('search',event.target.value)}/><div className="flex flex-wrap gap-2 sm:ml-auto"><ChoiceSelect className="w-[160px] max-w-full" aria-label={th?'เดือน':'Month'} value={month} onChange={event=>setFilter('month',event.target.value)}><option value="">{th?'ทุกเดือน':'All months'}</option>{months.map(value=><option key={value} value={value}>{value}</option>)}</ChoiceSelect><ChoiceSelect className="w-[200px] max-w-full" aria-label={th?'สถานะ':'Status'} value={status} onChange={event=>setFilter('status',event.target.value)}><option value="">{th?'ทุกสถานะ':'All statuses'}</option>{statuses.map(value=><option key={value} value={value}>{kind==='receipt'?receiptDocumentStatus(value,locale):organizationDocumentStatus(value,locale)}</option>)}</ChoiceSelect></div></div>
+ <div className="hidden overflow-x-auto md:block"><Table><TableHeader><TableRow>{(th?['เลขที่เอกสาร','วันที่','รอบ / รายการ','สถานะ','ยอดเงิน','เรท','']:['Document number','Date','Period / item','Status','Amount','Rate','']).map(label=><TableHead key={label} className={label===''?'w-16':undefined}>{label}</TableHead>)}</TableRow></TableHeader><TableBody>{visible.map(row=>{const documentId=kind==='invoice'?(row.invoiceId||row.documentId):(row.receiptId||row.documentId||row.id);return <TableRow key={row.id}><TableCell>{row.documentNumber||row.invoiceNumber||row.receiptNumber||'—'}</TableCell><TableCell>{row.issueDate?formatAppDate(row.issueDate,locale):'—'}</TableCell><TableCell>{row.period||row.description||'—'}</TableCell><TableCell>{statusBadge(row)}</TableCell><TableCell>{row.amount==null?'—':Number(row.amount).toLocaleString(locale,{minimumFractionDigits:2,maximumFractionDigits:2})}</TableCell><TableCell>{row.rate??'—'}</TableCell><TableCell className="w-16 text-right">{documentActions(row)}</TableCell></TableRow>;})}</TableBody></Table></div><div className="space-y-3 md:hidden">{visible.map(row=><article key={row.id} className="rounded-xl border bg-card p-4 space-y-3"><div className="flex items-center justify-between gap-3"><h2 className="font-medium break-all">{row.documentNumber||row.invoiceNumber||row.receiptNumber||'—'}</h2>{documentActions(row)}</div>{statusBadge(row)}<dl className="grid grid-cols-2 gap-3 text-sm"><div><dt className="text-muted-foreground">{th?'วันที่ออก':'Issue date'}</dt><dd>{row.issueDate?formatAppDate(row.issueDate,locale):'—'}</dd></div><div><dt className="text-muted-foreground">{th?'ยอดเงิน':'Amount'}</dt><dd>{row.amount==null?'—':Number(row.amount).toLocaleString(locale,{minimumFractionDigits:2,maximumFractionDigits:2})}</dd></div><div className="col-span-2"><dt className="text-muted-foreground">{th?'รอบ / รายการ':'Period / item'}</dt><dd>{row.period||row.description||'—'}</dd></div></dl><Button variant="outline" onClick={()=>openDetail(row)}>{th?'ดูรายละเอียด':'View details'}</Button></article>)}</div>{visible.length===0?<p className="bg-white dark:bg-card py-6 text-center">{th?'ไม่มีเอกสารตรงกับตัวกรอง':'No documents match these filters'}</p>:null}</>}
+ <DocumentPreviewModal open={preview!==null} onOpenChange={open=>{if(!open)setPreview(null);}} data={preview}/></div>;
 }
-interface Document extends OrganizationDocument {
-  invoiceId?: string;
-  receiptId?: string;
-  documentNumber?: string;
-}
-export function OrganizationDocuments() {
-  const locale = useLocale();
-  const text = (th: string, en: string) => (locale === "th" ? th : en);
-  const [data, setData] = useState<{
-    contracts: Contract[];
-    invoices: Document[];
-    receipts: Document[];
-  } | null>(null);
-  const [error, setError] = useState<"access" | "load" | null>(null);
-  const [retry, setRetry] = useState(0);
-  const [selected, setSelected] = useState<string | null>(null);
-  const [month, setMonth] = useState("");
-  const [status, setStatus] = useState("");
-  const [preview, setPreview] = useState<DocumentPreviewData | null>(null);
-  useEffect(() => {
-    let active = true;
-    setData(null);
-    setError(null);
-    Promise.all([
-      loadOrganizationRows<Contract>("contracts", apiClient.get),
-      loadOrganizationRows<Document>("billing", apiClient.get),
-      loadOrganizationRows<Document>("receipts", apiClient.get),
-    ])
-      .then(([contracts, invoices, receipts]) => {
-        if (active) setData({ contracts, invoices, receipts });
-      })
-      .catch((err: unknown) => {
-        if (active)
-          setError(
-            (err as { status?: number }).status === 401 ||
-              (err as { status?: number }).status === 403
-              ? "access"
-              : "load",
-          );
-      });
-    return () => {
-      active = false;
-    };
-  }, [retry]);
-  const months = Array.from(
-    new Set(
-      [...(data?.invoices ?? []), ...(data?.receipts ?? [])]
-        .map((row) => (row.period || row.issueDate || "").slice(0, 7))
-        .filter((value) => /^\d{4}-\d{2}$/.test(value)),
-    ),
-  )
-    .sort()
-    .reverse();
-  const monthLabel = (value: string) => formatOrganizationMonth(value, locale);
-  const statuses = Array.from(
-    new Set(
-      [...(data?.invoices ?? []), ...(data?.receipts ?? [])]
-        .flatMap((row) => [row.status, row.paymentStatus])
-        .filter((value): value is string => !!value),
-    ),
-  );
-    const label = (value?: string) => organizationDocumentStatus(value, locale);
-const documents = (rows: Document[]) =>
-    filterDocuments(documentsForContract(rows, selected), month, status);
-  const renderList = (rows: Document[], type: "invoice" | "receipt") => (
-    <Card>
-      <CardHeader className="px-4 pt-4"><CardTitle><h2>
-        {type === "invoice"
-          ? text("ใบแจ้งหนี้", "Invoices")
-          : text("ใบเสร็จรับเงิน", "Receipts")}
-      </h2></CardTitle></CardHeader>
-      <CardContent className="px-4 pb-4">
-      {rows.length === 0 ? (
-        <Empty className="py-5"><EmptyHeader><EmptyDescription>
-          {text("ไม่มีเอกสารตรงกับตัวกรอง", "No documents match these filters")}
-        </EmptyDescription></EmptyHeader></Empty>
-      ) : (
-        <ul className="divide-y">
-          {rows.map((row) => (
-            <li
-              key={row.id}
-              className="flex flex-wrap items-center justify-between gap-3 py-4"
-            >
-              <div>
-                <p className="font-medium">
-                  {row.documentNumber ||
-                    row.invoiceNumber ||
-                    row.receiptNumber ||
-                    text("ยังไม่ออกเลขที่เอกสาร", "Document number unavailable")}
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  {row.siteName ||
-                    text("ยังไม่มีข้อมูลไซต์งาน", "Site unavailable")}{" "}
-                  ·{" "}
-                  {(row.period ? monthLabel(row.period) : null) ||
-                    (row.issueDate
-                      ? formatAppDate(row.issueDate, locale)
-                      : "—")}{" "}
-                  · {label(row.paymentStatus || row.status)}
-                </p>
-              </div>
-              <p>
-                {row.amount == null || String(row.amount).trim() === ""
-                  ? "—"
-                  : Number(row.amount).toLocaleString(locale, {
-                      maximumFractionDigits: 2,
-                    })}{" "}
-                THB
-              </p>
-              <div className="flex flex-wrap gap-3">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="min-h-11 text-foreground"
-                  onClick={() =>
-                    setPreview({
-                      type,
-                      documentId:
-                        (type === "invoice"
-                          ? row.invoiceId
-                          : row.receiptId || row.id) || "",
-                      documentNumber:
-                        row.documentNumber ||
-                        row.invoiceNumber ||
-                        row.receiptNumber ||
-                        "",
-                      siteId: row.siteId || "",
-                    })
-                  }
-                >
-                  {text("เปิดเอกสาร", "Preview document")}
-                </Button>
-                <Link
-                  className="inline-flex min-h-11 items-center text-foreground underline underline-offset-4"
-                  href={`/records/${type === "invoice" ? "billing" : "receipts"}/${encodeURIComponent(row.id)}`}
-                >
-                  {type === "invoice"
-                    ? text("รายละเอียด / การชำระเงิน", "Details / Payment")
-                    : text("รายละเอียด", "Details")}
-                </Link>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-      </CardContent>
-    </Card>
-  );
-  return (
-    <div className="content w-full min-w-0 space-y-5">
-      <header>
-        <h1 className="text-2xl font-semibold">
-          {text("เอกสาร", "Documents")}
-        </h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          {text(
-            "เลือกสัญญาเพื่อดูใบแจ้งหนี้และใบเสร็จที่เชื่อมโยง",
-            "Select a contract to view its linked invoices and receipts",
-          )}
-        </p>
-      </header>
-      {error ? (
-        <Alert variant="destructive">
-          <AlertDescription>
-            {error === "access"
-              ? text(
-                  "ไม่มีสิทธิ์เข้าถึงเอกสาร กรุณาเข้าสู่ระบบด้วยบัญชีที่ได้รับอนุญาต",
-                  "Document access denied. Sign in with an authorized account.",
-                )
-              : text("โหลดเอกสารไม่สำเร็จ", "Unable to load documents")}
-          </AlertDescription>
-          <Button
-            type="button"
-            variant="outline"
-            className="min-h-11 text-foreground"
-            onClick={() => setRetry((value) => value + 1)}
-          >
-            {text("ลองอีกครั้ง", "Retry")}
-          </Button>
-        </Alert>
-      ) : !data ? (
-        <p role="status">{text("กำลังโหลดเอกสาร", "Loading documents")}</p>
-      ) : (
-        <>
-          <section
-            aria-label={text("เลือกสัญญา", "Select contract")}
-            className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3"
-          >
-            {data.contracts.map((contract) => (
-              <Button type="button" variant="outline"
-                key={contract.id}
-                aria-pressed={selected === contract.id}
-                onClick={() => setSelected(contract.id)}
-                className={`h-auto! min-w-0 flex-col items-stretch whitespace-normal rounded-xl p-4 text-left ${selected === contract.id ? "ring-2 ring-primary" : ""}`}
-              >
-                <p className="font-semibold break-all">
-                  {contract.contractNumber || text("ยังไม่ออกเลขที่สัญญา", "Contract number unavailable")}
-                </p>
-                <p className="mt-1 text-sm">
-                  {contract.siteName || "—"} · {label(contract.status)}
-                </p>
-                <p className="mt-2 text-xs text-muted-foreground">
-                  {contract.startDate
-                    ? formatAppDate(contract.startDate, locale)
-                    : "—"}{" "}
-                  –{" "}
-                  {contract.endDate
-                    ? formatAppDate(contract.endDate, locale)
-                    : text("ไม่ระบุวันสิ้นสุด", "End date unavailable")}
-                </p>
-              </Button>
-            ))}
-            <Button type="button" variant="outline"
-              aria-pressed={selected === null}
-              onClick={() => setSelected(null)}
-              className={`h-auto! flex-col items-stretch whitespace-normal rounded-xl p-4 text-left ${selected === null ? "ring-2 ring-primary" : ""}`}
-            >
-              <p className="font-semibold">
-                {text(
-                  "เอกสารที่ยังไม่เชื่อมโยงสัญญา",
-                  "Documents without contract linkage",
-                )}
-              </p>
-              <p className="mt-2 text-sm text-muted-foreground">
-                {text(
-                  "ไม่สามารถระบุรุ่นสัญญาของเอกสารเหล่านี้ได้",
-                  "The contract version for these records is unavailable.",
-                )}
-              </p>
-            </Button>
-          </section>
-          <div className="flex flex-wrap gap-4">
-            <Field className="w-auto">
-              <FieldLabel htmlFor="document-month">{text("เดือน", "Month")}</FieldLabel>
-              <ChoiceSelect
-                id="document-month"
-                aria-label={text("เดือน", "Month")}
-                className="min-h-11 w-full"
-                value={month}
-                onChange={(event) => setMonth(event.target.value)}
-              >
-                <option value="">{text("ทุกเดือน", "All months")}</option>
-                {months.map((value) => (
-                  <option key={value} value={value}>
-                    {monthLabel(value)}
-                  </option>
-                ))}
-              </ChoiceSelect>
-            </Field>
-            <Field className="w-auto">
-              <FieldLabel htmlFor="document-status">{text("สถานะ", "Status")}</FieldLabel>
-              <ChoiceSelect
-                id="document-status"
-                aria-label={text("สถานะ", "Status")}
-                className="min-h-11 w-full"
-                value={status}
-                onChange={(event) => setStatus(event.target.value)}
-              >
-                <option value="">{text("ทุกสถานะ", "All statuses")}</option>
-                {statuses.map((value) => (
-                  <option key={value} value={value}>
-                    {label(value)}
-                  </option>
-                ))}
-              </ChoiceSelect>
-            </Field>
-            <Button
-              type="button"
-              variant="outline"
-              className="min-h-11 self-end text-foreground"
-              onClick={() => {
-                setMonth("");
-                setStatus("");
-              }}
-            >
-              {text("ล้างตัวกรอง", "Clear filters")}
-            </Button>
-          </div>
-          {selected && (
-            <Link
-              className="inline-flex min-h-11 items-center text-foreground underline underline-offset-4"
-              href={`/records/contracts/${encodeURIComponent(selected)}`}
-            >
-              {text("รายละเอียดสัญญา", "Contract details")}
-            </Link>
-          )}
-          {renderList(documents(data.invoices), "invoice")}
-          {renderList(documents(data.receipts), "receipt")}
-        </>
-      )}
-      <DocumentPreviewModal
-        open={preview !== null}
-        onOpenChange={(open) => {
-          if (!open) setPreview(null);
-        }}
-        data={preview}
-      />
-    </div>
-  );
-}
-

@@ -7,11 +7,12 @@ import { Button } from '../../components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '../../components/ui/popover';
 import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from '../../components/ui/command';
 
-export function SiteFilter({ sites }: { sites: { id: string; name: string; externalSiteId?: string | null }[] }) {
+export function SiteFilter({ sites,allowAll=true }: { sites: { id: string; name: string; externalSiteId?: string | null }[];allowAll?:boolean }) {
   const {selectedSiteId:selected,chooseSite}=useSiteSelection();
   const th = useLocale() === 'th';
   const [open, setOpen] = useState(false);
-  const options = [{ id: '', name: th ? 'ทุกไซต์' : 'All sites' }, ...sites];
+  const options = allowAll?[{ id: '', name: th ? 'ทุกไซต์' : 'All sites' }, ...sites]:sites;
+  if(!allowAll)return <p className="rounded-lg bg-muted px-3 py-2 text-sm font-medium">{sites[0]?.name??(th?'ยังไม่ได้รับสิทธิ์ไซต์งาน':'No assigned site')}{sites[0]?.externalSiteId?` · ${sites[0].externalSiteId}`:''}</p>;
   function choose(id: string) {
     chooseSite(id);
     setOpen(false);

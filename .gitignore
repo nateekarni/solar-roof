@@ -1,6 +1,7 @@
 # Dependencies and generated builds
 node_modules/
 .next/
+.next-build-review/
 dist/
 .turbo/
 coverage/
@@ -46,6 +47,11 @@ Thumbs.db
 *.swp
 *.swo
 .worktrees/
+/.pnpm-store/
+/.tmp/
+/tmp/
+/.superpowers/
+/output/
 .superpowers/sdd/*/task-1-report.md
 # Python runtime/test caches
 __pycache__/

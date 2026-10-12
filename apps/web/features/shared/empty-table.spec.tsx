@@ -6,7 +6,7 @@ import { DataTable } from '../../components/ui/data-table';
 import { operationKeys } from './operation-columns';
 
 test('empty resource tables retain their named headers and an empty body row', () => {
-  for (const resource of ['sites', 'schools', 'billing', 'contracts', 'documents', 'receipts', 'alerts', 'notifications', 'reports', 'users', 'audit']) {
+  for (const resource of ['sites', 'customers', 'billing', 'contracts', 'documents', 'receipts', 'alerts', 'notifications', 'reports', 'users', 'audit']) {
     const keys = operationKeys(resource, {});
     const html = renderToStaticMarkup(<DataTable columns={keys.map(key => ({ accessorKey: key, header: key }))} data={[]} serverManaged />);
     assert.match(html, /<thead/);

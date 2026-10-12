@@ -15,7 +15,7 @@ export class ReportsController {
   if(!row)throw new NotFoundException('Report not found');
   const {user,scope}=await this.access.current(req.user.id);
   if(row.report_type==='audit'&&!['owner','admin'].includes(user.role))throw new ForbiddenException({code:'report_permission_revoked',message:'Report permission revoked'});
-  if(scope!==null)throw new ForbiddenException({code:'legacy_scope_unknown',message:'Create a new report to verify current school scope'});
+  if(scope!==null)throw new ForbiddenException({code:'legacy_scope_unknown',message:'Create a new report to verify current customer scope'});
   res.setHeader('Content-Type',row.content_type);res.setHeader('Content-Disposition',`attachment; filename="report-${id}.${row.format}"`);res.send(row.content);
  }
 }

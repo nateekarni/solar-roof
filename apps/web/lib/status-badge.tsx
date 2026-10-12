@@ -10,6 +10,12 @@ export const STATUS_MAP: Record<
     className?: string;
   }
 > = {
+  issued: {th:'ออกแล้ว',en:'Issued',variant:'secondary',className:'bg-success/15 text-success border-success/30'},
+  finalized: {th:'ยืนยันแล้ว',en:'Finalized',variant:'secondary',className:'bg-success/15 text-success border-success/30'},
+  superseded: {th:'ถูกแทนที่ด้วยฉบับใหม่',en:'Replaced by a new version',variant:'secondary',className:'bg-muted text-muted-foreground border-border'},
+  cancelled: {th:'ยกเลิก',en:'Cancelled',variant:'destructive'},
+  unpaid: {th:'รอชำระ',en:'Awaiting payment',variant:'secondary',className:'bg-warning/15 text-warning-emphasis border-warning/30'},
+  pending_payment: {th:'รอชำระ',en:'Awaiting payment',variant:'secondary',className:'bg-warning/15 text-warning-emphasis border-warning/30'},
   // Warnings / Pending
   warning: {
     th: "เตือน",
@@ -175,4 +181,9 @@ export function renderStatusBadge(cell: string, locale: "th" | "en" = "th") {
   }
 
   return <Badge variant="secondary">{trimmed || "-"}</Badge>;
+}
+
+export function renderReceiptStatusBadge(value:string,locale:'th'|'en'='th') {
+ if(['issued','finalized','draft','cancelled','superseded'].includes(value))return renderStatusBadge(value,locale);
+ return <Badge variant="secondary" className="bg-muted text-muted-foreground border-border">{locale==='th'?'ไม่ทราบสถานะเอกสาร':'Unknown document status'}</Badge>;
 }

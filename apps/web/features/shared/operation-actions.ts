@@ -13,7 +13,7 @@ export function getOperationActions(resource:string,row:OperationRow,capabilitie
   if(resource==='receipts'&&type!=='receipt')continue;
   if(resource==='documents'&&row.type!==type)continue;
   const id=resource==='billing'?row[type+'Id']:row.id;
-  actions.push({id:type,label:type==='invoice'?'ดูใบแจ้งหนี้':'ดูใบเสร็จรับเงิน',enabled:typeof id==='string'&&!!id,...(id?{}:{reason:'ยังไม่มีเอกสารที่ออกและบันทึกไว้สำหรับรายการนี้'})});
+  actions.push({id:type,label:type==='invoice'?'ดูใบวางบิล':'ดูใบเสร็จรับเงิน',enabled:typeof id==='string'&&!!id,...(id?{}:{reason:'ยังไม่มีเอกสารที่ออกและบันทึกไว้สำหรับรายการนี้'})});
  }
  return actions;
 }

@@ -26,22 +26,22 @@ const text = (v: any): string =>
 test("reference typography, paired cards, frozen accent and blank footer identity", () => {
   const s = { ...fixtures.invoice!, brandPrimary: "#a25a00" };
   const d = documentDefinition(s);
-  assert.equal(d.defaultStyle.fontSize, 16);
+  assert.equal(d.defaultStyle.fontSize, 11);
   const all = JSON.stringify(d.content);
   assert.match(all, /#a25a00/);
   assert.doesNotMatch(all, /#f29700/);
-  assert.match(all, /"fontSize":26/);
-  assert.match(all, /"fontSize":18/);
-  assert.match(all, /"fontSize":22/);
+  assert.match(all, /"fontSize":14/);
+  assert.match(all, /"fontSize":11/);
+  assert.match(all, /"fontSize":10.3/);
   const pair = d.content.find(
     (n) =>
-      n.table?.widths?.length === 2 && text(n).includes("Project Information"),
+      n.columns?.length === 2 && text(n).includes("ข้อมูลบริษัท"),
   );
   assert.ok(pair);
-  assert.match(text(pair), /Customer/);
-  assert.match(text(d.content[0]), /Due/);
-  assert.equal(d.footer(1, 2), null);
-  assert.doesNotMatch(text(d.footer(2, 2)), /INV|Page|หน้า/);
+  assert.match(text(pair), /ข้อมูลลูกค้า/);
+  assert.match(text(d.content[0]), /กำหนดชำระ/);
+  assert.match(text(d.footer(1, 2)), /หน้า 1 \/ 2/);
+  assert.doesNotMatch(text(d.footer(2, 2)), /INV|Page/);
   assert.equal((text(d.footer(2, 2)).match(/วันที่ลงนาม:/g) ?? []).length, 2);
 });
 test("receipt preserves invoice reference and every truthful transfer field without double-counting totals", () => {
@@ -71,7 +71,7 @@ test("receipt preserves invoice reference and every truthful transfer field with
   for (const value of [
     "INV261000001",
     "ผู้โอนจริง",
-    "PromptPay",
+    "พร้อมเพย์",
     "ธนาคารต้นทาง",
     "1234",
     "TRANSFER-A",
@@ -79,14 +79,14 @@ test("receipt preserves invoice reference and every truthful transfer field with
     "2,000.00",
     "2,623.45",
     "4,623.45",
-    "Receipt / Test Tax Invoice",
+    "ใบเสร็จรับเงิน / ใบกำกับภาษี",
   ])
     assert.ok(t.includes(value), value);
   assert.equal(
     (text(d.footer(1, 1)).match(/________________________/g) ?? []).length,
     1,
   );
-  assert.match(text(d.footer(1, 1)), /Authorised Signature/);
+  assert.match(text(d.footer(1, 1)), /ผู้รับเงิน/);
   assert.doesNotMatch(
     text(d.footer(1, 1)),
     /Prepared by|Document received by|8 ตุลาคม/,
@@ -105,9 +105,9 @@ test("ordinary invoice and receipt fit one page with bottom signatures and no vi
     assert.ok(signatures[0].y > 690);
     for (const line of lines)
       assert.ok(
-        line.x >= 39.9 &&
-          line.x + line.getWidth() <= 555.4 &&
-          line.y + line.getHeight() < 830,
+        line.x >= 9.9 &&
+          line.x + line.getWidth() <= 585.4 &&
+          line.y + line.getHeight() < 835,
         lineText(line),
       );
   }
@@ -118,7 +118,7 @@ const source = {
   site_name: "ไซต์จริง",
   external_site_id: "PROTOCOL-1",
   capacity_mwp: "0.012345",
-  school_id: "school-id",
+  customer_id: "customer-id",
   start_date: "2026-01-01",
   end_date: null,
   document_number: "PPA261000001",
@@ -206,7 +206,7 @@ test("financial adapter preserves frozen palette, invoice reference, approved re
   const snapshot = {
     brandPrimary: "#663300",
     invoiceNumber: "INV261000007",
-    templateVersion: "sarabun-a4-v5",
+    templateVersion: "sarabun-a4-v6",
     company: {
       company_name: "Issuer",
       tax_id: "0000000000000",
@@ -326,9 +326,9 @@ test("actual ordinary receipt with saved terms, approved note and every payer fa
   assert.equal(pages.length, 1);
   for (const line of pages.flatMap(pageLines))
     assert.ok(
-      line.x >= 39.9 &&
-        line.x + line.getWidth() <= 555.4 &&
-        line.y + line.getHeight() < 830,
+      line.x >= 9.9 &&
+        line.x + line.getWidth() <= 585.4 &&
+        line.y + line.getHeight() < 835,
       lineText(line),
     );
   const visible = pages.flatMap(pageLines).map(lineText).join("");
@@ -341,13 +341,10 @@ test("actual ordinary receipt with saved terms, approved note and every payer fa
     snapshot.approvedTransfers[0]!.evidence!,
   ])
     assert.ok(visible.includes(fact), fact);
-  assert.match(visible, /Receipt \/ Test Tax Invoice/);
-  assert.match(visible, /ใบกำกับภาษีทดสอบ/);
+  assert.match(visible, /ใบเสร็จรับเงิน \/ ใบกำกับภาษี/);
   const heading = documentDefinition(snapshot).content[0].columns[2].stack;
   for (const [label, size] of [
-    ["ใบเสร็จรับเงิน", 26],
-    ["ใบกำกับภาษีทดสอบ", 14],
-    ["Receipt / Test Tax Invoice", 16],
+    ["ใบเสร็จรับเงิน / ใบกำกับภาษี", 14],
   ] as const)
     assert.equal(heading.find((n: any) => text(n) === label).fontSize, size);
   assert.equal(
@@ -363,9 +360,9 @@ test("actual ordinary PPA finishes all ten clauses and paired signatures in two 
   assert.equal(pages.length, 2);
   for (const line of pages.flatMap(pageLines))
     assert.ok(
-      line.x >= 39.9 &&
-        line.x + line.getWidth() <= 555.4 &&
-        line.y + line.getHeight() < 830,
+      line.x >= 9.9 &&
+        line.x + line.getWidth() <= 585.4 &&
+        line.y + line.getHeight() < 835,
       lineText(line),
     );
   const visible = pages.flatMap(pageLines).map(lineText).join("");

@@ -45,8 +45,8 @@ export interface BillingCycleDetail {
   id: string;
   siteId?: string;
   siteName?: string;
-  schoolId?: string;
-  schoolName?: string;
+  customerId?: string;
+  customerName?: string;
   periodStart?: string;
   periodEnd?: string;
   cutoffTime?: string;
@@ -227,7 +227,7 @@ export function BillingDetailSheet({
                   {locale === "th" ? "รายละเอียดรอบบิลและการเรียกเก็บ" : "Billing Cycle Details"}
                 </SheetTitle>
                 <SheetDescription className="text-xs text-muted-foreground mt-0.5">
-                  {data?.schoolName || (locale === "th" ? "ข้อมูลรอบบิลการใช้ไฟฟ้า" : "Energy billing cycle")}
+                  {data?.customerName || (locale === "th" ? "ข้อมูลรอบบิลการใช้ไฟฟ้า" : "Energy billing cycle")}
                 </SheetDescription>
               </div>
               <div>{getStatusBadge(data?.status)}</div>
@@ -240,7 +240,7 @@ export function BillingDetailSheet({
               <AppLoading fullPage={false} />
             ) : data ? (
               <>
-                {/* School & Site Info Card */}
+                {/* Customer & Site Info Card */}
                 <div className="space-y-3 border-t pt-4">
                   <div className="flex items-center gap-2 font-semibold text-foreground text-xs">
                     <Building className="size-4 text-primary" />
@@ -249,7 +249,7 @@ export function BillingDetailSheet({
                   <div className="grid grid-cols-2 gap-3 pt-1 border-t border-border/40">
                     <div>
                       <span className="text-muted-foreground">{locale === "th" ? "องค์กร" : "Organization"}:</span>
-                      <p className="font-semibold text-foreground text-sm mt-0.5">{data.schoolName}</p>
+                      <p className="font-semibold text-foreground text-sm mt-0.5">{data.customerName}</p>
                     </div>
                     <div>
                       <span className="text-muted-foreground">{locale === "th" ? "ไซต์งาน" : "Site"}:</span>
@@ -348,9 +348,9 @@ export function BillingDetailSheet({
                   </div>
                   <div className="pt-2 border-t border-border/40 flex items-center justify-between">
                     <div>
-                      <span className="text-[11px] text-muted-foreground block">{locale === "th" ? "เลขที่ใบแจ้งหนี้" : "Invoice Number"}</span>
+                      <span className="text-[11px] text-muted-foreground block">{locale === "th" ? "เลขที่ใบวางบิล" : "Invoice Number"}</span>
                       <strong className="font-mono text-xs text-foreground">
-                        {data.invoiceNumber || (locale === "th" ? "ยังไม่ได้สร้างใบแจ้งหนี้" : "No invoice generated")}
+                        {data.invoiceNumber || (locale === "th" ? "ยังไม่ได้สร้างใบวางบิล" : "No invoice generated")}
                       </strong>
                     </div>
                     {data.invoiceNumber && (
@@ -361,7 +361,7 @@ export function BillingDetailSheet({
                         className="h-10 text-[11px] gap-1 px-2 border-border cursor-pointer hover:bg-accent"
                       >
                         <FileText className="size-3" />
-                        <span>{locale === "th" ? "เปิดดูใบแจ้งหนี้" : "View Invoice"}</span>
+                        <span>{locale === "th" ? "เปิดดูใบวางบิล" : "View Invoice"}</span>
                       </Button>
                     )}
                   </div>

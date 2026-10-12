@@ -1,0 +1,4 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {collectionDestination,comparisonRangeValid} from './refinement';
+test('collection navigation preserves cohort dates and selected site',()=>{const url=new URL(collectionDestination('paid','2026-09-01','2026-09-30','site'),'https://example.test');assert.equal(url.pathname,'/receipts');assert.equal(url.searchParams.get('collectionStatus'),'paid');assert.equal(url.searchParams.get('siteId'),'site');assert.equal(url.searchParams.get('from'),'2026-09-01');assert.equal(new URL(collectionDestination('overdue'),url).pathname,'/billing');});
+test('compare range is exact, ordered and limited to three calendar months',()=>{assert.ok(comparisonRangeValid('2026-01-31','2026-03-31'));assert.ok(!comparisonRangeValid('2026-01-31','2026-04-01'));assert.ok(!comparisonRangeValid('2026-02-30','2026-03-01'));assert.ok(!comparisonRangeValid('2026-03-01','2026-02-01'));});

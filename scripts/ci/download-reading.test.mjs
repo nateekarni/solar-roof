@@ -6,7 +6,7 @@ import {gzipSync,gunzipSync} from 'node:zlib';
 import {readDownloadedFile} from '../../apps/web/test/platform/download-reading.mjs';
 
 test('remote download transfer preserves CSV and compressed binary bytes and cleans local files',async()=>{
-  for(const expected of [Buffer.from('site,meter\nSchool,meter-1\n'),gzipSync('12345678901234567890.123456789\n')]) {
+  for(const expected of [Buffer.from('site,meter\nCustomer,meter-1\n'),gzipSync('12345678901234567890.123456789\n')]) {
     let saved;
     const actual=await readDownloadedFile({path(){throw new Error('Remote filesystem unavailable');},async saveAs(path){saved=path;await writeFile(path,expected);}});
     assert.deepEqual(actual,expected);

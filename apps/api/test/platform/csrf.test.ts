@@ -40,7 +40,7 @@ test('HTTP mutations enforce origin before public and authenticated controllers'
   assert.equal((await post(base+'/v1/auth/activate',{token:'wrong',password})).status,403,'Public activation requires Origin');
   assert.equal((await fetch(base+'/v1/auth/me',{headers:{Cookie:cookie}})).status,200,'Server-side GET needs no Origin');
   assert.equal((await post(base+'/v1/users/invite',{email:`scope-${id}@example.test`,displayName:'Scope',role:'owner'},{Authorization:'Bearer forged'})).status,401,'Bearer exemption still checks JWT');
-  await db.query("UPDATE users SET role='school_user' WHERE id=$1",[id]);
+  await db.query("UPDATE users SET role='customer_user' WHERE id=$1",[id]);
   assert.equal((await post(base+'/v1/users/invite',{email:`scope-${id}@example.test`,displayName:'Scope',role:'owner'},{Authorization:`Bearer ${tokens.accessToken}`})).status,403,'Verified nonbrowser bearer still checks current role/scope');
   assert.equal(Number((await db.query('SELECT count(*) FROM users WHERE email=$1',[`scope-${id}@example.test`])).rows[0].count),0);
   await db.query("UPDATE users SET role='owner' WHERE id=$1",[id]);

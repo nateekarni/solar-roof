@@ -1,0 +1,787 @@
+<!DOCTYPE html>
+
+<html lang="th"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
+<title>Admin — Mobile | SOLAR ROOF Telemetry</title>
+<!-- Google Fonts & Material Symbols -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&amp;family=Noto+Sans:wght@400;500;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS with extended container & forms -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "on-surface-variant": "#3d4947",
+            "on-primary-fixed": "#00201d",
+            "surface-tint": "#006a61",
+            "tertiary": "#006948",
+            "surface-container": "#eaedff",
+            "on-primary": "#ffffff",
+            "outline-variant": "#bcc9c6",
+            "surface-dim": "#d2d9f4",
+            "error-container": "#ffdad6",
+            "secondary-container": "#5bb8fe",
+            "on-secondary-fixed-variant": "#004b73",
+            "inverse-on-surface": "#eef0ff",
+            "surface": "#faf8ff",
+            "on-tertiary": "#ffffff",
+            "surface-container-highest": "#dae2fd",
+            "tertiary-fixed": "#85f8c4",
+            "secondary": "#006398",
+            "tertiary-container": "#00855d",
+            "background": "#faf8ff",
+            "on-error-container": "#93000a",
+            "on-secondary-container": "#00476e",
+            "surface-container-low": "#f2f3ff",
+            "surface-container-high": "#e2e7ff",
+            "primary-fixed-dim": "#6bd8cb",
+            "on-tertiary-fixed-variant": "#005137",
+            "on-tertiary-container": "#f5fff7",
+            "on-background": "#131b2e",
+            "primary": "#00685f",
+            "inverse-primary": "#6bd8cb",
+            "secondary-fixed-dim": "#93ccff",
+            "on-tertiary-fixed": "#002114",
+            "surface-bright": "#faf8ff",
+            "surface-container-lowest": "#ffffff",
+            "on-secondary-fixed": "#001d31",
+            "on-error": "#ffffff",
+            "on-primary-container": "#f4fffc",
+            "primary-container": "#008378",
+            "on-primary-fixed-variant": "#005049",
+            "outline": "#6d7a77",
+            "inverse-surface": "#283044",
+            "error": "#ba1a1a",
+            "on-secondary": "#ffffff",
+            "tertiary-fixed-dim": "#68dba9",
+            "surface-variant": "#dae2fd",
+            "on-surface": "#131b2e",
+            "secondary-fixed": "#cce5ff",
+            "primary-fixed": "#89f5e7"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "2xl": "1rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "space-md": "1rem",
+            "margin": "1rem",
+            "space-xs": "0.25rem",
+            "space-lg": "1.5rem",
+            "gutter": "1rem",
+            "space-xl": "2rem",
+            "space-sm": "0.5rem",
+            "margin-md": "2rem",
+            "gutter-md": "1.5rem"
+          },
+          "fontFamily": {
+            "body-sm": ["Noto Sans", "sans-serif"],
+            "headline-lg": ["Space Grotesk", "sans-serif"],
+            "metric-display": ["Space Grotesk", "sans-serif"],
+            "body-lg": ["Noto Sans", "sans-serif"],
+            "metric-display-mobile": ["Space Grotesk", "sans-serif"],
+            "headline-sm": ["Noto Sans", "sans-serif"],
+            "label-sm": ["Noto Sans", "sans-serif"],
+            "body-md": ["Noto Sans", "sans-serif"],
+            "headline-lg-mobile": ["Space Grotesk", "sans-serif"],
+            "headline-xl": ["Space Grotesk", "sans-serif"],
+            "headline-md": ["Space Grotesk", "sans-serif"],
+            "code-telemetry": ["JetBrains Mono", "monospace"],
+            "label-md": ["Noto Sans", "sans-serif"]
+          },
+          "fontSize": {
+            "body-sm": ["13px", { "lineHeight": "20px", "fontWeight": "400" }],
+            "headline-lg": ["28px", { "lineHeight": "36px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+            "metric-display": ["32px", { "lineHeight": "38px", "letterSpacing": "-0.03em", "fontWeight": "700" }],
+            "body-lg": ["16px", { "lineHeight": "26px", "fontWeight": "400" }],
+            "metric-display-mobile": ["26px", { "lineHeight": "32px", "fontWeight": "700" }],
+            "headline-sm": ["16px", { "lineHeight": "24px", "fontWeight": "600" }],
+            "label-sm": ["11px", { "lineHeight": "14px", "letterSpacing": "0.02em", "fontWeight": "500" }],
+            "body-md": ["14px", { "lineHeight": "22px", "fontWeight": "400" }],
+            "headline-lg-mobile": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
+            "headline-xl": ["36px", { "lineHeight": "44px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "headline-md": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+            "code-telemetry": ["12px", { "lineHeight": "16px", "fontWeight": "500" }],
+            "label-md": ["12px", { "lineHeight": "16px", "letterSpacing": "0.04em", "fontWeight": "600" }]
+          }
+        }
+      }
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-family: 'Material Symbols Outlined';
+      font-weight: normal;
+      font-style: normal;
+      font-size: 20px;
+      line-height: 1;
+      letter-spacing: normal;
+      text-transform: none;
+      display: inline-block;
+      white-space: nowrap;
+      word-wrap: normal;
+      direction: ltr;
+      -webkit-font-feature-settings: 'liga';
+      -webkit-font-smoothing: antialiased;
+    }
+    /* Hide scrollbar for carousel */
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+    @keyframes pulseGlow {
+      0%, 100% { transform: scale(1); opacity: 0.8; }
+      50% { transform: scale(1.45); opacity: 0.2; }
+    }
+    .live-dot-pulse {
+      animation: pulseGlow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+  </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+</head>
+<body class="bg-background text-on-surface antialiased flex justify-center selection:bg-primary-fixed selection:text-on-primary-fixed">
+<!-- Mobile Viewport Shell (Strict 390px Max-Width Device Frame) -->
+<div class="w-full max-w-[390px] min-h-screen bg-background relative flex flex-col pb-28 shadow-2xl">
+<!-- Top System Live Telemetry & Status Bar -->
+<header class="bg-surface-container-lowest text-on-surface w-full shadow-sm sticky top-0 z-40 border-b border-outline-variant/40">
+<!-- Status Meta Bar -->
+<div class="px-4 py-1.5 bg-surface-container flex items-center justify-between text-on-surface-variant font-code-telemetry text-label-sm border-b border-outline-variant/20">
+<div class="flex items-center gap-1.5">
+<span class="inline-block w-2 h-2 rounded-full bg-primary animate-pulse"></span>
+<span class="font-semibold tracking-wider text-primary">LIVE TELEMETRY</span>
+<span class="text-outline">|</span>
+<span>ICT UTC+7</span>
+</div>
+<div class="flex items-center gap-1">
+<span class="px-1.5 py-0.5 rounded bg-surface-container-highest text-on-surface-variant text-[10px] font-bold">ข้อมูลตัวอย่าง (Prototype)</span>
+</div>
+</div>
+<!-- Main Top App Bar Header -->
+<div class="flex flex-col justify-between w-full px-4 pt-2.5 pb-3">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<div class="w-9 h-9 rounded-xl bg-primary text-on-primary flex items-center justify-center shadow-sm">
+<span class="material-symbols-outlined" data-icon="solar_power" style="font-variation-settings: 'FILL' 1;">solar_power</span>
+</div>
+<div>
+<div class="font-headline-sm text-headline-sm font-bold text-primary flex items-center gap-1 leading-tight">
+<span>SOLAR ROOF</span>
+<span class="text-xs px-1.5 py-0.2 bg-primary/10 text-primary rounded font-label-md">Admin</span>
+</div>
+<p class="font-label-sm text-[11px] text-on-surface-variant leading-none">ศูนย์วิศวกรรมและควบคุมโทรมาตร</p>
+</div>
+</div>
+<button aria-label="Notifications" class="w-10 h-10 rounded-xl bg-surface-container-low hover:bg-surface-container active:scale-95 transition-transform flex items-center justify-center text-on-surface-variant relative">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+<span class="absolute top-2 right-2 w-2 h-2 rounded-full bg-error ring-2 ring-surface-container-lowest"></span>
+</button>
+</div>
+<!-- Scope Selector Module -->
+<div class="mt-3 pt-2.5 border-t border-outline-variant/30 flex flex-col gap-2">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-1.5 text-on-surface font-label-md text-label-md">
+<span class="material-symbols-outlined text-primary text-[18px]" data-icon="hub">hub</span>
+<span class="text-outline">ขอบเขต:</span>
+<span class="font-bold text-on-surface">ทุกไซต์ที่ดูแล (12 ไซต์)</span>
+</div>
+<button class="text-primary font-label-sm text-label-sm font-semibold flex items-center gap-0.5 px-2 py-1 rounded bg-primary/10 active:scale-95 transition-transform">
+<span>เปลี่ยน</span>
+<span class="material-symbols-outlined text-[16px]" data-icon="unfold_more">unfold_more</span>
+</button>
+</div>
+<!-- Quick Scope Tag with Back Button -->
+<div class="flex items-center justify-between bg-surface-container-low px-2.5 py-1.5 rounded-xl border border-outline-variant/50 text-label-sm">
+<div class="flex items-center gap-1.5 min-w-0">
+<span class="text-outline text-[11px]">ทางลัด:</span>
+<span class="font-code-telemetry font-bold text-primary truncate">รร.บ้านสวน (BSW-01)</span>
+<span class="px-1.5 py-0.2 rounded text-[10px] bg-tertiary-fixed text-on-tertiary-fixed font-medium">โฟกัส</span>
+</div>
+<button class="flex items-center gap-1 text-primary hover:text-on-surface font-label-md text-xs font-semibold px-2 py-1 bg-surface-container-lowest rounded-lg border border-outline-variant/60 shadow-xs active:scale-95 transition-transform">
+<span class="material-symbols-outlined text-[14px]" data-icon="arrow_back">arrow_back</span>
+<span>กลับทุกไซต์</span>
+</button>
+</div>
+</div>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="px-3 pt-3 flex flex-col gap-3.5">
+<!-- Date Range Filter & Freshness Bar -->
+<section class="bg-surface-container-lowest p-3 rounded-2xl border border-outline-variant/40 shadow-xs">
+<div class="flex items-center justify-between mb-2">
+<div class="flex items-center gap-1.5 text-primary font-headline-sm text-xs font-bold">
+<span class="material-symbols-outlined text-[16px]" data-icon="calendar_month">calendar_month</span>
+<span>รอบบิลวิเคราะห์:</span>
+<span class="font-code-telemetry text-on-surface bg-surface-container px-2 py-0.5 rounded font-semibold text-xs">1–30 ก.ย. 2569</span>
+</div>
+<!-- Freshness Tag -->
+<div class="flex items-center gap-1.5 bg-tertiary/10 px-2 py-1 rounded-full border border-tertiary/20">
+<span class="relative flex h-2 w-2">
+<span class="live-dot-pulse absolute inline-flex h-full w-full rounded-full bg-tertiary opacity-75"></span>
+<span class="relative inline-flex rounded-full h-2 w-2 bg-tertiary"></span>
+</span>
+<span class="font-label-sm text-[10px] font-bold text-tertiary tracking-tight">ข้อมูลสด (5 วิที่แล้ว)</span>
+</div>
+</div>
+<!-- Preset Segmented Control -->
+<div class="grid grid-cols-4 gap-1 p-1 bg-surface-container rounded-xl text-center font-label-sm text-xs">
+<button class="py-1.5 rounded-lg text-on-surface-variant font-medium active:scale-95 transition-transform">วันนี้</button>
+<button class="py-1.5 rounded-lg text-on-surface-variant font-medium active:scale-95 transition-transform">7 วัน</button>
+<button class="py-1.5 rounded-lg bg-surface-container-lowest text-primary font-bold shadow-xs border border-outline-variant/30 active:scale-95 transition-transform">เดือนนี้</button>
+<button class="py-1.5 rounded-lg text-on-surface-variant font-medium active:scale-95 transition-transform">กำหนดเอง</button>
+</div>
+</section>
+<!-- 1. Top KPI Summary Cards (All 12 Sites Scope) -->
+<section class="grid grid-cols-2 gap-2.5">
+<!-- KPI 1 (Primary - Full Width Span) -->
+<div class="col-span-2 bg-gradient-to-br from-primary via-primary-container to-surface-tint text-on-primary p-4 rounded-2xl shadow-sm relative overflow-hidden">
+<div class="absolute -right-4 -bottom-4 opacity-10 pointer-events-none">
+<span class="material-symbols-outlined text-[130px]" data-icon="bolt">bolt</span>
+</div>
+<div class="flex items-center justify-between text-on-primary-container">
+<span class="font-label-md text-xs tracking-wider uppercase flex items-center gap-1">
+<span class="material-symbols-outlined text-[15px]" data-icon="electric_bolt">electric_bolt</span>
+              พลังงานผลิตสะสมรอบนี้
+            </span>
+<span class="px-2 py-0.5 rounded-full bg-surface-container-lowest/20 text-[10px] font-code-telemetry font-bold">1–30 ก.ย. 2569</span>
+</div>
+<div class="mt-2 flex items-baseline gap-2">
+<span class="font-metric-display-mobile text-headline-xl font-bold tracking-tight text-white drop-shadow-xs">482,600</span>
+<span class="font-code-telemetry text-base font-semibold text-primary-fixed">kWh</span>
+</div>
+<div class="mt-2 pt-2 border-t border-white/15 flex items-center justify-between text-xs text-on-primary/90">
+<span>เฉลี่ยต่อวัน: <strong class="font-code-telemetry text-white">16,086.6 kWh</strong></span>
+<span class="flex items-center text-tertiary-fixed text-[11px] font-bold">ข้อมูลตัวอย่างในช่วงที่เลือก</span>
+</div>
+</div>
+<!-- KPI 2: Total Capacity -->
+<div class="bg-surface-container-lowest p-3.5 rounded-2xl border border-outline-variant/40 shadow-xs flex flex-col justify-between">
+<div class="flex items-center gap-1 text-on-surface-variant font-label-sm text-xs">
+<span class="material-symbols-outlined text-primary text-[16px]" data-icon="solar_power">solar_power</span>
+<span>กำลังติดตั้งรวม</span>
+</div>
+<div class="my-1.5">
+<span class="font-metric-display-mobile text-2xl font-bold text-on-surface">4.8</span>
+<span class="font-code-telemetry text-xs font-semibold text-primary ml-0.5">MWp</span>
+</div>
+<div class="text-[11px] text-outline font-label-sm">
+            ครอบคลุม <span class="font-semibold text-on-surface">12 ไซต์โครงข่าย</span>
+</div>
+</div>
+<!-- KPI 3: Live Output Power -->
+<div class="bg-surface-container-lowest p-3.5 rounded-2xl border border-outline-variant/40 shadow-xs flex flex-col justify-between">
+<div class="flex items-center justify-between text-on-surface-variant font-label-sm text-xs">
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-secondary text-[16px]" data-icon="speed">speed</span>
+<span>กำลังผลิตขณะนี้</span>
+</div>
+<span class="inline-block w-1.5 h-1.5 rounded-full bg-tertiary"></span>
+</div>
+<div class="my-1.5">
+<span class="font-metric-display-mobile text-2xl font-bold text-on-surface">3,240</span>
+<span class="font-code-telemetry text-xs font-semibold text-secondary ml-0.5">kW</span>
+</div>
+<div class="text-[10px] text-outline font-code-telemetry truncate">
+            Snapshot 9 ต.ค. 13:45
+          </div>
+</div>
+</section>
+<!-- 2. Device Freshness & Status Card -->
+<section class="bg-surface-container-lowest p-4 rounded-2xl border border-outline-variant/40 shadow-xs">
+<div class="flex items-center justify-between pb-3 border-b border-outline-variant/20">
+<div>
+<h2 class="font-headline-sm text-sm font-bold text-on-surface flex items-center gap-1.5">
+<span class="material-symbols-outlined text-primary text-[18px]" data-icon="sensors">sensors</span>
+              สถานะความพร้อมอุปกรณ์เทคนิค
+            </h2>
+<p class="font-label-sm text-[11px] text-on-surface-variant">อุปกรณ์โทรมาตรทั้งหมด 87 ตัว ใน 12 ไซต์</p>
+</div>
+<div class="px-2.5 py-1 rounded-xl bg-tertiary/10 border border-tertiary/20 text-tertiary font-code-telemetry font-bold text-xs">
+            89.7% Online
+          </div>
+</div>
+<div class="mt-3.5 flex items-center gap-4">
+<!-- Donut Ring SVG Diagram -->
+<div class="relative w-24 h-24 flex-shrink-0 flex items-center justify-center">
+<svg class="w-full h-full -rotate-90" viewbox="0 0 36 36">
+<!-- Background Ring -->
+<path class="text-surface-container" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" stroke-width="3.8"></path>
+<!-- Fresh Segment: 78/87 = 89.65% -->
+<path class="text-tertiary transition-all duration-1000 ease-out" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" stroke-dasharray="89.7, 100" stroke-linecap="round" stroke-width="3.8"></path>
+<!-- Stale Segment: 9/87 = 10.3% placed at offset -->
+<path class="text-secondary-container" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" stroke-dasharray="10.3, 100" stroke-dashoffset="-89.7" stroke-linecap="round" stroke-width="3.8"></path>
+</svg>
+<div class="absolute inset-0 flex flex-col items-center justify-center text-center">
+<span class="font-metric-display-mobile text-lg font-bold text-on-surface leading-none">87</span>
+<span class="text-[9px] font-label-sm text-outline mt-0.5">รวมอุปกรณ์</span>
+</div>
+</div>
+<!-- Fresh / Stale Breakdown Tags -->
+<div class="flex-1 flex flex-col gap-2">
+<div class="p-2 rounded-xl bg-tertiary/10 border border-tertiary/20 flex items-center justify-between">
+<div class="flex items-center gap-1.5">
+<span class="w-2.5 h-2.5 rounded-full bg-tertiary"></span>
+<span class="font-label-md text-xs text-on-surface">สดใหม่ (Fresh &lt; 5m)</span>
+</div>
+<span class="font-code-telemetry text-sm font-bold text-tertiary">78 <span class="text-[10px] font-normal text-on-surface-variant">ตัว</span></span>
+</div>
+<div class="p-2 rounded-xl bg-secondary-container/15 border border-secondary-container/30 flex items-center justify-between">
+<div class="flex items-center gap-1.5">
+<span class="w-2.5 h-2.5 rounded-full bg-secondary"></span>
+<span class="font-label-md text-xs text-on-surface">ล่าช้า (Stale &gt; 5m)</span>
+</div>
+<span class="font-code-telemetry text-sm font-bold text-secondary">9 <span class="text-[10px] font-normal text-on-surface-variant">ตัว</span></span>
+</div>
+</div>
+</div>
+<!-- Device Type Category Counts -->
+<div class="mt-3 pt-3 border-t border-outline-variant/30 grid grid-cols-3 gap-2 text-center">
+<div class="bg-surface-container p-2 rounded-xl">
+<div class="font-label-sm text-[10px] text-outline-variant text-on-surface-variant">Inverters</div>
+<div class="font-code-telemetry text-sm font-bold text-on-surface mt-0.5">60 <span class="text-[9px] text-outline font-normal">ตัว</span></div>
+</div>
+<div class="bg-surface-container p-2 rounded-xl">
+<div class="font-label-sm text-[10px] text-outline-variant text-on-surface-variant">Smart Meters</div>
+<div class="font-code-telemetry text-sm font-bold text-on-surface mt-0.5">15 <span class="text-[9px] text-outline font-normal">ตัว</span></div>
+</div>
+<div class="bg-surface-container p-2 rounded-xl">
+<div class="font-label-sm text-[10px] text-outline-variant text-on-surface-variant">Gateways</div>
+<div class="font-code-telemetry text-sm font-bold text-on-surface mt-0.5">12 <span class="text-[9px] text-outline font-normal">ตัว</span></div>
+</div>
+</div>
+</section>
+<!-- 3. Large Energy Area Graph (No Data Tables) -->
+<section class="bg-surface-container-lowest p-4 rounded-2xl border border-outline-variant/40 shadow-xs flex flex-col">
+<div class="flex items-start justify-between">
+<div>
+<div class="flex items-center gap-1 text-primary text-xs font-label-md font-bold">
+<span class="material-symbols-outlined text-[15px]" data-icon="ssid_chart">ssid_chart</span>
+<span>กราฟแนวโน้มการผลิตรอบบิล</span>
+</div>
+<h3 class="font-headline-sm text-sm font-bold text-on-surface mt-0.5">พลังงานไฟฟ้ารายวันรวม (kWh)</h3>
+<p class="font-label-sm text-[11px] text-outline">1–30 ก.ย. 2569 • ค่าเฉลี่ย 16,086.6 kWh/วัน</p>
+</div>
+<div class="text-right">
+<span class="px-2 py-0.5 bg-primary/10 text-primary rounded text-[10px] font-bold font-code-telemetry inline-flex items-center gap-0.5">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span> 30 วัน
+            </span>
+</div>
+</div>
+<!-- Callout Banner for Peak & Data Gap -->
+<div class="mt-2.5 flex items-center justify-between text-[11px] font-label-sm bg-surface-container px-2.5 py-1.5 rounded-xl border border-outline-variant/30">
+<div class="flex items-center gap-1">
+<span class="w-2 h-2 rounded-full bg-primary"></span>
+<span class="text-on-surface font-medium">จุดพีค: <strong class="font-code-telemetry text-primary">18 ก.ย. (19,420 kWh)</strong></span>
+</div>
+<div class="flex items-center gap-1 text-outline">
+<span class="inline-block w-2.5 border-b-2 border-dashed border-outline"></span>
+<span>16-17 ก.ย. ข้อมูลขาด</span>
+</div>
+</div>
+<!-- SVG Area Chart Container -->
+<div class="mt-3 w-full h-56 relative">
+<svg class="w-full h-full overflow-visible" preserveaspectratio="none" viewbox="0 0 350 200">
+<defs>
+<!-- Gradient for Area Under Curve -->
+<lineargradient id="energyTealGrad" x1="0" x2="0" y1="0" y2="1">
+<stop offset="0%" stop-color="#00685f" stop-opacity="0.38"></stop>
+<stop offset="60%" stop-color="#008378" stop-opacity="0.12"></stop>
+<stop offset="100%" stop-color="#00685f" stop-opacity="0.0"></stop>
+</lineargradient>
+<pattern height="6" id="diagonalHatch" patterntransform="rotate(45 0 0)" patternunits="userSpaceOnUse" width="6">
+<line stroke="#bcc9c6" stroke-dasharray="2,2" stroke-width="1.2" x1="0" x2="0" y1="0" y2="6"></line>
+</pattern>
+</defs>
+<!-- Horizontal Gridlines & Y-Axis Labels -->
+<!-- 20k kWh -->
+<line opacity="0.45" stroke="#bcc9c6" stroke-dasharray="3,3" stroke-width="0.8" x1="38" x2="345" y1="20" y2="20"></line>
+<text fill="#6d7a77" font-family="JetBrains Mono" font-size="8.5" text-anchor="end" x="32" y="23">20k</text>
+<!-- 15k kWh -->
+<line opacity="0.45" stroke="#bcc9c6" stroke-dasharray="3,3" stroke-width="0.8" x1="38" x2="345" y1="60" y2="60"></line>
+<text fill="#6d7a77" font-family="JetBrains Mono" font-size="8.5" text-anchor="end" x="32" y="63">15k</text>
+<!-- 10k kWh -->
+<line opacity="0.45" stroke="#bcc9c6" stroke-dasharray="3,3" stroke-width="0.8" x1="38" x2="345" y1="100" y2="100"></line>
+<text fill="#6d7a77" font-family="JetBrains Mono" font-size="8.5" text-anchor="end" x="32" y="103">10k</text>
+<!-- 5k kWh -->
+<line opacity="0.45" stroke="#bcc9c6" stroke-dasharray="3,3" stroke-width="0.8" x1="38" x2="345" y1="140" y2="140"></line>
+<text fill="#6d7a77" font-family="JetBrains Mono" font-size="8.5" text-anchor="end" x="32" y="143">5k</text>
+<!-- 0 kWh Baseline -->
+<line opacity="0.6" stroke="#6d7a77" stroke-width="1.2" x1="38" x2="345" y1="180" y2="180"></line>
+<text fill="#6d7a77" font-family="JetBrains Mono" font-size="8.5" text-anchor="end" x="32" y="183">0</text>
+<!-- Average Line (16,086 kWh -> Y ≈ 51.3) -->
+<line opacity="0.75" stroke="#00855d" stroke-dasharray="4,3" stroke-width="1.2" x1="38" x2="345" y1="51" y2="51"></line>
+<text fill="#00855d" font-family="JetBrains Mono" font-size="7.5" font-weight="600" text-anchor="end" x="343" y="47">Avg 16.0k</text>
+<!-- MISSING VALUE GAP REGION (16-17 ก.ย. ~ X: 185 to 205) -->
+<rect fill="url(#diagonalHatch)" height="160" opacity="0.65" width="22" x="186" y="20"></rect>
+<text fill="#6d7a77" font-family="Noto Sans" font-size="7.5" font-weight="600" text-anchor="middle" x="197" y="110">Data Gap</text>
+<text fill="#6d7a77" font-family="Noto Sans" font-size="6.5" text-anchor="middle" x="197" y="120">16-17 ก.ย.</text>
+<!-- Left Segment Area Fill (Days 1 to 15) -->
+<path d="M 40,180
+                     L 40,78
+                     Q 52,62 65,68
+                     T 90,56
+                     T 115,70
+                     T 140,48
+                     T 165,58
+                     L 186,64
+                     L 186,180 Z" fill="url(#energyTealGrad)"></path>
+<!-- Left Segment Stroke Curve (Days 1 to 15) -->
+<path d="M 40,78
+                     Q 52,62 65,68
+                     T 90,56
+                     T 115,70
+                     T 140,48
+                     T 165,58
+                     L 186,64" fill="none" stroke="#00685f" stroke-linecap="round" stroke-width="2.6"></path>
+<!-- Missing value bridge line (Dashed) -->
+<line stroke="#bcc9c6" stroke-dasharray="3,3" stroke-width="1.8" x1="186" x2="208" y1="64" y2="25"></line>
+<!-- Right Segment Area Fill (Days 18 to 30) - Contains Peak at Day 18 -->
+<path d="M 208,180
+                     L 208,25
+                     Q 225,28 240,44
+                     T 265,38
+                     T 290,58
+                     T 315,50
+                     L 345,62
+                     L 345,180 Z" fill="url(#energyTealGrad)"></path>
+<!-- Right Segment Stroke Curve (Days 18 to 30) -->
+<path d="M 208,25
+                     Q 225,28 240,44
+                     T 265,38
+                     T 290,58
+                     T 315,50
+                     L 345,62" fill="none" stroke="#00685f" stroke-linecap="round" stroke-width="2.6"></path>
+<!-- Peak Highlight Point at X=208, Y=25 (18 ก.ย. 19,420 kWh) -->
+<circle cx="208" cy="25" fill="#ffffff" r="4.5" stroke="#00685f" stroke-width="2.5"></circle>
+<circle cx="208" cy="25" fill="#008378" r="2"></circle>
+<!-- Peak Data Callout Bubble -->
+<g transform="translate(160, 2)">
+<rect fill="#131b2e" height="18" rx="5" width="95" x="0" y="0"></rect>
+<text fill="#ffffff" font-family="Noto Sans" font-size="8" font-weight="600" text-anchor="middle" x="47.5" y="12">
+                18 ก.ย. : 19,420 kWh
+              </text>
+</g>
+<!-- X-Axis Dates Markers -->
+<text fill="#6d7a77" font-family="Noto Sans" font-size="8.5" text-anchor="middle" x="40" y="194">1 ก.ย.</text>
+<text fill="#6d7a77" font-family="Noto Sans" font-size="8.5" text-anchor="middle" x="115" y="194">10 ก.ย.</text>
+<text fill="#00685f" font-family="Noto Sans" font-size="8.5" font-weight="700" text-anchor="middle" x="208" y="194">18 ก.ย.</text>
+<text fill="#6d7a77" font-family="Noto Sans" font-size="8.5" text-anchor="middle" x="275" y="194">24 ก.ย.</text>
+<text fill="#6d7a77" font-family="Noto Sans" font-size="8.5" text-anchor="middle" x="340" y="194">30 ก.ย.</text>
+</svg>
+</div>
+</section>
+<!-- 4. Prominent Geo Map & Swipeable Site Cards -->
+<section class="bg-surface-container-lowest p-3.5 rounded-2xl border border-outline-variant/40 shadow-xs flex flex-col gap-2.5">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-primary text-[18px]" data-icon="map">map</span>
+<div>
+<h3 class="font-headline-sm text-sm font-bold text-on-surface">พิกัดโครงข่ายไซต์งาน</h3>
+<p class="font-label-sm text-[11px] text-on-surface-variant">ภาคตะวันออก ชลบุรี-ระยอง (12 จุดปฏิบัติการ)</p>
+</div>
+</div>
+<span class="px-2 py-0.5 rounded-lg bg-surface-container text-on-surface font-code-telemetry text-xs font-bold">12 Sites</span>
+</div>
+<!-- Vector Stylized Geographic Map Canvas -->
+<div class="w-full h-44 rounded-xl bg-surface-container-low border border-outline-variant/40 relative overflow-hidden flex items-center justify-center">
+<!-- Stylized Map Grid & Coastal Contour Vector -->
+<svg class="absolute inset-0 w-full h-full" preserveaspectratio="none" viewbox="0 0 360 176">
+<!-- Subtle Map Grid -->
+<defs>
+<pattern height="24" id="mapGrid" patternunits="userSpaceOnUse" width="24">
+<path d="M 24 0 L 0 0 0 24" fill="none" stroke="#dae2fd" stroke-width="0.8"></path>
+</pattern>
+</defs>
+<rect fill="#f2f3ff" height="100%" width="100%"></rect>
+<rect fill="url(#mapGrid)" height="100%" width="100%"></rect>
+<!-- Water/Gulf of Thailand Contour -->
+<path d="M 0,0 L 95,0 Q 110,60 80,120 T 40,176 L 0,176 Z" fill="#dae2fd" opacity="0.6"></path>
+<text fill="#006398" font-family="Noto Sans" font-size="10" font-weight="600" opacity="0.4" transform="rotate(-65 35 90)" x="35" y="90">อ่าวไทย</text>
+<!-- Major Roads/Highways -->
+<path d="M 90,176 Q 140,120 180,60 T 260,0" fill="none" opacity="0.7" stroke="#bcc9c6" stroke-width="2.5"></path>
+<path d="M 175,70 Q 230,100 340,130" fill="none" opacity="0.5" stroke="#bcc9c6" stroke-width="1.8"></path>
+<!-- 12 Site Coordinate Pins -->
+<!-- Site 1: BSW-01 (Selected Active with pulse) -->
+<g class="cursor-pointer" transform="translate(178, 58)">
+<circle class="animate-ping" cx="0" cy="0" fill="#00685f" opacity="0.2" r="14"></circle>
+<circle cx="0" cy="0" fill="#00685f" r="7" stroke="#ffffff" stroke-width="2"></circle>
+<circle cx="0" cy="0" fill="#89f5e7" r="2.5"></circle>
+<rect fill="#00201d" height="14" rx="3" width="76" x="-38" y="-22"></rect>
+<text fill="#ffffff" font-family="Noto Sans" font-size="7.5" font-weight="700" text-anchor="middle" x="0" y="-12">รร.บ้านสวน ★</text>
+</g>
+<!-- Site 2: BLM-02 (รพ.บางละมุง) -->
+<g transform="translate(125, 110)">
+<circle cx="0" cy="0" fill="#00855d" r="5" stroke="#ffffff" stroke-width="1.8"></circle>
+<rect fill="#131b2e" height="12" opacity="0.85" rx="3" width="52" x="-26" y="-18"></rect>
+<text fill="#ffffff" font-family="Noto Sans" font-size="6.8" text-anchor="middle" x="0" y="-9">รพ.บางละมุง</text>
+</g>
+<!-- Site 3: BUU-01 (ม.บูรพา) -->
+<g transform="translate(150, 82)">
+<circle cx="0" cy="0" fill="#00855d" r="4.5" stroke="#ffffff" stroke-width="1.5"></circle>
+<rect fill="#131b2e" height="11" opacity="0.8" rx="2" width="44" x="-22" y="-16"></rect>
+<text fill="#ffffff" font-family="Noto Sans" font-size="6.5" text-anchor="middle" x="0" y="-8">ม.บูรพา</text>
+</g>
+<!-- Site 4: SPB-01 (นิคมสยามอีสเทิร์น) -->
+<g transform="translate(250, 115)">
+<circle cx="0" cy="0" fill="#00855d" r="4" stroke="#ffffff" stroke-width="1.5"></circle>
+</g>
+<!-- Site 5: LCB-03 (แหลมฉบังคลัง 3) -->
+<g transform="translate(112, 138)">
+<circle cx="0" cy="0" fill="#ba1a1a" r="4.5" stroke="#ffffff" stroke-width="1.5"></circle>
+</g>
+<!-- Site 6: AMN-01 (อมตะนคร เฟส 4) -->
+<g transform="translate(195, 30)">
+<circle cx="0" cy="0" fill="#00855d" r="4" stroke="#ffffff" stroke-width="1.5"></circle>
+</g>
+<!-- Site 7: PLD-02 (ปลวกแดง) -->
+<g transform="translate(285, 95)">
+<circle cx="0" cy="0" fill="#00855d" r="4" stroke="#ffffff" stroke-width="1.5"></circle>
+</g>
+<!-- Other sites as clustered technical nodes -->
+<circle cx="220" cy="75" fill="#00855d" r="3.5" stroke="#ffffff" stroke-width="1"></circle>
+<circle cx="205" cy="130" fill="#00855d" r="3.5" stroke="#ffffff" stroke-width="1"></circle>
+<circle cx="270" cy="60" fill="#00855d" r="3.5" stroke="#ffffff" stroke-width="1"></circle>
+<circle cx="310" cy="140" fill="#00855d" r="3.5" stroke="#ffffff" stroke-width="1"></circle>
+<circle cx="160" cy="155" fill="#00855d" r="3.5" stroke="#ffffff" stroke-width="1"></circle>
+</svg>
+<!-- Floating Map Control Legend -->
+<div class="absolute bottom-2 left-2 bg-surface-container-lowest/90 backdrop-blur-sm px-2 py-1 rounded-lg border border-outline-variant/40 text-[10px] flex items-center gap-2">
+<span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-tertiary"></span> ปกติ (11)</span>
+<span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-error"></span> มีเตือน (1)</span>
+</div>
+<div class="absolute top-2 right-2 bg-surface-container-lowest/90 px-2 py-0.5 rounded text-[10px] font-code-telemetry text-on-surface-variant border border-outline-variant/40">
+            Lat: 13.3611° N
+          </div>
+</div>
+<!-- Swipeable Site Carousel Header Indicator -->
+<div class="flex items-center justify-between text-xs text-on-surface-variant font-label-sm px-0.5">
+<span class="flex items-center gap-1 font-semibold text-on-surface">
+<span class="material-symbols-outlined text-[15px]" data-icon="swipe">swipe</span>
+            เลื่อนดูไซต์ (3 จาก 12)
+          </span>
+<span class="text-[11px] text-outline">เลื่อนในแนวนอน →</span>
+</div>
+<!-- Horizontal Swipeable Carousel -->
+<div class="flex gap-2.5 overflow-x-auto no-scrollbar pb-1 pt-0.5 snap-x snap-mandatory">
+<!-- Card 1: โรงเรียนบ้านสวน (BSW-01) - Active Focused -->
+<div class="min-w-[270px] max-w-[270px] snap-center bg-surface-container-lowest p-3 rounded-2xl border-2 border-primary shadow-xs flex flex-col justify-between relative">
+<div class="absolute top-2.5 right-2.5">
+<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-primary text-on-primary">เลือกอยู่</span>
+</div>
+<div>
+<div class="flex items-center gap-1 text-primary font-code-telemetry text-xs font-bold">
+<span class="material-symbols-outlined text-[14px]" data-icon="apartment">apartment</span>
+<span>BSW-01</span>
+</div>
+<h4 class="font-headline-sm text-sm font-bold text-on-surface mt-0.5 truncate">รร.บ้านสวน (BSW-01)</h4>
+<div class="flex items-center gap-2 mt-2 font-code-telemetry text-xs">
+<div>
+<span class="text-[10px] text-outline block">กำลังติดตั้ง</span>
+<span class="font-bold text-on-surface">0.45 MWp</span>
+</div>
+<div class="border-l border-outline-variant pl-2">
+<span class="text-[10px] text-outline block">กำลังผลิตสด</span>
+<span class="font-bold text-primary">218 kW</span>
+</div>
+</div>
+</div>
+<div class="mt-2.5 pt-2 border-t border-outline-variant/30 flex items-center justify-between text-xs">
+<span class="text-[11px] text-on-surface-variant font-label-sm">
+                Inverter: <strong class="text-on-surface">3/4 ปกติ</strong> <span class="text-secondary">(1 Stale)</span>
+</span>
+<button class="px-2.5 py-1 rounded-lg bg-primary/10 text-primary font-label-md text-xs font-semibold active:scale-95 transition-transform">
+                ดูไซต์นี้
+              </button>
+</div>
+</div>
+<!-- Card 2: โรงพยาบาลบางละมุง (BLM-02) -->
+<div class="min-w-[270px] max-w-[270px] snap-center bg-surface-container-lowest p-3 rounded-2xl border border-outline-variant/60 shadow-xs flex flex-col justify-between">
+<div class="flex items-center justify-between">
+<span class="font-code-telemetry text-xs font-bold text-on-surface-variant flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px] text-tertiary" data-icon="local_hospital">local_hospital</span>
+                BLM-02
+              </span>
+<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-tertiary/10 text-tertiary">ปกติ 100%</span>
+</div>
+<div>
+<h4 class="font-headline-sm text-sm font-bold text-on-surface mt-0.5 truncate">รพ.บางละมุง (BLM-02)</h4>
+<div class="flex items-center gap-2 mt-2 font-code-telemetry text-xs">
+<div>
+<span class="text-[10px] text-outline block">กำลังติดตั้ง</span>
+<span class="font-bold text-on-surface">0.80 MWp</span>
+</div>
+<div class="border-l border-outline-variant pl-2">
+<span class="text-[10px] text-outline block">กำลังผลิตสด</span>
+<span class="font-bold text-tertiary">540 kW</span>
+</div>
+</div>
+</div>
+<div class="mt-2.5 pt-2 border-t border-outline-variant/30 flex items-center justify-between text-xs">
+<span class="text-[11px] text-outline font-label-sm">Inverter 6/6 ออนไลน์ครบ</span>
+<button class="px-2 py-1 rounded-lg bg-surface-container text-on-surface font-label-md text-xs font-semibold active:scale-95 transition-transform">
+                สลับดู
+              </button>
+</div>
+</div>
+<!-- Card 3: มหาวิทยาลัยบูรพา (BUU-01) -->
+<div class="min-w-[270px] max-w-[270px] snap-center bg-surface-container-lowest p-3 rounded-2xl border border-outline-variant/60 shadow-xs flex flex-col justify-between">
+<div class="flex items-center justify-between">
+<span class="font-code-telemetry text-xs font-bold text-on-surface-variant flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px] text-tertiary" data-icon="school">school</span>
+                BUU-01
+              </span>
+<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-tertiary/10 text-tertiary">ปกติ</span>
+</div>
+<div>
+<h4 class="font-headline-sm text-sm font-bold text-on-surface mt-0.5 truncate">ม.บูรพา (BUU-01)</h4>
+<div class="flex items-center gap-2 mt-2 font-code-telemetry text-xs">
+<div>
+<span class="text-[10px] text-outline block">กำลังติดตั้ง</span>
+<span class="font-bold text-on-surface">0.60 MWp</span>
+</div>
+<div class="border-l border-outline-variant pl-2">
+<span class="text-[10px] text-outline block">กำลังผลิตสด</span>
+<span class="font-bold text-on-surface">392 kW</span>
+</div>
+</div>
+</div>
+<div class="mt-2.5 pt-2 border-t border-outline-variant/30 flex items-center justify-between text-xs">
+<span class="text-[11px] text-outline font-label-sm">Inverter 5/5 ทำงานปกติ</span>
+<button class="px-2 py-1 rounded-lg bg-surface-container text-on-surface font-label-md text-xs font-semibold active:scale-95 transition-transform">
+                สลับดู
+              </button>
+</div>
+</div>
+</div>
+</section>
+<!-- 5. Scoped Selected-Site Card (โรงเรียนบ้านสวน BSW-01) -->
+<section class="bg-surface-container-lowest p-4 rounded-2xl border-2 border-primary/30 shadow-xs flex flex-col gap-3">
+<!-- Site Header & Identification -->
+<div class="flex items-start justify-between pb-2.5 border-b border-outline-variant/30">
+<div>
+<div class="flex items-center gap-1 text-primary text-xs font-label-md font-bold">
+<span class="material-symbols-outlined text-[16px]" data-icon="my_location">my_location</span>
+<span>เมื่อเลือกโรงเรียนบ้านสวน (BSW-01) — ตรวจสอบเจาะลึก</span>
+</div>
+<h3 class="font-headline-sm text-base font-bold text-on-surface mt-0.5">โรงเรียนบ้านสวน (BSW-01)</h3>
+<p class="font-label-sm text-[11px] text-outline">ต.บ้านสวน อ.เมืองชลบุรี จ.ชลบุรี</p>
+</div>
+<span class="px-2 py-1 rounded-lg bg-primary-container text-on-primary-container font-code-telemetry text-[11px] font-bold">
+            BSW-01
+          </span>
+</div>
+<!-- Telemetry Tri-Metric Block -->
+<div class="grid grid-cols-3 gap-2 text-center bg-surface-container-low p-2.5 rounded-xl border border-outline-variant/40">
+<div>
+<span class="text-[10px] font-label-sm text-on-surface-variant block">กำลังติดตั้ง</span>
+<span class="font-metric-display-mobile text-sm font-bold text-on-surface">0.45</span>
+<span class="text-[10px] font-code-telemetry text-outline ml-0.5">MWp</span>
+</div>
+<div class="border-x border-outline-variant/50">
+<span class="text-[10px] font-label-sm text-on-surface-variant block">กำลังผลิตขณะนี้</span>
+<span class="font-metric-display-mobile text-sm font-bold text-primary">218</span>
+<span class="text-[10px] font-code-telemetry text-primary ml-0.5">kW</span>
+</div>
+<div>
+<span class="text-[10px] font-label-sm text-on-surface-variant block">สะสมรอบนี้</span>
+<span class="font-metric-display-mobile text-sm font-bold text-on-surface">48,200</span>
+<span class="text-[10px] font-code-telemetry text-outline ml-0.5">kWh</span>
+</div>
+</div>
+<!-- Reception Timeline Block -->
+<div class="bg-surface-container p-3 rounded-xl border border-outline-variant/30">
+<div class="flex items-center justify-between text-xs font-label-md mb-2">
+<span class="text-on-surface font-semibold flex items-center gap-1">
+<span class="material-symbols-outlined text-[15px] text-secondary" data-icon="schedule">schedule</span>
+              ตารางเวลาการรับส่งข้อมูลโทรมาตร
+            </span>
+<span class="text-[10px] font-code-telemetry text-outline">รอบทุก 5 นาที</span>
+</div>
+<div class="space-y-1.5 font-code-telemetry text-xs">
+<div class="flex items-center justify-between py-1 border-b border-outline-variant/30">
+<span class="text-on-surface-variant font-body-sm text-[11px]">Last Measured (เวลาตรวจวัด):</span>
+<span class="font-bold text-on-surface">13:44:10 น.</span>
+</div>
+<div class="flex items-center justify-between py-1 border-b border-outline-variant/30">
+<span class="text-on-surface-variant font-body-sm text-[11px]">Last Received (เวลารับข้อมูล):</span>
+<span class="font-bold text-tertiary">13:44:15 น. (หน่วง 5 วิ)</span>
+</div>
+<div class="flex items-center justify-between py-1">
+<span class="text-on-surface-variant font-body-sm text-[11px]">ช่องทางสื่อสารเครือข่าย:</span>
+<span class="px-2 py-0.5 rounded bg-surface-container-lowest text-on-surface text-[10px] font-semibold">4G LTE (ปกติ)</span>
+</div>
+</div>
+</div>
+<!-- Gateway Attention Alert Module -->
+<div class="p-3 bg-secondary-container/15 rounded-xl border border-secondary-container/40 flex flex-col gap-2">
+<div class="flex items-start gap-2">
+<span class="material-symbols-outlined text-secondary text-[20px] flex-shrink-0 mt-0.5" data-icon="warning">warning</span>
+<div>
+<h4 class="font-label-md text-xs font-bold text-on-secondary-container">แจ้งเตือนระดับเกตเวย์ (Gateway Attention)</h4>
+<p class="font-body-sm text-[11px] text-on-surface-variant mt-0.5 leading-snug">
+                Gateway RS485 Loop #2 สัญญาณหน่วง (Stale &gt; 8 นาที) ส่งผลให้ Inverter #04 อัปเดตข้อมูลช้ากว่าปกติ
+              </p>
+</div>
+</div>
+<!-- 44px Minimum Touch Target Action Button -->
+<div class="pt-1">
+<button class="w-full min-h-[44px] px-4 py-2.5 rounded-xl bg-secondary text-white font-label-md text-xs font-semibold shadow-xs flex items-center justify-center gap-1.5 active:scale-95 transition-transform">
+<span class="material-symbols-outlined text-[16px]" data-icon="build_circle">build_circle</span>
+<span>ตรวจสอบพอร์ตเชื่อมต่อ RS485 Loop #2</span>
+</button>
+</div>
+</div>
+</section>
+<!-- System Diagnostic Log Footer Teaser -->
+<div class="text-center py-2 text-[11px] font-label-sm text-outline">
+<span>SOLAR ROOF Telemetry Gateway Engine v4.2.1 • สถานะปกติ</span>
+</div>
+</main>
+<!-- Bottom Navigation Bar (Docked Full-Width Mobile Navigation Shell) -->
+<nav class="fixed bottom-0 left-0 right-0 w-full z-50 flex justify-around items-center px-2 py-2 max-w-[390px] mx-auto bg-surface-container-lowest text-primary shadow-md border-t border-outline-variant/30">
+<!-- Tab 1: ภาพรวม (ACTIVE) -->
+<button aria-label="ภาพรวม" class="flex flex-col items-center justify-center bg-primary-container text-on-primary-container rounded-xl px-2 py-1.5 min-w-[58px] min-h-[48px] active:scale-95 transition-transform">
+<span class="material-symbols-outlined text-[20px]" data-icon="dashboard" style="font-variation-settings: 'FILL' 1;">dashboard</span>
+<span class="text-label-sm font-label-sm mt-0.5 font-bold">ภาพรวม</span>
+</button>
+<!-- Tab 2: อุปกรณ์ -->
+<button aria-label="อุปกรณ์" class="flex flex-col items-center justify-center text-on-surface-variant px-2 py-1.5 min-w-[58px] min-h-[48px] hover:bg-surface-container-high rounded-xl active:scale-95 transition-transform">
+<span class="material-symbols-outlined text-[20px]" data-icon="solar_power">solar_power</span>
+<span class="text-label-sm font-label-sm mt-0.5">อุปกรณ์</span>
+</button>
+<!-- Tab 3: เกตเวย์ -->
+<button aria-label="เกตเวย์" class="flex flex-col items-center justify-center text-on-surface-variant px-2 py-1.5 min-w-[58px] min-h-[48px] hover:bg-surface-container-high rounded-xl active:scale-95 transition-transform">
+<span class="material-symbols-outlined text-[20px]" data-icon="router">router</span>
+<span class="text-label-sm font-label-sm mt-0.5">เกตเวย์</span>
+</button>
+<!-- Tab 4: แจ้งเตือน -->
+<button aria-label="แจ้งเตือน" class="flex flex-col items-center justify-center text-on-surface-variant px-2 py-1.5 min-w-[58px] min-h-[48px] hover:bg-surface-container-high rounded-xl active:scale-95 transition-transform relative">
+<span class="material-symbols-outlined text-[20px]" data-icon="notifications">notifications</span>
+<span class="absolute top-1.5 right-3 w-1.5 h-1.5 rounded-full bg-error"></span>
+<span class="text-label-sm font-label-sm mt-0.5">แจ้งเตือน</span>
+</button>
+<!-- Tab 5: บันทึก -->
+<button aria-label="บันทึก" class="flex flex-col items-center justify-center text-on-surface-variant px-2 py-1.5 min-w-[58px] min-h-[48px] hover:bg-surface-container-high rounded-xl active:scale-95 transition-transform">
+<span class="material-symbols-outlined text-[20px]" data-icon="receipt_long">receipt_long</span>
+<span class="text-label-sm font-label-sm mt-0.5">บันทึก</span>
+</button>
+</nav>
+</div>
+</body></html>

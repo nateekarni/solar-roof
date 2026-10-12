@@ -37,7 +37,7 @@ try {
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth),false,'Mobile horizontal overflow');
  await page.screenshot({path:'test/artifacts/dashboard-mobile.png',fullPage:true});
  if(fixture) {
-  for(const role of ['admin','operator','accountant','school']) {
+  for(const role of ['admin','operator','accountant','customer']) {
    const context=await browser.newContext();const rolePage=await context.newPage();
    rolePage.on('pageerror',error=>errors.push(error.message));
    await rolePage.goto(base+'/login');
@@ -47,8 +47,8 @@ try {
    await rolePage.waitForURL(base+'/',{timeout:15000});
    await rolePage.getByRole('heading',{level:1}).waitFor();
    const identity=await rolePage.request.get(base+'/v1/auth/me');
-   assert.equal(identity.status(),200);assert.equal((await identity.json()).role,role==='school'?'school_user':role);
-   if(role==='school') {
+   assert.equal(identity.status(),200);assert.equal((await identity.json()).role,role==='customer'?'customer_user':role);
+   if(role==='customer') {
     await expectDeniedPage(rolePage,'/sites');
     await expectDeniedPage(rolePage,'/reports');
     const denied=await rolePage.request.get(base+'/v1/sites/'+fixture.otherSiteId);
@@ -75,13 +75,13 @@ try {
     const card=rolePage.locator(`[data-job-id="${queued.jobId}"]`);await card.getByRole('status').filter({hasText:/^พร้อมใช้งาน —|^Ready —/}).waitFor({timeout:45000});
     const record=await rolePage.request.get(base+`/v1/jobs/${queued.jobId}`);assert.equal(record.status(),200);const completed=await record.json();assert.equal(completed.report.type,'device_health');assert.equal(completed.rowCount,1);
     const downloaded=rolePage.waitForEvent('download');await card.getByRole('button',{name:/ดาวน์โหลด|Download/,exact:true}).click();const artifact=await downloaded;assert.equal(artifact.suggestedFilename(),`report-${queued.jobId}.csv`);
-    const csv=(await readDownloadedFile(artifact)).toString('utf8');assert.ok(csv.includes(fixture.siteName),'Real worker exports the authorized site');assert.ok(csv.includes('meter-'),'Device report contains the fixture meter');assert.equal(csv.includes('Other '),false,'Other school data is absent');
+    const csv=(await readDownloadedFile(artifact)).toString('utf8');assert.ok(csv.includes(fixture.siteName),'Real worker exports the authorized site');assert.ok(csv.includes('meter-'),'Device report contains the fixture meter');assert.equal(csv.includes('Other '),false,'Other customer data is absent');
    }
    await context.close();
   }
  }
  assert.deepEqual(errors,[]);
- console.log('PASS: browser role destinations, own-school production, denied technical access for business roles, scoped operator reports, mobile width, zero page errors');
+ console.log('PASS: browser role destinations, own-customer production, denied technical access for business roles, scoped operator reports, mobile width, zero page errors');
 }finally{await browser.close();}
 
 

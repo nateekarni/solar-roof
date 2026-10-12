@@ -11,6 +11,6 @@ export function useFinancialCapabilities() {
   const reload=()=>{const current=++revision;setCapabilities({actions:[],unavailable:{}});fetchFinancialCapabilities(user).then(value=>{if(active&&current===revision)setCapabilities(value);}).catch(()=>{});};
   reload();window.addEventListener('operation-permission-denied',reload);
   return()=>{active=false;window.removeEventListener('operation-permission-denied',reload);};
- },[user?.id,user?.role,user?.schoolId]);
+ },[user?.id,user?.role,user?.customerId]);
  return capabilities;
 }

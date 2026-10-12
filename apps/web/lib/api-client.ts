@@ -1,3 +1,5 @@
+import {apiErrorMessage} from './api-error-message';
+const errorMessage=(status:number,message:unknown)=>{const saved=typeof document!=='undefined'?document.cookie.match(/(?:^|;)\s*locale=(th|en)(?:;|$)/)?.[1]:undefined;return apiErrorMessage(status,message,(saved??authStore.getState().user?.preferredLanguage)==='en'?'en':'th');};
 import { authStore } from "../stores/auth-store";
 
 const API_BASE =
@@ -54,7 +56,11 @@ async function request(endpoint: string, options: RequestInit = {}): Promise<Res
     credentials: options.credentials ?? "include",
   };
 
-  let response = await fetch(url, config);
+  let response: Response;
+  try { response = await fetch(url, config); } catch (error) {
+    if(error instanceof Error && error.name === 'AbortError') throw error;
+    throw Object.assign(new Error(errorMessage(0, null)), {status:0});
+  }
 
   const method = (options.method ?? "GET").toUpperCase();
   const canRetry = method === "GET" || method === "HEAD" || response.headers.get("X-Auth-Retry-Safe") === "1";
@@ -94,7 +100,7 @@ export const apiClient = {
     const res = await request(endpoint, { ...options, method: "GET" });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ message: res.statusText }));
-      throw Object.assign(new Error(res.status===403?"สิทธิ์ของคุณเปลี่ยนแล้ว กรุณาเลือกการดำเนินการที่ยังอนุญาต":err.message || "Request failed"), {status:res.status,code:err.code});
+      throw Object.assign(new Error(errorMessage(res.status,err.message)), {status:res.status,code:err.code});
     }
     return res.json();
   },
@@ -115,7 +121,7 @@ export const apiClient = {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({ message: res.statusText }));
-      throw new Error(res.status===403?"สิทธิ์ของคุณเปลี่ยนแล้ว กรุณาเลือกการดำเนินการที่ยังอนุญาต":err.message || "Request failed");
+      throw Object.assign(new Error(errorMessage(res.status,err.message)),{status:res.status,code:err.code,details:err});
     }
     return res.json();
   },
@@ -135,7 +141,7 @@ export const apiClient = {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({ message: res.statusText }));
-      throw new Error(res.status===403?"สิทธิ์ของคุณเปลี่ยนแล้ว กรุณาเลือกการดำเนินการที่ยังอนุญาต":err.message || "Request failed");
+      throw Object.assign(new Error(errorMessage(res.status,err.message)),{status:res.status,code:err.code,details:err});
     }
     return res.json();
   },
@@ -155,7 +161,7 @@ export const apiClient = {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({ message: res.statusText }));
-      throw new Error(res.status===403?"สิทธิ์ของคุณเปลี่ยนแล้ว กรุณาเลือกการดำเนินการที่ยังอนุญาต":err.message || "Request failed");
+      throw Object.assign(new Error(errorMessage(res.status,err.message)),{status:res.status,code:err.code,details:err});
     }
     return res.json();
   },
@@ -164,7 +170,7 @@ export const apiClient = {
     const res = await request(endpoint, { ...options, method: "DELETE" });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ message: res.statusText }));
-      throw new Error(res.status===403?"สิทธิ์ของคุณเปลี่ยนแล้ว กรุณาเลือกการดำเนินการที่ยังอนุญาต":err.message || "Request failed");
+      throw Object.assign(new Error(errorMessage(res.status,err.message)),{status:res.status,code:err.code,details:err});
     }
     return res.json();
   },
@@ -173,7 +179,7 @@ export const apiClient = {
     const res = await request(endpoint, { ...options, method: "GET" });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw Object.assign(new Error(err.message || "Failed to download file"), {status:res.status,code:err.code});
+      throw Object.assign(new Error(errorMessage(res.status,err.message)), {status:res.status,code:err.code});
     }
     return res.blob();
   },

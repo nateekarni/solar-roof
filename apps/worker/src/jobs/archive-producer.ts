@@ -27,9 +27,9 @@ export class ArchiveProducer {
     }
    }
    if(!row){await c.query('COMMIT');return false;}
-   const site=(await c.query('SELECT school_id FROM sites WHERE id=$1',[row.site_id])).rows[0];
+   const site=(await c.query('SELECT customer_id FROM sites WHERE id=$1',[row.site_id])).rows[0];
    const from=new Date(row.day.getTime()+25200000).toISOString().slice(0,10),to=new Date(row.day.getTime()+25200000+86400000).toISOString().slice(0,10),id=randomUUID();
-   await c.query("INSERT INTO platform_jobs(id,kind,payload,scope,payload_hash) VALUES($1::uuid,'archive',$2,$3,$1::text)",[id,{siteId:row.site_id,from,to,format:'jsonl.gz'},[site.school_id]]);
+   await c.query("INSERT INTO platform_jobs(id,kind,payload,scope,payload_hash) VALUES($1::uuid,'archive',$2,$3,$1::text)",[id,{siteId:row.site_id,from,to,format:'jsonl.gz'},[site.customer_id]]);
    await c.query('DELETE FROM telemetry_archive_dirty WHERE site_id=$1 AND day=$2',[row.site_id,row.day]);
    if(scan)await c.query('UPDATE telemetry_archive_scan SET next_from=$2 WHERE site_id=$1',[row.site_id,to+'T00:00:00+07:00']);
    await c.query('COMMIT');return true;

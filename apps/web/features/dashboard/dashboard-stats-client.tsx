@@ -51,7 +51,7 @@ export function DashboardStatsClient({
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          setCardConfig(dashboardMetrics(role,parsed.map(key => key === "schools" ? "totalSites" : key)));
+          setCardConfig(dashboardMetrics(role,parsed.map(key => key === "customers" ? "totalSites" : key)));
         }
       }
     } catch {

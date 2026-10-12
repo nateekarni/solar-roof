@@ -1,0 +1,22 @@
+import {createHash} from 'node:crypto';
+export const marker='solar-ten-site-demo-v1';
+export const id=key=>{const h=createHash('sha256').update(marker+':'+key).digest('hex');return `${h.slice(0,8)}-${h.slice(8,12)}-4${h.slice(13,16)}-8${h.slice(17,20)}-${h.slice(20,32)}`;};
+// Fictional businesses with realistic Thai locations; not actual customer records.
+export const sites=[
+ ['BKK-LKB-001','ศูนย์กระจายสินค้า ลาดกระบัง','บริษัท รุ่งอรุณโลจิสติกส์ จำกัด',13.7278,100.7756,.45,3.50],
+ ['SPK-BPL-002','โรงงานบรรจุภัณฑ์ บางพลี','บริษัท กรีนแพค เอเชีย จำกัด',13.6065,100.7108,.32,3.65],
+ ['PTT-KLG-003','คลังสินค้า คลองหลวง','บริษัท ธาราธรซัพพลาย จำกัด',14.0653,100.6467,.28,3.40],
+ ['AYA-BPI-004','โรงงานชิ้นส่วน บางปะอิน','บริษัท นวภัทรพรีซิชั่น จำกัด',14.2211,100.5783,.60,3.55],
+ ['CBI-SRC-005','ศูนย์บริการ ศรีราชา','บริษัท ตะวันออกออโต้แคร์ จำกัด',13.1678,100.9312,.18,3.75],
+ ['RYG-PLD-006','โรงงานอาหาร ปลวกแดง','บริษัท อรุณฟู้ดโปรดักส์ จำกัด',12.9734,101.2121,.52,3.45],
+ ['NPT-SMP-007','ศูนย์ค้าส่ง สามพราน','บริษัท พร้อมพาณิชย์โฮลเซล จำกัด',13.7264,100.2153,.25,3.60],
+ ['NMA-MUE-008','อาคารสำนักงาน นครราชสีมา','บริษัท โคราชบิสซิเนสพาร์ค จำกัด',14.9799,102.0978,.12,3.80],
+ ['CMI-SKP-009','โรงงานแปรรูป สันกำแพง','บริษัท ล้านนาแปรรูปเกษตร จำกัด',18.7441,99.1195,.22,3.70],
+ ['SKA-HDY-010','คลังห้องเย็น หาดใหญ่','บริษัท อันดามันโคลด์เชน จำกัด',7.0084,100.4747,.38,3.55],
+].map(([code,name,customer,latitude,longitude,capacity,rate],index)=>({code,name,customer,latitude,longitude,capacity,rate,index,siteId:id('site'+index),customerId:id('customer'+index),gatewayId:id('gateway'+index),gatewayCode:`GW-${code}`}));
+export const profiles=Object.fromEntries(['meter','logger'].map(kind=>{const energy=kind==='meter'?'energy.active.import.total':'solar.total_yield',power=kind==='meter'?'power.active.total':'solar.active_power';return [kind,{id:`demo-${kind}-5m-history`,version:'1.0.0',schemaVersion:'1.1',displayName:kind==='meter'?'Schneider PM2230 · มิเตอร์ส่งมอบ':'Huawei SmartLogger3000A · ผลิตโซลาร์',deviceType:kind==='meter'?'energy-meter':'solar-logger',pollGroups:['measurements'],fields:[{tag:energy,displayName:'พลังงานสะสม',pollGroup:'measurements',sourceUnit:'Wh',targetUnit:'kWh',conversion:'wh-to-kwh',...(kind==='meter'?{role:'billing-import'}:{})},{tag:power,displayName:'กำลังไฟฟ้า',pollGroup:'measurements',sourceUnit:'W',targetUnit:'W',conversion:'identity',role:'active-power'},{tag:'electrical.voltage.l1_n',displayName:'แรงดัน L1',pollGroup:'measurements',sourceUnit:'V',targetUnit:'V',conversion:'identity'},{tag:'electrical.current.l1',displayName:'กระแส L1',pollGroup:'measurements',sourceUnit:'A',targetUnit:'A',conversion:'identity'}]}];}));
+const DAY=86400000,OFFSET=7*3600000,EPOCH=Date.parse('2020-01-01T00:00:00+07:00');
+// Analytic integral: monotone at every timestamp, restart-safe, zero production at night.
+export function reading(site,kind,time){const t=typeof time==='number'?time:Date.parse(time),local=t+OFFSET,day=Math.floor((t-EPOCH)/DAY),hour=((local%DAY)+DAY)%DAY/3600000;const fraction=hour<=6?0:hour>=18?1:(1-Math.cos(Math.PI*(hour-6)/12))/2;const daily=site.capacity*1000*(3.8+site.index*.09),factor=kind==='meter'?.965:1;const kwh=(2000+day*daily+fraction*daily)*factor;const kw=hour>6&&hour<18?daily*Math.PI/24*Math.sin(Math.PI*(hour-6)/12)*factor:0;return {kwh,power:kw*1000,voltage:230+Math.sin(t/60000+site.index)*2,current:kw*1000/(3*230*.985)};}
+export function envelope(site,kind,time=Date.now()){const r=reading(site,kind,time),profile=profiles[kind],deviceCode=`${kind==='meter'?'MTR':'SLG'}-${site.code}`,stamp=new Date(time).toISOString();const values={[profile.fields[0].tag]:Number((r.kwh*1000).toFixed(3)),[profile.fields[1].tag]:Number(r.power.toFixed(3)),'electrical.voltage.l1_n':Number(r.voltage.toFixed(2)),'electrical.current.l1':Number(r.current.toFixed(3))};return {schemaVersion:'1.1',messageType:'telemetry',messageId:`${marker}-${deviceCode}-${time}`,sequence:time,lotNumber:Math.floor(time/1000)%4294967294+1,siteId:site.code,gatewayId:site.gatewayCode,device:{deviceId:deviceCode,deviceType:profile.deviceType,profileId:profile.id,profileVersion:profile.version},pollGroup:'measurements',timestamps:{polledAt:stamp,sentAt:stamp},data:{values,units:Object.fromEntries(profile.fields.map(f=>[f.tag,f.sourceUnit]))},quality:{status:'good',communication:'online'},synthetic:true};}
+export const topic=(site,kind)=>`solar/v1/sites/${site.code}/gateways/${site.gatewayCode}/devices/${kind==='meter'?'MTR':'SLG'}-${site.code}/telemetry`;

@@ -11,18 +11,18 @@ assert.equal(api,'http://127.0.0.1:13001');
 assert.equal(web,'http://localhost:13000');
 assert.equal(process.env.READINESS_DATABASE_URL,'postgresql://solar:ci-only-password@127.0.0.1:15432/solar_readiness');
 const db=new Pool({connectionString:process.env.READINESS_DATABASE_URL});
-const schools=Array.from({length:100},()=>randomUUID());
-const school=schools[0],user=randomUUID(),device=randomUUID(),job=randomUUID();
+const customers=Array.from({length:100},()=>randomUUID());
+const customer=customers[0],user=randomUUID(),device=randomUUID(),job=randomUUID();
 const sites=Array.from({length:100},()=>randomUUID()),gateways=sites.map(()=>randomUUID());
 const email=`u3-${user}@example.test`,password='U3-isolated-password-123!';
 const salt=randomBytes(16).toString('hex'),hash=`scrypt:${salt}:${scryptSync(password,salt,64).toString('hex')}`;
 // Docker publishes the fixture on IPv4; localhost IPv6 may belong to another project.
 const browser=await launchFixtureBrowser(),checks=[];
 try {
-  await db.query("INSERT INTO schools(id,name,code,region) SELECT id,'U3 School '||n,id::text,'fixture' FROM unnest($1::uuid[]) WITH ORDINALITY AS x(id,n)",[schools]);
-  await db.query("INSERT INTO sites(id,school_id,name,capacity_mwp) SELECT id,school,'U3 Site '||n,0.1 FROM unnest($1::uuid[],$2::uuid[]) WITH ORDINALITY AS x(id,school,n)",[sites,schools]);
+  await db.query("INSERT INTO customers(id,name,code,region) SELECT id,'U3 Customer '||n,id::text,'fixture' FROM unnest($1::uuid[]) WITH ORDINALITY AS x(id,n)",[customers]);
+  await db.query("INSERT INTO sites(id,customer_id,name,capacity_mwp) SELECT id,customer,'U3 Site '||n,0.1 FROM unnest($1::uuid[],$2::uuid[]) WITH ORDINALITY AS x(id,customer,n)",[sites,customers]);
   await db.query("INSERT INTO gateways(id,site_id,name,protocol,endpoint,last_seen_at) SELECT id,site,id::text,'mqtt','energy/'||id||'/#',CASE WHEN n=1 THEN now() ELSE now()-interval '1 day' END FROM unnest($1::uuid[],$2::uuid[]) WITH ORDINALITY AS x(id,site,n)",[gateways,sites]);
-  await db.query("INSERT INTO users(id,email,display_name,role,status,password_hash,school_id,preferred_language) VALUES($1,$2,'U3 User','admin','active',$3,$4,'en')",[user,email,hash,school]);
+  await db.query("INSERT INTO users(id,email,display_name,role,status,password_hash,customer_id,preferred_language) VALUES($1,$2,'U3 User','admin','active',$3,$4,'en')",[user,email,hash,customer]);
   await db.query("INSERT INTO devices(id,gateway_id,site_id,name,device_type,model,serial_number) VALUES($1::uuid,$2,$3,'U3 meter','meter','fixture',$1::text)",[device,gateways[0],sites[0]]);
   await db.query("INSERT INTO billing_meters(id,site_id,device_id) VALUES(gen_random_uuid(),$1,$2)",[sites[0],device]);
   await db.query("INSERT INTO telemetry_raw(id,device_id,site_id,source_time,received_time,raw_payload,normalized_value,unit,quality,ingestion_id,total_energy_kwh,active_power_w) VALUES(gen_random_uuid(),$1,$2,now(),now(),'{}',100,'kWh','complete',gen_random_uuid(),100,1200)",[device,sites[0]]);
@@ -65,7 +65,7 @@ try {
   // Over two intervals it sends 2–3 requests; a leaked meter poller adds at least 2.
   await page.waitForTimeout(21000);const closedPowerRequests=powerRequests-stoppedPowerRequests;
   assert.ok(closedPowerRequests>=2&&closedPowerRequests<=3,'Only the visible solar diagram keeps polling after power details close');
-  for(const role of ['owner','admin','operator','accountant','school_user']) {
+  for(const role of ['owner','admin','operator','accountant','customer_user']) {
     await db.query('UPDATE users SET role=$1 WHERE id=$2',[role,user]);
     for(const width of [390,1440]) {
       await page.setViewportSize({width,height:844});await page.goto(web+'/');
@@ -84,7 +84,7 @@ try {
         }
       }
       const compare=page.getByRole('button',{name:'Compare sites',exact:true});
-      if(role==='school_user'){assert.equal(await compare.count(),0,'School home has no technical comparison');}
+      if(role==='customer_user'){assert.equal(await compare.count(),0,'Customer home has no technical comparison');}
       else {await compare.focus();await page.keyboard.press('Enter');await page.getByRole('dialog').waitFor();
        await page.keyboard.press('Escape');await page.getByRole('dialog').waitFor({state:'hidden'});
        assert.equal(await compare.evaluate(element=>element===document.activeElement),true,'Dialog returns keyboard focus');}
@@ -103,7 +103,7 @@ try {
   await row.press('Enter');await page.waitForURL('**/records/sites/*');await page.getByRole('heading',{name:'Site details',exact:true}).waitFor();
   await page.getByRole('link',{name:'Back to list',exact:true}).focus();await page.keyboard.press('Enter');await page.waitForURL(web+'/sites');
   // U2 carry: terminal jobs clear connectivity notices without restarting polling.
-  await db.query("INSERT INTO platform_jobs(id,kind,status,created_by,scope,payload,payload_hash) VALUES($1,'report','cancelled',$2,$3,'{}','fixture')",[job,user,[school]]);
+  await db.query("INSERT INTO platform_jobs(id,kind,status,created_by,scope,payload,payload_hash) VALUES($1,'report','cancelled',$2,$3,'{}','fixture')",[job,user,[customer]]);
   await page.goto(web+`/reports?job=${job}`);const card=page.locator(`[data-job-id="${job}"]`);
   await card.getByRole('status').filter({hasText:/^Cancelled/}).waitFor();
   let statusRequests=0;page.on('request',request=>{if(request.url()===web+`/v1/jobs/${job}`)statusRequests++;});
@@ -127,5 +127,5 @@ try {
   await db.query('DELETE FROM devices WHERE id=$1',[device]);
   await db.query('DELETE FROM gateways WHERE id=ANY($1::uuid[])',[gateways]);
   await db.query('DELETE FROM sites WHERE id=ANY($1::uuid[])',[sites]);
-  await db.query('DELETE FROM schools WHERE id=ANY($1::uuid[])',[schools]);await db.end();
+  await db.query('DELETE FROM customers WHERE id=ANY($1::uuid[])',[customers]);await db.end();
 }

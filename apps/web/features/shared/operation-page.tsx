@@ -1,4 +1,5 @@
 import type {OperationPage as OperationPageData,OperationRow} from "@solar/api-contracts";
+import type {ReactNode} from 'react';
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createTranslator, type Locale } from "@solar/i18n";
@@ -6,10 +7,8 @@ import { serverFetch, getApiBaseUrl } from "../../lib/server-fetch";
 import { OperationPageHeader } from "./operation-page-header";
 import { OperationQueryTable } from "./operation-query-table";
 import { OperationAutoRefresh } from "./operation-auto-refresh";
-import { ReportJobs } from "../reports/job-status";
 import { getSessionUser } from "../../lib/session-user";
 import { FinancialDocumentIntro } from "./financial-document-intro";
-import {HistoryRequestDialog} from '../reports/history-request-dialog';
 
 type OperationResponse = OperationPageData<OperationRow>;
 
@@ -56,15 +55,19 @@ export async function OperationPage({
   title,
   description,
   action,
+  headerActions,
+  beforeTable,
 }: {
   resource: string;
   eyebrow?: string;
   title?: string;
   description?: string;
   action?: string | undefined;
+  headerActions?: ReactNode;
+  beforeTable?: ReactNode;
 }) {
   const user = await getSessionUser();
-  const businessFinancial = ["owner","school_user"].includes(user.role) && ["billing","contracts","receipts"].includes(resource);
+  const businessFinancial = ["owner","customer_user"].includes(user.role) && ["billing","contracts","receipts"].includes(resource);
   const cookieStore = await cookies();
   const locale = (cookieStore.get("locale")?.value as Locale) || "th";
   const t = createTranslator(locale);
@@ -92,9 +95,10 @@ export async function OperationPage({
           title={displayTitle}
           description={businessFinancial ? "" : displayDescription}
           action={displayAction}
+          headerActions={headerActions}
         />
         <FinancialDocumentIntro resource={resource} role={user.role} locale={locale} />
-        {resource === 'reports' && <><HistoryRequestDialog/><ReportJobs /></>}
+        {beforeTable}
         <OperationQueryTable
           resource={resource}
           title={displayTitle}

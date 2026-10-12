@@ -1,6 +1,9 @@
 export { normalizePaymentMetadata } from './payments.js';
+export type {FinancialInsights,DashboardSiteContext,MaintenanceInsights} from './dashboard-insights.js';
 export type { PaymentMetadata, PaymentSubmission, PaymentTransferRow, TransferPaymentMethod } from './payments.js';
 export type { OperationQuery, OperationPage, OperationRow, BillingRow, OperationAction, PersistedDocumentRow } from './operations.js';
+export { operationFilters } from './operation-filters.js';
+export type { OperationFilter } from './operation-filters.js';
 
 export interface ApiEnvelope<T> {
   data: T;
@@ -20,7 +23,15 @@ export interface DashboardSummaryParams {
   end_date?: string;
 }
 
+export interface DashboardEnergy {
+  observedKwh:number|null;
+  quality:'complete'|'partial'|'unavailable';
+  completeSites:number;
+  partialSites:number;
+  unavailableSites:number;
+}
 export interface DashboardSummaryStats {
+  energy?:DashboardEnergy;
   totalSites: number;
   onlineSites: number;
   installedMwp: number;
@@ -33,6 +44,8 @@ export interface DashboardSummaryStats {
 
 /** IDs are internal UUID references; external fields are registered operational codes. */
 export interface DashboardSummarySite {
+  sourceFingerprint?:string|null;
+  energy?:DashboardEnergy;
   externalSiteId?: string | null;
   externalGatewayId?: string | null;
   gatewayId?: string | null;
@@ -44,13 +57,15 @@ export interface DashboardSummarySite {
   longitude: number | null;
   status: string;
   capacityMwp: number;
-  schoolName: string;
+  customerName: string;
   productionKwh: number | null;
 }
 
 export interface DashboardSummaryDataPoint {
   date: string;
-  value: number;
+  value: number|null;
+  observedValue?:number|null;
+  watermark?:string|null;
   quality?: string;
 }
 
@@ -64,6 +79,7 @@ export interface DashboardSummaryAlert {
 }
 
 export interface DashboardSummaryCollection {
+  statuses?:{key:string;amount:string;count:number}[];
   total: number;
   paid: number;
   pending: number;
@@ -79,7 +95,13 @@ export interface DashboardCompareItem {
 }
 
 export interface DashboardSummaryResponse {
-  availableMapSites?: Pick<DashboardSummarySite,'id'|'externalSiteId'|'name'|'schoolName'|'latitude'|'longitude'>[];
+  periodInvoices?:DashboardPeriodInvoices;
+  cashReceivedDaily?:DashboardSummaryDataPoint[];
+  capabilities?:{business:boolean;technical:boolean};
+  financialInsights?:import('./dashboard-insights.js').FinancialInsights|null;
+  selectedSite?:import('./dashboard-insights.js').DashboardSiteContext|null;
+  maintenanceInsights?:import('./dashboard-insights.js').MaintenanceInsights|null;
+  availableMapSites?: Pick<DashboardSummarySite,'id'|'externalSiteId'|'name'|'customerName'|'latitude'|'longitude'>[];
   alertActiveCount?: number;
   energyReadModel?: {enabled:boolean;status:'preparing'|'ready';watermark:string|null};
   range: {start: string; end: string};
@@ -91,6 +113,19 @@ export interface DashboardSummaryResponse {
   rankings: { name: string; productionKwh: number }[];
   alerts: DashboardSummaryAlert[];
   collection: DashboardSummaryCollection;
+}
+export interface DashboardComparison {
+ range:{start:string;end:string};
+ sites:{siteId:string;site:string;installedMwp:number;generatedKwh:number|null;production:DashboardSummaryDataPoint[];finance:Pick<import('./dashboard-insights.js').FinancialInsights,'cohortBilled'|'cohortCollected'|'cohortOutstanding'|'collectionStatuses'|'asOf'>|null;financialDaily:DashboardSummaryDataPoint[];context:import('./dashboard-insights.js').DashboardSiteContext|null}[];
+}
+export interface DashboardPeriodInvoices {
+ items:{id:string;siteId:string;siteName:string;invoiceId?:string;invoiceNumber?:string;periodStart:string;dueDate:string|null;amount:string;approved:string;remaining:string;status:string}[];
+ total:number;
+ hasMore:boolean;
+}
+export interface DashboardDayResponse {
+ date:string;
+ sites:{siteId:string;name:string;energy:DashboardEnergy;watermark:string|null;points:{timestamp:string;value:number|null;quality:string}[]}[];
 }
 
 export type { FinancialAction, Capabilities } from './capabilities.js';

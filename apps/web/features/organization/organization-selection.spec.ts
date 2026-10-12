@@ -10,7 +10,7 @@ test('organization search matches name or code without hiding the selected ident
 test('typing a different customer drops the selected ID and creates a draft only',()=>{
  const result=selectOrganizationText([customer],'New customer','ORG-NEW');
  assert.deepEqual(organizationSitePayload(result),{newOrganization:{name:'New customer',code:'ORG-NEW'}});
- assert.deepEqual(organizationSitePayload(selectOrganizationText([customer],' acme solar ','ORG-NEW')),{schoolId:'customer-a'});
+ assert.deepEqual(organizationSitePayload(selectOrganizationText([customer],' acme solar ','ORG-NEW')),{customerId:'customer-a'});
  assert.equal(organizationSitePayload(null),null);
 });
 test('an ambiguous display name requires selecting the exact organization row',()=>{

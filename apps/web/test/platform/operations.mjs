@@ -7,13 +7,13 @@ const api=process.env.READINESS_API_URL,web=process.env.READINESS_WEB_URL;
 assert.equal(api,'http://127.0.0.1:13001');assert.equal(web,'http://localhost:13000');
 assert.equal(process.env.READINESS_DATABASE_URL,'postgresql://solar:ci-only-password@127.0.0.1:15432/solar_readiness');
 const db=new Pool({connectionString:process.env.READINESS_DATABASE_URL});
-const user=randomUUID(),school=randomUUID(),site=randomUUID(),email=`q1-browser-${user}@example.test`,password='Q1-browser-password-123!';
+const user=randomUUID(),customer=randomUUID(),site=randomUUID(),email=`q1-browser-${user}@example.test`,password='Q1-browser-password-123!';
 const salt=randomBytes(16).toString('hex'),hash=`scrypt:${salt}:${scryptSync(password,salt,64).toString('hex')}`;
 const browser=await launchFixtureBrowser();
 try {
- await db.query("INSERT INTO schools(id,name,code,region) VALUES($1,'Q1 Browser School',$2,'fixture')",[school,school]);
- await db.query("INSERT INTO sites(id,school_id,name,capacity_mwp) VALUES($1,$2,'Q1 Browser Site',0.1)",[site,school]);
- await db.query("INSERT INTO users(id,email,display_name,role,status,password_hash,school_id) VALUES($1,$2,'Q1 Browser','admin','active',$3,$4)",[user,email,hash,school]);
+ await db.query("INSERT INTO customers(id,name,code,region) VALUES($1,'Q1 Browser Customer',$2,'fixture')",[customer,customer]);
+ await db.query("INSERT INTO sites(id,customer_id,name,capacity_mwp) VALUES($1,$2,'Q1 Browser Site',0.1)",[site,customer]);
+ await db.query("INSERT INTO users(id,email,display_name,role,status,password_hash,customer_id) VALUES($1,$2,'Q1 Browser','admin','active',$3,$4)",[user,email,hash,customer]);
  await db.query("INSERT INTO billing_cycles(id,site_id,period_start,period_end,cutoff_time,status,quality,opening_energy,closing_energy,consumed_kwh,rate,amount) SELECT gen_random_uuid(),$1,date '2026-09-01'-n*interval '1 month',date '2026-09-30'-n*interval '1 month',now(),'pending_verification','complete',100,110,10,1,10 FROM generate_series(1,26) n",[site]);
  const oldest=(await db.query('SELECT id FROM billing_cycles WHERE site_id=$1 ORDER BY period_end ASC LIMIT 1',[site])).rows[0].id;
  const login=await fetch(api+'/v1/auth/login',{method:'POST',headers:{Origin:web,'Content-Type':'application/json'},body:JSON.stringify({email,password})});assert.equal(login.status,200);const tokens=await login.json();
@@ -26,7 +26,7 @@ try {
   await page.waitForFunction(()=>new URL(location.href).searchParams.has('cursor'));
   await page.getByText('Q1 Browser Site',{exact:true}).filter({visible:true}).first().waitFor();
   await page.getByRole('button',{name:/เมนูการดำเนินการ|Open actions menu/}).click();await page.getByRole('menuitem',{name:/ดูรายละเอียดรอบบิล|View Billing Details/}).click();
-  await page.waitForURL(web+'/records/billing/'+oldest);await page.getByRole('heading',{level:1}).waitFor();await page.getByText('Q1 Browser School',{exact:true}).first().waitFor();
+  await page.waitForURL(web+'/records/billing/'+oldest);await page.getByRole('heading',{level:1}).waitFor();await page.getByText('Q1 Browser Customer',{exact:true}).first().waitFor();
   await page.goBack();await page.getByRole('searchbox').waitFor();
   // Hold a real HTTP result to reproduce a response arriving after a new
   // search. The payload still comes from the private PostgreSQL fixture.
@@ -53,4 +53,4 @@ try {
   await page.reload();await page.getByRole('searchbox').waitFor();assert.equal(await page.getByRole('searchbox').inputValue(),'no-such-row','URL query survives reload');
  }
  assert.deepEqual(errors,[]);console.log('PASS: Q1 desktop/mobile keyset next page, later-page actual detail, URL search reset and reload');
-} finally {await browser.close();await db.query('DELETE FROM audit_events WHERE actor_id=$1',[user]);await db.query('DELETE FROM users WHERE id=$1',[user]);await db.query('DELETE FROM billing_cycles WHERE site_id=$1',[site]);await db.query('DELETE FROM sites WHERE id=$1',[site]);await db.query('DELETE FROM schools WHERE id=$1',[school]);await db.end();}
+} finally {await browser.close();await db.query('DELETE FROM audit_events WHERE actor_id=$1',[user]);await db.query('DELETE FROM users WHERE id=$1',[user]);await db.query('DELETE FROM billing_cycles WHERE site_id=$1',[site]);await db.query('DELETE FROM sites WHERE id=$1',[site]);await db.query('DELETE FROM customers WHERE id=$1',[customer]);await db.end();}

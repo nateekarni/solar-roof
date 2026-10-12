@@ -24,7 +24,7 @@ export interface PayloadConfig {
   receiveRevision: { id: string | null; version: number; config: PayloadReceiveConfig; createdAt: string | null };
   bundleFixture: { schemaVersion: string; payloads: Record<string, Record<string, unknown>> } | null;
   rejections: { topic: string; reason: string; receivedAt: string }[];
-  unmappedMessages: { externalDeviceId?: string | null; deviceId: string; messageId: string; receivedAt: string; unmapped: {tag: string; rawValue: number; rawUnit: string}[] }[];
+  unmappedMessages: { externalDeviceId?: string | null; deviceId: string; messageId: string; receivedAt: string; unmapped: {tag: string; rawValue: number; rawUnit: string}[] | Record<string,unknown> }[];
 }
 export interface PayloadReceiveConfig {
   messagesPath: string;

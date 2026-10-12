@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+
+<html lang="th">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Admin — เฉพาะไซต์ (Data Corrected)</title>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com"></script>
+<!-- Google Fonts: Space Grotesk & Noto Sans Thai -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@300;400;500;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Noto Sans Thai"', '"Space Grotesk"', 'sans-serif'],
+            mono: ['"Space Grotesk"', 'monospace']
+          },
+          colors: {
+            brand: {
+              50: '#f0fdf4',
+              100: '#dcfce7',
+              500: '#10b981',
+              600: '#059669',
+              700: '#047857',
+              800: '#065f46',
+              900: '#0f172a'
+            },
+            teal: {
+              700: '#0f766e',
+              800: '#115e59',
+              900: '#134e4a'
+            }
+          }
+        }
+      }
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      display: inline-block;
+      vertical-align: middle;
+    }
+    body {
+      font-family: 'Noto Sans Thai', 'Space Grotesk', sans-serif;
+      background-color: #f8fafc;
+      color: #0f172a;
+    }
+    .custom-scroll::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .custom-scroll::-webkit-scrollbar-thumb {
+      background-color: #cbd5e1;
+      border-radius: 9999px;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col bg-slate-50 text-slate-800 antialiased">
+<!-- Top System Bar -->
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+<div class="max-w-[1440px] mx-auto px-6 h-16 flex items-center justify-between gap-4">
+<!-- Brand & Section -->
+<div class="flex items-center gap-6">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-xl bg-teal-800 flex items-center justify-center text-white shadow-sm">
+<span class="material-symbols-outlined text-2xl">solar_power</span>
+</div>
+<div>
+<div class="flex items-center gap-2">
+<span class="font-bold text-lg tracking-tight text-slate-900 font-mono">SOLAR ROOF</span>
+<span class="text-xs px-2 py-0.5 rounded-full bg-teal-100 text-teal-800 font-medium">Admin ด้านเทคนิค</span>
+<span class="text-xs px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 font-medium">ข้อมูลตัวอย่าง (Prototype)</span>
+</div>
+<p class="text-xs text-slate-500">ศูนย์วิศวกรรมเฝ้าระวังโทรมาตรและข้อมูลเกตเวย์</p>
+</div>
+</div>
+<!-- Main Nav (Allowed: overview, sites, gateways, alerts) -->
+<nav class="hidden md:flex items-center gap-1 border-l border-slate-200 pl-6">
+<a class="px-3.5 py-2 rounded-lg text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 flex items-center gap-2 transition-colors" href="#">
+<span class="material-symbols-outlined text-[18px]">dashboard</span>
+            ภาพรวม
+          </a>
+<a class="px-3.5 py-2 rounded-lg text-sm font-semibold bg-teal-50 text-teal-800 flex items-center gap-2 border border-teal-200/60" href="#">
+<span class="material-symbols-outlined text-[18px]">grid_view</span>
+            ไซต์งาน
+          </a>
+<a class="px-3.5 py-2 rounded-lg text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 flex items-center gap-2 transition-colors" href="#">
+<span class="material-symbols-outlined text-[18px]">router</span>
+            เกตเวย์
+          </a>
+<a class="px-3.5 py-2 rounded-lg text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 flex items-center gap-2 transition-colors" href="#">
+<span class="material-symbols-outlined text-[18px]">notifications</span>
+            การแจ้งเตือน
+            <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+</a>
+</nav>
+</div>
+<!-- Header Controls: Site Selector + Active Range Picker -->
+<div class="flex items-center gap-3">
+<!-- Searchable Site Selector: Selected โรงเรียนบ้านสวน (BSW-01) -->
+<div class="relative min-w-[260px]">
+<div class="flex items-center gap-2 px-3 py-1.5 bg-teal-50 border border-teal-300 rounded-xl text-sm cursor-pointer hover:border-teal-400">
+<span class="material-symbols-outlined text-teal-800 text-[18px]">domain_verification</span>
+<div class="flex-1 text-left">
+<span class="text-[10px] text-teal-700 block font-semibold leading-none">ไซต์ที่กำลังเลือกดู (Selected)</span>
+<span class="text-xs font-bold text-slate-900 block truncate font-mono">โรงเรียนบ้านสวน (BSW-01)</span>
+</div>
+<span class="material-symbols-outlined text-slate-400 text-sm">unfold_more</span>
+</div>
+</div>
+<!-- Date Range Picker: Active กำหนดเอง (1–30 ก.ย. 2569) Retained -->
+<div class="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs">
+<button class="px-2.5 py-1 text-slate-600 hover:text-slate-900 font-medium rounded-lg">วันนี้</button>
+<button class="px-2.5 py-1 text-slate-600 hover:text-slate-900 font-medium rounded-lg">7 วัน</button>
+<button class="px-2.5 py-1 text-slate-600 hover:text-slate-900 font-medium rounded-lg">เดือนนี้</button>
+<button class="px-3 py-1 bg-white text-teal-800 font-semibold rounded-lg shadow-sm border border-slate-200/80 flex items-center gap-1.5">
+<span class="material-symbols-outlined text-sm text-teal-700">calendar_month</span>
+<span>กำหนดเอง (1–30 ก.ย. 2569)</span>
+</button>
+</div>
+<!-- Snapshot Indicator: 9 ต.ค. 2569 13:45 -->
+<div class="flex items-center gap-2 pl-2 border-l border-slate-200 text-xs text-slate-500">
+<div class="flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-50 text-emerald-800 rounded-lg border border-emerald-200 font-mono">
+<span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            Snapshot: 9 ต.ค. 2569 13:45
+          </div>
+</div>
+</div>
+</div>
+</header>
+<!-- Main Layout -->
+<main class="max-w-[1440px] w-full mx-auto px-6 py-6 flex-1 flex flex-col gap-6">
+<!-- Selected Site Header & Scope Navigation (Allowlist: Selected BSW-01) -->
+<div class="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+<div class="flex items-start gap-4">
+<div class="w-12 h-12 rounded-xl bg-teal-800 flex items-center justify-center text-white shrink-0 shadow-sm">
+<span class="material-symbols-outlined text-2xl">school</span>
+</div>
+<div>
+<div class="flex flex-wrap items-center gap-2">
+<h1 class="text-lg font-bold text-slate-900">โรงเรียนบ้านสวน (รหัสไซต์: BSW-01) ชลบุรี</h1>
+<span class="text-xs bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full font-semibold flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span> สถานีออนไลน์ (Online)
+            </span>
+<span class="text-xs bg-slate-100 text-slate-700 font-mono px-2 py-0.5 rounded">Site ID: BSW-01</span>
+</div>
+<div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 mt-1 font-mono">
+<span>ต.บ้านสวน อ.เมืองชลบุรี จ.ชลบุรี</span>
+<span>•</span>
+<span>พิกัด GPS: 13.3611° N, 100.9847° E</span>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-3">
+<!-- Return to all sites button -->
+<a class="px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-100 flex items-center gap-1.5 transition-colors" href="#">
+<span class="material-symbols-outlined text-sm">arrow_back</span>
+          กลับสู่ภาพรวมทุกไซต์
+        </a>
+</div>
+</div>
+<!-- 3 Selected Site KPI Cards (Allowlist: installed 0.45 MWp / period 48,200 kWh / instant 218 kW snapshot 9 ต.ค. 2569 13:45) -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+<!-- Card 1: Installed 0.45 MWp -->
+<div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+<div class="flex items-start justify-between">
+<span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">กำลังการผลิตติดตั้ง (DC)</span>
+<span class="p-2 rounded-lg bg-teal-50 text-teal-700 material-symbols-outlined text-lg">solar_power</span>
+</div>
+<div class="mt-3">
+<div class="flex items-baseline gap-2">
+<span class="text-3xl font-bold font-mono text-slate-900">0.45</span>
+<span class="text-sm font-semibold text-teal-800">MWp</span>
+</div>
+<p class="text-xs text-slate-500 mt-1">450 kWp DC Nameplate (Inverter 4 เครื่อง)</p>
+</div>
+</div>
+<!-- Card 2: Period Energy 48,200 kWh -->
+<div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+<div class="flex items-start justify-between">
+<span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">พลังงานผลิตสะสมรอบนี้</span>
+<span class="p-2 rounded-lg bg-emerald-50 text-emerald-700 material-symbols-outlined text-lg">electric_bolt</span>
+</div>
+<div class="mt-3">
+<div class="flex items-baseline gap-2">
+<span class="text-3xl font-bold font-mono text-emerald-800">48,200</span>
+<span class="text-sm font-semibold text-slate-600">kWh</span>
+</div>
+<p class="text-xs text-slate-500 mt-1">รอบตรวจวัด 1–30 ก.ย. 2569 (เฉลี่ย 1,606.7 kWh/วัน)</p>
+</div>
+</div>
+<!-- Card 3: Instant 218 kW (Snapshot 9 ต.ค. 2569 13:45) -->
+<div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+<div class="flex items-start justify-between">
+<span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">กำลังผลิตขณะนี้ (Instant)</span>
+<span class="p-2 rounded-lg bg-cyan-50 text-cyan-700 material-symbols-outlined text-lg">speed</span>
+</div>
+<div class="mt-3">
+<div class="flex items-baseline gap-2">
+<span class="text-3xl font-bold font-mono text-slate-900">218</span>
+<span class="text-sm font-semibold text-cyan-700">kW</span>
+</div>
+<div class="flex items-center gap-1.5 text-xs text-slate-500 mt-1 font-mono">
+<span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+            Snapshot 9 ต.ค. 2569 13:45
+          </div>
+</div>
+</div>
+</div>
+<!-- Daily Energy Chart (kWh) & Retained Map / Site Browser -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+<!-- Daily Measured Energy Area Chart (8 Cols) - kWh only, with peak callout & gap -->
+<div class="lg:col-span-8 bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+<div>
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-4">
+<div>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-teal-700">show_chart</span>
+<h2 class="text-base font-bold text-slate-900">พลังงานไฟฟ้าที่ผลิตรายวัน — รร.บ้านสวน (kWh)</h2>
+</div>
+<p class="text-xs text-slate-500 mt-0.5">รอบตรวจวัด 1–30 ก.ย. 2569 (ผลรวม 48,200 kWh • พีค 21 ก.ย. 1,842.6 kWh)</p>
+</div>
+<div class="flex items-center gap-3 text-xs">
+<span class="flex items-center gap-1.5 font-medium text-teal-800">
+<span class="w-3 h-3 rounded-sm bg-teal-600"></span> พลังงานที่ผลิตได้จริง (kWh)
+              </span>
+</div>
+</div>
+<!-- Area Chart SVG -->
+<div class="relative w-full h-64 mt-4">
+<svg class="w-full h-full overflow-visible" preserveaspectratio="none" viewbox="0 0 760 220">
+<defs>
+<lineargradient id="schoolAreaGrad" x1="0" x2="0" y1="0" y2="1">
+<stop offset="0%" stop-color="#0f766e" stop-opacity="0.32"></stop>
+<stop offset="100%" stop-color="#0f766e" stop-opacity="0.02"></stop>
+</lineargradient>
+</defs>
+<!-- Grid horizontal lines -->
+<line stroke="#f1f5f9" stroke-width="1" x1="40" x2="740" y1="30" y2="30"></line>
+<text fill="#94a3b8" font-family="Space Grotesk" font-size="10" text-anchor="end" x="32" y="34">2,000</text>
+<line stroke="#f1f5f9" stroke-width="1" x1="40" x2="740" y1="80" y2="80"></line>
+<text fill="#94a3b8" font-family="Space Grotesk" font-size="10" text-anchor="end" x="32" y="84">1,500</text>
+<line stroke="#f1f5f9" stroke-width="1" x1="40" x2="740" y1="130" y2="130"></line>
+<text fill="#94a3b8" font-family="Space Grotesk" font-size="10" text-anchor="end" x="32" y="134">1,000</text>
+<line stroke="#f1f5f9" stroke-width="1" x1="40" x2="740" y1="180" y2="180"></line>
+<text fill="#94a3b8" font-family="Space Grotesk" font-size="10" text-anchor="end" x="32" y="184">500</text>
+<line stroke="#cbd5e1" stroke-width="1" x1="40" x2="740" y1="205" y2="205"></line>
+<!-- Average Measured Line (1,606.7 kWh) -->
+<line stroke="#0f766e" stroke-dasharray="4 4" stroke-opacity="0.5" stroke-width="1.5" x1="40" x2="740" y1="69" y2="69"></line>
+<text fill="#0f766e" font-family="Noto Sans Thai" font-size="9" font-weight="600" text-anchor="end" x="735" y="65">ค่าเฉลี่ยที่วัดได้ 1,606.7 kWh</text>
+<!-- Measured Energy Area Curve -->
+<path d="M 40 205 L 40 148 C 80 135, 110 120, 150 100 C 190 85, 220 120, 260 110 C 300 95, 330 80, 370 70 C 410 60, 440 90, 480 105 C 500 80, 520 42, 545 42 C 570 42, 600 95, 630 110 C 670 125, 710 140, 740 135 L 740 205 Z" fill="url(#schoolAreaGrad)"></path>
+<path d="M 40 148 C 80 135, 110 120, 150 100 C 190 85, 220 120, 260 110 C 300 95, 330 80, 370 70 C 410 60, 440 90, 480 105 C 500 80, 520 42, 545 42 C 570 42, 600 95, 630 110 C 670 125, 710 140, 740 135" fill="none" stroke="#0f766e" stroke-width="2.5"></path>
+<!-- Peak Marker (Day 21: x=545, y=42) -->
+<circle cx="545" cy="42" fill="#ffffff" r="4.5" stroke="#0f766e" stroke-width="2.5"></circle>
+</svg>
+<!-- Peak Callout -->
+<div class="absolute top-4 left-[68%] -translate-x-1/2 bg-slate-900 text-white text-[11px] px-2.5 py-1 rounded-md shadow-md flex items-center gap-1.5 font-mono">
+<span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+<span>21 ก.ย. (สูงสุด 1,842.6 kWh)</span>
+</div>
+</div>
+<!-- X-Axis Labels -->
+<div class="flex justify-between text-[11px] text-slate-500 font-mono px-6 pt-2 border-t border-slate-100">
+<span>1 ก.ย.</span>
+<span>6 ก.ย.</span>
+<span>12 ก.ย.</span>
+<span>18 ก.ย.</span>
+<span class="text-teal-800 font-semibold">21 ก.ย. (พีค)</span>
+<span>26 ก.ย.</span>
+<span>30 ก.ย.</span>
+</div>
+</div>
+<div class="mt-4 pt-3 border-t border-slate-100 text-xs text-slate-500 flex flex-wrap items-center justify-between gap-2">
+<span>* แสดงข้อมูลพลังงานไฟฟ้าที่วัดได้จริงจาก Inverter + Main Meter ไม่มีการแปลงเป็นเงินบาท</span>
+<span class="font-mono text-slate-600 font-medium">รวม 30 วัน: 48,200 kWh</span>
+</div>
+</div>
+<!-- Retained Map / Site Browser (4 Cols) - Shows All Sites, Highlights School -->
+<div class="lg:col-span-4 bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+<div>
+<div class="flex items-center justify-between border-b border-slate-100 pb-3 mb-3">
+<div>
+<h2 class="text-base font-bold text-slate-900">แผนที่และเบราว์เซอร์ไซต์งาน</h2>
+<p class="text-xs text-slate-500">คงการแสดงผล 12 ไซต์เพื่อการสลับขอบเขต</p>
+</div>
+<span class="text-[10px] bg-teal-50 text-teal-800 border border-teal-200 px-2 py-0.5 rounded font-mono font-medium">12 Sites</span>
+</div>
+<!-- Mini Map highlighting School -->
+<div class="relative w-full h-44 bg-slate-100 rounded-xl overflow-hidden border border-slate-200 flex items-center justify-center">
+<svg class="w-full h-full opacity-60" viewbox="0 0 300 160">
+<rect fill="#e2e8f0" height="160" width="300"></rect>
+<path d="M 60 0 L 140 0 C 150 20, 180 40, 200 60 C 220 80, 250 80, 290 100 L 290 160 L 110 160 C 120 130, 130 110, 120 90 C 110 70, 80 60, 60 40 Z" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"></path>
+<!-- Other pins -->
+<circle cx="160" cy="70" fill="#94a3b8" r="3.5"></circle>
+<circle cx="180" cy="85" fill="#94a3b8" r="3.5"></circle>
+<circle cx="195" cy="110" fill="#94a3b8" r="3.5"></circle>
+<circle cx="210" cy="95" fill="#94a3b8" r="3.5"></circle>
+<!-- Highlighted School Pin -->
+<g transform="translate(175, 80)">
+<circle class="animate-ping" cx="0" cy="0" fill="#0f766e" fill-opacity="0.2" r="10"></circle>
+<circle cx="0" cy="0" fill="#0f766e" r="6" stroke="#ffffff" stroke-width="2"></circle>
+</g>
+</svg>
+<div class="absolute bottom-2 left-2 bg-slate-900/90 text-white text-[10px] px-2 py-1 rounded shadow-sm font-mono">
+              BSW-01: 13.3611° N, 100.9847° E
+            </div>
+</div>
+<!-- Quick Site Switcher / Browser List -->
+<div class="mt-3 space-y-2 max-h-48 overflow-y-auto custom-scroll pr-1">
+<div class="p-2.5 rounded-lg border-2 border-teal-600 bg-teal-50/60 flex items-center justify-between text-xs cursor-pointer">
+<div>
+<span class="font-bold text-slate-900 block">1. รร.บ้านสวน (BSW-01)</span>
+<span class="text-[10px] text-teal-800 font-mono">0.45 MWp • 218 kW (Instant)</span>
+</div>
+<span class="text-[10px] bg-teal-800 text-white px-2 py-0.5 rounded font-mono">เลือกอยู่</span>
+</div>
+<div class="p-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 flex items-center justify-between text-xs cursor-pointer">
+<div>
+<span class="font-medium text-slate-800 block">2. รง.ระยอง โพลีเมอร์ (EEC-01)</span>
+<span class="text-[10px] text-slate-500 font-mono">0.98 MWp • 680 kW</span>
+</div>
+<span class="text-[10px] text-slate-400">สลับดู</span>
+</div>
+<div class="p-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 flex items-center justify-between text-xs cursor-pointer">
+<div>
+<span class="font-medium text-slate-800 block">3. คลังสินค้าบางพลี เฟส 2 (BPL-02)</span>
+<span class="text-[10px] text-slate-500 font-mono">0.75 MWp • 510 kW</span>
+</div>
+<span class="text-[10px] text-slate-400">สลับดู</span>
+</div>
+<div class="p-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 flex items-center justify-between text-xs cursor-pointer">
+<div>
+<span class="font-medium text-slate-800 block">4. รพ.บางละมุงเมดิคอล (BLM-02)</span>
+<span class="text-[10px] text-slate-500 font-mono">0.80 MWp • 390 kW</span>
+</div>
+<span class="text-[10px] text-slate-400">สลับดู</span>
+</div>
+</div>
+</div>
+<div class="pt-3 border-t border-slate-100 text-center text-xs text-slate-400">
+          สามารถคลิกเพื่อเปลี่ยนไซต์ที่ต้องการตรวจสอบได้
+        </div>
+</div>
+</div>
+<!-- Gateway & Device Freshness Section (Allowlist Strict Requirements) -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+<!-- Gateway Cards (Allowlist: name, protocol, topic, lastSeenAt, configurationState ONLY) (4 Cols) -->
+<div class="lg:col-span-4 bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+<div>
+<div class="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-teal-700">router</span>
+<h2 class="text-base font-bold text-slate-900">เกตเวย์ประจำไซต์ (Gateway Card)</h2>
+</div>
+<span class="text-xs bg-emerald-100 text-emerald-800 font-mono font-medium px-2 py-0.5 rounded">Online</span>
+</div>
+<!-- Gateway Card with exact 5 fields allowed -->
+<div class="p-4 rounded-xl border border-slate-200 bg-slate-50/60 space-y-3 font-mono text-xs">
+<!-- 1. Name -->
+<div class="flex flex-col">
+<span class="text-[10px] font-sans text-slate-500">ชื่ออุปกรณ์เกตเวย์ (Gateway Name)</span>
+<span class="text-sm font-bold text-slate-900 mt-0.5">Huawei SmartLogger 3000A</span>
+</div>
+<!-- 2. Protocol -->
+<div class="flex flex-col pt-2 border-t border-slate-200">
+<span class="text-[10px] font-sans text-slate-500">โปรโตคอลการสื่อสาร (Protocol)</span>
+<span class="font-semibold text-slate-800 mt-0.5">Modbus TCP over 4G LTE</span>
+</div>
+<!-- 3. Topic -->
+<div class="flex flex-col pt-2 border-t border-slate-200">
+<span class="text-[10px] font-sans text-slate-500">หัวข้อส่งข้อมูล (MQTT Topic)</span>
+<span class="font-semibold text-teal-800 mt-0.5 break-all">/solar/bsw01/telemetry</span>
+</div>
+<!-- 4. LastSeenAt -->
+<div class="flex flex-col pt-2 border-t border-slate-200">
+<span class="text-[10px] font-sans text-slate-500">เวลาที่เห็นล่าสุด (Last Seen At)</span>
+<span class="font-semibold text-slate-900 mt-0.5 font-mono">13:44:55 น. (หน่วง 5 วินาที)</span>
+</div>
+<!-- 5. ConfigurationState -->
+<div class="flex flex-col pt-2 border-t border-slate-200">
+<span class="text-[10px] font-sans text-slate-500">สถานะการกำหนดค่า (Configuration State)</span>
+<div class="flex items-center gap-1.5 mt-0.5">
+<span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+<span class="font-semibold text-emerald-800 font-sans">Synced (ปรับคอนฟิกตรงกันสมบูรณ์)</span>
+</div>
+</div>
+</div>
+<!-- Heartbeat note -->
+<div class="mt-3 p-3 bg-teal-50/50 rounded-xl border border-teal-100 text-xs text-teal-900">
+<span class="font-semibold block mb-0.5">สัญญาณชีพจร (Heartbeat Loop):</span>
+<span>ปกติ ส่งทุก 30 วินาที รอบการส่งถัดไป 13:45:25 น.</span>
+</div>
+</div>
+<div class="pt-3 border-t border-slate-100 text-xs text-slate-400">
+          ฮาร์ดแวร์ประจำตู้คอนโทรล MDB โรงเรียนบ้านสวน
+        </div>
+</div>
+<!-- Device Freshness Timelines (Allowlist: lastMeasuredAt vs lastReceivedAt, name, model, code, interval. School 1 late device) (8 Cols) -->
+<div class="lg:col-span-8 bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+<div>
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3 mb-4">
+<div>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-teal-700">timer</span>
+<h2 class="text-base font-bold text-slate-900">ไทม์ไลน์ความสดใหม่ของข้อมูลอุปกรณ์ (Device Freshness Timelines)</h2>
+</div>
+<p class="text-xs text-slate-500 mt-0.5">เปรียบเทียบเวลาตรวจวัด (Last Measured) และเวลารับข้อมูล (Last Received) • แสดงแบบการ์ดไทม์ไลน์ (No Tables)</p>
+</div>
+<div class="flex items-center gap-2 text-xs">
+<span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 font-mono">4 ปกติ</span>
+<span class="px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 font-mono font-semibold">1 สัญญาณล่าช้า</span>
+</div>
+</div>
+<!-- Device Cards Timeline List (No Tables allowed) -->
+<div class="space-y-3">
+<!-- Device 1: INV-01 (Normal Fresh) -->
+<div class="p-3.5 rounded-xl border border-slate-200 bg-white hover:border-slate-300 transition-all flex flex-col md:flex-row md:items-center justify-between gap-3">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-lg bg-teal-50 text-teal-700 flex items-center justify-center font-bold font-mono text-sm shrink-0">
+                  01
+                </div>
+<div>
+<div class="flex items-center gap-2">
+<span class="text-xs font-bold text-slate-900">Inverter #01</span>
+<span class="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.2 rounded font-mono">INV-01</span>
+<span class="text-[11px] text-slate-500">รุ่น: Sungrow SG110CX</span>
+</div>
+<div class="text-[11px] text-slate-500 mt-0.5">รอบส่งข้อมูล (Interval): <strong class="font-mono text-slate-700">5 นาที</strong></div>
+</div>
+</div>
+<!-- Freshness Compare -->
+<div class="flex items-center gap-4 bg-slate-50 px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-mono shrink-0">
+<div>
+<span class="text-[10px] text-slate-400 block font-sans">Last Measured:</span>
+<span class="font-bold text-slate-800">13:44:10 น.</span>
+</div>
+<span class="text-slate-300 text-sm">→</span>
+<div>
+<span class="text-[10px] text-slate-400 block font-sans">Last Received:</span>
+<span class="font-bold text-teal-800">13:44:15 น.</span>
+</div>
+<span class="text-[10px] bg-emerald-100 text-emerald-800 font-semibold px-2 py-0.5 rounded-full font-sans">สดใหม่ (5 วินาที)</span>
+</div>
+</div>
+<!-- Device 2: INV-02 (THE 1 LATE DEVICE REQUIRED: School 1 late device) -->
+<div class="p-3.5 rounded-xl border-2 border-amber-300 bg-amber-50/50 transition-all flex flex-col md:flex-row md:items-center justify-between gap-3">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center font-bold font-mono text-sm shrink-0">
+                  02
+                </div>
+<div>
+<div class="flex items-center gap-2">
+<span class="text-xs font-bold text-slate-900">Inverter #02</span>
+<span class="text-[10px] bg-amber-200 text-amber-900 px-1.5 py-0.2 rounded font-mono font-semibold">INV-02</span>
+<span class="text-[11px] text-slate-600">รุ่น: Sungrow SG110CX</span>
+<span class="text-[10px] bg-amber-100 text-amber-800 border border-amber-300 px-1.5 py-0.2 rounded font-sans font-bold animate-pulse">สัญญาณล่าช้า (Stale)</span>
+</div>
+<div class="text-[11px] text-amber-900 mt-0.5 font-sans">
+                    รอบส่งปกติ: <strong class="font-mono">5 นาที</strong> • ไม่พบอัปเดตใหม่มาแล้ว 42 นาที
+                  </div>
+</div>
+</div>
+<!-- Freshness Compare showing the gap -->
+<div class="flex items-center gap-4 bg-white px-3.5 py-2 rounded-xl border border-amber-200 text-xs font-mono shrink-0">
+<div>
+<span class="text-[10px] text-slate-400 block font-sans">Last Measured:</span>
+<span class="font-bold text-slate-700">13:02:18 น.</span>
+</div>
+<span class="text-amber-400 text-sm">→</span>
+<div>
+<span class="text-[10px] text-slate-400 block font-sans">Last Received:</span>
+<span class="font-bold text-amber-800">13:02:25 น.</span>
+</div>
+<span class="text-[10px] bg-amber-200 text-amber-900 font-bold px-2 py-0.5 rounded-full font-sans">ล่าช้า 42 นาที</span>
+</div>
+</div>
+<!-- Device 3: INV-03 (Normal Fresh) -->
+<div class="p-3.5 rounded-xl border border-slate-200 bg-white hover:border-slate-300 transition-all flex flex-col md:flex-row md:items-center justify-between gap-3">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-lg bg-teal-50 text-teal-700 flex items-center justify-center font-bold font-mono text-sm shrink-0">
+                  03
+                </div>
+<div>
+<div class="flex items-center gap-2">
+<span class="text-xs font-bold text-slate-900">Inverter #03</span>
+<span class="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.2 rounded font-mono">INV-03</span>
+<span class="text-[11px] text-slate-500">รุ่น: Sungrow SG110CX</span>
+</div>
+<div class="text-[11px] text-slate-500 mt-0.5">รอบส่งข้อมูล (Interval): <strong class="font-mono text-slate-700">5 นาที</strong></div>
+</div>
+</div>
+<div class="flex items-center gap-4 bg-slate-50 px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-mono shrink-0">
+<div>
+<span class="text-[10px] text-slate-400 block font-sans">Last Measured:</span>
+<span class="font-bold text-slate-800">13:44:02 น.</span>
+</div>
+<span class="text-slate-300 text-sm">→</span>
+<div>
+<span class="text-[10px] text-slate-400 block font-sans">Last Received:</span>
+<span class="font-bold text-teal-800">13:44:08 น.</span>
+</div>
+<span class="text-[10px] bg-emerald-100 text-emerald-800 font-semibold px-2 py-0.5 rounded-full font-sans">สดใหม่ (6 วินาที)</span>
+</div>
+</div>
+<!-- Device 4: INV-04 (Normal Fresh) -->
+<div class="p-3.5 rounded-xl border border-slate-200 bg-white hover:border-slate-300 transition-all flex flex-col md:flex-row md:items-center justify-between gap-3">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-lg bg-teal-50 text-teal-700 flex items-center justify-center font-bold font-mono text-sm shrink-0">
+                  04
+                </div>
+<div>
+<div class="flex items-center gap-2">
+<span class="text-xs font-bold text-slate-900">Inverter #04</span>
+<span class="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.2 rounded font-mono">INV-04</span>
+<span class="text-[11px] text-slate-500">รุ่น: Sungrow SG110CX</span>
+</div>
+<div class="text-[11px] text-slate-500 mt-0.5">รอบส่งข้อมูล (Interval): <strong class="font-mono text-slate-700">5 นาที</strong></div>
+</div>
+</div>
+<div class="flex items-center gap-4 bg-slate-50 px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-mono shrink-0">
+<div>
+<span class="text-[10px] text-slate-400 block font-sans">Last Measured:</span>
+<span class="font-bold text-slate-800">13:44:05 น.</span>
+</div>
+<span class="text-slate-300 text-sm">→</span>
+<div>
+<span class="text-[10px] text-slate-400 block font-sans">Last Received:</span>
+<span class="font-bold text-teal-800">13:44:11 น.</span>
+</div>
+<span class="text-[10px] bg-emerald-100 text-emerald-800 font-semibold px-2 py-0.5 rounded-full font-sans">สดใหม่ (6 วินาที)</span>
+</div>
+</div>
+<!-- Device 5: Main Power Meter MTR-01 (Normal Fresh) -->
+<div class="p-3.5 rounded-xl border border-slate-200 bg-white hover:border-slate-300 transition-all flex flex-col md:flex-row md:items-center justify-between gap-3">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-lg bg-cyan-50 text-cyan-700 flex items-center justify-center font-bold font-mono text-sm shrink-0">
+                  MTR
+                </div>
+<div>
+<div class="flex items-center gap-2">
+<span class="text-xs font-bold text-slate-900">Main Power Meter (MDB)</span>
+<span class="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.2 rounded font-mono">MTR-01</span>
+<span class="text-[11px] text-slate-500">รุ่น: Schneider PM5350</span>
+</div>
+<div class="text-[11px] text-slate-500 mt-0.5">รอบส่งข้อมูล (Interval): <strong class="font-mono text-slate-700">1 นาที</strong> (ความแม่นยำสูง)</div>
+</div>
+</div>
+<div class="flex items-center gap-4 bg-slate-50 px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-mono shrink-0">
+<div>
+<span class="text-[10px] text-slate-400 block font-sans">Last Measured:</span>
+<span class="font-bold text-slate-800">13:44:50 น.</span>
+</div>
+<span class="text-slate-300 text-sm">→</span>
+<div>
+<span class="text-[10px] text-slate-400 block font-sans">Last Received:</span>
+<span class="font-bold text-teal-800">13:44:52 น.</span>
+</div>
+<span class="text-[10px] bg-emerald-100 text-emerald-800 font-semibold px-2 py-0.5 rounded-full font-sans">สดใหม่ (2 วินาที)</span>
+</div>
+</div>
+</div>
+</div>
+<div class="pt-3 border-t border-slate-100 text-xs text-slate-500 flex items-center justify-between">
+<span>รวมอุปกรณ์ตรวจวัดของโรงเรียนบ้านสวน 5 ตัว (Inverter 4 ตัว, Meter 1 ตัว)</span>
+<span class="text-amber-800 font-medium">แจ้งเตือนระดับเกตเวย์: รอการตอบสนองจากพอร์ต RS485 Loop #2</span>
+</div>
+</div>
+</div>
+</main>
+<!-- Technical Footer -->
+<footer class="bg-white border-t border-slate-200 mt-auto py-3">
+<div class="max-w-[1440px] mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
+<div class="flex items-center gap-4">
+<span class="font-bold text-slate-700 font-mono">SOLAR ROOF Telemetry Gateway Engine v4.2.1</span>
+<span>•</span>
+<span>เซิร์ฟเวอร์รหัสไซต์: BSW-01 (รร.บ้านสวน ชลบุรี)</span>
+</div>
+<div class="flex items-center gap-4 font-mono text-[11px]">
+<span>Latency: 42ms</span>
+<span>Poll Frequency: 5s / 60s</span>
+<span class="text-emerald-700 font-semibold">CRC32 Check: OK</span>
+</div>
+</div>
+</footer>
+</body>
+</html>

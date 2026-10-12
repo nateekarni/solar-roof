@@ -1,0 +1,50 @@
+'use client';
+import {ChoiceSelect} from "../../components/ui/choice-select";
+import {createContext,useContext,useEffect,useState,type ReactNode} from 'react';
+import {apiClient} from '../../lib/api-client';
+import {useSessionUser} from '../../providers/session-user-provider';
+import {Dialog,DialogContent,DialogHeader,DialogTitle,DialogDescription} from '../../components/ui/dialog';
+import {Settings} from 'lucide-react';
+import {alertRuleState} from './alert-rule-state';
+import {useLocale} from '../../providers/locale-provider';
+import {Button} from '../../components/ui/button';
+import {Input} from '../../components/ui/input';
+import {Label} from '../../components/ui/label';
+type Rule={id:string;site_id:string;kind:string;semantic_field?:string;duration_seconds:number;cooldown_seconds:number;enabled:boolean;channels:string[];recipient_user_ids:string[]};
+type Site={id:string;name:string;code:string};
+type Recipient={id:string;name:string;email:string};
+const selectClass='rounded-md border border-input bg-background p-2 text-sm w-full';
+const RuleSettingsContext=createContext<{open:()=>void;state:string;error:string;permitted:boolean}|null>(null);
+export function AlertRuleSettingsButton(){const settings=useContext(RuleSettingsContext),th=useLocale()==='th';if(!settings?.permitted)return null;return <Button variant="outline" onClick={settings.open}><Settings className="size-4"/>{th?'ตั้งค่าการแจ้งเตือน':'Alert settings'}</Button>;}
+export function AlertRuleEmptyState(){const settings=useContext(RuleSettingsContext),th=useLocale()==='th';if(!settings?.permitted)return null;if(settings.error)return <p role="alert" className="text-destructive">{settings.error}</p>;if(!['unconfigured','disabled'].includes(settings.state))return null;return <section className="rounded-xl border bg-card p-5 space-y-3"><h2 className="font-semibold">{settings.state==='unconfigured'?(th?'ยังไม่ได้ตั้งค่ากฎแจ้งเตือน':'No alert rules configured'):(th?'กฎแจ้งเตือนทั้งหมดปิดใช้งาน':'All alert rules are disabled')}</h2><p className="text-sm text-muted-foreground">{th?'จัดการเงื่อนไขและผู้รับในหน้าตั้งค่าการแจ้งเตือน':'Manage conditions and recipients in alert settings.'}</p><Button variant="outline" onClick={settings.open}>{th?'ตั้งค่ากฎแจ้งเตือน':'Configure alert rules'}</Button></section>;}
+export function AlertRulesEditor({children}:{children?:ReactNode}){
+ const th=useLocale()==='th';
+ const user=useSessionUser();
+ const permitted=user.authorization?user.authorization.permissions.includes('technical.alerts.edit'):['admin','operator'].includes(user.role);
+ const [rules,setRules]=useState<Rule[]>([]),[sites,setSites]=useState<Site[]>([]),[recipients,setRecipients]=useState<Recipient[]>([]);
+ const [siteId,setSiteId]=useState(''),[kind,setKind]=useState('offline'),[field,setField]=useState('active_power'),[operator,setOperator]=useState('gt'),[threshold,setThreshold]=useState(''),[duration,setDuration]=useState('120'),[cooldown,setCooldown]=useState('300'),[recovery,setRecovery]=useState(false),[selected,setSelected]=useState<string[]>([]),[channels,setChannels]=useState<string[]>(['in_app']);
+ const [loaded,setLoaded]=useState(false);
+ const [error,setError]=useState(''),[busy,setBusy]=useState(false),[open,setOpen]=useState(false);
+ useEffect(()=>{if(!permitted)return;let active=true;setLoaded(false);setError('');Promise.all([apiClient.get<Rule[]>('/v1/alert-rules'),apiClient.get<Site[]>('/v1/alert-rules/sites')]).then(([r,s])=>{if(active){setRules(r);setSites(s);setLoaded(true);}}).catch(e=>{if(active)setError(e.message);});return ()=>{active=false;};},[permitted]);
+ useEffect(()=>{setSelected([]);setRecipients([]);if(!siteId)return;let active=true;apiClient.get<Recipient[]>(`/v1/alert-rules/recipients?site_id=${encodeURIComponent(siteId)}`).then(r=>{if(active)setRecipients(r);}).catch(e=>{if(active)setError(e.message);});return ()=>{active=false;};},[siteId]);
+ if(!permitted)return <>{children}</>;
+ const toggle=(values:string[],value:string)=>values.includes(value)?values.filter(v=>v!==value):[...values,value];
+ async function save(){setBusy(true);setError('');try{await apiClient.post('/v1/alert-rules',{siteId,kind,semanticField:kind==='threshold'?field:undefined,operator:kind==='threshold'?operator:undefined,threshold:kind==='threshold'?Number(threshold):undefined,durationSeconds:Number(duration),cooldownSeconds:Number(cooldown),recovery,recipientUserIds:selected,channels});setRules(await apiClient.get<Rule[]>('/v1/alert-rules'));}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
+ async function disable(id:string){setBusy(true);try{await apiClient.delete(`/v1/alert-rules/${id}`);setRules(await apiClient.get<Rule[]>('/v1/alert-rules'));}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
+ return <RuleSettingsContext.Provider value={{open:()=>setOpen(true),state:alertRuleState(loaded,rules),error,permitted}}>{children}<Dialog open={open} onOpenChange={setOpen}><DialogContent className='sm:max-w-3xl max-sm:w-full max-sm:max-h-[90svh] max-h-[90vh] overflow-y-auto space-y-4'><DialogHeader><DialogTitle>{th?'ตั้งค่าการแจ้งเตือน':'Alert settings'}</DialogTitle><DialogDescription>{th?'จัดการกฎ เงื่อนไข และผู้รับ':'Manage rules, conditions and recipients'}</DialogDescription></DialogHeader>
+
+  <p className='text-sm text-muted-foreground'>{th?'เลือกผู้รับที่ยืนยันอีเมลและมีสิทธิ์ไซต์ การเปิดอ่านไม่เป็นการรับทราบเหตุแจ้งเตือน':'Choose verified recipients with current site access. Reading does not acknowledge an alarm.'}</p>
+  {error&&<p role='alert' className='text-sm text-destructive'>{error}</p>}
+  {open&&<form onSubmit={e=>{e.preventDefault();void save();}} className='grid gap-4 md:grid-cols-2'>
+   <div className='space-y-2'><Label htmlFor='rule-site'>{th?'ไซต์งาน':'Site'}</Label><ChoiceSelect id='rule-site' className={selectClass} required value={siteId} onChange={e=>setSiteId(e.target.value)}><option value=''>{th?'เลือกไซต์':'Select site'}</option>{sites.map(s=><option key={s.id} value={s.id}>{s.name} · {s.code}</option>)}</ChoiceSelect></div>
+   <div className='space-y-2'><Label htmlFor='rule-kind'>{th?'เงื่อนไข':'Condition'}</Label><ChoiceSelect id='rule-kind' className={selectClass} value={kind} onChange={e=>setKind(e.target.value)}><option value='offline'>{th?'เกตเวย์ออฟไลน์':'Gateway offline'}</option><option value='stale'>{th?'ข้อมูลเก่า':'Stale telemetry'}</option><option value='threshold'>{th?'เกณฑ์ข้อมูล':'Value threshold'}</option></ChoiceSelect></div>
+   {kind==='threshold'&&<><div className='space-y-2'><Label htmlFor='rule-field'>{th?'ค่าข้อมูล':'Field'}</Label><ChoiceSelect id='rule-field' className={selectClass} value={field} onChange={e=>setField(e.target.value)}>{[['active_power',th?'กำลังไฟ (W)':'Power (W)'],['total_energy',th?'พลังงาน (kWh)':'Energy (kWh)'],['voltage',th?'แรงดัน (V)':'Voltage (V)'],['current',th?'กระแส (A)':'Current (A)'],['frequency',th?'ความถี่ (Hz)':'Frequency (Hz)'],['power_factor','Power factor']].map(([v,l])=><option key={v} value={v}>{l}</option>)}</ChoiceSelect></div><div className='space-y-2'><Label htmlFor='rule-threshold'>{th?'เกณฑ์':'Threshold'}</Label><div className='flex gap-2'><ChoiceSelect aria-label={th?'ตัวเปรียบเทียบ':'Operator'} className={selectClass} value={operator} onChange={e=>setOperator(e.target.value)}>{['gt','gte','lt','lte'].map((v,i)=><option key={v} value={v}>{['>','≥','<','≤'][i]}</option>)}</ChoiceSelect><Input id='rule-threshold' required type='number' step='any' value={threshold} onChange={e=>setThreshold(e.target.value)}/></div></div></>}
+   <div className='space-y-2'><Label htmlFor='rule-duration'>{th?'เกิดเงื่อนไขต่อเนื่อง (วินาที)':'Duration (seconds)'}</Label><Input id='rule-duration' required type='number' min='0' max='604800' value={duration} onChange={e=>setDuration(e.target.value)}/></div>
+   <div className='space-y-2'><Label htmlFor='rule-cooldown'>{th?'ระยะพัก (วินาที)':'Cooldown (seconds)'}</Label><Input id='rule-cooldown' required type='number' min='0' max='2592000' value={cooldown} onChange={e=>setCooldown(e.target.value)}/></div>
+   <fieldset className='space-y-2'><legend className='text-sm font-medium mb-2'>{th?'ผู้รับ':'Recipients'}</legend>{recipients.length?recipients.map(r=><label key={r.id} className='flex items-start gap-2 text-sm'><input type='checkbox' checked={selected.includes(r.id)} onChange={()=>setSelected(toggle(selected,r.id))}/><span>{r.name} · {r.email}</span></label>):<p className='text-sm text-muted-foreground'>{th?'ไม่มีผู้รับที่ยืนยันในไซต์':'No verified site recipients'}</p>}</fieldset>
+   <fieldset className='space-y-2'><legend className='text-sm font-medium mb-2'>{th?'ช่องทาง':'Channels'}</legend>{[['in_app',th?'ในระบบ':'In app'],['email',th?'อีเมล':'Email']].map(([v,l])=><label key={v} className='flex gap-2 text-sm'><input type='checkbox' checked={channels.includes(v!)} onChange={()=>setChannels(toggle(channels,v!))}/>{l}</label>)}<label className='flex gap-2 text-sm'><input type='checkbox' checked={recovery} onChange={e=>setRecovery(e.target.checked)}/>{th?'แจ้งเมื่อกลับสู่ปกติ':'Recovery notification'}</label></fieldset>
+   <Button type='submit' disabled={busy||!selected.length||!channels.length}>{th?'บันทึกกฎ':'Save rule'}</Button>
+  </form>}
+  <div className='space-y-2'>{rules.map(r=><div key={r.id} className='flex flex-wrap items-center justify-between gap-2 rounded-md border p-3 text-sm'><span>{sites.find(s=>s.id===r.site_id)?.name??r.site_id} · {r.kind}{r.semantic_field?' · '+r.semantic_field:''} · {r.duration_seconds}s / {r.cooldown_seconds}s · {r.channels.join(', ')} · {r.recipient_user_ids.length} {th?'ผู้รับ':'recipients'}</span>{r.enabled?<Button variant='outline' size='sm' disabled={busy} onClick={()=>void disable(r.id)}>{th?'ปิดใช้งาน':'Disable'}</Button>:<span className='rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground'>{th?'ปิดใช้งาน':'Disabled'}</span>}</div>)}{loaded&&!rules.length&&<p className='text-sm text-muted-foreground'>{th?'ยังไม่ได้ตั้งค่ากฎแจ้งเตือน':'No alert rules configured'}</p>}</div>
+ </DialogContent></Dialog></RuleSettingsContext.Provider>;
+}

@@ -7,13 +7,13 @@ const api=process.env.READINESS_API_URL,web=process.env.READINESS_WEB_URL;
 assert.equal(api,'http://127.0.0.1:13001');assert.equal(web,'http://localhost:13000');
 assert.equal(process.env.READINESS_DATABASE_URL,'postgresql://solar:ci-only-password@127.0.0.1:15432/solar_readiness');
 const db=new Pool({connectionString:process.env.READINESS_DATABASE_URL});
-const user=randomUUID(),school=randomUUID(),site=randomUUID(),invoice=randomUUID(),email=`u1-browser-${user}@example.test`,password='U1-browser-password-123!';
+const user=randomUUID(),customer=randomUUID(),site=randomUUID(),invoice=randomUUID(),email=`u1-browser-${user}@example.test`,password='U1-browser-password-123!';
 const salt=randomBytes(16).toString('hex'),hash=`scrypt:${salt}:${scryptSync(password,salt,64).toString('hex')}`;
 const browser=await launchFixtureBrowser();
 try {
- await db.query("INSERT INTO schools(id,name,code,region) VALUES($1::uuid,'U1 Browser School',$1::text,'fixture')",[school]);
- await db.query("INSERT INTO sites(id,school_id,name,capacity_mwp) VALUES($1,$2,'U1 Browser Site',0.1)",[site,school]);
- await db.query("INSERT INTO users(id,email,display_name,role,status,password_hash,school_id,created_at) VALUES($1,$2,'U1 Browser','admin','active',$3,$4,'2026-09-30T20:30:00Z')",[user,email,hash,school]);
+ await db.query("INSERT INTO customers(id,name,code,region) VALUES($1::uuid,'U1 Browser Customer',$1::text,'fixture')",[customer]);
+ await db.query("INSERT INTO sites(id,customer_id,name,capacity_mwp) VALUES($1,$2,'U1 Browser Site',0.1)",[site,customer]);
+ await db.query("INSERT INTO users(id,email,display_name,role,status,password_hash,customer_id,created_at) VALUES($1,$2,'U1 Browser','admin','active',$3,$4,'2026-09-30T20:30:00Z')",[user,email,hash,customer]);
  await db.query("INSERT INTO billing_cycles(id,site_id,period_start,period_end,cutoff_time,status,quality,opening_energy,closing_energy,consumed_kwh,rate,amount) SELECT gen_random_uuid(),$1,date '2026-09-01'-n*interval '1 month',date '2026-09-30'-n*interval '1 month',now(),'approved','complete',100,110,10,1,10 FROM generate_series(1,26) n",[site]);
  const oldest=(await db.query('SELECT id FROM billing_cycles WHERE site_id=$1 ORDER BY period_end ASC LIMIT 1',[site])).rows[0].id;
  await db.query("INSERT INTO documents(id,site_id,billing_cycle_id,document_type,document_number,status,amount,issue_date,file_key) VALUES($1,$2,$3,'invoice','U1-OLDER-INV','issued',10,'2020-01-01','legacy/metadata-only.pdf')",[invoice,site,oldest]);
@@ -23,10 +23,10 @@ try {
  if(!process.env.U1_TIMEOUT_ONLY&&!process.env.U1_FIX_ONLY)for(const timezoneId of ['UTC','Asia/Bangkok']) {
   const context=await browser.newContext({timezoneId});await context.addCookies([{name:'access_token',value:tokens.accessToken,domain:'localhost',path:'/',httpOnly:true},{name:'refresh_token',value:tokens.refreshToken,domain:'localhost',path:'/',httpOnly:true}]);
   const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
-  if(!process.env.U1_PAYMENT_ONLY)for(const role of ['owner','admin','operator','accountant','school_user']) {
+  if(!process.env.U1_PAYMENT_ONLY)for(const role of ['owner','admin','operator','accountant','customer_user']) {
    await db.query('UPDATE users SET role=$1 WHERE id=$2',[role,user]);
    for(const width of [1440,390]) {
-    const business=['owner','school_user'].includes(role),mobileMode=business&&width===390;
+    const business=['owner','customer_user'].includes(role),mobileMode=business&&width===390;
     await page.setViewportSize({width,height:900});await page.goto(web+'/billing?search=U1%20Browser');
     await page.getByRole('searchbox').fill('U1 Browser');
     await page.getByRole('status').filter({hasText:/^25 / }).waitFor();
@@ -50,7 +50,7 @@ try {
     await page.goBack();await page.getByRole('status').filter({hasText:/^25 / }).waitFor();await page.goForward();await page.getByRole('status').filter({hasText:/^1 / }).waitFor();assert.equal(page.url(),page2);
    }
   }
-  await db.query("UPDATE users SET role='school_user' WHERE id=$1",[user]);
+  await db.query("UPDATE users SET role='customer_user' WHERE id=$1",[user]);
   await page.setViewportSize({width:390,height:900});await page.goto(web+'/billing?search=U1%20Browser');
   await page.getByRole('button',{name:'ชำระเงินและแนบสลิป',exact:true}).first().click();
   await page.locator('#slip-upload').setInputFiles({name:'evidence.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jxioAAAAASUVORK5CYII=','base64')});
@@ -65,7 +65,7 @@ try {
   // The database changes scope after the displayed action: server denies the real POST.
   await page.goto(web+'/billing?search=U1%20Browser');await page.getByRole('button',{name:'ชำระเงินและแนบสลิป',exact:true}).first().click();
   await page.locator('#slip-upload').setInputFiles({name:'evidence.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jxioAAAAASUVORK5CYII=','base64')});
-  await page.getByRole('img',{name:'ตัวอย่างหลักฐาน',exact:true}).waitFor();await db.query('UPDATE users SET school_id=NULL WHERE id=$1',[user]);
+  await page.getByRole('img',{name:'ตัวอย่างหลักฐาน',exact:true}).waitFor();await db.query('UPDATE users SET customer_id=NULL WHERE id=$1',[user]);
   const denied=page.waitForResponse(r=>r.url().endsWith('/pay')),capRefresh=page.waitForResponse(r=>r.url().endsWith('/v1/auth/capabilities'));
   await page.getByRole('button',{name:'ยืนยันการชำระเงิน',exact:true}).click();assert.equal((await denied).status(),403);assert.deepEqual((await (await capRefresh).json()).operationsActions,[]);
   const deniedDialog=page.getByRole('dialog');
@@ -75,7 +75,7 @@ try {
   await page.getByRole('button',{name:'ยกเลิก',exact:true}).click();await deniedDialog.waitFor({state:'hidden'});
   await page.getByRole('alert').filter({hasText:'สิทธิ์ของคุณเปลี่ยนแล้ว'}).waitFor();
   assert.equal(await page.getByRole('button',{name:'ชำระเงินและแนบสลิป',exact:true}).count(),0);
-  await db.query('UPDATE users SET school_id=$1 WHERE id=$2',[school,user]);
+  await db.query('UPDATE users SET customer_id=$1 WHERE id=$2',[customer,user]);
   const expectedDeniedErrors=errors.filter(message=>message.includes('403 (Forbidden)'));assert.equal(expectedDeniedErrors.length,1,'One deliberate denied HTTP request is reported by Chromium');
   assert.deepEqual(errors.filter(message=>!message.includes('403 (Forbidden)')),[],timezoneId);errors.length=0;
   await db.query("UPDATE users SET role='admin' WHERE id=$1",[user]);

@@ -111,7 +111,7 @@ test('readiness and monitoring endpoints require staff authority and expose no e
   const ids:string[]=[];
   try{
     for(const path of ['readiness','monitoring'])assert.equal((await fetch(`${process.env.READINESS_API_URL}/v1/platform/${path}`)).status,401);
-    for(const role of ['owner','admin','operator','accountant','school_user']){
+    for(const role of ['owner','admin','operator','accountant','customer_user']){
       const id=randomUUID();ids.push(id);
       const password='Readiness-fixture-password-123!';
       await db.query("INSERT INTO users(id,email,display_name,role,status,password_hash) VALUES($1,$2,'Readiness fixture',$3,'active',$4)",[id,`${id}@example.test`,role,auth.hashPassword(password)]);

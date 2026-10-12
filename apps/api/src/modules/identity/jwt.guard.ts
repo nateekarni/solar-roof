@@ -4,6 +4,7 @@ import { SessionService } from "./session.service.js";
 import { AuthService } from "./auth.service.js";
 import { IS_PUBLIC_KEY } from "./public.decorator.js";
 import { DatabaseService } from "../../database/database.service.js";
+import { AuthorizationService } from './authorization.service.js';
 
 function extractToken(request: any): string | undefined {
   if (request.cookies && request.cookies.access_token) {
@@ -30,6 +31,7 @@ export class JwtAuthGuard implements CanActivate {
     @Inject(Reflector) private readonly reflector: Reflector
     , @Inject(DatabaseService) private readonly db: DatabaseService
     , @Inject(SessionService) private readonly sessions: SessionService
+    , @Inject(AuthorizationService) private readonly authorization: AuthorizationService
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -51,10 +53,10 @@ export class JwtAuthGuard implements CanActivate {
     try {
       const user = this.authService.verifyAccessToken(token);
       if (!(await this.sessions.isActive(user.sessionId, user.id))) throw new UnauthorizedException("Session is inactive");
-      const result = await this.db.query("SELECT id, role, school_id, status FROM users WHERE id=$1", [user.id]);
+      const result = await this.db.query("SELECT id, role, customer_id, status, ARRAY(SELECT site_id::text FROM site_account_assignments WHERE user_id=users.id AND revoked_at IS NULL) AS assigned_site_ids FROM users WHERE id=$1", [user.id]);
       const current = result.rows[0];
       if (!current || current.status !== "active") throw new UnauthorizedException("Account is inactive");
-      request.user = { ...user, role: current.role, schoolId: current.school_id ?? undefined };
+      request.user = { ...user, role: current.role, customerId: current.customer_id ?? undefined, assignedSiteIds: current.assigned_site_ids ?? [], authorization:await this.authorization.load(user.id,current.role) };
       return true;
     } catch {
       context.switchToHttp().getResponse().setHeader("X-Auth-Retry-Safe", "1");

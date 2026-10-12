@@ -1,0 +1,2 @@
+import assert from 'node:assert/strict';import test from 'node:test';import {settingsPatch} from './settings-domain-model';
+test('settings patch includes a revision and only values managed by that domain',()=>{assert.deepEqual(settingsPatch('technical',7,{defaultFetchFrequencySec:30,documentRetentionYears:20,technicalAggregateRetentionYears:3}),{revision:7,settings:{defaultFetchFrequencySec:30,technicalAggregateRetentionYears:3}});});
