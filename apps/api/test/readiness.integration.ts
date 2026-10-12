@@ -69,7 +69,7 @@ try {
   assert.equal(summary.body.sites[0].productionKwh,null);assert.deepEqual(summary.body.rankings,[]);
   // This fixture has a billing meter and no Solar Logger: preserve unknown PV, never zero.
   assert.deepEqual(summary.body.production,['2026-01-01','2026-01-02','2026-01-03'].map(date=>({
-    date,value:null,quality:'missing',watermark:null,
+    date,value:null,observedValue:null,quality:'missing',watermark:null,
     reason:'solar_logger_unavailable_or_ambiguous',reasons:['solar_logger_unavailable_or_ambiguous'],
   })));
   assert.equal((await request('customer',`/v1/sites/${site.id}/live-telemetry`)).status,403);
