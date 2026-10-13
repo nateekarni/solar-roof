@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import {mkdir,readFile} from 'node:fs/promises';
 import {launchFixtureBrowser} from './platform/fixture-browser.mjs';
-import {readDownloadedFile} from './platform/download-reading.mjs';
 
 const base=process.env.READINESS_WEB_URL || 'http://localhost:13000';
 if(!['localhost','127.0.0.1'].includes(new URL(base).hostname))throw new Error('Local readiness testing only');
@@ -24,12 +23,12 @@ try {
  await page.getByRole('button',{name:'เข้าสู่ระบบ',exact:true}).click();
  await page.waitForURL(base+'/',{timeout:15000});
  await page.getByRole('main').first().waitFor(); await page.getByRole('heading',{level:1}).waitFor();
- assert.equal(await page.getByRole('link',{name:'องค์กร',exact:true}).count(),0);
  assert.equal(await page.getByRole('button',{name:'รายปี',exact:true}).count(),0);
  await mkdir('test/artifacts',{recursive:true});
  await page.screenshot({path:'test/artifacts/dashboard-desktop.png',fullPage:true});
- await expectDeniedPage(page,'/sites');
- assert.equal((await page.request.get(base+'/v1/sites')).status(),403);
+ await page.goto(base+'/sites');await page.getByRole('heading',{level:1}).waitFor();
+ assert.equal((await page.request.get(base+'/v1/sites')).status(),200);
+ await expectDeniedPage(page,'/gateways');
  await expectDeniedPage(page,'/reports');
  await page.goto(base+'/billing');await page.getByRole('heading',{level:1}).waitFor();
  await page.setViewportSize({width:390,height:844});
@@ -37,7 +36,7 @@ try {
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth),false,'Mobile horizontal overflow');
  await page.screenshot({path:'test/artifacts/dashboard-mobile.png',fullPage:true});
  if(fixture) {
-  for(const role of ['admin','operator','accountant','school']) {
+  for(const role of ['admin','operator','accountant','customer']) {
    const context=await browser.newContext();const rolePage=await context.newPage();
    rolePage.on('pageerror',error=>errors.push(error.message));
    await rolePage.goto(base+'/login');
@@ -47,8 +46,8 @@ try {
    await rolePage.waitForURL(base+'/',{timeout:15000});
    await rolePage.getByRole('heading',{level:1}).waitFor();
    const identity=await rolePage.request.get(base+'/v1/auth/me');
-   assert.equal(identity.status(),200);assert.equal((await identity.json()).role,role==='school'?'school_user':role);
-   if(role==='school') {
+   assert.equal(identity.status(),200);assert.equal((await identity.json()).role,role==='customer'?'customer_user':role);
+   if(role==='customer') {
     await expectDeniedPage(rolePage,'/sites');
     await expectDeniedPage(rolePage,'/reports');
     const denied=await rolePage.request.get(base+'/v1/sites/'+fixture.otherSiteId);
@@ -58,30 +57,26 @@ try {
     const summary=await rolePage.request.get(base+'/v1/dashboard/summary');
     assert.equal(summary.status(),200);const data=await summary.json();assert.deepEqual(data.sites.map(site=>site.id),[fixture.siteId]);
     assert.equal((await rolePage.goto(base+'/production')).status(),200);await rolePage.getByRole('heading',{level:1}).waitFor();
+   } else if(role==='admin'||role==='operator') {
+    await expectDeniedPage(rolePage,'/sites');
+    await rolePage.goto(base+'/gateways');await rolePage.getByRole('heading',{level:1}).waitFor();
+    const gateways=await rolePage.request.get(base+'/v1/gateways');assert.equal(gateways.status(),200);
+    if(role==='operator')assert.deepEqual((await gateways.json()).map(row=>row.siteId),[fixture.siteId]);
+    await expectDeniedPage(rolePage,'/billing');
    } else {
-    await rolePage.goto(base+'/sites');await rolePage.getByRole('heading',{level:1}).waitFor();
-    if(role==='admin')await rolePage.getByRole('button',{name:/เพิ่มไซต์/}).waitFor();
-    else assert.equal(await rolePage.getByRole('button',{name:/เพิ่มไซต์/}).count(),0);
+    await rolePage.goto(base+'/billing');await rolePage.getByRole('heading',{level:1}).waitFor();
+    await expectDeniedPage(rolePage,'/gateways');
    }
-   if(role==='operator') {
-    await rolePage.goto(base+'/reports');await rolePage.getByRole('button',{name:/สร้างรายงาน|Generate Report/}).first().click();
-    await rolePage.locator('#r-type').click();await rolePage.getByRole('option',{name:/รายงานสถานะอุปกรณ์|Device & Gateway/}).click();
-    for(const id of ['date-from','date-to']) {
-     await rolePage.locator('#'+id).click();await rolePage.locator('[data-slot=calendar] .rdp-today button').filter({visible:true}).last().click();await rolePage.locator('#'+id).getAttribute('aria-expanded').then(value=>assert.equal(value,'false'));
-    }
-    await rolePage.locator('#r-format').click();await rolePage.getByRole('option',{name:'CSV (.csv)',exact:true}).click();
-    const accepted=rolePage.waitForResponse(response=>response.request().method()==='POST'&&response.url().endsWith('/v1/reports'));
-    await rolePage.getByRole('dialog').locator('form').evaluate(form=>form.requestSubmit());const response=await accepted;assert.equal(response.status(),202);const queued=await response.json();assert.equal(queued.status,'queued');
-    const card=rolePage.locator(`[data-job-id="${queued.jobId}"]`);await card.getByRole('status').filter({hasText:/^พร้อมใช้งาน —|^Ready —/}).waitFor({timeout:45000});
-    const record=await rolePage.request.get(base+`/v1/jobs/${queued.jobId}`);assert.equal(record.status(),200);const completed=await record.json();assert.equal(completed.report.type,'device_health');assert.equal(completed.rowCount,1);
-    const downloaded=rolePage.waitForEvent('download');await card.getByRole('button',{name:/ดาวน์โหลด|Download/,exact:true}).click();const artifact=await downloaded;assert.equal(artifact.suggestedFilename(),`report-${queued.jobId}.csv`);
-    const csv=(await readDownloadedFile(artifact)).toString('utf8');assert.ok(csv.includes(fixture.siteName),'Real worker exports the authorized site');assert.ok(csv.includes('meter-'),'Device report contains the fixture meter');assert.equal(csv.includes('Other '),false,'Other school data is absent');
-   }
+   await expectDeniedPage(rolePage,'/reports');
+   const reports=await rolePage.request.post(base+'/v1/reports',{headers:{Origin:base},data:{type:'energy',format:'csv'}});
+   assert.equal(reports.status(),403,`${role} legacy report creation stays disabled`);
+   const jobs=await rolePage.request.get(base+'/v1/jobs/'+fixture.device);
+   assert.equal(jobs.status(),403,`${role} legacy jobs stay disabled`);
    await context.close();
   }
  }
  assert.deepEqual(errors,[]);
- console.log('PASS: browser role destinations, own-school production, denied technical access for business roles, scoped operator reports, mobile width, zero page errors');
+ console.log('PASS: browser role destinations, own-customer production, denied technical access for business roles, scoped technical grants and denied legacy reports, mobile width, zero page errors');
 }finally{await browser.close();}
 
 

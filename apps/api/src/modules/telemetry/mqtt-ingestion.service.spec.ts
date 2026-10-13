@@ -28,6 +28,16 @@ function fixture(options: { unknown?: boolean; fail?: boolean; mappings?: object
 }
 const payload = (metrics: object, timestamp = '2026-09-30T01:00:00Z') => JSON.stringify({ deviceId: 'dev', gateway: 'GW-1', timestamp, metrics });
 
+test('selected remote broker publishes configuration even when system default broker is disabled',async()=>{
+ const sent:string[]=[];
+ const db={query:async()=>({rows:[{brokerId:'remote',endpoint:'solar/v1/sites/SITE/gateways/GW/devices/+/telemetry',externalSiteId:'SITE',externalGatewayId:'GW'}]})} as unknown as DatabaseService;
+ const service=new MqttIngestionService(db,db as any);
+ const remote=Reflect.get(service,'remote') as Map<string,unknown>;
+ remote.set('remote',{client:{connected:true,publish(topic:string,_data:string,_options:unknown,callback:(err?:Error)=>void){sent.push(topic);callback();}}});
+ assert.equal(await service.publishHardwareConfig('Gateway',{configurationVersion:1}),true);
+ assert.deepEqual(sent,['solar/v1/sites/SITE/gateways/GW/config']);
+});
+
 test('response and config publications never enter ingestion', async () => {
   const f = fixture();
   await f.service.handleIncomingMessage('energy/GW-1/response', payload({ activePower: 1200 }));

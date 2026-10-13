@@ -4,7 +4,7 @@ import {usePathname,useSearchParams} from 'next/navigation';
 import type {OperationQuery} from '@solar/api-contracts';
 export function useOperationQuery(defaultDirection: "asc" | "desc" = "desc") {
  const searchParams=useSearchParams(),pathname=usePathname();
- const query=React.useMemo<OperationQuery>(()=>({limit:Number(searchParams.get('limit')??25),sort:searchParams.get('sort')??'',direction:searchParams.has('direction')?(searchParams.get('direction')==='asc'?'asc':'desc'):defaultDirection,...Object.fromEntries(['cursor','search','from','to'].flatMap(key=>searchParams.get(key)?[[key,searchParams.get(key)!]]:[]))}),[searchParams,defaultDirection]);
+ const query=React.useMemo<OperationQuery>(()=>({limit:Number(searchParams.get('limit')??25),sort:searchParams.get('sort')??'',direction:searchParams.has('direction')?(searchParams.get('direction')==='asc'?'asc':'desc'):defaultDirection,...Object.fromEntries(['cursor','search','from','to','siteId','collectionStatus','status','severity','type','role','entityType','channel','category','format'].flatMap(key=>searchParams.get(key)?[[key,searchParams.get(key)!]]:[]))}),[searchParams,defaultDirection]);
  const setQuery=React.useCallback((patch:Partial<OperationQuery>)=>{
   const params=new URLSearchParams(window.location.search);
   if(Object.keys(patch).some(key=>key!=='cursor'))params.delete('cursor');

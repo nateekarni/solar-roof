@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+
+<html lang="th"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Owner / Accountant — เฉพาะไซต์ โรงเรียนบ้านสวน (BSW-01) ชลบุรี | SOLAR ROOF</title>
+<!-- Material Symbols Outlined -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Google Fonts: Space Grotesk, Noto Sans Thai, JetBrains Mono -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&amp;family=Noto+Sans+Thai:wght@300;400;500;600;700&amp;family=Noto+Sans:wght@400;500;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS with Plugins -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "secondary-fixed": "#cce5ff",
+            "error-container": "#ffdad6",
+            "primary-fixed-dim": "#6bd8cb",
+            "surface-bright": "#faf8ff",
+            "secondary-fixed-dim": "#93ccff",
+            "on-surface-variant": "#3d4947",
+            "tertiary": "#006948",
+            "primary": "#00685f",
+            "on-error-container": "#93000a",
+            "inverse-on-surface": "#eef0ff",
+            "on-primary-fixed": "#00201d",
+            "surface-container-highest": "#dae2fd",
+            "outline": "#6d7a77",
+            "surface-container-lowest": "#ffffff",
+            "surface-container-high": "#e2e7ff",
+            "on-tertiary-container": "#f5fff7",
+            "surface-tint": "#006a61",
+            "tertiary-fixed": "#85f8c4",
+            "on-error": "#ffffff",
+            "on-surface": "#131b2e",
+            "inverse-primary": "#6bd8cb",
+            "surface": "#faf8ff",
+            "secondary": "#006398",
+            "on-secondary": "#ffffff",
+            "tertiary-fixed-dim": "#68dba9",
+            "on-secondary-fixed": "#001d31",
+            "error": "#ba1a1a",
+            "surface-container": "#eaedff",
+            "on-tertiary": "#ffffff",
+            "on-tertiary-fixed-variant": "#005137",
+            "primary-fixed": "#89f5e7",
+            "on-secondary-container": "#00476e",
+            "background": "#faf8ff",
+            "surface-dim": "#d2d9f4",
+            "on-primary-fixed-variant": "#005049",
+            "surface-variant": "#dae2fd",
+            "surface-container-low": "#f2f3ff",
+            "on-primary": "#ffffff",
+            "inverse-surface": "#283044",
+            "secondary-container": "#5bb8fe",
+            "on-primary-container": "#f4fffc",
+            "on-tertiary-fixed": "#002114",
+            "tertiary-container": "#00855d",
+            "on-secondary-fixed-variant": "#004b73",
+            "on-background": "#131b2e",
+            "primary-container": "#008378",
+            "outline-variant": "#bcc9c6"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "gutter": "1rem",
+            "margin": "1rem",
+            "space-lg": "1.5rem",
+            "space-xs": "0.25rem",
+            "space-xl": "2rem",
+            "space-md": "1rem",
+            "space-sm": "0.5rem",
+            "gutter-md": "1.5rem",
+            "margin-md": "2rem"
+          },
+          "fontFamily": {
+            "body-sm": ["Noto Sans Thai", "Noto Sans", "sans-serif"],
+            "headline-lg": ["Space Grotesk", "Noto Sans Thai", "sans-serif"],
+            "code-telemetry": ["JetBrains Mono", "monospace"],
+            "body-lg": ["Noto Sans Thai", "Noto Sans", "sans-serif"],
+            "headline-lg-mobile": ["Space Grotesk", "Noto Sans Thai", "sans-serif"],
+            "metric-display": ["Space Grotesk", "sans-serif"],
+            "headline-sm": ["Noto Sans Thai", "Noto Sans", "sans-serif"],
+            "metric-display-mobile": ["Space Grotesk", "sans-serif"],
+            "headline-xl": ["Space Grotesk", "sans-serif"],
+            "label-md": ["Noto Sans Thai", "Noto Sans", "sans-serif"],
+            "headline-md": ["Space Grotesk", "Noto Sans Thai", "sans-serif"],
+            "label-sm": ["Noto Sans Thai", "Noto Sans", "sans-serif"],
+            "body-md": ["Noto Sans Thai", "Noto Sans", "sans-serif"]
+          },
+          "fontSize": {
+            "body-sm": ["13px", { "lineHeight": "20px", "fontWeight": "400" }],
+            "headline-lg": ["28px", { "lineHeight": "36px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+            "code-telemetry": ["12px", { "lineHeight": "16px", "fontWeight": "500" }],
+            "body-lg": ["16px", { "lineHeight": "26px", "fontWeight": "400" }],
+            "headline-lg-mobile": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
+            "metric-display": ["32px", { "lineHeight": "38px", "letterSpacing": "-0.03em", "fontWeight": "700" }],
+            "headline-sm": ["16px", { "lineHeight": "24px", "fontWeight": "600" }],
+            "metric-display-mobile": ["26px", { "lineHeight": "32px", "fontWeight": "700" }],
+            "headline-xl": ["36px", { "lineHeight": "44px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "label-md": ["12px", { "lineHeight": "16px", "letterSpacing": "0.04em", "fontWeight": "600" }],
+            "headline-md": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+            "label-sm": ["11px", { "lineHeight": "14px", "letterSpacing": "0.02em", "fontWeight": "500" }],
+            "body-md": ["14px", { "lineHeight": "22px", "fontWeight": "400" }]
+          }
+        }
+      }
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      display: inline-block;
+      vertical-align: middle;
+      line-height: 1;
+    }
+    @keyframes subtlePulse {
+      0%, 100% { opacity: 0.25; transform: scale(1); }
+      50% { opacity: 0.6; transform: scale(1.35); }
+    }
+    .pulse-ring {
+      animation: subtlePulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    .tabular-nums {
+      font-variant-numeric: tabular-nums;
+    }
+  </style>
+</head>
+<body class="bg-background text-on-surface antialiased min-h-screen flex selection:bg-primary selection:text-on-primary">
+<!-- Desktop SideNavBar Anchor (Shared Component Execution) -->
+<aside class="h-screen w-64 flex flex-col p-4 border-r border-outline-variant/30 bg-surface-container-lowest sticky top-0 z-40 shrink-0 select-none shadow-sm justify-between">
+<div class="flex flex-col gap-6">
+<!-- App Brand & Identity -->
+<div class="flex items-center gap-3 px-2 py-1">
+<div class="w-10 h-10 rounded-xl bg-primary flex items-center justify-center text-on-primary shadow-sm">
+<span class="material-symbols-outlined text-2xl" data-icon="solar_power" style="font-variation-settings: 'FILL' 1;">solar_power</span>
+</div>
+<div class="flex flex-col">
+<span class="font-headline-md text-headline-md font-bold tracking-tight text-primary">SOLAR ROOF</span>
+<span class="font-label-sm text-label-sm text-outline">Owner / ผู้บริหารการเงิน</span>
+</div>
+</div>
+<!-- Scope Context Chip -->
+<div class="bg-surface-container-low rounded-lg p-2.5 border border-outline-variant/40">
+<div class="flex items-center justify-between text-outline text-[11px] mb-1 font-label-sm">
+<span>พอร์ตโฟลิโอไซต์เดี่ยว</span>
+<span class="text-primary font-semibold">BSW-01</span>
+</div>
+<div class="font-headline-sm text-headline-sm text-on-surface truncate">รร.บ้านสวน (ชลบุรี)</div>
+<a class="inline-flex items-center gap-1 font-body-sm text-body-sm text-primary hover:text-primary-container mt-1 font-medium transition-colors" href="#portfolio">
+<span class="material-symbols-outlined text-sm" data-icon="arrow_back">arrow_back</span>
+<span>กลับทุกไซต์</span>
+</a>
+</div>
+<!-- Main Navigation Cluster -->
+<nav class="flex flex-col gap-1">
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors duration-150" href="#overview">
+<span class="material-symbols-outlined text-xl" data-icon="dashboard">dashboard</span>
+<span class="font-label-md text-label-md">ภาพรวมธุรกิจ</span>
+</a>
+<!-- Active Document & Billing Tab -->
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-surface-container text-primary font-semibold active:scale-[0.99] transition-transform" href="#billing">
+<span class="material-symbols-outlined text-xl" data-icon="receipt_long" style="font-variation-settings: 'FILL' 1;">receipt_long</span>
+<span class="font-label-md text-label-md">เอกสาร &amp; บิล</span>
+</a>
+<a class="flex items-center justify-between px-3 py-2.5 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors duration-150" href="#audit-queue">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-xl" data-icon="pending_actions">pending_actions</span>
+<span class="font-label-md text-label-md">คิวงานตรวจสอบ</span>
+</div>
+<span class="bg-error text-on-error text-xs font-semibold px-2 py-0.5 rounded-full font-code-telemetry">1</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors duration-150" href="#contracts">
+<span class="material-symbols-outlined text-xl" data-icon="description">description</span>
+<span class="font-label-md text-label-md">จัดการสัญญา</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors duration-150" href="#portfolio">
+<span class="material-symbols-outlined text-xl" data-icon="domain">domain</span>
+<span class="font-label-md text-label-md">พอร์ตโฟลิโอทุกไซต์</span>
+</a>
+</nav>
+</div>
+<!-- Sidebar Bottom Action & Settings -->
+<div class="flex flex-col gap-2 pt-4 border-t border-outline-variant/30">
+<button class="w-full flex items-center justify-center gap-2 bg-primary text-on-primary py-2.5 px-3 rounded-lg font-headline-sm text-headline-sm hover:bg-primary-container active:scale-[0.98] transition-all shadow-sm">
+<span class="material-symbols-outlined text-lg" data-icon="download">download</span>
+<span>ส่งออกรายงานข้อมูล</span>
+</button>
+<div class="flex flex-col gap-0.5 mt-2">
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors text-label-md font-label-md" href="#settings">
+<span class="material-symbols-outlined text-lg" data-icon="settings">settings</span>
+<span>การตั้งค่าระบบ</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors text-label-md font-label-md" href="#help">
+<span class="material-symbols-outlined text-lg" data-icon="help">help</span>
+<span>ความช่วยเหลือ</span>
+</a>
+</div>
+</div>
+</aside>
+<!-- Main Content Canvas -->
+<div class="flex-1 flex flex-col min-w-0 bg-[#F5F7FA]">
+<!-- TopNavBar Anchor (Shared Component Execution) -->
+<header class="flex justify-between items-center w-full px-8 h-16 border-b border-outline-variant/30 bg-surface-container-lowest sticky top-0 z-30 shadow-sm">
+<!-- Breadcrumb and Site Context -->
+<div class="flex items-center gap-4">
+<a class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface text-body-sm font-body-sm transition-colors border border-outline-variant/30" href="#portfolio">
+<span class="material-symbols-outlined text-base text-primary" data-icon="arrow_back">arrow_back</span>
+<span class="font-medium">กลับทุกไซต์</span>
+</a>
+<div class="h-5 w-px bg-outline-variant/40"></div>
+<div class="flex items-center gap-2">
+<span class="font-headline-sm text-headline-sm font-bold text-on-surface">โรงเรียนบ้านสวน (BSW-01) ชลบุรี</span>
+<span class="font-code-telemetry text-code-telemetry px-2 py-0.5 rounded bg-surface-container text-outline font-semibold">BSW-01</span>
+</div>
+</div>
+<!-- Range Selector Filters -->
+<div class="hidden lg:flex items-center p-1 bg-surface-container-low rounded-lg border border-outline-variant/30 text-body-sm font-body-sm"><button class="px-3 py-1 text-on-surface-variant hover:text-on-surface rounded transition-colors font-medium">วันนี้</button>
+<button class="px-3 py-1 text-on-surface-variant hover:text-on-surface rounded transition-colors font-medium">7 วัน</button>
+<button class="px-3 py-1 text-on-surface-variant hover:text-on-surface rounded transition-colors font-medium">เดือนนี้ (ก.ย. 2569)</button>
+<button class="px-3 py-1 rounded bg-surface-container-lowest text-primary shadow-sm font-semibold border border-outline-variant/40 flex items-center gap-1.5">
+<span class="material-symbols-outlined text-sm" data-icon="calendar_today">calendar_today</span>
+<span>กำหนดเอง (1–30 ก.ย. 2569)</span>
+</button></div>
+<!-- Trailing Status & Indicators -->
+<div class="flex items-center gap-4">
+<!-- Live Freshness Indicator Pattern -->
+<div class="hidden sm:inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200">
+<span class="relative flex h-2.5 w-2.5">
+<span class="pulse-ring absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+<span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+</span>
+<span class="font-body-sm text-body-sm text-emerald-800 font-medium">ข้อมูลสด (5 วิที่แล้ว)</span>
+</div>
+<!-- Prototype Watermark Chip -->
+<span class="font-label-sm text-label-sm px-2.5 py-1 rounded-full bg-surface-container-high text-outline font-medium border border-outline-variant/50">
+          ข้อมูลตัวอย่าง (Prototype)
+        </span>
+<!-- System Icons & Avatar -->
+<div class="flex items-center gap-2 text-outline">
+<button class="p-2 rounded-lg hover:bg-surface-container hover:text-on-surface transition-colors" title="รีเฟรชข้อมูล">
+<span class="material-symbols-outlined text-xl" data-icon="refresh">refresh</span>
+</button>
+<button class="p-2 rounded-lg hover:bg-surface-container hover:text-on-surface transition-colors relative" title="การแจ้งเตือน">
+<span class="material-symbols-outlined text-xl" data-icon="notifications">notifications</span>
+<span class="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-error"></span>
+</button>
+</div>
+<div class="h-8 w-px bg-outline-variant/40"></div>
+<!-- Accountant Profile Brief -->
+<div class="flex items-center gap-2.5 pl-1">
+<div class="w-8 h-8 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-primary font-bold text-xs font-code-telemetry">
+            ACC
+          </div>
+<div class="hidden xl:flex flex-col text-left">
+<span class="font-label-sm text-label-sm font-semibold text-on-surface leading-tight">สมศรี มีทรัพย์ (CPA)</span>
+<span class="font-code-telemetry text-[10px] text-outline">รอบบิล ก.ย. 2569</span>
+</div>
+</div>
+</div>
+</header>
+<!-- Main Scrollable Canvas Area -->
+<main class="flex-1 px-8 py-6 max-w-7xl w-full mx-auto space-y-6">
+<!-- Site Header Summary Banner -->
+<section class="bg-surface-container-lowest border border-outline-variant/30 rounded-xl p-6 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+<div class="space-y-3"><div class="flex flex-wrap items-center gap-3">
+<h1 class="font-headline-lg text-headline-lg font-bold text-on-surface tracking-tight">โรงเรียนบ้านสวน (BSW-01) ชลบุรี</h1>
+<span class="font-code-telemetry text-code-telemetry px-2.5 py-0.5 rounded-full bg-surface-container text-primary font-bold border border-outline-variant/30">รหัสไซต์: BSW-01</span>
+</div>
+<div class="grid grid-cols-2 md:grid-cols-4 gap-4 pt-1 text-body-sm font-body-sm">
+<div class="border-l-2 border-primary/40 pl-3">
+<span class="text-outline block text-xs font-label-sm">คู่สัญญา / สถานที่</span>
+<span class="font-semibold text-on-surface">โรงเรียนบ้านสวนวิทยาศาสตร์</span>
+</div>
+<div class="border-l-2 border-primary/40 pl-3">
+<span class="text-outline block text-xs font-label-sm">อัตราค่าไฟ</span>
+<span class="font-semibold text-on-surface tabular-nums">3.20 บาท / kWh</span>
+</div>
+<div class="border-l-2 border-primary/40 pl-3">
+<span class="text-outline block text-xs font-label-sm">กำลังติดตั้ง</span>
+<span class="font-semibold text-on-surface tabular-nums">0.45 MWp (450 kWp)</span>
+</div>
+<div class="border-l-2 border-primary/40 pl-3">
+<span class="text-outline block text-xs font-label-sm">พิกัดทางภูมิศาสตร์</span>
+<span class="font-code-telemetry text-xs font-medium text-on-surface">13.3611° N, 100.9847° E</span>
+</div>
+</div></div>
+<div class="flex sm:flex-col sm:items-end justify-between gap-3 shrink-0">
+<button class="inline-flex items-center gap-2 bg-primary hover:bg-primary-container text-on-primary font-headline-sm text-headline-sm px-4 py-2.5 rounded-lg active:scale-[0.98] transition shadow-sm">
+<span class="material-symbols-outlined text-lg" data-icon="post_add">post_add</span>
+<span>ออกใบแจ้งหนี้รอบใหม่</span>
+</button>
+<div class="font-code-telemetry text-[11px] text-outline text-right">
+            รอบบิลปัจจุบัน: 1–30 ก.ย. 2569 (ปิดรอบแล้ว)
+          </div>
+</div>
+</section>
+<!-- Site-Specific Audit Queue Notice Card (Amber Alert Banner) -->
+<section class="bg-amber-50/70 border border-amber-200/80 rounded-xl p-4.5 px-5 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+<div class="flex items-start gap-3.5">
+<div class="w-9 h-9 rounded-lg bg-amber-100 border border-amber-300 flex items-center justify-center text-amber-800 shrink-0 mt-0.5">
+<span class="material-symbols-outlined text-xl" data-icon="notification_important">notification_important</span>
+</div>
+<div>
+<div class="flex items-center gap-2">
+<h2 class="font-headline-sm text-headline-sm font-bold text-amber-950">คิวงานตรวจสอบเฉพาะไซต์ รร.บ้านสวน (BSW-01)</h2>
+<span class="bg-amber-200 text-amber-900 text-xs px-2 py-0.5 rounded font-code-telemetry font-bold">รออนุมัติ 1 รายการ</span>
+</div>
+<p class="font-body-md text-body-md text-amber-900/90 mt-1">
+              มีสลิปโอนเงินส่วนที่เหลือแนบมาใหม่ 1 รายการ รอยืนยันยอด <span class="font-bold text-amber-950 tabular-nums">฿54,240</span> โดยโรงเรียนบ้านสวนวิทยาศาสตร์ (ส่งเมื่อ 8 ต.ค. 2569 เวลา 16:20 น.)
+            </p>
+</div>
+</div>
+<div class="flex items-center gap-2.5 shrink-0 self-end md:self-center">
+<button class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-amber-300 hover:bg-amber-100 text-amber-900 font-body-sm text-body-sm font-semibold transition shadow-2xs">
+<span class="material-symbols-outlined text-base" data-icon="attachment">attachment</span>
+<span>ดูไฟล์สลิป (slip_54240.pdf)</span>
+</button>
+<button class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-body-sm text-body-sm font-semibold transition shadow-2xs">
+<span class="material-symbols-outlined text-base" data-icon="check_circle">check_circle</span>
+<span>อนุมัติยอดและออกใบเสร็จ</span>
+</button>
+</div>
+</section>
+<!-- Financial KPI Cards Row (5 Cards) -->
+<section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+<!-- KPI 1: เรียกเก็บรอบนี้ -->
+<div class="bg-surface-container-lowest border border-outline-variant/30 rounded-xl p-4.5 shadow-sm hover:border-outline-variant/60 transition flex flex-col justify-between">
+<div class="flex items-center justify-between text-outline mb-2">
+<span class="font-label-md text-label-md tracking-wider uppercase">เรียกเก็บรอบนี้ (Cohort Billed)</span>
+<span class="material-symbols-outlined text-lg text-primary" data-icon="request_quote">request_quote</span>
+</div>
+<div>
+<div class="font-metric-display text-metric-display text-on-surface tabular-nums">฿154,240</div>
+<div class="font-body-sm text-body-sm text-outline mt-1 leading-snug">
+              48,200 kWh × ฿3.20<br/>
+<span class="text-error font-medium">ครบกำหนด 15 ต.ค. 2569</span>
+</div>
+</div>
+</div>
+<!-- KPI 2: อนุมัติชำระแล้ว -->
+<div class="bg-surface-container-lowest border border-outline-variant/30 rounded-xl p-4.5 shadow-sm hover:border-outline-variant/60 transition flex flex-col justify-between">
+<div class="flex items-center justify-between text-outline mb-2">
+<span class="font-label-md text-label-md tracking-wider uppercase">อนุมัติชำระแล้ว (Paid)</span>
+<span class="material-symbols-outlined text-lg text-emerald-600" data-icon="task_alt">task_alt</span>
+</div>
+<div>
+<div class="font-metric-display text-metric-display text-emerald-700 tabular-nums">฿100,000</div>
+<div class="font-body-sm text-body-sm text-outline mt-1 leading-snug">
+<span class="text-emerald-700 font-bold">64.8%</span> ของยอดเรียกเก็บ<br/>
+<span class="font-code-telemetry text-xs">ใบเสร็จ RC-202609-001</span>
+</div>
+</div>
+</div>
+<!-- KPI 3: ยอดคงเหลือรอชำระ -->
+<div class="bg-surface-container-lowest border border-amber-200 rounded-xl p-4.5 shadow-sm hover:border-amber-300 transition flex flex-col justify-between bg-amber-50/20">
+<div class="flex items-center justify-between text-amber-700 mb-2">
+<span class="font-label-md text-label-md tracking-wider uppercase">คงค้างรอชำระ (Outstanding)</span>
+<span class="material-symbols-outlined text-lg text-amber-600" data-icon="hourglass_top">hourglass_top</span>
+</div>
+<div>
+<div class="font-metric-display text-metric-display text-amber-700 tabular-nums">฿54,240</div>
+<div class="font-body-sm text-body-sm text-amber-900/80 mt-1 leading-snug">
+<span class="font-bold text-amber-800">35.2%</span> มีสลิปรอยืนยัน<br/>
+<span class="font-medium text-amber-800">ครบกำหนด 15 ต.ค. 2569</span>
+</div>
+</div>
+</div>
+<!-- KPI 4: พลังงานผลิตรอบนี้ -->
+<div class="bg-surface-container-lowest border border-outline-variant/30 rounded-xl p-4.5 shadow-sm hover:border-outline-variant/60 transition flex flex-col justify-between">
+<div class="flex items-center justify-between text-outline mb-2">
+<span class="font-label-md text-label-md tracking-wider uppercase">พลังงานผลิตรอบนี้</span>
+<span class="material-symbols-outlined text-lg text-primary" data-icon="bolt">bolt</span>
+</div>
+<div>
+<div class="font-metric-display text-metric-display text-on-surface tabular-nums">48,200 <span class="text-lg font-normal text-outline">kWh</span></div>
+<div class="font-body-sm text-body-sm text-outline mt-1 leading-snug">48.20 MWh (รอบบิล 30 วัน)<br/><span class="text-outline font-medium">บันทึกจากมิเตอร์ตรวจวัดจริง</span></div>
+</div>
+</div>
+<!-- KPI 5: กำลังผลิตขณะนี้ -->
+<div class="bg-surface-container-lowest border border-outline-variant/30 rounded-xl p-4.5 shadow-sm hover:border-outline-variant/60 transition flex flex-col justify-between">
+<div class="flex items-center justify-between text-outline mb-2">
+<span class="font-label-md text-label-md tracking-wider uppercase">กำลังผลิตขณะนี้ (Real-Time)</span>
+<span class="material-symbols-outlined text-lg text-primary" data-icon="wb_sunny">wb_sunny</span>
+</div>
+<div>
+<div class="font-metric-display text-metric-display text-primary tabular-nums">218 <span class="text-lg font-normal text-outline">kW</span></div>
+<div class="font-body-sm text-body-sm text-outline mt-1 leading-snug">
+              48.4% ของ Peak 0.45 MWp<br/>
+<span class="font-code-telemetry text-xs">Snapshot 9 ต.ค. 13:45</span>
+</div>
+</div>
+</div>
+</section>
+<!-- Charts Section: Area Production/Billing Chart & Payment Cohort Donut Chart -->
+<section class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+<!-- Energy & Billing Area Chart (col-span-8) -->
+<div class="lg:col-span-8 bg-surface-container-lowest border border-outline-variant/30 rounded-xl p-6 shadow-sm flex flex-col justify-between">
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-outline-variant/20"><div>
+<div class="flex items-center gap-2">
+<h3 class="font-headline-md text-headline-md font-bold text-on-surface">การผลิตไฟรายวัน (1–30 ก.ย. 2569)</h3>
+<span class="bg-primary/10 text-primary font-code-telemetry text-xs px-2 py-0.5 rounded font-semibold">30 วัน</span>
+</div>
+<p class="font-body-sm text-body-sm text-outline mt-0.5">พลังงานสะสมตรวจวัดจริง 48,200 kWh • เฉลี่ย 1,606.7 kWh / วัน</p>
+</div>
+<div class="flex items-center gap-4 text-xs font-label-md">
+<div class="flex items-center gap-1.5">
+<span class="w-3 h-3 rounded bg-primary"></span>
+<span class="text-on-surface-variant font-semibold">พลังงานที่ผลิตได้จริง (kWh)</span>
+</div>
+</div></div>
+<!-- SVG Solar Area Chart -->
+<div class="w-full h-72 py-3 relative"><svg class="w-full h-full overflow-visible" preserveaspectratio="none" viewbox="0 0 700 240">
+<defs>
+<lineargradient id="solarTealGradient" x1="0%" x2="0%" y1="0%" y2="100%">
+<stop offset="0%" stop-color="#0D9488" stop-opacity="0.35"></stop>
+<stop offset="100%" stop-color="#0D9488" stop-opacity="0.00"></stop>
+</lineargradient>
+</defs>
+<line stroke="#E2E8F0" stroke-dasharray="3 3" x1="40" x2="680" y1="20" y2="20"></line>
+<line stroke="#E2E8F0" stroke-dasharray="3 3" x1="40" x2="680" y1="70" y2="70"></line>
+<line stroke="#E2E8F0" stroke-dasharray="3 3" x1="40" x2="680" y1="120" y2="120"></line>
+<line stroke="#E2E8F0" stroke-dasharray="3 3" x1="40" x2="680" y1="170" y2="170"></line>
+<line stroke="#CBD5E1" stroke-width="1.5" x1="40" x2="680" y1="210" y2="210"></line>
+<text fill="#64748B" font-family="JetBrains Mono" font-size="10" text-anchor="end" x="32" y="24">2,000</text>
+<text fill="#64748B" font-family="JetBrains Mono" font-size="10" text-anchor="end" x="32" y="74">1,500</text>
+<text fill="#64748B" font-family="JetBrains Mono" font-size="10" text-anchor="end" x="32" y="124">1,000</text>
+<text fill="#64748B" font-family="JetBrains Mono" font-size="10" text-anchor="end" x="32" y="174">500</text>
+<text fill="#64748B" font-family="JetBrains Mono" font-size="10" text-anchor="end" x="32" y="214">0</text>
+<path d="M 40 210 L 40 145 C 80 150, 110 110, 150 120 C 190 130, 230 90, 270 95 C 310 100, 350 130, 390 105 C 430 80, 460 30, 490 28 C 520 26, 560 85, 600 95 C 640 105, 660 115, 680 110 L 680 210 Z" fill="url(#solarTealGradient)"></path>
+<path d="M 40 145 C 80 150, 110 110, 150 120 C 190 130, 230 90, 270 95 C 310 100, 350 130, 390 105 C 430 80, 460 30, 490 28 C 520 26, 560 85, 600 95 C 640 105, 660 115, 680 110" fill="none" stroke="#0D9488" stroke-width="2.5"></path>
+<line stroke="#0D9488" stroke-dasharray="2 2" stroke-width="1.5" x1="490" x2="490" y1="28" y2="210"></line>
+<circle cx="490" cy="28" fill="#0D9488" r="5" stroke="#ffffff" stroke-width="2"></circle>
+<g transform="translate(435, 12)">
+<rect fill="#0F172A" height="24" rx="4" width="110"></rect>
+<text fill="#89F5E7" font-family="Noto Sans Thai" font-size="10" font-weight="600" text-anchor="middle" x="55" y="16">พีค 20 ก.ย.: 1,820 kWh</text>
+</g>
+<text fill="#64748B" font-family="JetBrains Mono" font-size="10" x="45" y="226">1 ก.ย.</text>
+<text fill="#64748B" font-family="JetBrains Mono" font-size="10" x="150" y="226">6 ก.ย.</text>
+<text fill="#64748B" font-family="JetBrains Mono" font-size="10" x="270" y="226">12 ก.ย.</text>
+<text fill="#64748B" font-family="JetBrains Mono" font-size="10" x="390" y="226">18 ก.ย.</text>
+<text fill="#0D9488" font-family="JetBrains Mono" font-size="10" font-weight="bold" x="490" y="226">20 ก.ย.</text>
+<text fill="#64748B" font-family="JetBrains Mono" font-size="10" x="600" y="226">26 ก.ย.</text>
+<text fill="#64748B" font-family="JetBrains Mono" font-size="10" x="670" y="226">30 ก.ย.</text>
+</svg></div>
+<!-- Bottom Micro Metrics Strip -->
+<div class="grid grid-cols-2 gap-3 pt-4 border-t border-outline-variant/20 text-center font-body-sm text-body-sm">
+<div class="bg-surface-container-low p-2 rounded-lg">
+<span class="text-outline text-xs block">เฉลี่ยพลังงานรายวัน</span>
+<span class="font-bold text-on-surface tabular-nums">1,606.7 kWh / วัน</span>
+</div>
+<div class="bg-surface-container-low p-2 rounded-lg">
+<span class="text-outline text-xs block">ความแม่นยำเซนเซอร์ Inverter</span>
+<span class="font-bold text-emerald-700 tabular-nums">99.82% (High Grade)</span>
+</div>
+</div>
+</div>
+<!-- Cohort Payment Status Donut Chart (col-span-4) -->
+<div class="lg:col-span-4 bg-surface-container-lowest border border-outline-variant/30 rounded-xl p-6 shadow-sm flex flex-col justify-between">
+<div>
+<div class="flex items-center justify-between pb-3 border-b border-outline-variant/20">
+<h3 class="font-headline-md text-headline-md font-bold text-on-surface">สัดส่วนการชำระเงินรอบนี้</h3>
+<span class="font-code-telemetry text-xs text-outline">รอบ ก.ย. 69</span>
+</div>
+<!-- SVG Donut Chart with Center Amount -->
+<div class="relative w-56 h-56 mx-auto my-4 flex items-center justify-center">
+<svg class="w-full h-full transform -rotate-90" viewbox="0 0 100 100">
+<!-- Background Circle -->
+<circle cx="50" cy="50" fill="none" r="38" stroke="#F1F5F9" stroke-width="12"></circle>
+<!-- Paid Segment (64.8% -> stroke-dasharray = 154.8 238.8) -->
+<!-- Circumference = 2 * PI * 38 = 238.76. 64.8% = 154.71 -->
+<circle cx="50" cy="50" fill="none" r="38" stroke="#00685F" stroke-dasharray="154.71 238.76" stroke-linecap="round" stroke-width="12"></circle>
+<!-- Outstanding Segment (35.2% -> offset 154.71, length = 84.05) -->
+<circle cx="50" cy="50" fill="none" r="38" stroke="#D97706" stroke-dasharray="84.05 238.76" stroke-dashoffset="-154.71" stroke-linecap="round" stroke-width="12"></circle>
+</svg>
+<!-- Central Telemetry Overlay -->
+<div class="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none">
+<span class="font-label-sm text-[11px] text-outline uppercase tracking-wider">ยอดเรียกเก็บรวม</span>
+<span class="font-headline-md text-headline-md font-bold text-on-surface tabular-nums">฿154,240</span>
+<span class="font-code-telemetry text-[11px] text-emerald-700 font-semibold">100% Cohort</span>
+</div>
+</div>
+<!-- Detailed Breakdown Legend -->
+<div class="space-y-3 pt-2">
+<div class="flex items-center justify-between p-2.5 rounded-lg bg-surface-container-low border border-outline-variant/30">
+<div class="flex items-center gap-2.5">
+<span class="w-3.5 h-3.5 rounded-full bg-primary shrink-0"></span>
+<div>
+<span class="font-body-sm text-body-sm font-semibold text-on-surface block">ชำระแล้ว (อนุมัติแล้ว)</span>
+<span class="font-code-telemetry text-[11px] text-outline">ใบเสร็จ RC-202609-001</span>
+</div>
+</div>
+<div class="text-right">
+<span class="font-headline-sm text-headline-sm font-bold text-on-surface tabular-nums">฿100,000.00</span>
+<span class="text-xs text-primary font-semibold block">64.8%</span>
+</div>
+</div>
+<div class="flex items-center justify-between p-2.5 rounded-lg bg-amber-50/50 border border-amber-200">
+<div class="flex items-center gap-2.5">
+<span class="w-3.5 h-3.5 rounded-full bg-amber-600 shrink-0"></span>
+<div>
+<span class="font-body-sm text-body-sm font-semibold text-amber-950 block">คงค้างรอตรวจสอบ</span>
+<span class="font-code-telemetry text-[11px] text-amber-800">สลิปแนบรออนุมัติ</span>
+</div>
+</div>
+<div class="text-right">
+<span class="font-headline-sm text-headline-sm font-bold text-amber-950 tabular-nums">฿54,240.00</span>
+<span class="text-xs text-amber-800 font-semibold block">35.2%</span>
+</div>
+</div>
+</div>
+</div>
+<div class="mt-4 pt-3 border-t border-outline-variant/20 flex items-center justify-between text-body-sm font-body-sm text-outline">
+<span>เงื่อนไขชำระเงิน</span>
+<span class="font-medium text-on-surface">Net 15 วัน (15 ต.ค. 2569)</span>
+</div>
+</div>
+</section>
+<!-- Prominent Retained Map Section (Eastern Region Thailand) -->
+<section class="bg-surface-container-lowest border border-outline-variant/30 rounded-xl p-6 shadow-sm">
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-outline-variant/20">
+<div>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-xl" data-icon="location_on">location_on</span>
+<h3 class="font-headline-md text-headline-md font-bold text-on-surface">ตำแหน่งที่ตั้งไซต์และพอร์ตโฟลิโอภาคตะวันออก (Thailand Eastern Region)</h3>
+</div>
+<p class="font-body-sm text-body-sm text-outline mt-0.5">
+              แสดงการกระจายตัวของไซต์ในความดูแล โดยเน้นไซต์ รร.บ้านสวน (BSW-01) ชลบุรี
+            </p>
+</div>
+<a class="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-surface-container-low hover:bg-surface-container text-primary font-headline-sm text-headline-sm border border-outline-variant/30 transition shadow-2xs self-start sm:self-auto" href="#portfolio">
+<span class="material-symbols-outlined text-base" data-icon="travel_explore">travel_explore</span>
+<span>กลับทุกไซต์</span>
+</a>
+</div>
+<!-- Styled Technical Map Canvas Container -->
+<div class="mt-4 relative w-full h-80 rounded-xl overflow-hidden border border-outline-variant/40 bg-[#E8EEF5]">
+<!-- Stylized Geo Vector Backdrop -->
+<svg class="absolute inset-0 w-full h-full" preserveaspectratio="none" viewbox="0 0 1000 400" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<pattern height="40" id="gridPattern" patternunits="userSpaceOnUse" width="40">
+<path d="M 40 0 L 0 0 0 40" fill="none" stroke="#D5E0EA" stroke-width="0.8"></path>
+</pattern>
+</defs>
+<rect fill="#EBF1F7" height="400" width="1000"></rect>
+<rect fill="url(#gridPattern)" height="400" width="1000"></rect>
+<!-- Coastline Representation (Gulf of Thailand & Eastern Seaboard) -->
+<path d="M 0 350 Q 180 340 320 280 T 480 230 T 620 180 T 800 240 T 1000 290 L 1000 400 L 0 400 Z" fill="#D9E6F2" opacity="0.9"></path>
+<!-- Major Highway routes (Route 7 / Route 3) -->
+<path d="M 120 40 Q 320 120 450 180 T 780 340" fill="none" stroke="#CBD5E1" stroke-dasharray="6 3" stroke-width="3"></path>
+<path d="M 380 20 L 520 200 L 640 380" fill="none" stroke="#CBD5E1" stroke-width="2"></path>
+<!-- Region Water Label -->
+<text fill="#94A3B8" font-family="Space Grotesk" font-size="14" letter-spacing="2" x="220" y="360">GULF OF THAILAND</text>
+<text fill="#94A3B8" font-family="Space Grotesk" font-size="12" letter-spacing="1.5" x="560" y="80">CHONBURI PROVINCE</text>
+</svg>
+<!-- Highlighted Site: โรงเรียนบ้านสวน (BSW-01) Prominent Pulse Pin -->
+<div class="absolute left-[48%] top-[45%] -translate-x-1/2 -translate-y-1/2 z-20 group">
+<div class="relative flex items-center justify-center">
+<span class="pulse-ring absolute w-12 h-12 rounded-full bg-primary opacity-30"></span>
+<span class="w-7 h-7 rounded-full bg-primary text-on-primary flex items-center justify-center shadow-lg border-2 border-white">
+<span class="material-symbols-outlined text-sm" data-icon="solar_power" style="font-variation-settings: 'FILL' 1;">solar_power</span>
+</span>
+</div>
+<!-- Permanent High-Density Site Badge / Tooltip -->
+<div class="absolute left-1/2 -translate-x-1/2 bottom-full mb-2.5 w-64 bg-surface-container-lowest border border-primary/40 rounded-xl p-3 shadow-xl backdrop-blur-md">
+<div class="flex items-center justify-between text-xs mb-1">
+<span class="font-bold text-primary font-code-telemetry">BSW-01 (SELECTED)</span>
+<span class="bg-emerald-100 text-emerald-800 text-[10px] px-1.5 py-0.5 rounded font-semibold">Active</span>
+</div>
+<div class="font-headline-sm text-xs font-bold text-on-surface leading-tight">โรงเรียนบ้านสวนวิทยาศาสตร์</div>
+<div class="text-[11px] text-outline mt-1 font-body-sm leading-snug">
+                กำลังติดตั้ง: 0.45 MWp | พิกัด 13.3611° N, 100.9847° E<br/>
+                ยอดเรียกเก็บรอบนี้: <span class="font-bold text-on-surface">฿154,240</span>
+</div>
+<div class="w-2.5 h-2.5 bg-surface-container-lowest border-r border-b border-primary/40 transform rotate-45 absolute -bottom-1.5 left-1/2 -translate-x-1/2"></div>
+</div>
+</div>
+<!-- Other Portfolio Pin 1: โรงงานชลบุรีพัฒนา -->
+<div class="absolute left-[34%] top-[32%] -translate-x-1/2 -translate-y-1/2 z-10">
+<div class="w-5 h-5 rounded-full bg-outline/80 text-white flex items-center justify-center shadow-sm border border-white">
+<span class="material-symbols-outlined text-[10px]" data-icon="factory">factory</span>
+</div>
+<div class="bg-white/95 px-2 py-0.5 rounded shadow text-[10px] font-medium text-on-surface absolute top-6 -left-8 whitespace-nowrap border border-slate-200">
+              โรงงานชลบุรีพัฒนา (0.80 MWp)
+            </div>
+</div>
+<!-- Other Portfolio Pin 2: ศรีราชาโลจิสติกส์ -->
+<div class="absolute left-[62%] top-[68%] -translate-x-1/2 -translate-y-1/2 z-10">
+<div class="w-5 h-5 rounded-full bg-outline/80 text-white flex items-center justify-center shadow-sm border border-white">
+<span class="material-symbols-outlined text-[10px]" data-icon="warehouse">warehouse</span>
+</div>
+<div class="bg-white/95 px-2 py-0.5 rounded shadow text-[10px] font-medium text-on-surface absolute top-6 -left-8 whitespace-nowrap border border-slate-200">
+              ศรีราชาโลจิสติกส์ (1.20 MWp)
+            </div>
+</div>
+<!-- Map Legend Overlay (Bottom Left) -->
+<div class="absolute bottom-3 left-3 bg-surface-container-lowest/90 backdrop-blur-sm border border-outline-variant/40 rounded-lg p-2 text-[11px] font-body-sm space-y-1 shadow-xs">
+<div class="flex items-center gap-2">
+<span class="w-2.5 h-2.5 rounded-full bg-primary"></span>
+<span class="font-medium text-on-surface">ไซต์ที่กำลังโฟกัส (BSW-01)</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="w-2.5 h-2.5 rounded-full bg-outline"></span>
+<span class="text-outline">ไซต์อื่นๆ ในพอร์ตโฟลิโอภาคตะวันออก</span>
+</div>
+</div>
+<!-- Map Scale & Status Overlay (Bottom Right) -->
+<div class="absolute bottom-3 right-3 bg-surface-container-lowest/90 backdrop-blur-sm border border-outline-variant/40 rounded-lg px-2.5 py-1 text-right font-code-telemetry text-[11px] text-outline">
+            GIS Map Scale 1:250,000 | Datum WGS84
+          </div>
+</div>
+</section>
+<!-- Document & Billing Cards Section (Cards, NOT a table) -->
+<section class="space-y-4">
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+<div>
+<h3 class="font-headline-md text-headline-md font-bold text-on-surface">เอกสารทางการเงินและประวัติบิล (Document &amp; Billing Cards)</h3>
+<p class="font-body-sm text-body-sm text-outline">จัดการและตรวจสอบสถานะการชำระเงินตามสัญญาของไซต์ รร.บ้านสวน</p>
+</div>
+<span class="font-code-telemetry text-xs text-outline">ทั้งหมด 3 เอกสารสำคัญ</span>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+<!-- Card 1: ใบแจ้งหนี้ปัจจุบัน (INV-202609-001) -->
+<div class="bg-surface-container-lowest border-2 border-primary/40 rounded-xl p-5 shadow-sm flex flex-col justify-between relative overflow-hidden">
+<div class="absolute top-0 right-0 bg-primary/10 text-primary text-[10px] font-code-telemetry font-bold px-3 py-1 rounded-bl-lg">
+              รอบบิลปัจจุบัน
+            </div>
+<div class="space-y-3">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+<span class="material-symbols-outlined text-2xl" data-icon="receipt">receipt</span>
+</div>
+<div>
+<div class="font-headline-sm text-headline-sm font-bold text-on-surface">INV-202609-001</div>
+<div class="font-body-sm text-xs text-outline">รอบบิล 1–30 ก.ย. 2569</div>
+</div>
+</div>
+<!-- Financial Metric Breakdown Inside Card -->
+<div class="bg-surface-container-low rounded-lg p-3 space-y-1.5 text-body-sm font-body-sm border border-outline-variant/20">
+<div class="flex justify-between items-center">
+<span class="text-outline text-xs">ยอดเรียกเก็บสุทธิ</span>
+<span class="font-bold text-on-surface tabular-nums">฿154,240.00</span>
+</div>
+<div class="flex justify-between items-center">
+<span class="text-outline text-xs">ชำระแล้ว (Partially)</span>
+<span class="text-emerald-700 font-semibold tabular-nums">฿100,000.00</span>
+</div>
+<div class="h-px bg-outline-variant/30"></div>
+<div class="flex justify-between items-center text-amber-900 font-semibold">
+<span class="text-xs">ยอดรอชำระคงค้าง</span>
+<span class="tabular-nums font-bold text-sm">฿54,240.00</span>
+</div>
+</div>
+<div class="flex items-center justify-between text-xs pt-1">
+<span class="inline-flex items-center gap-1 text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 font-medium">
+<span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                  รอชำระส่วนที่เหลือ
+                </span>
+<span class="text-error font-medium">ครบกำหนด 15 ต.ค. 69</span>
+</div>
+</div>
+<!-- Card Actions -->
+<div class="grid grid-cols-2 gap-2 mt-4 pt-3 border-t border-outline-variant/20">
+<button class="inline-flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-lg border border-outline-variant/40 hover:bg-surface-container-low text-on-surface text-body-sm font-body-sm transition">
+<span class="material-symbols-outlined text-base" data-icon="picture_as_pdf">picture_as_pdf</span>
+<span>ดู PDF</span>
+</button>
+<button class="inline-flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-body-sm font-body-sm transition font-medium shadow-2xs">
+<span class="material-symbols-outlined text-base" data-icon="verified">verified</span>
+<span>ตรวจสอบสลิป</span>
+</button>
+</div>
+</div>
+<!-- Card 2: ใบเสร็จรับเงิน (RC-202609-001) -->
+<div class="bg-surface-container-lowest border border-outline-variant/30 rounded-xl p-5 shadow-sm flex flex-col justify-between">
+<div class="space-y-3">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center border border-emerald-200">
+<span class="material-symbols-outlined text-2xl" data-icon="verified_user">verified_user</span>
+</div>
+<div>
+<div class="font-headline-sm text-headline-sm font-bold text-on-surface">RC-202609-001</div>
+<div class="font-body-sm text-xs text-outline">ใบเสร็จรับเงิน (งวดที่ 1)</div>
+</div>
+</div>
+<!-- Content details -->
+<div class="bg-surface-container-low rounded-lg p-3 space-y-1.5 text-body-sm font-body-sm border border-outline-variant/20">
+<div class="flex justify-between items-center">
+<span class="text-outline text-xs">ยอดรับชำระแล้ว</span>
+<span class="font-bold text-emerald-700 tabular-nums">฿100,000.00</span>
+</div>
+<div class="flex justify-between items-center">
+<span class="text-outline text-xs">วันที่ออกเอกสาร</span>
+<span class="font-medium text-on-surface">5 ต.ค. 2569</span>
+</div>
+<div class="flex justify-between items-center">
+<span class="text-outline text-xs">ช่องทางชำระเงิน</span>
+<span class="text-outline text-xs">โอนเงินธนาคาร (SCB)</span>
+</div>
+</div>
+<div class="flex items-center justify-between text-xs pt-1">
+<span class="inline-flex items-center gap-1 text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 font-medium">
+<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                  ชำระแล้ว (อนุมัติผ่าน)
+                </span>
+<span class="text-outline font-code-telemetry">INV-Ref: 001</span>
+</div>
+</div>
+<!-- Card Actions -->
+<div class="mt-4 pt-3 border-t border-outline-variant/20">
+<button class="w-full inline-flex items-center justify-center gap-2 py-2 px-3 rounded-lg border border-outline-variant/40 hover:bg-surface-container-low text-on-surface text-body-sm font-body-sm transition font-medium">
+<span class="material-symbols-outlined text-base" data-icon="download">download</span>
+<span>ดาวน์โหลดใบเสร็จ (PDF)</span>
+</button>
+</div>
+</div>
+<!-- Card 3: ใบแจ้งหนี้รอบก่อน (INV-202608-001) -->
+<div class="bg-surface-container-lowest border border-outline-variant/30 rounded-xl p-5 shadow-sm flex flex-col justify-between opacity-95">
+<div class="space-y-3">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center">
+<span class="material-symbols-outlined text-2xl" data-icon="history">history</span>
+</div>
+<div>
+<div class="font-headline-sm text-headline-sm font-bold text-on-surface">INV-202608-001</div>
+<div class="font-body-sm text-xs text-outline">รอบบิล ส.ค. 2569 (ย้อนหลัง)</div>
+</div>
+</div>
+<!-- Content details -->
+<div class="bg-surface-container-low rounded-lg p-3 space-y-1.5 text-body-sm font-body-sm border border-outline-variant/20">
+<div class="flex justify-between items-center">
+<span class="text-outline text-xs">ยอดเรียกเก็บรอบ ส.ค.</span>
+<span class="font-bold text-on-surface tabular-nums">฿148,900.00</span>
+</div>
+<div class="flex justify-between items-center">
+<span class="text-outline text-xs">พลังงานรวม</span>
+<span class="font-medium text-on-surface tabular-nums">46,531 kWh</span>
+</div>
+<div class="flex justify-between items-center">
+<span class="text-outline text-xs">วันที่ปิดยอดสมบูรณ์</span>
+<span class="text-outline text-xs">12 ก.ย. 2569</span>
+</div>
+</div>
+<div class="flex items-center justify-between text-xs pt-1">
+<span class="inline-flex items-center gap-1 text-slate-700 bg-slate-100 px-2 py-0.5 rounded font-medium">
+<span class="w-1.5 h-1.5 rounded-full bg-slate-500"></span>
+                  ชำระครบถ้วนแล้ว
+                </span>
+<span class="text-outline text-xs">ไม่มีภาระผูกพัน</span>
+</div>
+</div>
+<!-- Card Actions -->
+<div class="mt-4 pt-3 border-t border-outline-variant/20">
+<button class="w-full inline-flex items-center justify-center gap-2 py-2 px-3 rounded-lg border border-outline-variant/40 hover:bg-surface-container-low text-on-surface text-body-sm font-body-sm transition font-medium">
+<span class="material-symbols-outlined text-base" data-icon="visibility">visibility</span>
+<span>ดูประวัติเอกสาร</span>
+</button>
+</div>
+</div>
+</div>
+</section>
+<!-- Site Footer Contract Strip -->
+<footer class="pt-6 pb-8 border-t border-outline-variant/30 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs font-body-sm text-outline">
+<div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+<span>รหัสไซต์: <strong class="text-on-surface font-code-telemetry">BSW-01</strong> (โรงเรียนบ้านสวน ชลบุรี)</span></div>
+<div class="flex items-center gap-4">
+<span>พิกัดทางบัญชี: รหัสทรัพย์สิน AST-SOLAR-0012</span>
+<span>•</span>
+<span>อัปเดตเซิร์ฟเวอร์: 09 ต.ค. 2569 13:45:22 ICT</span>
+</div>
+</footer>
+</main>
+</div>
+</body></html>

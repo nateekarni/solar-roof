@@ -17,7 +17,7 @@ if(!broker||!['localhost','127.0.0.1','[::1]'].includes(new URL(broker).hostname
 const db=new DatabaseService({statementTimeout:1500});
 const readiness=new FinancialReadinessService(db),sources=new BillingSourceBindingService(db),financial=new LocalFinancialApplicationService(db,readiness);
 await readiness.assertEnabled('calculate'); // Never bypass the normal policy gate.
-const run=randomUUID().replaceAll('-',''),siteId=randomUUID(),schoolId=randomUUID(),gatewayId=randomUUID(),deviceId=randomUUID(),extraDeviceId=randomUUID(),revisionId=randomUUID(),meterId=randomUUID(),contractId=randomUUID(),recipientId=randomUUID();
+const run=randomUUID().replaceAll('-',''),siteId=randomUUID(),customerId=randomUUID(),gatewayId=randomUUID(),deviceId=randomUUID(),extraDeviceId=randomUUID(),revisionId=randomUUID(),meterId=randomUUID(),contractId=randomUUID(),recipientId=randomUUID();
 const externalSite=`BILL-${run}`,externalGateway=`GW-${run}`,externalDevice='MAIN';
 const topic=`solar/v1/sites/${externalSite}/gateways/${externalGateway}/devices/${externalDevice}/telemetry`,ackTopic=`solar/v1/sites/${externalSite}/gateways/${externalGateway}/dataAcept`;
 const profile=validatePayloadProfile({id:`bill-${run}`,version:'1.0.0',schemaVersion:'1.1',displayName:'Synthetic delivery meter',deviceType:'energy-meter',pollGroups:['energy'],fields:[{tag:'energy.active.import.total',sourceTag:'meter.wh',displayName:'Delivery counter',pollGroup:'energy',sourceUnit:'Wh',targetUnit:'kWh',conversion:'wh-to-kwh',role:'billing-import'}]});
@@ -43,9 +43,9 @@ try{
  const actor=(await db.query("SELECT id FROM users WHERE role='admin' AND status='active' ORDER BY id LIMIT 1")).rows[0];assert.ok(actor,'Existing synthetic admin required');
  // Add new identities only. Preserve every existing fixture row and document original.
  await db.transaction(async client=>{
-  await client.query("INSERT INTO schools(id,name,code,region) VALUES($1,$2,$3,'TEST')",[schoolId,`Billing MQTT ${run}`,`BILL-${run}`]);
-  await client.query("INSERT INTO users(id,email,display_name,role,school_id,email_verified_at,verified_email) VALUES($1,$2,'Synthetic MQTT customer','school_user',$3,now(),$2)",[recipientId,`billing-${run}@solar-platform.invalid`,schoolId]);
-  await client.query('INSERT INTO sites(id,school_id,name,capacity_mwp,external_site_id) VALUES($1,$2,$3,1,$4)',[siteId,schoolId,`Billing MQTT ${run}`,externalSite]);
+  await client.query("INSERT INTO customers(id,name,code,region) VALUES($1,$2,$3,'TEST')",[customerId,`Billing MQTT ${run}`,`BILL-${run}`]);
+  await client.query("INSERT INTO users(id,email,display_name,role,customer_id,email_verified_at,verified_email) VALUES($1,$2,'Synthetic MQTT customer','customer_user',$3,now(),$2)",[recipientId,`billing-${run}@solar-platform.invalid`,customerId]);
+  await client.query('INSERT INTO sites(id,customer_id,name,capacity_mwp,external_site_id) VALUES($1,$2,$3,1,$4)',[siteId,customerId,`Billing MQTT ${run}`,externalSite]);
   await client.query("INSERT INTO gateways(id,site_id,name,protocol,endpoint,external_gateway_id,status) VALUES($1,$2,$3,'mqtt',$4,$3,'offline')",[gatewayId,siteId,externalGateway,topic.replace('/MAIN/','/+/')]);
   await client.query('INSERT INTO payload_profile_revisions(id,profile_id,version,config) VALUES($1,$2,$3,$4)',[revisionId,profile.id,profile.version,JSON.stringify(profile)]);
   for(const [id,external] of [[deviceId,'MAIN'],[extraDeviceId,'EXTRA']])await client.query("INSERT INTO devices(id,gateway_id,site_id,name,device_type,model,serial_number,external_device_id,payload_profile_revision_id) VALUES($1,$2,$3,$4,'meter','Synthetic',$1::uuid::text,$4,$5)",[id,gatewayId,siteId,external,revisionId]);
@@ -89,5 +89,5 @@ try{
  assert.equal((await raw(opening.messageId))[0]?.payload_profile_revision_id,revisionId);
  await sources.bind(siteId,{...source,profileRevisionId:nextRevision,billingImpactConfirmed:true},actor.id);
  await publish({...opening,timestamps:{...opening.timestamps,sentAt:new Date().toISOString()}});assert.equal((await raw(opening.messageId)).length,1);assert.equal((await raw(opening.messageId))[0]?.payload_profile_revision_id,revisionId);checks.push('Profile changes require explicit rebind; old data and durable replay retain original decoding');
- console.log(JSON.stringify({run,siteId,schoolId,deviceId,contractId,cycleId:cycle.id,openingId:first.id,closingId:last.id,profileRevisionId:revisionId,bindingId:binding.id,consumedKwh:cycle.consumed_kwh,amount:cycle.amount,checks},null,2));
+ console.log(JSON.stringify({run,siteId,customerId,deviceId,contractId,cycleId:cycle.id,openingId:first.id,closingId:last.id,profileRevisionId:revisionId,bindingId:binding.id,consumedKwh:cycle.consumed_kwh,amount:cycle.amount,checks},null,2));
 }finally{await Promise.all([receiver.endAsync(true),sender.endAsync(true)]);await ingress.beforeApplicationShutdown();await db.onModuleDestroy();}

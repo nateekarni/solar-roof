@@ -1,0 +1,887 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin — ทุกไซต์ (Data Corrected)</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts: Space Grotesk & Noto Sans Thai -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Noto Sans Thai"', '"Space Grotesk"', 'sans-serif'],
+            mono: ['"Space Grotesk"', 'monospace']
+          },
+          colors: {
+            brand: {
+              50: '#f0fdf4',
+              100: '#dcfce7',
+              500: '#10b981',
+              600: '#059669',
+              700: '#047857',
+              800: '#065f46',
+              900: '#0f172a'
+            },
+            teal: {
+              700: '#0f766e',
+              800: '#115e59',
+              900: '#134e4a'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      display: inline-block;
+      vertical-align: middle;
+    }
+    body {
+      font-family: 'Noto Sans Thai', 'Space Grotesk', sans-serif;
+      background-color: #f8fafc;
+      color: #0f172a;
+    }
+    .custom-scroll::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .custom-scroll::-webkit-scrollbar-thumb {
+      background-color: #cbd5e1;
+      border-radius: 9999px;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col bg-slate-50 text-slate-800 antialiased">
+
+  <!-- Top System Bar -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+    <div class="max-w-[1440px] mx-auto px-6 h-16 flex items-center justify-between gap-4">
+
+      <!-- Brand & Section -->
+      <div class="flex items-center gap-6">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-teal-800 flex items-center justify-center text-white shadow-sm">
+            <span class="material-symbols-outlined text-2xl">solar_power</span>
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="font-bold text-lg tracking-tight text-slate-900 font-mono">SOLAR ROOF</span>
+              <span class="text-xs px-2 py-0.5 rounded-full bg-teal-100 text-teal-800 font-medium">Admin ด้านเทคนิค</span>
+              <span class="text-xs px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 font-medium">ข้อมูลตัวอย่าง (Prototype)</span>
+            </div>
+            <p class="text-xs text-slate-500">ศูนย์วิศวกรรมเฝ้าระวังโทรมาตรและข้อมูลเกตเวย์</p>
+          </div>
+        </div>
+
+        <!-- Main Nav (Allowed: overview, sites, gateways, alerts) -->
+        <nav class="hidden md:flex items-center gap-1 border-l border-slate-200 pl-6">
+          <a href="#" class="px-3.5 py-2 rounded-lg text-sm font-semibold bg-teal-50 text-teal-800 flex items-center gap-2 border border-teal-200/60">
+            <span class="material-symbols-outlined text-[18px]">dashboard</span>
+            ภาพรวม
+          </a>
+          <a href="#" class="px-3.5 py-2 rounded-lg text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 flex items-center gap-2 transition-colors">
+            <span class="material-symbols-outlined text-[18px]">grid_view</span>
+            ไซต์งาน
+          </a>
+          <a href="#" class="px-3.5 py-2 rounded-lg text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 flex items-center gap-2 transition-colors">
+            <span class="material-symbols-outlined text-[18px]">router</span>
+            เกตเวย์
+          </a>
+          <a href="#" class="px-3.5 py-2 rounded-lg text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 flex items-center gap-2 transition-colors">
+            <span class="material-symbols-outlined text-[18px]">notifications</span>
+            การแจ้งเตือน
+            <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+          </a>
+        </nav>
+      </div>
+
+      <!-- Header Controls: Site Selector + Active Range Picker -->
+      <div class="flex items-center gap-3">
+
+        <!-- Searchable Site Selector (Default: ทุกไซต์ที่มีสิทธิ์) -->
+        <div class="relative min-w-[240px]">
+          <div class="flex items-center gap-2 px-3 py-1.5 bg-slate-100 border border-slate-200 rounded-xl text-sm cursor-pointer hover:border-slate-300">
+            <span class="material-symbols-outlined text-slate-500 text-[18px]">domain</span>
+            <div class="flex-1 text-left">
+              <span class="text-xs text-slate-500 block leading-none">ขอบเขตไซต์งาน</span>
+              <span class="text-xs font-semibold text-slate-800 block truncate">ทุกไซต์ที่มีสิทธิ์ (12 ไซต์)</span>
+            </div>
+            <span class="material-symbols-outlined text-slate-400 text-sm">unfold_more</span>
+          </div>
+        </div>
+
+        <!-- Date Range Picker: Active กำหนดเอง (1–30 ก.ย. 2569) -->
+        <div class="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs">
+          <button class="px-2.5 py-1 text-slate-600 hover:text-slate-900 font-medium rounded-lg">วันนี้</button>
+          <button class="px-2.5 py-1 text-slate-600 hover:text-slate-900 font-medium rounded-lg">7 วัน</button>
+          <button class="px-2.5 py-1 text-slate-600 hover:text-slate-900 font-medium rounded-lg">เดือนนี้</button>
+          <button class="px-3 py-1 bg-white text-teal-800 font-semibold rounded-lg shadow-sm border border-slate-200/80 flex items-center gap-1.5">
+            <span class="material-symbols-outlined text-sm text-teal-700">calendar_month</span>
+            <span>กำหนดเอง (1–30 ก.ย. 2569)</span>
+          </button>
+        </div>
+
+        <!-- Refresh & Status Snapshot Indicator -->
+        <div class="flex items-center gap-2 pl-2 border-l border-slate-200 text-xs text-slate-500">
+          <div class="flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-50 text-emerald-800 rounded-lg border border-emerald-200 font-mono">
+            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            Snapshot: 9 ต.ค. 2569 13:45
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </header>
+
+  <!-- Main Layout -->
+  <main class="max-w-[1440px] w-full mx-auto px-6 py-6 flex-1 flex flex-col gap-6">
+
+    <!-- Overview Scope Alert / Breadcrumb Header -->
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-lg bg-teal-50 border border-teal-200 flex items-center justify-center text-teal-800">
+          <span class="material-symbols-outlined text-xl">hub</span>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-base font-bold text-slate-900">ภาพรวมระบบโทรมาตรทุกไซต์งาน (12 ไซต์ที่ได้รับสิทธิ์)</h1>
+            <span class="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-mono">ภาคตะวันออก & เขตอุตสาหกรรม</span>
+          </div>
+          <p class="text-xs text-slate-500 mt-0.5">รอบข้อมูลโทรมาตรที่เลือก: 1–30 ก.ย. 2569 • ข้อมูลการตรวจวัดล่าสุด: 9 ต.ค. 2569 13:45</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 text-xs">
+        <span class="text-slate-500">สถานะเครือข่ายเกตเวย์:</span>
+        <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-emerald-100 text-emerald-800 font-semibold font-mono">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span> 11/12 ไซต์ปกติ (1 ไซต์มีอุปกรณ์ล่าช้า)
+        </span>
+      </div>
+    </div>
+
+    <!-- 4 Overview KPI Cards (Exact Allowlist: 12 sites, 4.8 MWp, 482,600 kWh, 3,240 kW snapshot 9 ต.ค. 2569 13:45) -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+
+      <!-- Card 1: 12 Sites -->
+      <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+        <div class="flex items-start justify-between">
+          <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">ไซต์งานที่ดูแล</span>
+          <span class="p-2 rounded-lg bg-slate-100 text-slate-600 material-symbols-outlined text-lg">corporate_fare</span>
+        </div>
+        <div class="mt-3">
+          <div class="flex items-baseline gap-2">
+            <span class="text-3xl font-bold font-mono text-slate-900">12</span>
+            <span class="text-sm font-semibold text-slate-500">ไซต์งาน</span>
+          </div>
+          <p class="text-xs text-slate-500 mt-1">ครอบคลุมชลบุรี ระยอง ฉะเชิงเทรา พระนครศรีอยุธยา</p>
+        </div>
+      </div>
+
+      <!-- Card 2: Installed 4.8 MWp -->
+      <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+        <div class="flex items-start justify-between">
+          <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">กำลังติดตั้งรวม</span>
+          <span class="p-2 rounded-lg bg-teal-50 text-teal-700 material-symbols-outlined text-lg">solar_power</span>
+        </div>
+        <div class="mt-3">
+          <div class="flex items-baseline gap-2">
+            <span class="text-3xl font-bold font-mono text-slate-900">4.8</span>
+            <span class="text-sm font-semibold text-teal-800">MWp</span>
+          </div>
+          <p class="text-xs text-slate-500 mt-1">ผลรวมกำลังติดตั้งตามสัญญาติดตั้งโซลาร์เซลล์</p>
+        </div>
+      </div>
+
+      <!-- Card 3: Period Energy 482,600 kWh -->
+      <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+        <div class="flex items-start justify-between">
+          <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">พลังงานผลิตสะสมรอบนี้</span>
+          <span class="p-2 rounded-lg bg-emerald-50 text-emerald-700 material-symbols-outlined text-lg">electric_bolt</span>
+        </div>
+        <div class="mt-3">
+          <div class="flex items-baseline gap-2">
+            <span class="text-3xl font-bold font-mono text-emerald-800">482,600</span>
+            <span class="text-sm font-semibold text-slate-600">kWh</span>
+          </div>
+          <p class="text-xs text-slate-500 mt-1">วัดจาก Inverter + Main Meters ในรอบ 1–30 ก.ย. 2569</p>
+        </div>
+      </div>
+
+      <!-- Card 4: Current Instant 3,240 kW -->
+      <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+        <div class="flex items-start justify-between">
+          <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">กำลังผลิตขณะนี้ (Instant)</span>
+          <span class="p-2 rounded-lg bg-cyan-50 text-cyan-700 material-symbols-outlined text-lg">speed</span>
+        </div>
+        <div class="mt-3">
+          <div class="flex items-baseline gap-2">
+            <span class="text-3xl font-bold font-mono text-slate-900">3,240</span>
+            <span class="text-sm font-semibold text-cyan-700">kW</span>
+          </div>
+          <div class="flex items-center gap-1.5 text-xs text-slate-500 mt-1 font-mono">
+            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+            Snapshot 9 ต.ค. 2569 13:45
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Middle Row: Daily Measured Energy Area Chart (with missing data gap) + Device Reception Donut -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+      <!-- Daily Measured Energy Area Chart (8 Cols) - kWh with missing data gap 16-17 ก.ย. -->
+      <div class="lg:col-span-8 bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+        <div>
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-4">
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="material-symbols-outlined text-teal-700">show_chart</span>
+                <h2 class="text-base font-bold text-slate-900">พลังงานไฟฟ้าที่ผลิตรายวันรวม (kWh)</h2>
+              </div>
+              <p class="text-xs text-slate-500 mt-0.5">รอบตรวจวัด 1–30 ก.ย. 2569 (ค่าเฉลี่ยที่วัดได้ 16,086.6 kWh/วัน จากเครื่องมือวัด 12 ไซต์)</p>
+            </div>
+            <div class="flex items-center gap-3 text-xs">
+              <span class="flex items-center gap-1.5 font-medium text-teal-800">
+                <span class="w-3 h-3 rounded-sm bg-teal-600"></span> พลังงานที่วัดได้จริง (kWh)
+              </span>
+              <span class="flex items-center gap-1.5 font-medium text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                <span class="w-2 h-2 rounded-full bg-amber-500"></span> ช่วงข้อมูลขาด 16–17 ก.ย.
+              </span>
+            </div>
+          </div>
+
+          <!-- Area Chart SVG with actual gap -->
+          <div class="relative w-full h-64 mt-4">
+            <svg class="w-full h-full overflow-visible" viewBox="0 0 760 220" preserveAspectRatio="none">
+              <defs>
+                <!-- Teal Gradient for actual energy -->
+                <linearGradient id="areaGradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#0f766e" stop-opacity="0.32"></stop>
+                  <stop offset="100%" stop-color="#0f766e" stop-opacity="0.02"></stop>
+                </linearGradient>
+                <!-- Hatch pattern for missing data gap -->
+                <pattern id="gapHatch" width="8" height="8" patternTransform="rotate(45 0 0)" patternUnits="userSpaceOnUse">
+                  <line x1="0" y1="0" x2="0" y2="8" stroke="#f59e0b" stroke-width="1.5" stroke-opacity="0.3" />
+                </pattern>
+              </defs>
+
+              <!-- Grid horizontal lines -->
+              <line x1="40" y1="30" x2="740" y2="30" stroke="#f1f5f9" stroke-width="1" />
+              <text x="32" y="34" font-size="10" fill="#94a3b8" text-anchor="end" font-family="Space Grotesk">20k</text>
+
+              <line x1="40" y1="80" x2="740" y2="80" stroke="#f1f5f9" stroke-width="1" />
+              <text x="32" y="84" font-size="10" fill="#94a3b8" text-anchor="end" font-family="Space Grotesk">15k</text>
+
+              <line x1="40" y1="130" x2="740" y2="130" stroke="#f1f5f9" stroke-width="1" />
+              <text x="32" y="134" font-size="10" fill="#94a3b8" text-anchor="end" font-family="Space Grotesk">10k</text>
+
+              <line x1="40" y1="180" x2="740" y2="180" stroke="#f1f5f9" stroke-width="1" />
+              <text x="32" y="184" font-size="10" fill="#94a3b8" text-anchor="end" font-family="Space Grotesk">5k</text>
+
+              <line x1="40" y1="205" x2="740" y2="205" stroke="#cbd5e1" stroke-width="1" />
+
+              <!-- Average Measured Line (16,086.6 kWh) -->
+              <line x1="40" y1="69" x2="740" y2="69" stroke="#0f766e" stroke-width="1.5" stroke-dasharray="4 4" stroke-opacity="0.5" />
+              <text x="735" y="65" font-size="9" fill="#0f766e" text-anchor="end" font-family="Noto Sans Thai" font-weight="600">ค่าเฉลี่ยที่วัดได้ 16,086.6 kWh</text>
+
+              <!-- Missing Data Gap Shading (Days 16 - 17: approx x=375 to x=415) -->
+              <rect x="375" y="30" width="40" height="175" fill="url(#gapHatch)" />
+              <line x1="375" y1="30" x2="375" y2="205" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="2 2" />
+              <line x1="415" y1="30" x2="415" y2="205" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="2 2" />
+
+              <!-- Measured Energy Area Segment 1: Day 1 - 15 -->
+              <path d="M 40 205 L 40 145 C 70 135, 90 140, 120 125 C 150 110, 170 150, 200 130 C 230 110, 260 90, 290 80 C 320 70, 345 85, 375 92 L 375 205 Z" fill="url(#areaGradient)" />
+              <path d="M 40 145 C 70 135, 90 140, 120 125 C 150 110, 170 150, 200 130 C 230 110, 260 90, 290 80 C 320 70, 345 85, 375 92" fill="none" stroke="#0f766e" stroke-width="2.5" />
+
+              <!-- Measured Energy Area Segment 2: Day 18 - 30 (Peak at Day 18 = 19,420 kWh) -->
+              <path d="M 415 205 L 415 42 C 430 36, 455 35, 475 75 C 505 110, 535 70, 565 65 C 595 60, 620 95, 650 120 C 680 145, 710 115, 740 122 L 740 205 Z" fill="url(#areaGradient)" />
+              <path d="M 415 42 C 430 36, 455 35, 475 75 C 505 110, 535 70, 565 65 C 595 60, 620 95, 650 120 C 680 145, 710 115, 740 122" fill="none" stroke="#0f766e" stroke-width="2.5" />
+
+              <!-- Peak Marker on 18 ก.ย. (approx x=440, y=36) -->
+              <circle cx="440" cy="36" r="4.5" fill="#ffffff" stroke="#0f766e" stroke-width="2.5" />
+            </svg>
+
+            <!-- Tooltip / Callout for Missing Data & Peak -->
+            <div class="absolute top-2 left-[48%] -translate-x-1/2 bg-slate-900 text-white text-[11px] px-2.5 py-1 rounded-md shadow-md flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+              <span>จุดพีค: 18 ก.ย. (19,420 kWh)</span>
+            </div>
+
+            <div class="absolute bottom-10 left-[51%] text-center pointer-events-none">
+              <span class="text-[10px] bg-amber-100 text-amber-800 font-medium px-2 py-0.5 rounded border border-amber-300">
+                ข้อมูลขาด 16–17 ก.ย.
+              </span>
+            </div>
+          </div>
+
+          <!-- X-Axis Labels -->
+          <div class="flex justify-between text-[11px] text-slate-500 font-mono px-6 pt-2 border-t border-slate-100">
+            <span>1 ก.ย.</span>
+            <span>5 ก.ย.</span>
+            <span>10 ก.ย.</span>
+            <span class="text-amber-700 font-semibold">16–17 (Gap)</span>
+            <span class="text-teal-800 font-semibold">18 ก.ย. (พีค)</span>
+            <span>24 ก.ย.</span>
+            <span>30 ก.ย.</span>
+          </div>
+        </div>
+
+        <div class="mt-4 pt-3 border-t border-slate-100 text-xs text-slate-500 flex flex-wrap items-center justify-between gap-2">
+          <span>* พลังงานไฟฟ้ารายวันคำนวณจากหน่วยวัดสะสมจริง (kWh) ไม่มีการอนุมานแปลงเป็นตัวเลขมูลค่าเงินบาท</span>
+          <span class="font-mono text-slate-600 font-medium">รวม 30 วัน: 482,600 kWh</span>
+        </div>
+      </div>
+
+      <!-- Device Reception Donut Card (4 Cols) - 87 = 78 receiving + 9 stale (Attention: 9 stale) -->
+      <div class="lg:col-span-4 bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between border-b border-slate-100 pb-4">
+            <div>
+              <h2 class="text-base font-bold text-slate-900">การรับสัญญาณอุปกรณ์</h2>
+              <p class="text-xs text-slate-500">Device Reception (ไม่ใช่ความสมบูรณ์เชิงกายภาพ)</p>
+            </div>
+            <span class="px-2 py-0.5 text-xs rounded bg-slate-100 text-slate-600 font-mono font-medium">รวม 87 ตัว</span>
+          </div>
+
+          <!-- Donut Graphic & Legend -->
+          <div class="my-6 flex flex-col items-center">
+
+            <!-- SVG Donut Chart (87 total: 78 receiving / 9 stale) -->
+            <div class="relative w-44 h-44 flex items-center justify-center">
+              <svg class="w-full h-full -rotate-90" viewBox="0 0 100 100">
+                <!-- Background circle -->
+                <circle cx="50" cy="50" r="38" fill="none" stroke="#f1f5f9" stroke-width="12"></circle>
+                <!-- Receiving / Fresh (78 / 87 = ~89.7%) Circumference = 2 * PI * 38 = ~238.76 -->
+                <!-- 238.76 * 0.8965 = ~214.0 -->
+                <circle cx="50" cy="50" r="38" fill="none" stroke="#0d9488" stroke-width="12"
+                        stroke-dasharray="214 238.76" stroke-dashoffset="0" stroke-linecap="round"></circle>
+                <!-- Stale (9 / 87 = ~10.3%) 238.76 * 0.1035 = ~24.7 -->
+                <circle cx="50" cy="50" r="38" fill="none" stroke="#f59e0b" stroke-width="12"
+                        stroke-dasharray="24.7 238.76" stroke-dashoffset="-214" stroke-linecap="round"></circle>
+              </svg>
+              <div class="absolute inset-0 flex flex-col items-center justify-center text-center">
+                <span class="text-3xl font-bold font-mono text-slate-900">87</span>
+                <span class="text-xs text-slate-500 font-medium">อุปกรณ์โทรมาตร</span>
+              </div>
+            </div>
+
+            <!-- Reception Breakdown -->
+            <div class="w-full space-y-2 mt-2">
+              <div class="flex items-center justify-between p-2.5 rounded-lg bg-teal-50/60 border border-teal-100">
+                <div class="flex items-center gap-2">
+                  <span class="w-3 h-3 rounded-full bg-teal-600"></span>
+                  <span class="text-xs font-medium text-slate-700">กำลังรับข้อมูล (Receiving / Fresh &lt; 5m)</span>
+                </div>
+                <span class="text-xs font-bold font-mono text-teal-800">78 ตัว (89.7%)</span>
+              </div>
+
+              <!-- 9 Stale Attention Box -->
+              <div class="flex items-center justify-between p-2.5 rounded-lg bg-amber-50 border border-amber-200">
+                <div class="flex items-center gap-2">
+                  <span class="w-3 h-3 rounded-full bg-amber-500 animate-pulse"></span>
+                  <span class="text-xs font-semibold text-amber-900">สัญญาณล่าช้า (Stale &gt; 5m — ต้องตรวจสอบ)</span>
+                </div>
+                <span class="text-xs font-bold font-mono text-amber-800">9 ตัว (10.3%)</span>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <div class="pt-3 border-t border-slate-100 text-xs text-slate-500">
+          <div class="grid grid-cols-3 gap-2 text-center text-[11px]">
+            <div class="bg-slate-50 p-2 rounded border border-slate-100">
+              <span class="block text-slate-400 font-mono">Inverters</span>
+              <span class="font-bold text-slate-800 font-mono">60 ตัว</span>
+            </div>
+            <div class="bg-slate-50 p-2 rounded border border-slate-100">
+              <span class="block text-slate-400 font-mono">Power Meters</span>
+              <span class="font-bold text-slate-800 font-mono">15 ตัว</span>
+            </div>
+            <div class="bg-slate-50 p-2 rounded border border-slate-100">
+              <span class="block text-slate-400 font-mono">Gateways</span>
+              <span class="font-bold text-slate-800 font-mono">12 ตัว</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Bottom Section: Map + Searchable Selectable Site Cards + Ranking Measured kWh Horizontal Bars -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+      <!-- Left Column: Map of Thailand (Not Collapsed) + Missing Coordinates Card (8 Cols) -->
+      <div class="lg:col-span-8 flex flex-col gap-4">
+
+        <!-- Thailand Map Container (Pan/Zoom Controls, Prominent, Not Collapsed) -->
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col">
+          <div class="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="material-symbols-outlined text-teal-700">map</span>
+                <h2 class="text-base font-bold text-slate-900">แผนที่โครงข่ายสถานีโทรมาตรประเทศไทย (Thailand Telemetry Map)</h2>
+              </div>
+              <p class="text-xs text-slate-500 mt-0.5">กระจุกตัวพื้นที่ EEC ชลบุรี-ระยอง และภาคกลาง • พิกัด GPS สำรวจแล้ว 11 ไซต์</p>
+            </div>
+
+            <!-- Map Controls -->
+            <div class="flex items-center gap-2">
+              <div class="flex items-center bg-slate-100 rounded-lg p-0.5 border border-slate-200">
+                <button class="w-7 h-7 flex items-center justify-center text-slate-600 hover:text-slate-900 hover:bg-white rounded transition-colors" title="Zoom In">
+                  <span class="material-symbols-outlined text-sm">add</span>
+                </button>
+                <button class="w-7 h-7 flex items-center justify-center text-slate-600 hover:text-slate-900 hover:bg-white rounded transition-colors" title="Zoom Out">
+                  <span class="material-symbols-outlined text-sm">remove</span>
+                </button>
+                <button class="w-7 h-7 flex items-center justify-center text-slate-600 hover:text-slate-900 hover:bg-white rounded transition-colors" title="Reset View">
+                  <span class="material-symbols-outlined text-sm">crop_free</span>
+                </button>
+              </div>
+              <span class="text-xs px-2.5 py-1 bg-teal-50 text-teal-800 rounded-md border border-teal-200 font-mono font-medium">11 Pins บนแผนที่</span>
+            </div>
+          </div>
+
+          <!-- Map Visual Surface (Clean vector rendering) -->
+          <div class="relative w-full h-80 bg-slate-100 rounded-xl overflow-hidden border border-slate-200 flex items-center justify-center">
+
+            <!-- Simplified Thailand & Eastern Region Coast Vector Background -->
+            <svg class="w-full h-full opacity-60" viewBox="0 0 600 320">
+              <!-- Sea background -->
+              <rect width="600" height="320" fill="#e2e8f0" />
+              <!-- Landmass shape -->
+              <path d="M 120 0 L 260 0 C 270 40, 310 70, 340 100 C 370 130, 420 120, 520 150 L 520 280 C 460 260, 410 240, 370 240 C 330 240, 300 270, 270 320 L 180 320 C 190 280, 210 230, 210 200 C 210 160, 150 140, 120 110 Z" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"></path>
+              <!-- Gulf of Thailand Water label -->
+              <text x="180" y="240" font-size="12" fill="#94a3b8" font-family="Noto Sans Thai" font-weight="500">อ่าวไทย (Gulf of Thailand)</text>
+              <text x="350" y="70" font-size="11" fill="#94a3b8" font-family="Noto Sans Thai">ภาคกลาง & ปริมณฑล</text>
+              <text x="390" y="190" font-size="11" fill="#0f766e" font-family="Noto Sans Thai" font-weight="600">กลุ่มสถานี EEC (ชลบุรี-ระยอง)</text>
+
+              <!-- Telemetry Station Markers (11 Sites) -->
+              <!-- Pin 1: โรงเรียนบ้านสวน (BSW-01) - HIGHLIGHTED -->
+              <g transform="translate(365, 175)">
+                <circle cx="0" cy="0" r="14" fill="#0f766e" fill-opacity="0.2" class="animate-ping"></circle>
+                <circle cx="0" cy="0" r="8" fill="#0f766e" stroke="#ffffff" stroke-width="2.5"></circle>
+              </g>
+
+              <!-- Other 10 Pins -->
+              <circle cx="340" cy="140" r="5" fill="#0d9488" stroke="#ffffff" stroke-width="1.5"></circle> <!-- BKK 1 -->
+              <circle cx="355" cy="150" r="5" fill="#0d9488" stroke="#ffffff" stroke-width="1.5"></circle> <!-- BPL-02 บางพลี -->
+              <circle cx="380" cy="185" r="5" fill="#0d9488" stroke="#ffffff" stroke-width="1.5"></circle> <!-- BLM-02 บางละมุง -->
+              <circle cx="415" cy="200" r="5" fill="#0d9488" stroke="#ffffff" stroke-width="1.5"></circle> <!-- RYG-03 ระยอง -->
+              <circle cx="395" cy="165" r="5" fill="#0d9488" stroke="#ffffff" stroke-width="1.5"></circle> <!-- AMT-04 อมตะ -->
+              <circle cx="370" cy="195" r="5" fill="#0d9488" stroke="#ffffff" stroke-width="1.5"></circle> <!-- LCB-09 แหลมฉบัง -->
+              <circle cx="330" cy="110" r="5" fill="#0d9488" stroke="#ffffff" stroke-width="1.5"></circle> <!-- AYT-08 อยุธยา -->
+              <circle cx="430" cy="195" r="5" fill="#f59e0b" stroke="#ffffff" stroke-width="1.5"></circle> <!-- TRE-04 ปลวกแดง (Stale) -->
+              <circle cx="360" cy="130" r="5" fill="#0d9488" stroke="#ffffff" stroke-width="1.5"></circle> <!-- SKV-02 กรุงเทพ -->
+              <circle cx="410" cy="175" r="5" fill="#0d9488" stroke="#ffffff" stroke-width="1.5"></circle> <!-- PIN-05 ปิ่นทอง -->
+            </svg>
+
+            <!-- Highlight Tag for BSW-01 on Map -->
+            <div class="absolute top-[48%] left-[58%] -translate-y-1/2 bg-slate-900 text-white px-3 py-2 rounded-xl shadow-lg border border-slate-700 pointer-events-auto">
+              <div class="flex items-center gap-1.5 text-xs font-bold">
+                <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                <span>รร.บ้านสวน (BSW-01)</span>
+                <span class="text-[10px] bg-teal-800 text-teal-200 px-1.5 py-0.2 rounded font-mono">0.45 MWp</span>
+              </div>
+              <div class="text-[11px] text-slate-300 font-mono mt-0.5">พิกัด 13.3611° N, 100.9847° E • ผลิตสด 218 kW</div>
+            </div>
+
+            <!-- Map legend overlay -->
+            <div class="absolute bottom-3 left-3 bg-white/95 backdrop-blur-sm p-2 rounded-lg border border-slate-200 text-[11px] flex items-center gap-3 shadow-sm">
+              <span class="flex items-center gap-1.5 font-medium text-slate-700">
+                <span class="w-2.5 h-2.5 rounded-full bg-teal-600"></span> ไซต์ออนไลน์ปกติ (10)
+              </span>
+              <span class="flex items-center gap-1.5 font-medium text-slate-700">
+                <span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span> ไซต์มีสัญญาณล่าช้า (1)
+              </span>
+            </div>
+
+          </div>
+
+          <!-- MISSING COORDINATES CARD (Allowlist: missingcoordinates card ยังไม่มีพิกัด no fakepin) -->
+          <div class="mt-4 p-3.5 bg-amber-50/80 border border-amber-200 rounded-xl flex items-center justify-between gap-4">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center text-amber-800 shrink-0">
+                <span class="material-symbols-outlined text-lg">location_off</span>
+              </div>
+              <div>
+                <div class="flex items-center gap-2">
+                  <span class="text-xs font-bold text-amber-900">ไซต์งานยังไม่มีพิกัด GPS (1 ไซต์)</span>
+                  <span class="text-[10px] px-1.5 py-0.5 rounded bg-white text-amber-800 border border-amber-200 font-mono">No Fake Pin</span>
+                </div>
+                <p class="text-xs text-amber-800 mt-0.5">ไซต์ <strong class="font-semibold">บจก. นครหลวงคอนกรีต สระบุรี (NKL-12)</strong> อยู่ระหว่างการส่งทีมช่างสำรวจค่าละติจูด/ลองจิจูด ระบบไม่ปักหมุดจำลองโดยไม่มีข้อมูลจริง</p>
+              </div>
+            </div>
+            <span class="text-xs font-mono text-amber-900 bg-amber-100 px-2 py-1 rounded shrink-0">0.35 MWp</span>
+          </div>
+
+        </div>
+
+        <!-- Ranking: Measured Site kWh Horizontal Bars (Readable visualizations NO TABLES) -->
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col">
+          <div class="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="material-symbols-outlined text-teal-700">bar_chart</span>
+                <h2 class="text-base font-bold text-slate-900">การจัดอันดับพลังงานที่วัดได้จริงรายไซต์ (Ranking Measured kWh)</h2>
+              </div>
+              <p class="text-xs text-slate-500 mt-0.5">แสดงปริมาณพลังงานสะสมจริงรอบ 1–30 ก.ย. 2569 (ไม่มีการคำนวณเงินบาท)</p>
+            </div>
+            <span class="text-xs font-mono text-slate-500">เรียงจากมากไปน้อย</span>
+          </div>
+
+          <!-- Horizontal Bars List -->
+          <div class="space-y-3">
+
+            <!-- Item 1: ระยอง โพลีเมอร์ -->
+            <div>
+              <div class="flex justify-between text-xs mb-1">
+                <span class="font-medium text-slate-800">1. โรงงานระยอง โพลีเมอร์ (EEC-01) <span class="text-slate-400 font-mono">(0.98 MWp)</span></span>
+                <span class="font-bold font-mono text-teal-800">98,400 kWh</span>
+              </div>
+              <div class="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
+                <div class="h-full bg-teal-700 rounded-full" style="width: 100%;"></div>
+              </div>
+            </div>
+
+            <!-- Item 2: คลังสินค้าบางพลี -->
+            <div>
+              <div class="flex justify-between text-xs mb-1">
+                <span class="font-medium text-slate-800">2. คลังสินค้าบางพลี เฟส 2 (BPL-02) <span class="text-slate-400 font-mono">(0.75 MWp)</span></span>
+                <span class="font-bold font-mono text-teal-800">75,200 kWh</span>
+              </div>
+              <div class="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
+                <div class="h-full bg-teal-600 rounded-full" style="width: 76.4%;"></div>
+              </div>
+            </div>
+
+            <!-- Item 3: อมตะนคร เมทัล -->
+            <div>
+              <div class="flex justify-between text-xs mb-1">
+                <span class="font-medium text-slate-800">3. อมตะนคร เมทัล ชลบุรี (AMT-04) <span class="text-slate-400 font-mono">(0.62 MWp)</span></span>
+                <span class="font-bold font-mono text-teal-800">62,100 kWh</span>
+              </div>
+              <div class="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
+                <div class="h-full bg-teal-600 rounded-full" style="width: 63.1%;"></div>
+              </div>
+            </div>
+
+            <!-- Item 4: ศูนย์กระจายสินค้าอยุธยา -->
+            <div>
+              <div class="flex justify-between text-xs mb-1">
+                <span class="font-medium text-slate-800">4. ศูนย์กระจายสินค้าอยุธยา (AYT-08) <span class="text-slate-400 font-mono">(0.50 MWp)</span></span>
+                <span class="font-bold font-mono text-teal-800">49,800 kWh</span>
+              </div>
+              <div class="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
+                <div class="h-full bg-teal-500 rounded-full" style="width: 50.6%;"></div>
+              </div>
+            </div>
+
+            <!-- Item 5: โรงเรียนบ้านสวน (BSW-01) - HIGHLIGHTED -->
+            <div class="p-2 rounded-lg bg-teal-50/70 border border-teal-200">
+              <div class="flex justify-between text-xs mb-1">
+                <span class="font-bold text-teal-900 flex items-center gap-1.5">
+                  <span class="material-symbols-outlined text-sm text-teal-700">check_circle</span>
+                  5. โรงเรียนบ้านสวน (BSW-01) <span class="text-teal-700 font-mono font-normal">(0.45 MWp — ไซต์ที่เลือก)</span>
+                </span>
+                <span class="font-bold font-mono text-teal-900">48,200 kWh</span>
+              </div>
+              <div class="w-full h-3 bg-teal-100 rounded-full overflow-hidden">
+                <div class="h-full bg-teal-700 rounded-full" style="width: 48.9%;"></div>
+              </div>
+            </div>
+
+            <!-- Item 6: แหลมฉบัง ซีฟู้ด -->
+            <div>
+              <div class="flex justify-between text-xs mb-1">
+                <span class="font-medium text-slate-800">6. แหลมฉบัง ซีฟู้ด โคลด์เชน (LCB-09) <span class="text-slate-400 font-mono">(0.45 MWp)</span></span>
+                <span class="font-bold font-mono text-teal-800">45,100 kWh</span>
+              </div>
+              <div class="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
+                <div class="h-full bg-teal-500 rounded-full" style="width: 45.8%;"></div>
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- Right Column: Searchable Scrollable Selectable Site Cards (4 Cols) - All 12 Sites -->
+      <div class="lg:col-span-4 bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[780px]">
+
+        <div class="border-b border-slate-100 pb-3">
+          <div class="flex items-center justify-between">
+            <h2 class="text-base font-bold text-slate-900">รายการไซต์ทั้งหมด (12 ไซต์)</h2>
+            <span class="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-mono font-medium">สิทธิ์ Admin</span>
+          </div>
+          <p class="text-xs text-slate-500 mt-0.5">เลือกเพื่อเข้าสู่หน้าจอเจาะลึกเฉพาะไซต์</p>
+
+          <!-- Search input -->
+          <div class="relative mt-3">
+            <span class="material-symbols-outlined absolute left-3 top-2.5 text-slate-400 text-lg">search</span>
+            <input type="text" placeholder="ค้นหาชื่อไซต์, รหัสไซต์, จังหวัด..." value=""
+                   class="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:border-teal-600 focus:bg-white" />
+          </div>
+        </div>
+
+        <!-- Scrollable Site Cards List (Custom scroll) -->
+        <div class="flex-1 overflow-y-auto custom-scroll space-y-2.5 pr-1 mt-3">
+
+          <!-- Site 1: โรงเรียนบ้านสวน (BSW-01) - HIGHLIGHTED ACTIVE -->
+          <div class="p-3.5 rounded-xl border-2 border-teal-600 bg-teal-50/50 shadow-sm cursor-pointer transition-all">
+            <div class="flex items-start justify-between">
+              <div>
+                <div class="flex items-center gap-1.5">
+                  <span class="text-xs font-bold text-slate-900">โรงเรียนบ้านสวน</span>
+                  <span class="text-[10px] bg-teal-100 text-teal-800 font-mono px-1.5 py-0.2 rounded font-semibold">BSW-01</span>
+                </div>
+                <p class="text-[11px] text-slate-500 mt-0.5">ต.บ้านสวน อ.เมืองชลบุรี จ.ชลบุรี</p>
+              </div>
+              <span class="text-[10px] bg-emerald-100 text-emerald-800 font-semibold px-2 py-0.5 rounded-full flex items-center gap-1">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span> กำลังดู
+              </span>
+            </div>
+
+            <div class="grid grid-cols-3 gap-2 mt-3 pt-2 border-t border-teal-200/60 text-center font-mono">
+              <div class="bg-white/80 p-1.5 rounded border border-teal-200/40">
+                <span class="text-[10px] text-slate-500 block">กำลังติดตั้ง</span>
+                <span class="text-xs font-bold text-slate-800">0.45 MWp</span>
+              </div>
+              <div class="bg-white/80 p-1.5 rounded border border-teal-200/40">
+                <span class="text-[10px] text-slate-500 block">ผลิตสะสม</span>
+                <span class="text-xs font-bold text-teal-800">48,200 kWh</span>
+              </div>
+              <div class="bg-white/80 p-1.5 rounded border border-teal-200/40">
+                <span class="text-[10px] text-slate-500 block">ผลิตขณะนี้</span>
+                <span class="text-xs font-bold text-slate-800">218 kW</span>
+              </div>
+            </div>
+
+            <div class="mt-2.5 flex items-center justify-between text-[11px]">
+              <span class="text-slate-500">โทรมาตร: <strong class="text-slate-700 font-mono">4/4 Inverters, 1 MTR</strong></span>
+              <span class="text-teal-700 font-semibold flex items-center gap-0.5 hover:underline">
+                เปิดเฉพาะไซต์ <span class="material-symbols-outlined text-xs">arrow_forward</span>
+              </span>
+            </div>
+          </div>
+
+          <!-- Site 2: โรงงานระยอง โพลีเมอร์ (EEC-01) -->
+          <div class="p-3 rounded-xl border border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50 cursor-pointer transition-all">
+            <div class="flex items-start justify-between">
+              <div>
+                <div class="flex items-center gap-1.5">
+                  <span class="text-xs font-bold text-slate-800">โรงงานระยอง โพลีเมอร์</span>
+                  <span class="text-[10px] bg-slate-100 text-slate-700 font-mono px-1.5 py-0.2 rounded">EEC-01</span>
+                </div>
+                <p class="text-[11px] text-slate-500 mt-0.5">นิคมพัฒนา จ.ระยอง</p>
+              </div>
+              <span class="text-[10px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded font-mono">Fresh</span>
+            </div>
+            <div class="flex justify-between items-center text-[11px] font-mono mt-2 pt-2 border-t border-slate-100 text-slate-600">
+              <span>0.98 MWp</span>
+              <span>สะสม: 98,400 kWh</span>
+              <span class="text-slate-800 font-semibold">680 kW</span>
+            </div>
+          </div>
+
+          <!-- Site 3: คลังสินค้าบางพลี เฟส 2 (BPL-02) -->
+          <div class="p-3 rounded-xl border border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50 cursor-pointer transition-all">
+            <div class="flex items-start justify-between">
+              <div>
+                <div class="flex items-center gap-1.5">
+                  <span class="text-xs font-bold text-slate-800">คลังสินค้าบางพลี เฟส 2</span>
+                  <span class="text-[10px] bg-slate-100 text-slate-700 font-mono px-1.5 py-0.2 rounded">BPL-02</span>
+                </div>
+                <p class="text-[11px] text-slate-500 mt-0.5">บางพลี จ.สมุทรปราการ</p>
+              </div>
+              <span class="text-[10px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded font-mono">Fresh</span>
+            </div>
+            <div class="flex justify-between items-center text-[11px] font-mono mt-2 pt-2 border-t border-slate-100 text-slate-600">
+              <span>0.75 MWp</span>
+              <span>สะสม: 75,200 kWh</span>
+              <span class="text-slate-800 font-semibold">510 kW</span>
+            </div>
+          </div>
+
+          <!-- Site 4: อมตะนคร เมทัล (AMT-04) -->
+          <div class="p-3 rounded-xl border border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50 cursor-pointer transition-all">
+            <div class="flex items-start justify-between">
+              <div>
+                <div class="flex items-center gap-1.5">
+                  <span class="text-xs font-bold text-slate-800">อมตะนคร เมทัล</span>
+                  <span class="text-[10px] bg-slate-100 text-slate-700 font-mono px-1.5 py-0.2 rounded">AMT-04</span>
+                </div>
+                <p class="text-[11px] text-slate-500 mt-0.5">อ.พานทอง จ.ชลบุรี</p>
+              </div>
+              <span class="text-[10px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded font-mono">Fresh</span>
+            </div>
+            <div class="flex justify-between items-center text-[11px] font-mono mt-2 pt-2 border-t border-slate-100 text-slate-600">
+              <span>0.62 MWp</span>
+              <span>สะสม: 62,100 kWh</span>
+              <span class="text-slate-800 font-semibold">420 kW</span>
+            </div>
+          </div>
+
+          <!-- Site 5: รพ.บางละมุงเมดิคอล (BLM-02) -->
+          <div class="p-3 rounded-xl border border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50 cursor-pointer transition-all">
+            <div class="flex items-start justify-between">
+              <div>
+                <div class="flex items-center gap-1.5">
+                  <span class="text-xs font-bold text-slate-800">รพ.บางละมุงเมดิคอล</span>
+                  <span class="text-[10px] bg-slate-100 text-slate-700 font-mono px-1.5 py-0.2 rounded">BLM-02</span>
+                </div>
+                <p class="text-[11px] text-slate-500 mt-0.5">อ.บางละมุง จ.ชลบุรี</p>
+              </div>
+              <span class="text-[10px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded font-mono">Fresh</span>
+            </div>
+            <div class="flex justify-between items-center text-[11px] font-mono mt-2 pt-2 border-t border-slate-100 text-slate-600">
+              <span>0.80 MWp</span>
+              <span>สะสม: 54,300 kWh</span>
+              <span class="text-slate-800 font-semibold">390 kW</span>
+            </div>
+          </div>
+
+          <!-- Site 6: โรงงานอีสเทิร์นซีบอร์ด (TRE-04) - HAS STALE DEVICE -->
+          <div class="p-3 rounded-xl border border-amber-200 bg-amber-50/40 hover:bg-amber-50 cursor-pointer transition-all">
+            <div class="flex items-start justify-between">
+              <div>
+                <div class="flex items-center gap-1.5">
+                  <span class="text-xs font-bold text-slate-800">อีสเทิร์น เอ็นจิเนียริ่ง</span>
+                  <span class="text-[10px] bg-amber-100 text-amber-800 font-mono px-1.5 py-0.2 rounded">TRE-04</span>
+                </div>
+                <p class="text-[11px] text-slate-500 mt-0.5">ปลวกแดง จ.ระยอง</p>
+              </div>
+              <span class="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-mono font-semibold">1 Stale</span>
+            </div>
+            <div class="flex justify-between items-center text-[11px] font-mono mt-2 pt-2 border-t border-amber-200/60 text-slate-600">
+              <span>0.48 MWp</span>
+              <span>สะสม: 38,900 kWh</span>
+              <span class="text-slate-800 font-semibold">240 kW</span>
+            </div>
+          </div>
+
+          <!-- Site 7: ศูนย์กระจายสินค้าอยุธยา (AYT-08) -->
+          <div class="p-3 rounded-xl border border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50 cursor-pointer transition-all">
+            <div class="flex items-start justify-between">
+              <div>
+                <div class="flex items-center gap-1.5">
+                  <span class="text-xs font-bold text-slate-800">ศูนย์กระจายสินค้าอยุธยา</span>
+                  <span class="text-[10px] bg-slate-100 text-slate-700 font-mono px-1.5 py-0.2 rounded">AYT-08</span>
+                </div>
+                <p class="text-[11px] text-slate-500 mt-0.5">วังน้อย จ.พระนครศรีอยุธยา</p>
+              </div>
+              <span class="text-[10px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded font-mono">Fresh</span>
+            </div>
+            <div class="flex justify-between items-center text-[11px] font-mono mt-2 pt-2 border-t border-slate-100 text-slate-600">
+              <span>0.50 MWp</span>
+              <span>สะสม: 49,800 kWh</span>
+              <span class="text-slate-800 font-semibold">310 kW</span>
+            </div>
+          </div>
+
+          <!-- Site 8: แหลมฉบัง ซีฟู้ด (LCB-09) -->
+          <div class="p-3 rounded-xl border border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50 cursor-pointer transition-all">
+            <div class="flex items-start justify-between">
+              <div>
+                <div class="flex items-center gap-1.5">
+                  <span class="text-xs font-bold text-slate-800">แหลมฉบัง ซีฟู้ด โคลด์เชน</span>
+                  <span class="text-[10px] bg-slate-100 text-slate-700 font-mono px-1.5 py-0.2 rounded">LCB-09</span>
+                </div>
+                <p class="text-[11px] text-slate-500 mt-0.5">ศรีราชา จ.ชลบุรี</p>
+              </div>
+              <span class="text-[10px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded font-mono">Fresh</span>
+            </div>
+            <div class="flex justify-between items-center text-[11px] font-mono mt-2 pt-2 border-t border-slate-100 text-slate-600">
+              <span>0.45 MWp</span>
+              <span>สะสม: 45,100 kWh</span>
+              <span class="text-slate-800 font-semibold">270 kW</span>
+            </div>
+          </div>
+
+          <!-- Sites 9 - 12 (Concise cards) -->
+          <div class="p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 cursor-pointer text-xs">
+            <div class="flex justify-between font-bold text-slate-800">
+              <span>อาคารพาณิชย์สุขุมวิท (SKV-02)</span>
+              <span class="font-mono text-slate-600">0.32 MWp</span>
+            </div>
+            <div class="flex justify-between text-[11px] text-slate-500 font-mono mt-1">
+              <span>กทม.</span>
+              <span>สะสม: 28,400 kWh</span>
+            </div>
+          </div>
+
+          <div class="p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 cursor-pointer text-xs">
+            <div class="flex justify-between font-bold text-slate-800">
+              <span>นิคมฯ ปิ่นทอง 3 (PIN-05)</span>
+              <span class="font-mono text-slate-600">0.25 MWp</span>
+            </div>
+            <div class="flex justify-between text-[11px] text-slate-500 font-mono mt-1">
+              <span>ชลบุรี</span>
+              <span>สะสม: 21,200 kWh</span>
+            </div>
+          </div>
+
+          <div class="p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 cursor-pointer text-xs">
+            <div class="flex justify-between font-bold text-slate-800">
+              <span>บจก. บางปะกง โลจิสติกส์ (BPG-07)</span>
+              <span class="font-mono text-slate-600">0.20 MWp</span>
+            </div>
+            <div class="flex justify-between text-[11px] text-slate-500 font-mono mt-1">
+              <span>ฉะเชิงเทรา</span>
+              <span>สะสม: 16,800 kWh</span>
+            </div>
+          </div>
+
+          <div class="p-3 rounded-xl border border-amber-200 bg-amber-50/30 hover:bg-amber-50 cursor-pointer text-xs">
+            <div class="flex justify-between font-bold text-amber-900">
+              <span>บจก. นครหลวงคอนกรีต (NKL-12)</span>
+              <span class="font-mono text-amber-800">0.35 MWp</span>
+            </div>
+            <div class="flex justify-between text-[11px] text-amber-700 font-mono mt-1">
+              <span>สระบุรี (ยังไม่มีพิกัด GPS)</span>
+              <span>สะสม: 27,200 kWh</span>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="pt-3 border-t border-slate-100 text-center">
+          <span class="text-xs text-slate-400">แสดงผลครบถ้วน 12 จาก 12 ไซต์งาน</span>
+        </div>
+
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- Technical Footer -->
+  <footer class="bg-white border-t border-slate-200 mt-auto py-3">
+    <div class="max-w-[1440px] mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
+      <div class="flex items-center gap-4">
+        <span class="font-bold text-slate-700 font-mono">SOLAR ROOF Telemetry Gateway Engine v4.2.1</span>
+        <span>•</span>
+        <span>โหมดวิศวกรรม: อ่านค่าสดโดยตรงจากอุปกรณ์โทรมาตร</span>
+      </div>
+      <div class="flex items-center gap-4 font-mono text-[11px]">
+        <span>Latency: 42ms</span>
+        <span>Poll Frequency: 5s / 60s</span>
+        <span class="text-emerald-700 font-semibold">CRC32 Check: OK</span>
+      </div>
+    </div>
+  </footer>
+
+</body>
+</html>

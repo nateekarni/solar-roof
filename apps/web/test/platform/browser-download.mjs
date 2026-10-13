@@ -9,7 +9,7 @@ import {readDownloadedFile} from './download-reading.mjs';
 // Synthetic artifacts served by this process test transport only; application
 // authorization/content assertions remain in the real report/history E2Es.
 export async function verifyBrowserDownloads(browser) {
-  const csv='site,meter\nSchool,meter-1\n',history='12345678901234567890.123456789\n';
+  const csv='site,meter\nCustomer,meter-1\n',history='12345678901234567890.123456789\n';
   const server=createServer((request,response)=>{
     if(request.url==='/')return response.end('<a href="/report.csv">CSV</a><a href="/history.gz">Gzip</a>');
     const compressed=request.url==='/history.gz';

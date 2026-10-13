@@ -7,27 +7,31 @@ import { AuthService } from '../../src/modules/identity/auth.service.js';
 import { assertIsolatedDatabase } from './fixtures.js';
 import { DatabaseService } from '../../src/database/database.service.js';
 import { OperationsService } from '../../src/modules/dashboard/operations.service.js';
+import { AuthorizationService } from '../../src/modules/identity/authorization.service.js';
 import { mkdir, writeFile } from 'node:fs/promises';
 
 test('operations HTTP pages are bounded, stable, scoped, searchable beyond old audit cap and summarize the same filters', async () => {
   const db = new Pool({ connectionString: assertIsolatedDatabase(process.env.READINESS_DATABASE_URL!) });
   const base = process.env.READINESS_API_URL!, origin = process.env.READINESS_WEB_URL!;
-  const school = randomUUID(), other = randomUUID(), site = randomUUID(), otherSite = randomUUID(), user = randomUUID();
+  const customer = randomUUID(), other = randomUUID(), site = randomUUID(), otherSite = randomUUID(), user = randomUUID();
   const email = `operations-${user}@example.test`, password = 'Operations-fixture-password-123!';
   const auth = new AuthService('readiness-test-access-secret-000000000000', 'readiness-test-refresh-secret-000000000000');
-  await db.query("INSERT INTO schools(id,name,code,region) VALUES($1::uuid,'Q1 A',$1::text,'fixture'),($2::uuid,'Q1 B',$2::text,'fixture')", [school, other]);
-  await db.query("INSERT INTO sites(id,school_id,name,capacity_mwp) VALUES($1,$2,'Q1 A',0.1),($3,$4,'Q1 B',0.1)", [site, school, otherSite, other]);
-  await db.query("INSERT INTO users(id,email,display_name,role,status,password_hash,school_id) VALUES($1,$2,'Q1 actor','accountant','active',$3,$4)", [user, email, auth.hashPassword(password), school]);
+  await db.query("INSERT INTO customers(id,name,code,region) VALUES($1::uuid,'Q1 A',$1::text,'fixture'),($2::uuid,'Q1 B',$2::text,'fixture')", [customer, other]);
+  await db.query("INSERT INTO sites(id,customer_id,name,capacity_mwp) VALUES($1,$2,'Q1 A',0.1),($3,$4,'Q1 B',0.1)", [site, customer, otherSite, other]);
+  await db.query("INSERT INTO users(id,email,display_name,role,status,password_hash,customer_id) VALUES($1,$2,'Q1 actor','accountant','active',$3,$4)", [user, email, auth.hashPassword(password), customer]);
+  await db.query(`INSERT INTO employee_domain_grants(user_id,domain,overrides,scope_mode,site_ids) VALUES($1,'business',$2::jsonb,'selected',$3::uuid[])`,[user,JSON.stringify({'business.billing.view':true,'business.billing.download':true,'business.documents.view':true}),[site]]);
   await db.query("INSERT INTO billing_cycles(id,site_id,period_start,period_end,cutoff_time,status,quality,opening_energy,closing_energy,consumed_kwh,rate,amount) SELECT gen_random_uuid(),$1,date '2026-09-01'-n*interval '1 month',date '2026-09-30'-n*interval '1 month',now(),'pending_verification','complete',100,110,10,1,10 FROM generate_series(1,1001) n", [site]);
   await db.query("INSERT INTO billing_cycles(id,site_id,period_start,period_end,cutoff_time,status,quality,opening_energy,closing_energy,consumed_kwh,rate,amount) VALUES(gen_random_uuid(),$1,'2026-09-01','2026-09-30',now(),'paid','complete',100,110,10,1,10)", [otherSite]);
-  await db.query("INSERT INTO audit_events(id,actor_id,action,entity_type,entity_id,correlation_id,occurred_at) SELECT gen_random_uuid(),$1,CASE WHEN n=501 THEN 'Q1-old-search' ELSE 'Q1-event' END,'fixture',$1,gen_random_uuid(),now()-(n/10)*interval '1 minute' FROM generate_series(1,501) n", [user]);
+  await db.query("INSERT INTO audit_events(id,actor_id,action,entity_type,entity_id,correlation_id,occurred_at) SELECT gen_random_uuid(),$1,CASE WHEN n=501 THEN 'technical.Q1-old-search' ELSE 'technical.Q1-event' END,'fixture',$1,gen_random_uuid(),now()-(n/10)*interval '1 minute' FROM generate_series(1,501) n", [user]);
   await db.query("INSERT INTO documents(id,site_id,document_type,document_number,amount,issue_date) SELECT gen_random_uuid(),$1,'invoice',gen_random_uuid()::text,10,CASE WHEN n<=15 THEN date '2026-09-30' ELSE NULL END FROM generate_series(1,30) n",[site]);
   try {
     const login = await fetch(base + '/v1/auth/login', { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) });
     assert.equal(login.status, 200);
     const token = (await login.json()).accessToken;
     const get = (path: string) => fetch(base + path, { headers: { Authorization: `Bearer ${token}` } });
-    const first = await (await get('/v1/operations/billing')).json();
+    const firstResponse = await get('/v1/operations/billing');
+    assert.equal(firstResponse.status,200);
+    const first = await firstResponse.json();
     assert.equal(first.rows.length, 25);
     assert.equal(first.page.hasMore, true);
     const original = new Set((await db.query('SELECT id FROM billing_cycles WHERE site_id=$1', [site])).rows.map(row => row.id));
@@ -53,8 +57,10 @@ test('operations HTTP pages are bounded, stable, scoped, searchable beyond old a
     const audit = await (await get('/v1/operations/audit')).json();
     assert.equal(audit.rows.length, 25); assert.equal(audit.page.hasMore, true);
     const old = await (await get('/v1/operations/audit?search=Q1-old-search')).json();
-    assert.equal(old.rows.length, 1); assert.equal(old.rows[0].action, 'Q1-old-search');
+    assert.equal(old.rows.length, 1); assert.equal(old.rows[0].action, 'technical.Q1-old-search');
+    assert.equal((await get('/v1/operations/documents')).status,403,'Technical manager cannot read financial documents');
     for(const resource of ['audit','documents']) {
+      await db.query('UPDATE users SET role=$1 WHERE id=$2',[resource==='audit'?'admin':'accountant',user]);
       const expected=resource==='audit'?501:30;
       const seenIds=new Set<string>();let cursor='';
       do {const response=await get(`/v1/operations/${resource}?limit=25${cursor?'&cursor='+cursor:''}`);const part=await response.json();assert.equal(response.status,200,JSON.stringify(part));for(const row of part.rows){assert.equal(seenIds.has(row.id),false);seenIds.add(row.id);}cursor=part.page.nextCursor??'';}while(cursor);
@@ -79,7 +85,8 @@ test('operations HTTP pages are bounded, stable, scoped, searchable beyond old a
     const statements:{sql:string;params:unknown[];returned:number}[]=[];
     database.query=async (sql:string,params:unknown[]=[])=>{const result=await originalQuery(sql,params);statements.push({sql,params:[...params],returned:result.rows.length});return result;};
     try {
-      const service=new OperationsService(database),principal={id:user,role:'accountant',schoolId:school};
+      const service=new OperationsService(database),principal={id:user,role:'accountant',customerId:customer,authorization:await new AuthorizationService(database).load(user,'accountant')};
+      statements.length=0;
       await service.summary('billing',principal);
       assert.equal(statements.length,1);assert.equal(statements[0]!.returned,1);assert.match(statements[0]!.sql,/SELECT count\(\*\)/);
       statements.length=0;
@@ -92,11 +99,12 @@ test('operations HTTP pages are bounded, stable, scoped, searchable beyond old a
       await mkdir('../../test/artifacts',{recursive:true});
       await writeFile('../../test/artifacts/q1-operation-explain.json',JSON.stringify({fixtureBillingRows:1002,returnedRows:26,responseRows:25,summaryStatements:1,summaryReturnedRows:1,sql:exact.sql,plan:explain.rows[0]['QUERY PLAN'],limits:'Fixture demonstrates bounded result transfer only; no production capacity claim.'},null,2));
     } finally {await database.onModuleDestroy();}
-    await db.query('UPDATE users SET school_id=$1 WHERE id=$2', [other, user]);
+    await db.query('UPDATE users SET customer_id=$1 WHERE id=$2', [other, user]);
+    await db.query("UPDATE employee_domain_grants SET site_ids=$2::uuid[] WHERE user_id=$1 AND domain='business'",[user,[otherSite]]);
     assert.equal((await get('/v1/operations/billing?cursor=' + encodeURIComponent(first.page.nextCursor))).status, 400);
     const changed = await (await get('/v1/operations/billing')).json();
     assert.equal(changed.rows.length, 1); assert.equal(changed.rows[0].siteId, otherSite);
-    for(const role of ['operator','school_user']) {
+    for(const role of ['operator','customer_user']) {
       await db.query('UPDATE users SET role=$1 WHERE id=$2',[role,user]);
       for(const encoded of ['%75sers','%61udit'])for(const suffix of ['','/summary','/export'])assert.equal((await get(`/v1/operations/${encoded}${suffix}`)).status,403,`${role} encoded ${encoded}${suffix} retains service authorization`);
     }
@@ -107,7 +115,7 @@ test('operations HTTP pages are bounded, stable, scoped, searchable beyond old a
     await db.query('DELETE FROM auth_sessions WHERE user_id=$1', [user]);
     await db.query('DELETE FROM users WHERE id=$1', [user]);
     await db.query('DELETE FROM sites WHERE id=ANY($1::uuid[])', [[site, otherSite]]);
-    await db.query('DELETE FROM schools WHERE id=ANY($1::uuid[])', [[school, other]]);
+    await db.query('DELETE FROM customers WHERE id=ANY($1::uuid[])', [[customer, other]]);
     await db.end();
   }
 });

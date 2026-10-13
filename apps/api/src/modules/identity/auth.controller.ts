@@ -1,5 +1,6 @@
 import { FinancialReadinessService } from "../billing/financial-readiness.service.js";
-import { schoolScope } from "../../common/auth/route-policy.js";
+import { customerScope } from "../../common/auth/route-policy.js";
+import type { Authorization } from '../../common/auth/authorization.js';
 import {
   BadRequestException,
   Put,
@@ -20,6 +21,8 @@ import { DatabaseService } from "../../database/database.service.js";
 import { SessionService } from "./session.service.js";
 import { AuthService } from "./auth.service.js";
 import { Public } from "./public.decorator.js";
+import { TwoFactorService } from './two-factor.service.js';
+import { HttpException } from '@nestjs/common';
 
 function extractCookie(req: Request, name: string): string | undefined {
   if (req.cookies && req.cookies[name]) return req.cookies[name];
@@ -45,74 +48,83 @@ export class AuthController {
     @Inject(SessionService) private readonly sessions: SessionService,
     @Inject(FinancialReadinessService)
     private readonly readiness: FinancialReadinessService,
+    @Inject(TwoFactorService) private readonly twoFactor: TwoFactorService = new TwoFactorService(db,authService),
   ) {}
 
   @Get("capabilities")
   async capabilities(
-    @Req() req: Request & { user?: { role: string; schoolId?: string } },
+    @Req() req: Request & { user?: { role: string; customerId?: string; authorization?:Authorization } },
   ) {
-    const scope = schoolScope(req.user);
-    return this.readiness.capabilities(
+    const scope = customerScope(req.user);
+    return {...await this.readiness.capabilities(
       req.user?.role ?? "",
       scope === null || scope.length > 0,
-    );
+    ),authorization:req.user?.authorization};
   }
 
   @Public()
   @Post("login")
   @HttpCode(HttpStatus.OK)
   async login(
-    @Body() body: { email?: string; password?: string },
+    @Body() body: { email?: string; password?: string; secondFactorCode?: string; recoveryCode?: string },
     @Res({ passthrough: true }) res: Response,
   ) {
-    const email = body.email?.trim().toLowerCase();
+    if (!body || typeof body.email !== 'string' || typeof body.password !== 'string' || body.email.length>320 || body.password.length>128 ||
+      (body.secondFactorCode!==undefined && (typeof body.secondFactorCode!=='string'||body.secondFactorCode.length>16)) ||
+      (body.recoveryCode!==undefined && (typeof body.recoveryCode!=='string'||body.recoveryCode.length>32)))throw new UnauthorizedException('Invalid login fields');
+    const email = body.email.trim().toLowerCase();
     const password = body.password;
     if (!email || !password) {
       throw new UnauthorizedException("Email and password are required");
     }
 
-    const query = `
-      SELECT id, email, display_name, role, status, school_id, password_hash, preferred_language, preferred_theme
-      FROM users
-      WHERE email = $1
-    `;
-    const result = await this.db.query(query, [email]);
-    const user = result.rows[0];
-    if (!user) {
-      throw new UnauthorizedException("Invalid email or password");
-    }
+    const attempt = await this.db.transaction(async client=>{
+      const query = `
+        SELECT id, email, display_name, role, status, customer_id, ARRAY(SELECT site_id::text FROM site_account_assignments WHERE user_id=users.id AND revoked_at IS NULL) AS assigned_site_ids, password_hash, preferred_language, preferred_theme, avatar_data
+        FROM users
+        WHERE email = $1 FOR UPDATE
+      `;
+      const result = await client.query(query, [email]);
+      const user = result.rows[0];
+      if (!user) {
+        throw new UnauthorizedException("Invalid email or password");
+      }
 
-    if (user.status !== "active") {
-      throw new UnauthorizedException("User account is inactive");
-    }
+      if (user.status !== "active") {
+        throw new UnauthorizedException("User account is inactive");
+      }
 
-    if (
-      !user.password_hash ||
-      !this.authService.verifyPassword(password, user.password_hash)
-    ) {
-      throw new UnauthorizedException("Invalid email or password");
-    }
+      if (
+        !user.password_hash ||
+        !this.authService.verifyPassword(password, user.password_hash)
+      ) {
+        throw new UnauthorizedException("Invalid email or password");
+      }
 
-    const { sid: sessionId } = await this.sessions.create(user.id);
-    const tokens = this.authService.issueTokens(
-      {
-        id: user.id,
-        email: user.email,
-        role: user.role,
-        schoolId: user.school_id || undefined,
-      },
-      sessionId,
-    );
+      const factor=await this.twoFactor.loginFactorInTransaction(client,user.id,body);
+      if(factor!=='verified')return {factor,...await this.twoFactor.challengeInTransaction(client,user.id)};
+      const sessionId=randomUUID();
+      await client.query('INSERT INTO auth_sessions(sid,user_id) VALUES($1,$2)',[sessionId,user.id]);
+      const tokens = this.authService.issueTokens(
+        {
+          id: user.id,
+          email: user.email,
+          role: user.role,
+          customerId: user.customer_id || undefined,
+        },
+        sessionId,
+      );
 
-    const refreshTokenHash = createHash("sha256")
-      .update(tokens.refreshToken)
-      .digest("hex");
-    await this.sessions.initialize(
-      sessionId,
-      user.id,
-      refreshTokenHash,
-      this.authService.verifyRefreshToken(tokens.refreshToken).expiresAt,
-    );
+      const refreshTokenHash = createHash("sha256")
+        .update(tokens.refreshToken)
+        .digest("hex");
+      await client.query('UPDATE auth_sessions SET refresh_hash=$3,expires_at=$4 WHERE sid=$1 AND user_id=$2',[sessionId,user.id,refreshTokenHash,this.authService.verifyRefreshToken(tokens.refreshToken).expiresAt]);
+      return {factor:'verified' as const,user,tokens,sessionId};
+    });
+    if(attempt.factor==='required')return {requiresTwoFactor:true,method:attempt.method,...('maskedTarget' in attempt?{maskedTarget:attempt.maskedTarget}:{})};
+    if(attempt.factor==='limited')throw new HttpException('Too many second-factor attempts; retry in 5 minutes',429);
+    if(attempt.factor!=='verified'||!('tokens' in attempt))throw new UnauthorizedException('Invalid second factor');
+    const {user,tokens,sessionId}=attempt;
 
     const isProd = process.env.NODE_ENV === "production";
     res.cookie("refresh_token", tokens.refreshToken, {
@@ -153,9 +165,11 @@ export class AuthController {
         email: user.email,
         displayName: user.display_name,
         role: user.role,
-        schoolId: user.school_id,
+        customerId: user.customer_id,
+        assignedSiteIds:user.assigned_site_ids ?? [],
         preferredLanguage: user.preferred_language,
         preferredTheme: user.preferred_theme,
+        avatarData: user.avatar_data ?? null,
       },
     };
   }
@@ -182,7 +196,7 @@ export class AuthController {
     }
 
     const query = `
-      SELECT id, email, display_name, role, status, school_id, refresh_token_hash, preferred_language, preferred_theme
+      SELECT id, email, display_name, role, status, customer_id, ARRAY(SELECT site_id::text FROM site_account_assignments WHERE user_id=users.id AND revoked_at IS NULL) AS assigned_site_ids, refresh_token_hash, preferred_language, preferred_theme, avatar_data
       FROM users
       WHERE id = $1
     `;
@@ -209,7 +223,7 @@ export class AuthController {
         id: user.id,
         email: user.email,
         role: user.role,
-        schoolId: user.school_id || undefined,
+        customerId: user.customer_id || undefined,
       },
       newSessionId,
     );
@@ -252,9 +266,11 @@ export class AuthController {
         email: user.email,
         displayName: user.display_name,
         role: user.role,
-        schoolId: user.school_id,
+        customerId: user.customer_id,
+        assignedSiteIds:user.assigned_site_ids ?? [],
         preferredLanguage: user.preferred_language,
         preferredTheme: user.preferred_theme,
+        avatarData: user.avatar_data ?? null,
       },
     };
   }
@@ -336,6 +352,13 @@ export class AuthController {
       const hash = result.rows[0]?.password_hash;
       if (!hash || !this.authService.verifyPassword(currentPassword, hash))
         throw new UnauthorizedException("Current password is incorrect");
+      // Password rotation invalidates every previously issued recovery challenge
+      // while retaining the users lock shared by reset and second-factor flows.
+      await client.query(
+        "UPDATE user_password_resets SET consumed_at=NOW() WHERE user_id=$1 AND consumed_at IS NULL",
+        [userId],
+      );
+      await client.query("DELETE FROM user_email_otp WHERE user_id=$1", [userId]);
       const updated = this.authService.hashPassword(newPassword);
       await client.query(
         "UPDATE users SET password_hash=$1,updated_at=NOW() WHERE id=$2",
@@ -356,15 +379,15 @@ export class AuthController {
   }
 
   @Get("me")
-  async me(@Req() req: Request & { user?: { id: string } }) {
+  async me(@Req() req: Request & { user?: { id: string;authorization?:unknown } }) {
     const userId = req.user?.id;
     if (!userId) {
       throw new UnauthorizedException("User not authenticated");
     }
 
     const query = `
-      SELECT id, email, display_name AS "displayName", role, status, school_id AS "schoolId",
-             preferred_language AS "preferredLanguage", preferred_theme AS "preferredTheme"
+      SELECT id, email, display_name AS "displayName", role, status, customer_id AS "customerId", ARRAY(SELECT site_id::text FROM site_account_assignments WHERE user_id=users.id AND revoked_at IS NULL) AS "assignedSiteIds",
+             preferred_language AS "preferredLanguage", preferred_theme AS "preferredTheme", avatar_data AS "avatarData"
       FROM users
       WHERE id = $1
     `;
@@ -374,6 +397,6 @@ export class AuthController {
       throw new UnauthorizedException("User not found");
     }
 
-    return user;
+    return {...user,authorization:req.user?.authorization};
   }
 }

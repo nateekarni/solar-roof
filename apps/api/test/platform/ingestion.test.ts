@@ -45,7 +45,7 @@ test('2000 concurrent work items keep bounded running, pending and gateway state
 test('actual API MQTT rejects huge/deep input, commits once before ACK, survives database outage and broker restart, and keeps HTTP available during burst', { timeout: 120000 }, async () => {
   const db = new Pool({ connectionString: assertIsolatedDatabase(process.env.READINESS_DATABASE_URL!) });
   db.on('error', () => {}); // The test intentionally stops PostgreSQL; pg evicts failed idle clients.
-  const school = randomUUID(), otherSchool = randomUUID(), site = randomUUID(), otherSite = randomUUID(), gateway = randomUUID(), device = randomUUID(), otherGateway = randomUUID(), otherDevice = randomUUID();
+  const customer = randomUUID(), otherCustomer = randomUUID(), site = randomUUID(), otherSite = randomUUID(), gateway = randomUUID(), device = randomUUID(), otherGateway = randomUUID(), otherDevice = randomUUID();
   const topic = `energy/${gateway}/telemetry`, response = `energy/${gateway}/response`;
   const base = process.env.READINESS_API_URL!;
   const compose = (...args: string[]) => execFileSync('docker', ['compose', '-f', 'infra/ci/compose.yml', ...args], { cwd: new URL('../../../../', import.meta.url), stdio: 'pipe' });
@@ -57,12 +57,12 @@ test('actual API MQTT rejects huge/deep input, commits once before ACK, survives
   const payload = (id: string, extra: object = {}) => JSON.stringify({ deviceId: device, gateway, sourceTime: new Date().toISOString(), ingestionId: id, metrics: { activePower: 1200 }, ...extra });
   const ready = () => until(async () => { try { return (await fetch(base + '/ready')).ok && (await fetch(base + '/ready/mqtt')).ok; } catch { return false; } }, 30000);
   try {
-    await db.query("INSERT INTO schools(id,name,code,region) VALUES($1::uuid,'Q2 school',$1::text,'fixture')", [school]);
-    await db.query("INSERT INTO sites(id,school_id,name,capacity_mwp) VALUES($1,$2,'Q2 site',0.1)", [site, school]);
+    await db.query("INSERT INTO customers(id,name,code,region) VALUES($1::uuid,'Q2 customer',$1::text,'fixture')", [customer]);
+    await db.query("INSERT INTO sites(id,customer_id,name,capacity_mwp) VALUES($1,$2,'Q2 site',0.1)", [site, customer]);
     await db.query("INSERT INTO gateways(id,site_id,name,protocol,endpoint) VALUES($1::uuid,$2,$1::text,'mqtt',$3)", [gateway, site, `energy/${gateway}/#`]);
     await db.query("INSERT INTO devices(id,gateway_id,site_id,name,device_type,model,serial_number) VALUES($1::uuid,$2,$3,'Q2 meter','meter','fixture',$1::text)", [device, gateway, site]);
-    await db.query("INSERT INTO schools(id,name,code,region) VALUES($1::uuid,'Q2 second school',$1::text,'fixture')", [otherSchool]);
-    await db.query("INSERT INTO sites(id,school_id,name,capacity_mwp) VALUES($1,$2,'Q2 second site',0.1)", [otherSite, otherSchool]);
+    await db.query("INSERT INTO customers(id,name,code,region) VALUES($1::uuid,'Q2 second customer',$1::text,'fixture')", [otherCustomer]);
+    await db.query("INSERT INTO sites(id,customer_id,name,capacity_mwp) VALUES($1,$2,'Q2 second site',0.1)", [otherSite, otherCustomer]);
     await db.query("INSERT INTO gateways(id,site_id,name,protocol,endpoint) VALUES($1::uuid,$2,$1::text,'mqtt',$3)", [otherGateway, otherSite, `energy/${otherGateway}/#`]);
     await db.query("INSERT INTO devices(id,gateway_id,site_id,name,device_type,model,serial_number) VALUES($1::uuid,$2,$3,'Q2 second meter','meter','fixture',$1::text)", [otherDevice, otherGateway, otherSite]);
     compose('restart', 'api'); await ready();
@@ -152,8 +152,11 @@ test('actual API MQTT rejects huge/deep input, commits once before ACK, survives
     await db.query('DELETE FROM telemetry_raw WHERE device_id=ANY($1::uuid[])', [[device, otherDevice]]);
     await db.query('DELETE FROM telemetry_archive_dirty WHERE site_id=ANY($1::uuid[])', [[site, otherSite]]);
     await db.query('DELETE FROM telemetry_archive_scan WHERE site_id=ANY($1::uuid[])', [[site, otherSite]]);
-    await db.query('DELETE FROM devices WHERE id=ANY($1::uuid[])', [[device, otherDevice]]); await db.query('DELETE FROM gateways WHERE id=ANY($1::uuid[])', [[gateway, otherGateway]]);
-    await db.query('DELETE FROM sites WHERE id=ANY($1::uuid[])', [[site, otherSite]]); await db.query('DELETE FROM schools WHERE id=ANY($1::uuid[])', [[school, otherSchool]]); await db.end();
+    await db.query('DELETE FROM devices WHERE id=ANY($1::uuid[])', [[device, otherDevice]]);
+    await db.query('DELETE FROM gateway_configuration_revisions WHERE gateway_id=ANY($1::uuid[])', [[gateway, otherGateway]]);
+    await db.query('DELETE FROM gateway_installation_history WHERE gateway_id=ANY($1::uuid[]) OR replaced_by_gateway_id=ANY($1::uuid[])', [[gateway, otherGateway]]);
+    await db.query('DELETE FROM gateways WHERE id=ANY($1::uuid[])', [[gateway, otherGateway]]);
+    await db.query('DELETE FROM sites WHERE id=ANY($1::uuid[])', [[site, otherSite]]); await db.query('DELETE FROM customers WHERE id=ANY($1::uuid[])', [[customer, otherCustomer]]); await db.end();
   }
 });
 

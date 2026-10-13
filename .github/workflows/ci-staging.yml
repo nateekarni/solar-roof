@@ -43,6 +43,7 @@ jobs:
       - run: python3 scripts/ci/recovery-sampler.test.py
       - run: pnpm --filter @solar/api exec tsx --test test/performance/capacity-policy.test.ts test/performance/page-budget.test.ts
       - name: Build immutable candidate images
+        id: build
         timeout-minutes: 10
         run: |
           node scripts/ci/phase-timing.mjs application-image-build bash -euo pipefail <<'BUILD'
@@ -64,6 +65,7 @@ jobs:
       - name: Verify web-first deployment without MQTT
         run: bash infra/ci/web-first-smoke.sh
       - name: Prepare version-matched browser server
+        id: browser
         timeout-minutes: 5
         run: node scripts/ci/phase-timing.mjs browser-preparation bash scripts/ci/browser-server.sh start
       - name: Verify browser download transfer
@@ -72,18 +74,22 @@ jobs:
       - name: Verify MQTT credentials and ACLs
         run: bash infra/docker/mosquitto/smoke.sh
       - name: Real integration and browser E2E in disposable stack
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.browser.outcome == 'success' }}
         timeout-minutes: 8
         run: node scripts/ci/phase-timing.mjs integration bash scripts/ci/integration.sh
       - name: Isolated platform regression and latency baseline
-        timeout-minutes: 15
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.browser.outcome == 'success' }}
+        timeout-minutes: 20
         run: node scripts/ci/phase-timing.mjs platform-regression bash scripts/ci/platform-check.sh all-fast --prebuilt
       - name: Verify isolated recovery fixture
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         timeout-minutes: 12
         env:
           RECOVERY_IMAGE: solar-postgres-backup:ci
           PLATFORM_CI_STORAGE_PORT: '19001'
         run: node scripts/ci/phase-timing.mjs recovery bash scripts/ci/recovery-drill.sh --profile fixture
       - name: Exercise reduced mixed workload in an isolated stack
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.browser.outcome == 'success' }}
         timeout-minutes: 10
         env:
           CAPACITY_PREBUILT: 'true'

@@ -97,7 +97,6 @@ export function NotificationDetailModal({
           </div>
         </DialogHeader>
 
-        {notification.jobId && <a className="text-primary underline" href={`/reports?job=${encodeURIComponent(notification.jobId)}`}>{t('jobs.open')}</a>}
         {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto pr-1 space-y-4 text-sm my-2">
           {/* Notification Message Content Box */}

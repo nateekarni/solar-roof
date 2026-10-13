@@ -1,5 +1,7 @@
 "use client";
 import { originalSourceFromRow } from './original-document-loader';
+import {collectRecordIds,recordDetailHref,saveRecordNavigation} from './record-navigation';
+import {apiClient} from '../../lib/api-client';
 
 import * as React from "react";
 import type {OperationRow} from "@solar/api-contracts";
@@ -43,7 +45,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "../../components/ui/dropdown-menu";
-import { operationKeys, isTemporalColumn } from "./operation-columns";
+import { operationKeys, isTemporalColumn,operationColumnLabel } from "./operation-columns";
+import {BillOverdueCell} from './bill-overdue-cell';
 import { TelemetryAgeLabel } from "./telemetry-age-label";
 import { useLocale, useT } from "../../providers/locale-provider";
 import { useFinancialCapabilities } from "../../lib/financial-capabilities";
@@ -53,11 +56,10 @@ import { OperationCardList } from "./operation-card-list";
 import { DocumentPreviewModal, type DocumentPreviewData } from "./document-preview-modal";
 import { BillingDetailModal } from "../billing/billing-detail-modal";
 import { PaymentDialog } from "../billing/payment-dialog";
-import { PaymentVerificationDialog } from "../billing/payment-verification-dialog";
 import { SiteEditDialog } from "../sites/site-edit-dialog";
 import { SiteDeleteDialog } from "../sites/site-delete-dialog";
 import { SiteTelemetryDialog } from "../sites/site-telemetry-dialog";
-import { renderStatusBadge, STATUS_MAP } from "../../lib/status-badge";
+import { renderStatusBadge, renderReceiptStatusBadge, STATUS_MAP } from "../../lib/status-badge";
 import { formatAppDate, formatAppDateTime, isIsoDateLike } from "../../lib/date-format";
 
 type SummaryItem = {
@@ -134,19 +136,22 @@ export function OperationTable({
   const t = useT();
   const locale = useLocale();
   const router = useRouter();
-  const {query, setQuery} = useOperationQuery(["schools","sites","users"].includes(resource) ? "asc" : "desc");
+  const {query, setQuery} = useOperationQuery(["customers","sites","users"].includes(resource) ? "asc" : "desc");
   const user = useSessionUser();
   const financial = useFinancialCapabilities();
+  const [queryControlsReady,setQueryControlsReady]=React.useState(false);
   const [permissionError,setPermissionError]=React.useState(false);
+  const [openingDetail,setOpeningDetail]=React.useState(false);
+  const [navigationError,setNavigationError]=React.useState(false);
+  const navigating=React.useRef(false);
+  React.useEffect(()=>setQueryControlsReady(true),[]);
   React.useEffect(()=>{const denied=()=>setPermissionError(true);window.addEventListener("operation-permission-denied",denied);return()=>window.removeEventListener("operation-permission-denied",denied);},[]);
-  const isSchoolUser = user?.role === "school_user";
+  const isCustomerUser = user?.role === "customer_user";
   const isOwner = user?.role === "owner";
 
   // Payment Dialog States
   const [payDialogOpen, setPayDialogOpen] = React.useState(false);
   const [selectedPayCycle, setSelectedPayCycle] = React.useState<any | null>(null);
-  const [verifyDialogOpen, setVerifyDialogOpen] = React.useState(false);
-  const [selectedVerifyCycle, setSelectedVerifyCycle] = React.useState<any | null>(null);
 
   // Document Preview Modal State
   const [previewOpen, setPreviewOpen] = React.useState(false);
@@ -187,7 +192,7 @@ export function OperationTable({
       siteId: row.siteId,
       billingCycleId: row.billingCycleId,
       documentNumber: row.documentNumber || (type === "receipt" ? row.receiptNumber : row.invoiceNumber),
-      schoolName: row.schoolName,
+      customerName: row.customerName,
       siteName: row.siteName,
       period: row.period || row.periodStart,
       issueDate: row.issueDate || row.startDate,
@@ -219,14 +224,24 @@ export function OperationTable({
     setBillingSheetOpen(true);
   };
 
-  const openResourceDetail = (res: string, item: Record<string, any>) => {
-    router.push(`/records/${encodeURIComponent(res)}/${encodeURIComponent(String(item[idKey] || item.id))}`);
+  const openResourceDetail = async (res: string, item: Record<string, any>) => {
+    const id=String(item[idKey] || item.id);
+    if(res!=='billing'&&res!=='receipts'){router.push(`/records/${encodeURIComponent(res)}/${encodeURIComponent(id)}`);return;}
+    if(navigating.current)return;
+    navigating.current=true;setOpeningDetail(true);setNavigationError(false);
+    try{
+      const query=window.location.search.slice(1);
+      const ids=await collectRecordIds(res,query,url=>apiClient.get(url,{cache:'no-store'}));
+      const token=saveRecordNavigation({resource:res,ids,query});
+      router.push(recordDetailHref(res,id,token));
+    }catch{setNavigationError(true);}
+    finally{navigating.current=false;setOpeningDetail(false);}
   };
 
   const handleAction = (id:string,item:OperationRow) => {
     if(id==='detail')openResourceDetail(resource,item);
     else if(id==='pay'){setSelectedPayCycle(item);setPayDialogOpen(true);}
-    else if(id==='verify'){setSelectedVerifyCycle(item);setVerifyDialogOpen(true);}
+    else if(id==='verify')void openResourceDetail(resource,item);
     else if(id==='invoice'||id==='receipt')openDocumentPreview(id,item);
   };
   const renderMenuActions=(item:OperationRow)=>{const itemId=String(item[idKey]||item.id);return <>
@@ -321,11 +336,12 @@ export function OperationTable({
     const keys = operationKeys(resource,firstRow,idKey);
 
     const cols: ColumnDef<OperationRow, any>[] = keys.map((key, idx) => {
-      const rawTitle = (rawColumns[idx] ?? key).replaceAll("โรงเรียน", "องค์กร");
-      const headerTitle =
+      const rawTitle = (rawColumns[idx] ?? key).replaceAll("ลูกค้า", "องค์กร");
+      const fallbackTitle =
         locale === "en" && COLUMN_TRANSLATIONS[rawTitle]
           ? COLUMN_TRANSLATIONS[rawTitle]
           : rawTitle;
+      const headerTitle=operationColumnLabel(resource,key,locale,fallbackTitle);
 
       return {
         accessorKey: key,
@@ -340,6 +356,7 @@ export function OperationTable({
               variant="ghost"
               size="sm"
               className="h-10 px-0 py-0 text-xs font-semibold hover:bg-transparent tracking-normal"
+              disabled={serverManaged && !queryControlsReady}
               onClick={() => serverManaged ? setQuery({sort: sortKey, direction: currentSort === sortKey && currentDirection === "asc" ? "desc" : "asc"}) : column.toggleSorting(column.getIsSorted() === "asc")}
             >
               {headerTitle}
@@ -348,6 +365,7 @@ export function OperationTable({
           );
         },
         cell: ({ row }) => {
+          if(resource==='billing'&&key==='daysOverdue')return <BillOverdueCell row={row.original} locale={locale}/>;
           const val = row.getValue(key);
           const str = String(val ?? "-").trim();
           const lower = str.toLowerCase();
@@ -358,7 +376,7 @@ export function OperationTable({
             STATUS_MAP[lower] ||
             STATUS_MAP[str]
           ) {
-            return renderStatusBadge(str, locale);
+            return resource==='receipts'&&key==='status'?renderReceiptStatusBadge(str,locale):renderStatusBadge(str, locale);
           }
 
           if (key.toLowerCase().includes("amount") || key.toLowerCase().includes("ยอด")) {
@@ -470,7 +488,7 @@ export function OperationTable({
     });
 
     return cols;
-  }, [rows, rawColumns, idKey, locale, resource, openResourceDetail]);
+  }, [rows, rawColumns, idKey, locale, resource, openResourceDetail, query.sort, query.direction, queryControlsReady, serverManaged, setQuery]);
 
   const searchPlaceholder =
     locale === "th"
@@ -479,9 +497,11 @@ export function OperationTable({
 
   return (
     <>
+      {openingDetail&&<p role="status">{locale==='th'?'กำลังเปิดรายละเอียดและเตรียมลำดับรายการ…':'Opening details and preparing record order…'}</p>}
+      {navigationError&&<p role="alert">{locale==='th'?'เปิดรายละเอียดไม่สำเร็จ กรุณาลองเลือกรายการอีกครั้ง':'Unable to open details. Please select the record again.'}</p>}
       {permissionError && <p role="alert">สิทธิ์ของคุณเปลี่ยนแล้ว ระบบกำลังตรวจสอบสิทธิ์ล่าสุด กรุณาเลือกการดำเนินการที่ยังอนุญาต</p>}
       {/* Top Summary Stat Cards */}
-      {summary && summary.length > 0 && (
+      {!['alerts','audit'].includes(resource) && summary && summary.length > 0 && (
         <div className={`grid grid-cols-2 gap-3 ${summary.length === 1 ? 'lg:grid-cols-1' : summary.length === 2 ? 'lg:grid-cols-2' : summary.length === 3 ? 'lg:grid-cols-3' : 'lg:grid-cols-4'}`}>
           {summary.map((stat, i) => (
             <Card className="stat-card" key={i}>
@@ -590,19 +610,11 @@ export function OperationTable({
         siteName={selectedTelemetrySite?.name}
       />
 
-      {/* Payment Dialog for School User */}
+      {/* Payment Dialog for Customer User */}
       <PaymentDialog
         open={payDialogOpen}
         onOpenChange={setPayDialogOpen}
         billingCycle={selectedPayCycle}
-        onSuccess={() => router.refresh()}
-      />
-
-      {/* Payment Verification Dialog for Admin / Owner */}
-      <PaymentVerificationDialog
-        open={verifyDialogOpen}
-        onOpenChange={setVerifyDialogOpen}
-        billingCycle={selectedVerifyCycle}
         onSuccess={() => router.refresh()}
       />
 

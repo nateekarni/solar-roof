@@ -17,15 +17,21 @@ import {
 } from "../../components/ui/card";
 import { useLocale } from "../../providers/locale-provider";
 
-type Site = {
+export type SiteMapSite = {
   id: string;
   name: string;
   latitude: number | null;
   longitude: number | null;
   status?: string;
   capacityMwp?: number;
-  schoolName: string;
+  customerName: string;
   productionKwh?: number | null;
+};
+
+export type SiteMapProps = {
+  sites: SiteMapSite[];
+  availableSites?: Pick<SiteMapSite,"id"|"name"|"customerName"|"latitude"|"longitude">[] | undefined;
+  dataSiteId?: string | undefined;
 };
 
 const style: StyleSpecification = {
@@ -41,7 +47,7 @@ const style: StyleSpecification = {
   layers: [{ id: "osm", type: "raster", source: "osm" }],
 } as const;
 
-export function SiteMap({ sites,availableSites,dataSiteId }: { sites: Site[]; availableSites?: Pick<Site,'id'|'name'|'schoolName'|'latitude'|'longitude'>[]|undefined; dataSiteId?:string|undefined }) {
+export function SiteMap({ sites,availableSites,dataSiteId }: SiteMapProps) {
   const {selectedSiteId,chooseSite}=useSiteSelection();
   const scoped=dashboardScopeMatches(selectedSiteId,dataSiteId);
   const mapSites=(availableSites??sites).map(site=>({...site,...(scoped?sites.find(value=>value.id===site.id):undefined)}));
@@ -159,7 +165,7 @@ export function SiteMap({ sites,availableSites,dataSiteId }: { sites: Site[]; av
                   </span>}
                   <strong className="text-foreground">{selected.name}</strong>
                   <span className="text-muted-foreground">
-                    {selected.schoolName}
+                    {selected.customerName}
                   </span>
                   {scoped && <small className="font-semibold text-primary">
                     {formatNumber(selected.productionKwh)} kWh ·{" "}
@@ -215,7 +221,7 @@ export function SiteMap({ sites,availableSites,dataSiteId }: { sites: Site[]; av
             </strong>
             <span className="site-sub">
               {selected
-                ? selected.schoolName
+                ? selected.customerName
                 : `${validSites.length} ${th ? "ไซต์ที่มีพิกัด • เลือกไซต์เพื่อดูรายละเอียด" : "sites with coordinates • Select a site for details"}`}
             </span>
           </div>

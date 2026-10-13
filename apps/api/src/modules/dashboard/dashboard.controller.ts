@@ -19,6 +19,11 @@ export class DashboardController {
     const result = await this.dashboard.getSummary(req.user,start,end,query.site_id);
     return result.production.map(row => ({label:row.date,value:row.value,unit:'kWh',quality:row.quality,watermark:row.watermark,reason:row.reason,reasons:row.reasons}));
   }
+  @Get('day')
+  getDay(@Req() req:{user:DashboardPrincipal},@Query() query:DashboardQuery){
+    const {start,end}=this.range(query);
+    return this.dashboard.getDay(req.user,start,end,query.site_id);
+  }
   @Get('revenue')
   async getRevenue(@Req() req: {user:DashboardPrincipal}, @Query() query:DashboardQuery) {
     const {start,end}=this.range(query);
@@ -29,6 +34,11 @@ export class DashboardController {
   compare(@Req() req: {user:DashboardPrincipal}, @Query() query:DashboardQuery) {
     const {start,end}=this.range(query);
     return this.dashboard.compare(req.user,query.metric || 'periodKwh',query.site_ids?.split(',').filter(Boolean) || [],start,end);
+  }
+  @Get('comparison')
+  comparison(@Req() req:{user:DashboardPrincipal},@Query() query:DashboardQuery){
+    const {start,end}=this.range(query);
+    return this.dashboard.comparison(req.user,query.site_ids?.split(',').filter(Boolean)||[],start,end);
   }
   @Get('power-flow')
   getPowerFlow(@Req() req: {user:DashboardPrincipal}, @Query() query:DashboardQuery) {

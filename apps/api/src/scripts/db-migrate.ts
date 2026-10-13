@@ -45,6 +45,23 @@ try {
     "infra/migrations/036_contract_document_originals.sql",
     "infra/migrations/037_optional_payer_metadata.sql",
     "infra/migrations/038_notification_feed.sql",
+    "infra/migrations/039_customer_terminology.sql",
+    "infra/migrations/040_site_account_assignments.sql",
+    "infra/migrations/041_payment_evidence_review.sql",
+    "infra/migrations/042_site_billing.sql",
+    "infra/migrations/043_operational_automation.sql",
+    "infra/migrations/044_site_rate_retirement.sql",
+    "infra/migrations/045_delivery_claim_recovery.sql",
+    "infra/migrations/046_payment_evidence_digest_indexes.sql",
+    "infra/migrations/047_employee_domain_permissions.sql",
+    "infra/migrations/048_gateway_reconciliation.sql",
+    "infra/migrations/049_live_notification_permissions.sql",
+    "infra/migrations/050_gateway_continuous_comparison.sql",
+    "infra/migrations/051_gateway_replacement_history.sql",
+    "infra/migrations/052_dashboard_production_sources.sql",
+    "infra/migrations/053_user_authenticators.sql",
+    "infra/migrations/054_user_avatar.sql",
+    "infra/migrations/055_email_factor_password_reset.sql",
   ];
   for (const file of migrationFiles) {
     const sql = await readFile(new URL(`../../../../${file}`, import.meta.url), "utf8");

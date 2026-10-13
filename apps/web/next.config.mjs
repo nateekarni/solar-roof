@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  distDir: process.env.NEXT_BUILD_OUTPUT_DIR || '.next',
   allowedDevOrigins: [
     "*.trycloudflare.com",
     "upgrading-unlikely-endangered-ferrari.trycloudflare.com",

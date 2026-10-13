@@ -6,7 +6,7 @@ export type DocumentType = "contract" | "invoice" | "receipt" | "settlement" | "
 export interface RateScheduleItem { startDate: string; endDate?: string; rate: number; }
 export interface DocumentPreviewData {
   type: DocumentType; id?: string; documentId?: string; siteId?: string; billingCycleId?: string;
-  title?: string; documentNumber?: string; schoolName?: string; siteName?: string; period?: string;
+  title?: string; documentNumber?: string; customerName?: string; siteName?: string; period?: string;
   issueDate?: string; dueDate?: string; consumedKwh?: number | string; rate?: number | string;
   amount?: number | string; status?: string; signers?: string; version?: string; capacityMwp?: number | string;
   taxId?: string; taxBranch?: string; taxAddress?: string; taxEmail?: string; taxPhone?: string;

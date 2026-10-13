@@ -20,6 +20,10 @@ infra/docker/mosquitto/certs
 
 **/test/artifacts
 .worktrees
+.pnpm-store
+.tmp
+tmp
+output
 .superpowers
 
 docs

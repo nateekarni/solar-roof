@@ -69,13 +69,13 @@ node --input-type=module -e 'for(const p of ["/health","/ready","/ready/mqtt"]){
 
 ## 6. เพิ่ม user ใน Coolify เอง
 
-ทำตาม [คู่มือคำสั่งเพิ่ม user](coolify-manual-users-th.md): สร้าง Admin → login → เพิ่มโรงเรียน/ไซต์ → สร้าง Owner และ School User ที่ผูกโรงเรียน/ไซต์จริง รหัสอย่างน้อย 16 ตัวอักษร คำสั่งใช้ transaction/audit และไม่ reset รหัสเดิมเมื่อรันซ้ำ
+ทำตาม [คู่มือคำสั่งเพิ่ม user](coolify-manual-users-th.md): สร้าง Admin → login → เพิ่มลูกค้า/ไซต์ → สร้าง Owner และ Customer User ที่ผูกลูกค้า/ไซต์จริง รหัสอย่างน้อย 16 ตัวอักษร คำสั่งใช้ transaction/audit และไม่ reset รหัสเดิมเมื่อรันซ้ำ
 
 ไม่ใช้ db:seed หรือ db:seed:reset บน deployment เพราะเป็น demo seed ไม่ใช่คำสั่งเพิ่มบัญชี
 
 ## 7. ทดสอบและอัปเดต
 
-- ทดสอบ Admin เข้าถึงทุกเมนู, Owner เห็นเฉพาะงานบริษัท/เอกสาร และ School User เห็นเฉพาะโรงเรียนที่ผูกไว้
+- ทดสอบ Admin เข้าถึงทุกเมนู, Owner เห็นเฉพาะงานบริษัท/เอกสาร และ Customer User เห็นเฉพาะลูกค้าที่ผูกไว้
 - เพิ่มไซต์ เลือก Pilot SPM91 หรือเพิ่ม Preset ของตัวเอง ตรวจ Preview หน่วย Wh → kWh; การเลือก Preset ไม่ได้ตั้ง firmware Gateway
 - ยังไม่มี telemetry ให้หน้าเว็บแสดงข้อมูลตามที่มีจริง ไม่สร้าง production samples จำลอง
 - เมื่ออัปเดตให้เปลี่ยน 4 image digests ใน resource เดิม → Deploy → ตรวจ migration/health/login คำสั่ง migrate รันอัตโนมัติอยู่แล้ว หากต้องตรวจซ้ำรัน pnpm --filter @solar/api db:migrate ใน API terminal ได้

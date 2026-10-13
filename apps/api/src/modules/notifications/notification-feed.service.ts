@@ -1,10 +1,10 @@
 import { BadRequestException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { canVisitPage } from '@solar/domain';
 import { DatabaseService } from '../../database/database.service.js';
-import { schoolScope, type ScopePrincipal } from '../../common/auth/route-policy.js';
+import { customerScope, type ScopePrincipal } from '../../common/auth/route-policy.js';
 export function notificationScope(user: ScopePrincipal) {
- if(!user.id || !['owner','admin','operator','accountant','school_user'].includes(user.role??''))throw new UnauthorizedException();
- return {userId:user.id,schools:schoolScope(user),alerts:canVisitPage(user.role!,'/alerts'),workflows:canVisitPage(user.role!,'/notifications')};
+ if(!user.id || !['owner','admin','operator','accountant','customer_user'].includes(user.role??''))throw new UnauthorizedException();
+ return {userId:user.id,customers:customerScope(user),alerts:canVisitPage(user.role!,'/alerts'),workflows:canVisitPage(user.role!,'/notifications')};
 }
 export function parseNotificationIds(ids:unknown):string[]{
  if(!Array.isArray(ids)||ids.length>500||ids.some(id=>typeof id!=='string'||! /^(alert|workflow|contract|document|payment):[a-zA-Z0-9:_-]{1,150}$/.test(id)))throw new BadRequestException('Invalid notification identities');
@@ -19,12 +19,16 @@ export function parseNotificationSite(site:unknown):string|null {
 export const notificationVisibleSql=`WITH visible AS (
  SELECT e.id,e.title,e.detail,e.destination,e.created_at,'workflow'::text AS kind,NULL::text AS severity
  FROM notification_feed_events e JOIN sites s ON s.id=e.site_id
- WHERE ($2::uuid[] IS NULL OR s.school_id=ANY($2::uuid[])) AND ($3::uuid IS NULL OR s.id=$3)
+ WHERE ($2::uuid[] IS NULL OR s.customer_id=ANY($2::uuid[])) AND (NOT EXISTS(SELECT 1 FROM users scope_user WHERE scope_user.id=$1::uuid AND scope_user.role='customer_user') OR EXISTS(SELECT 1 FROM site_account_assignments assignment WHERE assignment.user_id=$1::uuid AND assignment.site_id=s.id AND assignment.revoked_at IS NULL)) AND ($3::uuid IS NULL OR s.id=$3)
+ AND (NOT EXISTS(SELECT 1 FROM operational_event_recipients er WHERE er.notification_id=e.id) OR EXISTS(SELECT 1 FROM operational_event_recipients er WHERE er.notification_id=e.id AND er.user_id=$1))
  AND EXISTS(SELECT 1 FROM unnest($7::text[]) permitted(root) WHERE e.destination=permitted.root OR starts_with(e.destination,permitted.root||'/'))
+ AND employee_can_access($1::uuid,'business',CASE WHEN starts_with(e.destination,'/records/receipts') THEN 'business.receipts.view' WHEN starts_with(e.destination,'/records/documents') THEN 'business.documents.view' ELSE 'business.billing.view' END,s.id)
  UNION ALL
  SELECT 'alert:'||a.id::text,a.title,a.detail,'/alerts',a.occurred_at,'alert',a.severity
  FROM alerts a JOIN sites s ON s.id=a.site_id
- WHERE $4::boolean AND ($2::uuid[] IS NULL OR s.school_id=ANY($2::uuid[])) AND ($3::uuid IS NULL OR s.id=$3)
+ WHERE $4::boolean AND (NOT EXISTS(SELECT 1 FROM users scope_user WHERE scope_user.id=$1::uuid AND scope_user.role='customer_user') OR EXISTS(SELECT 1 FROM site_account_assignments assignment WHERE assignment.user_id=$1::uuid AND assignment.site_id=s.id AND assignment.revoked_at IS NULL)) AND ($2::uuid[] IS NULL OR s.customer_id=ANY($2::uuid[])) AND ($3::uuid IS NULL OR s.id=$3)
+ AND (NOT EXISTS(SELECT 1 FROM operational_delivery_outbox o WHERE o.alert_id=a.id) OR EXISTS(SELECT 1 FROM operational_event_recipients er WHERE er.notification_id='alert:'||a.id::text AND er.user_id=$1))
+ AND employee_can_access($1::uuid,'technical','technical.alerts.view',s.id)
  UNION ALL
  SELECT 'workflow:'||n.id::text,n.title,n.status,'/notifications',n.created_at,'workflow',NULL
  FROM notification_deliveries n JOIN platform_jobs j ON j.id=n.job_id
@@ -38,7 +42,7 @@ export const notificationVisibleSql=`WITH visible AS (
 @Injectable()
 export class NotificationFeedService {
  constructor(@Inject(DatabaseService) private readonly db:DatabaseService){}
- private parameters(user:ScopePrincipal,site:unknown){const scope=notificationScope(user);return [scope.userId,scope.schools,parseNotificationSite(site),scope.alerts,scope.workflows,['owner','admin'].includes(user.role??''),['/records/contracts','/records/documents','/records/receipts','/records/billing'].filter(path=>canVisitPage(user.role??'',path))];}
+ private parameters(user:ScopePrincipal,site:unknown){const scope=notificationScope(user);return [scope.userId,scope.customers,parseNotificationSite(site),scope.alerts,scope.workflows,['owner','admin'].includes(user.role??''),['/records/contracts','/records/documents','/records/receipts','/records/billing'].filter(path=>canVisitPage(user.role??'',path))];}
  // The bell is an activity feed across dates; dashboard date filters do not
  // change its scope. Return the latest 100 rows but count/read all visible rows.
  async feed(user:ScopePrincipal,site?:unknown){

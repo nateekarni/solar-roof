@@ -1,1 +1,1 @@
-export { schoolScope, type ScopePrincipal } from "./route-policy.js";
+export { customerScope, type ScopePrincipal } from "./route-policy.js";

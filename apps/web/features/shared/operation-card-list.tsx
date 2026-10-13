@@ -4,9 +4,10 @@ import type {OperationRow} from '@solar/api-contracts';
 import {FileQuestion,Image as ImageIcon} from 'lucide-react';
 import {Button} from '../../components/ui/button';
 import {Card} from '../../components/ui/card';
-import {operationKeys,isTemporalColumn} from './operation-columns';
+import {operationKeys,isTemporalColumn,operationColumnLabel} from './operation-columns';
+import {BillOverdueCell} from './bill-overdue-cell';
 import {TelemetryAgeLabel} from './telemetry-age-label';
-import {renderStatusBadge,STATUS_MAP} from '../../lib/status-badge';
+import {renderStatusBadge,renderReceiptStatusBadge,STATUS_MAP} from '../../lib/status-badge';
 import {formatAppDate,formatAppDateTime,isIsoDateLike} from '../../lib/date-format';
 import {useLocale} from '../../providers/locale-provider';
 export interface OperationCardListProps {
@@ -20,7 +21,7 @@ export function OperationCardList({resource,columns:rawColumns,rows,idKey='id',o
  const secondaryKeys=keys.filter(k=>k!==titleKey&&k!==statusKey);
  const formatNumber=(value:unknown)=>value===null||value===undefined||value===""?"—":Number.isFinite(Number(value))?new Intl.NumberFormat(locale==='th'?'th-TH':'en-US',{maximumFractionDigits:2}).format(Number(value)):String(value??'—');
  const isStatusValue=(value:unknown)=>Boolean(STATUS_MAP[String(value??'').trim().toLowerCase()]||STATUS_MAP[String(value??'').trim()]);
- const getStatusBadge=(value:string)=>renderStatusBadge(value,locale);
+ const getStatusBadge=(value:string)=>resource==='receipts'?renderReceiptStatusBadge(value,locale):renderStatusBadge(value,locale);
  return <div className="space-y-3">
       {/* Cards List */}
       {rows.length === 0 ? (
@@ -60,7 +61,7 @@ export function OperationCardList({resource,columns:rawColumns,rows,idKey='id',o
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
                     <p className="text-xs font-semibold text-muted-foreground/70 uppercase tracking-wider text-[10px]">
-                      {rawColumns[0] ?? titleKey}
+                      {operationColumnLabel(resource,titleKey,locale,rawColumns[0] ?? titleKey)}
                     </p>
                     <h3 className="text-sm font-bold text-foreground truncate mt-0.5">
                       {titleDisplay}
@@ -78,7 +79,7 @@ export function OperationCardList({resource,columns:rawColumns,rows,idKey='id',o
                 {secondaryKeys.length > 0 && (
                   <div className="grid grid-cols-2 gap-2 pt-2 border-t border-border/50 text-xs">
                     {(resource === "sites" ? secondaryKeys.filter(k=>k!=="lastSeenAt") : (["billing","contracts","documents","receipts"].includes(resource) ? secondaryKeys : secondaryKeys.slice(0,4))).map((key, kIdx) => {
-                      const colHeader = rawColumns[keys.indexOf(key)] ?? key;
+                      const colHeader = operationColumnLabel(resource,key,locale,rawColumns[keys.indexOf(key)] ?? key);
                       const val = row[key];
                       const str = String(val ?? "-");
 
@@ -127,7 +128,7 @@ export function OperationCardList({resource,columns:rawColumns,rows,idKey='id',o
                                 ? ""
                                 : "text-foreground"
                             }`}>
-                              {resource === "sites" && ["lastUpdated","lastSeenAt","last_seen_at"].includes(key) ? (
+                              {resource==='billing'&&key==='daysOverdue'?<BillOverdueCell row={row} locale={locale}/>:resource === "sites" && ["lastUpdated","lastSeenAt","last_seen_at"].includes(key) ? (
                                 <TelemetryAgeLabel value={val} locale={locale} compact />
                               ) : isStatusValue(val) ? (
                                 getStatusBadge(str)

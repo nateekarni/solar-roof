@@ -1,4 +1,5 @@
 "use client";
+import { focusInvalidFields } from "../../lib/form-feedback";
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { UserPlus } from "lucide-react";
@@ -31,13 +32,13 @@ import { useLocale, useT } from "../../providers/locale-provider";
 const userSchema = z.object({
   email: z.string().min(1, "กรุณาระบุอีเมล").email("รูปแบบอีเมลไม่ถูกต้อง"),
   displayName: z.string().min(2, "ชื่อผู้ใช้งานต้องมีอย่างน้อย 2 ตัวอักษร"),
-  role: z.enum(["owner", "admin", "school_user"]),
-  schoolId: z.string().optional(),
+  role: z.enum(["owner", "admin", "customer_user"]),
+  customerId: z.string().optional(),
 });
 
 type UserFormValues = z.infer<typeof userSchema>;
 
-interface SchoolOption {
+interface CustomerOption {
   id: string;
   name: string;
 }
@@ -56,8 +57,8 @@ export function InviteUserDialog({
   const [checkingInvitation, setCheckingInvitation] = React.useState(false);
   const [lookupMessage, setLookupMessage] = React.useState("");
   const [loading, setLoading] = React.useState(false);
-  const [schools, setSchools] = React.useState<SchoolOption[]>([]);
-  const [selectedRole, setSelectedRole] = React.useState<"owner" | "admin" | "school_user">("school_user");
+  const [customers, setCustomers] = React.useState<CustomerOption[]>([]);
+  const [selectedRole, setSelectedRole] = React.useState<"owner" | "admin" | "customer_user">("customer_user");
   const [invitedResult, setInvitedResult] = React.useState<{
     email: string;
     invitationId: string;
@@ -88,9 +89,9 @@ export function InviteUserDialog({
       setInvitedResult(null);
 
       apiClient
-        .get<SchoolOption[]>("/v1/schools")
+        .get<CustomerOption[]>("/v1/customers")
         .then((data) => {
-          setSchools(data);
+          setCustomers(data);
         })
         .catch(() => {});
     }
@@ -186,7 +187,7 @@ export function InviteUserDialog({
             </DialogFooter>
           </div>
         ) : (
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 pt-3.5">
+          <form onSubmit={handleSubmit(onSubmit, errors => focusInvalidFields(errors))} className="space-y-4 pt-3.5">
             <div className="space-y-2">
               <Label htmlFor="u-email" required className="text-xs font-medium">
                 {locale === "th" ? "อีเมล (Email)" : "Email Address"}
@@ -226,7 +227,7 @@ export function InviteUserDialog({
               </Label>
               <Select
 
-                onValueChange={(val: "owner" | "admin" | "school_user") => {
+                onValueChange={(val: "owner" | "admin" | "customer_user") => {
                   setSelectedRole(val);
                   setValue("role", val);
                 }}
@@ -235,8 +236,8 @@ export function InviteUserDialog({
                   <SelectValue placeholder="เลือกประเภท" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="school_user" className="text-xs">
-                    {t("profile.schoolUser")}
+                  <SelectItem value="customer_user" className="text-xs">
+                    {t("profile.customerUser")}
                   </SelectItem>
                   <SelectItem value="admin" className="text-xs">
                     {t("profile.admin")}
@@ -248,17 +249,17 @@ export function InviteUserDialog({
               </Select>
             </div>
 
-            {selectedRole === "school_user" && (
+            {selectedRole === "customer_user" && (
               <div className="space-y-2">
                 <Label htmlFor="u-organization" required className="text-xs font-medium">
                   {locale === "th" ? "องค์กรสังกัด" : "Organization Access"}
                 </Label>
-                <Select onValueChange={(val) => setValue("schoolId", val)}>
+                <Select onValueChange={(val) => setValue("customerId", val)}>
                   <SelectTrigger id="u-organization" className="text-xs h-10 w-full">
                     <SelectValue placeholder="เลือกองค์กร" />
                   </SelectTrigger>
                   <SelectContent>
-                    {schools.map((s) => (
+                    {customers.map((s) => (
                       <SelectItem key={s.id} value={s.id} className="text-xs">
                         {s.name}
                       </SelectItem>

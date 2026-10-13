@@ -7,7 +7,7 @@ import {randomUUID} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {Pool} from 'pg';
 import os from 'node:os';
-import {assertIsolatedDatabase,createFixture} from './fixtures.js';
+import {assertIsolatedDatabase,createBaselineFixture} from './fixtures.js';
 import {AuthService} from '../../src/modules/identity/auth.service.js';
 import {DatabaseService} from '../../src/database/database.service.js';
 import {metricsSnapshot} from '../../src/common/observability/metrics.js';
@@ -108,16 +108,23 @@ test('baseline revision upgrade preserves populated users, readings and financia
   try {
     await client.query(`CREATE SCHEMA ${schema}`);owned.push(schema);await client.query(`SET search_path TO ${schema},public`);
     await migrate(true);
-    const fixture=await createFixture(client);
+    const fixture=await createBaselineFixture(client);
     const passwordAuth=new AuthService('fixture-only-access','fixture-only-refresh');
     const legacyPassword=passwordAuth.hashPassword('Fixture-migration-original-123!');
     await client.query('UPDATE users SET password_hash=$1,refresh_token_hash=$2 WHERE id=$3',[legacyPassword,'legacy-refresh-hash',fixture.users[0]]);
-    const snapshot=async()=>({
-      users:(await client.query('SELECT id,email,role,school_id,password_hash,refresh_token_hash FROM users ORDER BY id')).rows,
+    // Normalize only migration 039's intentional rename; compare every persisted
+    // identity and value, including organization/site relationships, unchanged.
+    const snapshot=async(baseline=false)=>({
+      users:(await client.query(baseline
+        ? "SELECT id,email,CASE WHEN role='school_user' THEN 'customer_user' ELSE role END AS role,school_id AS customer_id,password_hash,refresh_token_hash FROM users ORDER BY id"
+        : 'SELECT id,email,role,customer_id,password_hash,refresh_token_hash FROM users ORDER BY id')).rows,
+      customers:(await client.query(baseline?'SELECT id,name,code,region,status FROM schools ORDER BY id':'SELECT id,name,code,region,status FROM customers ORDER BY id')).rows,
+      sites:(await client.query(baseline?'SELECT id,school_id AS customer_id,name,capacity_mwp FROM sites ORDER BY id':'SELECT id,customer_id,name,capacity_mwp FROM sites ORDER BY id')).rows,
       readings:(await client.query('SELECT id,device_id,site_id,source_time,normalized_value,raw_payload FROM telemetry_raw ORDER BY id')).rows,
       documents:(await client.query('SELECT id,site_id,document_number,amount,status FROM documents ORDER BY id')).rows
     });
-    const original=await snapshot();
+    assert.equal((await client.query('SELECT role FROM users WHERE id=$1',[fixture.users[0]])).rows[0].role,'school_user');
+    const original=await snapshot(true);
     const before=(await client.query('SELECT (SELECT count(*) FROM users) users,(SELECT count(*) FROM telemetry_raw) readings,(SELECT count(*) FROM documents) documents')).rows;
     await migrate(false);
     assert.deepEqual(await snapshot(),original);
@@ -127,7 +134,7 @@ test('baseline revision upgrade preserves populated users, readings and financia
     assert.equal((await client.query('SELECT count(*) FROM auth_sessions')).rows[0].count,'0');
     assert.deepEqual((await client.query('SELECT (SELECT count(*) FROM users) users,(SELECT count(*) FROM telemetry_raw) readings,(SELECT count(*) FROM documents) documents')).rows,before);
     assert.equal((await client.query('SELECT amount FROM documents WHERE id=$1',[fixture.documentId])).rows[0].amount,'123.45000000');
-    assert.equal((await client.query('SELECT count(*) FROM schools')).rows[0].count,'100');
+    assert.equal((await client.query('SELECT count(*) FROM customers')).rows[0].count,'100');
     assert.equal((await client.query('SELECT count(*) FROM devices')).rows[0].count,'1000');
     assert.equal(before[0].readings,'3000');
     assert.equal((await client.query('SELECT count(*) FROM schema_migrations WHERE name LIKE $1',['%011%'])).rows[0].count,'0');
@@ -135,13 +142,13 @@ test('baseline revision upgrade preserves populated users, readings and financia
     for(const [name,sql,params] of [
       ['sites','SELECT id,name FROM sites ORDER BY name',[]],
       ['latest-reading','SELECT source_time,active_power_w,total_energy_kwh FROM telemetry_raw WHERE site_id=$1 ORDER BY source_time DESC LIMIT 1',[fixture.siteIds[0]]],
-      ['tenant-sites','SELECT id,name FROM sites WHERE school_id=$1',[fixture.schoolIds[0]]],
+      ['tenant-sites','SELECT id,name FROM sites WHERE customer_id=$1',[fixture.customerIds[0]]],
       ['documents','SELECT document_number,amount FROM documents WHERE site_id=$1',[fixture.siteIds[0]]]
     ] as const) {
       const started=performance.now();const result=await client.query(sql,[...params]);measurements.push({name,rows:result.rowCount,bytes:Buffer.byteLength(JSON.stringify(result.rows)),milliseconds:performance.now()-started});
     }
     await mkdir(new URL('test/artifacts/',root),{recursive:true});
-    await writeFile(new URL('test/artifacts/platform-baseline.json',root),JSON.stringify({revision:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),baselineRevision:'098c147',hardware:{host:os.platform(),cpus:os.cpus().length,memoryBytes:os.totalmem(),docker:execFileSync('docker',['info','--format','{{.NCPU}} CPUs / {{.MemTotal}} bytes RAM'],{encoding:'utf8'}).trim()},node:process.version,fixture:{schools:100,meters:1000,readings:3000},cache:'warm after fixture inserts; one measured execution per query',measurements},null,2));
+    await writeFile(new URL('test/artifacts/platform-baseline.json',root),JSON.stringify({revision:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),baselineRevision:'098c147',hardware:{host:os.platform(),cpus:os.cpus().length,memoryBytes:os.totalmem(),docker:execFileSync('docker',['info','--format','{{.NCPU}} CPUs / {{.MemTotal}} bytes RAM'],{encoding:'utf8'}).trim()},node:process.version,fixture:{customers:100,meters:1000,readings:3000},cache:'warm after fixture inserts; one measured execution per query',measurements},null,2));
     console.log(JSON.stringify(measurements));
     await client.query(`CREATE SCHEMA ${fresh}`);owned.push(fresh);await client.query(`SET search_path TO ${fresh},public`);
     await migrate(false);

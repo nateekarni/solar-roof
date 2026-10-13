@@ -27,7 +27,7 @@ const logger=profiles.find((p:any)=>p.profileId==='huawei-smartlogger3000a' && p
 assert.ok(pm && logger,'default revisions exist');
 let siteId=process.env.PAYLOAD_TEST_SITE_ID;
 if(!siteId){
- const site=await request('/v1/sites',{name:`MQTT Payload Test ${run}`,schoolName:`MQTT Test School ${run}`,capacityMwp:0.5,gatewayName:`GW-TEST-${run}`,deviceSerial:`PM2230-TEST-${run}`,deviceModel:'PM2230',externalSiteId:`SITE-TEST-${run}`,externalGatewayId:`GW-TEST-${run}`,externalDeviceId:`METER-TEST-${run}`,payloadProfileRevisionId:pm.id});
+ const site=await request('/v1/sites',{name:`MQTT Payload Test ${run}`,customerName:`MQTT Test Customer ${run}`,capacityMwp:0.5,gatewayName:`GW-TEST-${run}`,deviceSerial:`PM2230-TEST-${run}`,deviceModel:'PM2230',externalSiteId:`SITE-TEST-${run}`,externalGatewayId:`GW-TEST-${run}`,externalDeviceId:`METER-TEST-${run}`,payloadProfileRevisionId:pm.id});
  siteId=site.id;
 }
 assert.ok(siteId,'test site');

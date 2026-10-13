@@ -22,11 +22,11 @@ export class HistoryJobsWorker implements OnModuleInit,OnModuleDestroy {
  private schedule(){if(this.stopping)return;this.timer=setTimeout(()=>{this.pending=this.runOnce().catch(()=>this.logger.warn('History polling failed')).finally(()=>{this.pending=undefined;this.schedule();});},1000);this.timer.unref();}
  async onModuleDestroy(){this.stopping=true;clearTimeout(this.timer);this.abort?.abort();await this.pending;if(this.ownsPool)await this.pool.end();if(this.ownsStorage)this.storage.destroy();}
  async allowed(job:any){
-  const site=(await this.pool.query('SELECT school_id FROM sites WHERE id=$1',[job.payload.siteId])).rows[0];
-  if(!site||!Array.isArray(job.scope)||job.scope.length!==1||job.scope[0]!==site.school_id)return false;
+  if(job.kind!=='archive'||job.created_by!==null)return false;
+  const site=(await this.pool.query('SELECT customer_id FROM sites WHERE id=$1',[job.payload.siteId])).rows[0];
+  if(!site||!Array.isArray(job.scope)||job.scope.length!==1||job.scope[0]!==site.customer_id)return false;
   if(job.kind==='archive'&&job.created_by===null)return true;
-  const user=(await this.pool.query('SELECT role,status,school_id FROM users WHERE id=$1',[job.created_by])).rows[0];
-  return !!user&&user.status==='active'&&['owner','admin','operator','accountant','school_user'].includes(user.role)&&(user.role==='owner'||!user.school_id&&user.role!=='school_user'||user.school_id===site.school_id);
+  return false;
  }
  async runOnce(){
   const owner=randomUUID();let job:any=null;

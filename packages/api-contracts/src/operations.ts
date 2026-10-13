@@ -6,6 +6,16 @@ export interface OperationQuery {
   direction: 'asc' | 'desc';
   from?: string;
   to?: string;
+  status?: string;
+  siteId?: string;
+  collectionStatus?: 'paid'|'pending_review'|'overdue'|'awaiting_payment'|undefined;
+  severity?: string;
+  type?: string;
+  role?: string;
+  entityType?: string;
+  channel?: string;
+  category?: string;
+  format?: string;
 }
 
 export interface OperationPage<T> {

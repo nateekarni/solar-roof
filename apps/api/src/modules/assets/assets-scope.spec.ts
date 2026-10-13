@@ -8,17 +8,17 @@ function fixture(){
  const db={query:async(_sql:string,params:unknown[])=>{calls.push(params);return {rows:[]};}};
  return {calls,controller:new AssetsController(db as unknown as DatabaseService,{} as MqttIngestionService)};
 }
-test('admin asset collections ignore a legacy school assignment',async()=>{
+test('admin has no business asset collection scope',async()=>{
  const {controller,calls}=fixture();
- await controller.listSchools({user:{role:'admin',schoolId:'school-a'}});
- await controller.listSites({user:{role:'admin',schoolId:'school-a'}});
- assert.deepEqual(calls,[[null,true],[null,true]]);
+ await controller.listCustomers({user:{role:'admin',customerId:'customer-a'}});
+ await controller.listSites({user:{role:'admin',customerId:'customer-a'}});
+ assert.deepEqual(calls,[[[]],[[]]]);
 });
-test('asset collection scope keeps school users isolated and legacy staff compatible',async()=>{
+test('asset collection scopes fail closed without a single assignment or explicit employee grant',async()=>{
  const {controller,calls}=fixture();
- await controller.listSchools({user:{role:'school_user',schoolId:'school-a'}});
- await controller.listSites({user:{role:'school_user'}});
- await controller.listSites({user:{role:'operator',schoolId:'school-a'}});
- await controller.listSchools({user:{role:'accountant',schoolId:'school-a'}});
- assert.deepEqual(calls,[['school-a',true],[null,false],['school-a',true],['school-a',true]]);
+ await controller.listCustomers({user:{role:'customer_user',customerId:'customer-a'}});
+ await controller.listSites({user:{role:'customer_user'}});
+ await controller.listSites({user:{role:'operator',customerId:'customer-a'}});
+ await controller.listCustomers({user:{role:'accountant',customerId:'customer-a'}});
+ assert.deepEqual(calls,[[[]],[[]],[[]],[[]]]);
 });

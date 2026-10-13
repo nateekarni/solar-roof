@@ -14,7 +14,7 @@ export interface OrganizationPickerProps {
 }
 export function useOrganizationCatalog(open:boolean){
  const [organizations,setOrganizations]=React.useState<OrganizationRecord[]>([]),[error,setError]=React.useState('');
- React.useEffect(()=>{let active=true;if(open){setError('');apiClient.get<OrganizationRecord[]>('/v1/schools').then(rows=>{if(active)setOrganizations(rows);}).catch(e=>{if(active){setOrganizations([]);setError(e instanceof Error?e.message:'Unable to load organizations');}});}return()=>{active=false;};},[open]);
+ React.useEffect(()=>{let active=true;if(open){setError('');apiClient.get<OrganizationRecord[]>('/v1/customers').then(rows=>{if(active)setOrganizations(rows);}).catch(e=>{if(active){setOrganizations([]);setError(e instanceof Error?e.message:'Unable to load organizations');}});}return()=>{active=false;};},[open]);
  const update=React.useCallback((record:OrganizationRecord)=>setOrganizations(rows=>rows.map(row=>row.id===record.id?record:row)),[]);
  return {organizations,error,onRecordUpdated:update};
 }
@@ -43,7 +43,7 @@ export function OrganizationPicker({organizations,value,onChange,onRecordUpdated
  return <div className="space-y-2 sm:col-span-2" onBlur={e=>{if(!e.currentTarget.contains(e.relatedTarget as Node|null))setExpanded(false);}}>
   <div className="grid gap-3 sm:grid-cols-2">
   <div className="min-w-0 space-y-2">
-  <Label htmlFor={inputId} required>{locale==='th'?'ชื่อบริษัทลูกค้า':'Customer company name'}</Label>
+  <Label htmlFor={inputId} required>{locale==='th'?'ชื่อลูกค้า':'Customer name'}</Label>
   <div className="flex items-start gap-2"><div className="relative min-w-0 flex-1"><Input id={inputId} role="combobox" aria-expanded={expanded} aria-controls={listId} aria-autocomplete="list" aria-activedescendant={activeIndex>=0?listId+'-'+activeIndex:undefined}
    value={query} disabled={disabled} placeholder={locale==='th'?'ค้นหาชื่อหรือรหัสลูกค้า หรือระบุลูกค้าใหม่':'Search customer name/code or enter a new customer'} onFocus={()=>setExpanded(true)} onChange={e=>type(e.target.value)}
    onKeyDown={e=>{

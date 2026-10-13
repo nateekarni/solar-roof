@@ -13,13 +13,28 @@ export class PayloadIngestion {
   const context=(await this.db.query<{siteId:string;gatewayId:string;externalSiteId:string;externalGatewayId:string}>(`SELECT g.id AS "gatewayId",g.site_id AS "siteId",s.external_site_id AS "externalSiteId",g.external_gateway_id AS "externalGatewayId" FROM gateways g JOIN sites s ON s.id=g.site_id WHERE s.external_site_id=$1 AND g.external_gateway_id=$2 AND s.status<>'archived' AND g.protocol='mqtt' AND g.mqtt_broker_id IS NOT DISTINCT FROM $3::uuid`,[match[1],match[2],brokerId])).rows[0];
   // Existing single-envelope validation still verifies device, broker and topic scope.
   if(!context) { const ack=await this.accept(topic,input,brokerId);if(ack)acknowledged(ack);return; }
-  const revision=(await this.db.query('SELECT id,config FROM gateway_payload_receive_revisions WHERE gateway_id=$1 ORDER BY version DESC LIMIT 1',[context.gatewayId])).rows[0];
+  const receiveRevisions=(await this.db.query('SELECT id,version,config FROM gateway_payload_receive_revisions WHERE gateway_id=$1 ORDER BY version DESC',[context.gatewayId])).rows;
+  let revision=receiveRevisions[0];
+  const configurationVersion=input&&typeof input==='object'&&'configurationVersion' in input?input.configurationVersion:undefined;
+  if(configurationVersion!==undefined){
+   if(!Number.isSafeInteger(configurationVersion)||Number(configurationVersion)<1){await this.reject(topic,'Invalid configuration version',context);return;}
+   const snapshot=(await this.db.query('SELECT config FROM gateway_configuration_revisions WHERE gateway_id=$1 AND version=$2',[context.gatewayId,configurationVersion])).rows[0];
+   if(!snapshot){await this.reject(topic,'No registered configuration version',context);return;}
+   revision={id:snapshot.config.receiveRevisionId,config:snapshot.config.receiveConfig};
+  }else if(receiveRevisions.length>1){
+   const interpretations=new Set<string>();
+   for(const candidate of receiveRevisions){
+    try{const decoded=decodePayloadMessages(input,validateReceiveConfig(candidate.config),{siteId:context.externalSiteId,gatewayId:context.externalGatewayId});interpretations.add(logicalPayloadDigest({messages:decoded.messages.map(m=>m.envelope),errors:decoded.errors}));}
+    catch{interpretations.add('invalid');}
+   }
+   if(interpretations.size>1){await this.reject(topic,'Ambiguous receive configuration; specify registered configurationVersion',context);return;}
+  }
   let decoded;
   try { decoded=decodePayloadMessages(input,validateReceiveConfig(revision?.config??{}),{siteId:context.externalSiteId,gatewayId:context.externalGatewayId}); }
   catch(error){await this.reject(topic,error instanceof Error?error.message:'Invalid message collection',context);return;}
   for(const error of decoded.errors)await this.reject(topic,`${error.key}: ${error.reason}`,context);
   for(const message of decoded.messages) {
-   let envelope=message.envelope;
+   let envelope=configurationVersion===undefined?message.envelope:{...message.envelope,configurationVersion};
    // A retry of the identical logical source message retains its original mapping,
    // even when receive aliases or the assigned profile have subsequently changed.
    if(typeof envelope.messageId==='string') {
@@ -60,6 +75,27 @@ export class PayloadIngestion {
   // A committed retry is interpreted using its original immutable revision, even after upgrade.
   const messageHint=input && typeof input==='object' && 'messageId' in input ? input.messageId : undefined;
   const previous=typeof messageHint==='string' ? await this.db.query<{config:PayloadProfile}>(`SELECT p.config FROM payload_messages m JOIN payload_profile_revisions p ON p.id=m.profile_revision_id WHERE m.gateway_id=$1 AND m.device_id=$2 AND m.message_id=$3`,[entity.gatewayId,entity.deviceId,messageHint]) : null;
+  const activeRevisionId=entity.revisionId;
+  if(!previous?.rows[0]) {
+   const assigned=(await this.db.query<{revisionId:string;config:PayloadProfile}>(`SELECT p.id AS "revisionId",p.config FROM device_profile_assignments a JOIN payload_profile_revisions p ON p.id=a.profile_revision_id WHERE a.device_id=$1 ORDER BY a.assigned_at DESC`,[entity.deviceId])).rows;
+   const hint=input&&typeof input==='object'&&'device' in input?input.device as {profileId?:unknown;profileVersion?:unknown;profileRevisionId?:unknown}:undefined;
+   let revisionHint=hint?.profileRevisionId;
+   if(input&&typeof input==='object'&&'configurationVersion' in input){
+    const version=input.configurationVersion;
+    if(!Number.isSafeInteger(version)||Number(version)<1){await this.reject(topic,'Invalid configuration version',entity);return null;}
+    const configuration=(await this.db.query(`SELECT config FROM gateway_configuration_revisions WHERE gateway_id=$1 AND version=$2`,[entity.gatewayId,version])).rows[0];
+    const registered=configuration?.config?.devices?.find((d:{deviceId:string})=>d.deviceId===entity.externalDeviceId);
+    if(!registered?.profileRevisionId||revisionHint&&revisionHint!==registered.profileRevisionId){await this.reject(topic,'No registered device in configuration version',entity);return null;}
+    revisionHint=registered.profileRevisionId;
+   }
+   const candidates=assigned.filter(p=>{const source=p.config.sourceProfile??p.config;return (!revisionHint||revisionHint===p.revisionId)&&(!hint?.profileId||hint.profileId===source.id)&&(!hint?.profileVersion||hint.profileVersion===source.version);});
+   if(candidates.length>1){
+    const decoder=(p:PayloadProfile)=>JSON.stringify({deviceType:p.deviceType,fields:p.fields.map(({displayName,...field})=>field),pollGroups:p.pollGroups});
+    if(new Set(candidates.map(p=>decoder(p.config))).size>1){await this.reject(topic,'Ambiguous unversioned configuration; specify registered profileRevisionId',entity);return null;}
+   }
+   if(candidates[0]){entity.revisionId=candidates[0].revisionId;entity.config=candidates[0].config;}
+   else if(assigned.length){await this.reject(topic,'No registered profile version',entity);return null;}
+  }
   let normalized;
   try { normalized=normalizePayloadEnvelope(input,{profile:previous?.rows[0]?.config??entity.config,siteId:entity.externalSiteId,gatewayId:entity.externalGatewayId,deviceId:entity.externalDeviceId},topic);
    if([normalized.polledAt,normalized.measuredAt].some(time=>time&&new Date(time).getTime()>Date.now()))throw Error('Source timestamp is in the future');
@@ -72,7 +108,7 @@ export class PayloadIngestion {
    // lock so a concurrent edit cannot stamp stale provenance on a new message.
    const pinned=(await client.query('SELECT payload_profile_revision_id AS "revisionId" FROM devices WHERE id=$1 FOR SHARE',[entity.deviceId])).rows[0];
    const active=(await client.query('SELECT billing_source_binding_id AS id FROM billing_meters WHERE site_id=$1 AND device_id=$2 AND active=true',[entity.siteId,entity.deviceId])).rows;
-   if(pinned?.revisionId!==entity.revisionId||active.length>1||(active[0]?.id??null)!==(entity.billingSource?.id??null))throw Error('Profile or billing source changed; retry message');
+   if(pinned?.revisionId!==activeRevisionId||active.length>1||(active[0]?.id??null)!==(entity.billingSource?.id??null))throw Error('Profile or billing source changed; retry message');
    const inserted=await client.query(`INSERT INTO payload_messages (id,gateway_id,device_id,message_id,digest,accepted_at,profile_revision_id,lot_number,sequence,polled_at,sent_at,raw_payload,unmapped,receive_revision_id,source_payload)
     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13::jsonb,$14,$15::jsonb) ON CONFLICT (gateway_id,device_id,message_id) DO NOTHING RETURNING id`,
     [messageId,entity.gatewayId,entity.deviceId,n.messageId,n.digest,receivedAt,entity.revisionId,n.lotNumber,n.sequence,n.polledAt,n.sentAt,JSON.stringify(n.raw),JSON.stringify(n.unmapped),reception?.revisionId??null,JSON.stringify(reception?.original??n.raw)]);

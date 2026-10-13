@@ -1,4 +1,5 @@
 import { OperationActions } from "./operation-page-actions";
+import type {ReactNode} from 'react';
 
 export function OperationPageHeader({
   resource,
@@ -6,12 +7,14 @@ export function OperationPageHeader({
   title,
   description,
   action,
+  headerActions,
 }: {
   resource?: string;
   eyebrow: string;
   title: string;
   description: string;
   action?: string | undefined;
+  headerActions?: ReactNode;
 }) {
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-3.5">
@@ -22,6 +25,7 @@ export function OperationPageHeader({
         <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
       </div>
       <div className="flex items-center gap-2 shrink-0 flex-wrap">
+        {headerActions}
         <OperationActions resource={resource || ""} title={title} action={action} />
       </div>
     </div>

@@ -1,4 +1,5 @@
 "use client";
+import {FormErrorSummary} from "../../../components/feedback/form-feedback";
 import {BrandMark, BRAND_NAME} from "../../../components/brand/brand-mark";
 
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -6,6 +7,7 @@ import { createTranslator, type Locale } from "@solar/i18n";
 import { AlertCircle, Eye, EyeOff, Lock, Mail, LoaderCircle } from "lucide-react";
 
 import * as React from "react";
+import Link from 'next/link';
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { Button } from "../../../components/ui/button";
@@ -14,6 +16,7 @@ import { Label } from "../../../components/ui/label";
 import { Tabs, TabsList, TabsTrigger } from "../../../components/ui/tabs";
 import { Card, CardContent } from "../../../components/ui/card";
 import { authStore } from "../../../stores/auth-store";
+import {loginFactorBody} from '../../../features/auth/login-factor';
 
 const getInitialLocale = (): Locale => {
   if (typeof document === "undefined") return "th";
@@ -28,6 +31,11 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = React.useState(false);
   const [passwordChanged, setPasswordChanged] = React.useState(false);
   const [locale, setLocaleState] = React.useState<Locale>("th");
+  const [requiresFactor,setRequiresFactor]=React.useState(false);
+  const [factor,setFactor]=React.useState('');
+  const [recovery,setRecovery]=React.useState(false);
+  const [factorMethod,setFactorMethod]=React.useState<'totp'|'email'>('totp');
+  const [maskedTarget,setMaskedTarget]=React.useState('');
 
   React.useEffect(() => {
     setLocaleState(getInitialLocale());
@@ -81,12 +89,14 @@ export default function LoginPage() {
   const onSubmit = async (values: LoginFormValues) => {
     setIsLoading(true);
     setErrorKey(null);
+    let verification:{}|{secondFactorCode?:string;recoveryCode?:string}={};
+    if(requiresFactor){try{verification=loginFactorBody(recovery,factor);}catch{setErrorKey('auth.loginError');setIsLoading(false);return;}}
     try {
       const res = await fetch("/v1/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify(values),
+        body: JSON.stringify({...values,...verification}),
       });
 
       if (!res.ok) {
@@ -103,6 +113,7 @@ export default function LoginPage() {
       }
 
       const data = await res.json();
+      if(data.requiresTwoFactor){setRequiresFactor(true);setFactorMethod(data.method==='email'?'email':'totp');setMaskedTarget(data.maskedTarget??'');setFactor('');return;}
       authStore.setAuth(data.user, data.accessToken);
       // Hard navigation ensures all cookies are immediately active in the document context
       window.location.replace("/");
@@ -133,12 +144,13 @@ export default function LoginPage() {
           <div className="flex items-center gap-3"><BrandMark className="size-10"/><div><p className="text-lg font-semibold">{BRAND_NAME}</p><p className="text-xs text-muted-foreground">{th ? "ระบบบริหารพลังงานแสงอาทิตย์" : "Solar energy management"}</p></div></div>
           <div className="space-y-2"><h1 className="text-2xl font-semibold tracking-tight">{t("auth.login")}</h1><p className="text-sm leading-relaxed text-muted-foreground">{t("auth.subtitle")}</p></div>
           {passwordChanged && <p role="status" className="rounded-lg border bg-muted p-3 text-sm">{th ? "เปลี่ยนรหัสผ่านแล้ว กรุณาเข้าสู่ระบบอีกครั้ง อุปกรณ์อื่นออกจากระบบแล้ว" : "Password changed. Sign in again. Your other sessions have been signed out."}</p>}
-          {errorKey && <div role="alert" className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"><AlertCircle aria-hidden="true" className="mt-0.5 size-4 shrink-0"/><span>{t(errorKey)}</span></div>}
+          {errorKey && <FormErrorSummary className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"><AlertCircle aria-hidden="true" className="mt-0.5 size-4 shrink-0"/><span>{t(errorKey)}</span></FormErrorSummary>}
           <form noValidate onSubmit={handleSubmit(onSubmit)} className="space-y-5" aria-busy={isLoading}>
+            {requiresFactor&&<div className="space-y-3 rounded-lg border p-3"><Label htmlFor="login-factor">{recovery?(th?'รหัสกู้คืน':'Recovery code'):(factorMethod==='email'?(th?'รหัสจากอีเมล':'Email code'):(th?'รหัสจากแอปยืนยันตัวตน':'Authenticator code'))}</Label><Input id="login-factor" autoFocus autoComplete="one-time-code" inputMode={recovery?'text':'numeric'} value={factor} onChange={event=>setFactor(event.target.value)} placeholder={recovery?'XXXX-XXXX':'123456'}/><p className="text-xs text-muted-foreground">{factorMethod==='email'?(th?'ส่งรหัสไปยังอีเมลแล้ว':'Code sent to your email')+' '+maskedTarget:(th?'ใช้รหัสจากแอปยืนยันตัวตนหรือรหัสกู้คืนที่ยังไม่ได้ใช้':'Use your authenticator app or an unused recovery code.')}</p><Button type="button" variant="ghost" onClick={()=>{setRecovery(!recovery);setFactor('');}}>{recovery?(th?'ใช้รหัสยืนยัน':'Use verification code'):(th?'ใช้รหัสกู้คืน':'Use recovery code')}</Button></div>}
             <div className="space-y-2"><Label htmlFor="email" className="text-sm">{t("auth.email")}</Label><div className="relative"><Mail aria-hidden="true" className="pointer-events-none absolute left-[calc(0.75rem+1px)] top-1/2 size-4 -translate-y-1/2 text-muted-foreground"/><Input id="email" type="email" autoComplete="username" placeholder={t("auth.enterEmail")} className="h-10 pl-10 text-sm" aria-invalid={!!errors.email} aria-describedby={errors.email ? "email-error" : undefined} {...register("email")}/></div>{errors.email && <p id="email-error" role="alert" className="text-sm text-destructive">{errors.email.message}</p>}</div>
             <div className="space-y-2"><Label htmlFor="password" className="text-sm">{t("auth.password")}</Label><div className="relative"><Lock aria-hidden="true" className="pointer-events-none absolute left-[calc(0.75rem+1px)] top-1/2 size-4 -translate-y-1/2 text-muted-foreground"/><Input id="password" type={showPassword ? "text" : "password"} autoComplete="current-password" placeholder={th ? "กรอกรหัสผ่าน" : "Enter your password"} className="h-10 pl-10 pr-12 text-sm" aria-invalid={!!errors.password} aria-describedby={errors.password ? "password-error" : undefined} {...register("password")}/><Button type="button" variant="ghost" size="icon" className="absolute right-0 top-0 size-10 text-muted-foreground" onClick={()=>setShowPassword(!showPassword)} aria-label={showPassword ? t("auth.hidePassword") : t("auth.showPassword")} aria-pressed={showPassword}>{showPassword ? <EyeOff aria-hidden="true" className="size-4"/> : <Eye aria-hidden="true" className="size-4"/>}</Button></div>{errors.password && <p id="password-error" role="alert" className="text-sm text-destructive">{errors.password.message}</p>}</div>
             <Button type="submit" disabled={isLoading} className="h-10 w-full text-sm font-medium">{isLoading && <LoaderCircle aria-hidden="true" className="size-4 animate-spin"/>}{isLoading ? t("auth.signingIn") : t("auth.login")}</Button>
-          </form>
+          {requiresFactor&&factorMethod==='email'&&!recovery&&<Button type="button" variant="outline" className="w-full" disabled={isLoading} onClick={()=>{setRequiresFactor(false);setFactor('');}}>{th?'ส่งรหัสใหม่ (ยืนยันรหัสผ่านอีกครั้ง)':'Request another code (verify password again)'}</Button>}<Link href="/forgot-password" className="block text-center text-sm text-primary">{th?'ลืมรหัสผ่าน':'Forgot password'}</Link></form>
         </CardContent></Card>
       </div>
     </section>

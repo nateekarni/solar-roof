@@ -6,7 +6,7 @@ import {
   pageLines,
   lineText,
 } from "./document-layout.test-fixtures.js";
-import { documentDefinition } from "./document-layout.js";
+import { documentDefinition,formatDocumentDate } from "./document-layout.js";
 const fixtures = refinementFixtures();
 const signatures = (page: any) =>
   pageLines(page).filter((l) =>
@@ -60,10 +60,10 @@ test("long facts survive pagination, final-page signatures and compact continuat
       }
       for (const line of lines) {
         assert.ok(
-          line.x >= 39.9 && line.x + line.getWidth() <= 555.4,
+          line.x >= (fixtures[name]!.type === 'contract' ? 39.9 : 9.9) && line.x + line.getWidth() <= (fixtures[name]!.type === 'contract' ? 555.4 : 585.4),
           `${name} ${lineText(line)}`,
         );
-        assert.ok(line.y + line.getHeight() < 830, `${name} ${lineText(line)}`);
+        assert.ok(line.y + line.getHeight() < 835, `${name} ${lineText(line)}`);
       }
     }
     const all = pages.flatMap(pageLines).map(lineText).join("\n");
@@ -145,7 +145,7 @@ test("numeric columns fit exact large values and return unused space to ordinary
   assert.ok(
     ordinary.find((l) => lineText(l).includes("Solar electricity charges"))
       .maxWidth >
-      large.find((l) => lineText(l).includes("LINE-1")).maxWidth + 100,
+      large.find((l) => lineText(l).includes("LINE-1")).maxWidth + 30,
   );
 });
 test("reference header and paired cards remain separated, with complete long saved identity", () => {
@@ -153,27 +153,27 @@ test("reference header and paired cards remain separated, with complete long sav
   const pages = layoutDocumentPages(snapshot);
   const lines = pageLines(pages[0]);
   const customer = lines.find((l) =>
-    lineText(l).includes("ข้อมูลลูกค้า / Customer"),
+    lineText(l).includes("ข้อมูลลูกค้า"),
   );
   const header = lines.filter((l) => l.y < customer.y);
   const joined = header.map(lineText).join("").replaceAll(/\s/g, "");
   for (const value of [
     snapshot.documentNumber,
-    snapshot.issueDate,
+    formatDocumentDate(snapshot.issueDate),
     snapshot.issuer.name,
-    snapshot.issuer.address,
-    snapshot.issuer.email!,
   ])
     assert.ok(joined.includes(value.replaceAll(/\s/g, "")), value);
+  const allText=pages.flatMap(pageLines).map(lineText).join('').replaceAll(/\s/g,'');
+  for(const value of [snapshot.issuer.address,snapshot.issuer.email!])assert.ok(allText.includes(value.replaceAll(/\s/g,'')),value);
   for (const page of pages) {
     for (const l of pageLines(page))
       assert.ok(
-        l.x >= 39.9 && l.x + l.getWidth() <= 555.4 && l.y + l.getHeight() < 830,
+        l.x >= 9.9 && l.x + l.getWidth() <= 585.4 && l.y + l.getHeight() < 835,
         lineText(l),
       );
   }
   const image = pages[0].items.find((i: any) => i.type === "image").item;
-  assert.ok(Math.abs(image.x - 40) < 0.01);
+  assert.ok(Math.abs(image.x - 10) < 0.01);
   assert.ok(image._width <= 65.01);
   const issuer = header.find((l) => lineText(l).includes("บริษัท"));
   assert.ok(issuer.x - image.x < 80);

@@ -21,13 +21,13 @@ export function parseOrganization(value:unknown) {
 }
 export function organizationCodeError(error:unknown):never {
  const e=error as {code?:string;constraint?:string};
- if(e.code==='23505'&&/schools.*code|organization.*code/.test(e.constraint??''))throw new ConflictException('Organization code already exists; choose another code or select the existing organization');
+ if(e.code==='23505'&&/customers.*code|organization.*code/.test(e.constraint??''))throw new ConflictException('Organization code already exists; choose another code or select the existing organization');
  throw error;
 }
 export async function insertOrganization(client:Pick<DatabaseService,'query'>,input:ReturnType<typeof parseOrganization>,region='ภาคกลาง'){
  for(let attempt=0;attempt<5;attempt++) {
  const code=attempt===0?input.code:'ORG-'+randomUUID().replaceAll('-','').slice(0,12).toUpperCase();
- const result=await client.query(`INSERT INTO schools (id,name,code,region,status,legal_name,tax_id,tax_branch,tax_address,contact_name,phone,document_email)
+ const result=await client.query(`INSERT INTO customers (id,name,code,region,status,legal_name,tax_id,tax_branch,tax_address,contact_name,phone,document_email)
  VALUES($1,$2,$3,$4,'active',$5,$6,$7,$8,$9,$10,$11) ${input.generatedCode?'ON CONFLICT (lower(btrim(code))) DO NOTHING':''} RETURNING ${organizationColumns}`,
  [randomUUID(),input.name,code,region,input.legalName,input.taxId,input.taxBranch,input.taxAddress,input.contactName,input.phone,input.documentEmail]);
  const record=result.rows[0];
@@ -37,17 +37,27 @@ export async function insertOrganization(client:Pick<DatabaseService,'query'>,in
  throw new ConflictException("Unable to allocate organization code; retry creation");
 }
 /** Runs on the site transaction so failed device/site creation cannot leave a customer behind. */
-export async function resolveSiteOrganization(client:Pick<DatabaseService,'query'>,body:{schoolId?:string|undefined;schoolName?:string|undefined;newOrganization?:OrganizationInput}){
- if(body.schoolId){
+export async function resolveSiteOrganization(client:Pick<DatabaseService,'query'>,body:{customerId?:string|undefined;customerName?:string|undefined;newOrganization?:OrganizationInput},currentSite?:{id:string;customerId:string}){
+ const validateExisting=async(existing:{id:string;status?:string})=>{
+  if(currentSite?.customerId===existing.id)return existing.id;
+  if(existing.status!=='active')throw new BadRequestException('Choose an active organization');
+  // Preserve edits to historical multi-site customers; only a new attachment is restricted.
+  if(currentSite?.customerId!==existing.id){
+   const attached=await client.query('SELECT id FROM sites WHERE customer_id = $1 AND ($2::uuid IS NULL OR id <> $2) LIMIT 1',[existing.id,currentSite?.id??null]);
+   if(attached.rows.length)throw new ConflictException('Organization already has a site; create a new customer for this site');
+  }
+  return existing.id;
+ };
+ if(body.customerId){
   if(body.newOrganization)throw new BadRequestException('Choose an existing organization or create a new one');
-  const existing=await client.query('SELECT id FROM schools WHERE id = $1 FOR UPDATE',[body.schoolId]);
+  const existing=await client.query<{id:string;status:string}>('SELECT id,status FROM customers WHERE id = $1 FOR UPDATE',[body.customerId]);
   if(!existing.rows[0])throw new BadRequestException('Organization not found');
-  return body.schoolId;
+  return validateExisting(existing.rows[0]);
  }
- const input=parseOrganization(body.newOrganization??{name:body.schoolName});
+ const input=parseOrganization(body.newOrganization??{name:body.customerName});
  await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',['organization:'+input.name.toLocaleLowerCase()]);
- const existing=await client.query('SELECT id FROM schools WHERE lower(btrim(name)) = lower($1) ORDER BY id FOR UPDATE',[input.name]);
+ const existing=await client.query<{id:string;status:string}>('SELECT id,status FROM customers WHERE lower(btrim(name)) = lower($1) ORDER BY id FOR UPDATE',[input.name]);
  if(existing.rows.length>1||existing.rows.length&&body.newOrganization)throw new ConflictException('Organization name already exists; select the correct existing organization');
- if(existing.rows[0])return existing.rows[0].id as string;
+ if(existing.rows[0])return validateExisting(existing.rows[0]);
  return (await insertOrganization(client,input)).id as string;
 }

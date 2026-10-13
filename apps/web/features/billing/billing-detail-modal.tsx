@@ -1,4 +1,6 @@
 "use client";
+import {BillRateEditor} from './bill-rate-editor';
+
 
 import * as React from "react";
 import {
@@ -46,7 +48,7 @@ import { useSessionUser } from "../../providers/session-user-provider";
 import { notify } from "../../components/feedback/notifications";
 import { formatAppDate, formatAppDateTime } from "../../lib/date-format";
 import {normalizePaymentMetadata,type PaymentMetadata} from '@solar/api-contracts';
-import {PaymentMetadataFields} from './payment-dialog';
+import {PaymentVerificationDialog} from './payment-verification-dialog';
 import {paymentMetadataCopy} from './payment-metadata-copy';
 import { PaymentHistory,type TransferHistoryRow } from "./payment-history";
 import { formatTransferAmount,transferAmount } from "./payment-input";
@@ -57,7 +59,7 @@ export interface BillingDetailData {
   period?: string;
   periodStart?: string;
   periodEnd?: string;
-  schoolName?: string;
+  customerName?: string;
   siteName?: string;
   consumedKwh?: number;
   openingEnergy?: number;
@@ -98,11 +100,11 @@ export function BillingDetailModal({
   const locale = useLocale();
   const user = useSessionUser();
   const financial = useFinancialCapabilities();
-  const isSchoolUser = user?.role === "school_user";
+  const isCustomerUser = user?.role === "customer_user";
   const canSubmitTransfer=(financial.operationsActions??[]).includes("submit_payment");
-  const [payerMetadata,setPayerMetadata]=React.useState({payerName:"",paymentMethod:"",originBank:"",originAccount:""});
-  const [enteredTransferAmount,setEnteredTransferAmount]=React.useState("");
-  React.useEffect(()=>{setEnteredTransferAmount("");setPayerMetadata({payerName:"",paymentMethod:"",originBank:"",originAccount:""});},[open,billingId]);
+  const [evidenceNote,setEvidenceNote]=React.useState("");
+  const [reviewOpen,setReviewOpen]=React.useState(false);
+  React.useEffect(()=>{setEvidenceNote("");setReviewOpen(false);},[open,billingId]);
 
   const [loading, setLoading] = React.useState(false);
   const [data, setData] = React.useState<BillingDetailData | null>(initialData || null);
@@ -132,12 +134,12 @@ export function BillingDetailModal({
       });
       notify.success(
         locale === "th"
-          ? `ส่งอีเมลใบแจ้งหนี้ไปยัง ${recipientEmail} สำเร็จ`
+          ? `ส่งอีเมลใบวางบิลไปยัง ${recipientEmail} สำเร็จ`
           : `Invoice email sent to ${recipientEmail} successfully`
       );
       setEmailModalOpen(false);
     } catch (err: any) {
-      notify.error(err?.message || "ไม่สามารถส่งอีเมลใบแจ้งหนี้ได้");
+      notify.error(err?.message || "ไม่สามารถส่งอีเมลใบวางบิลได้");
     } finally {
       setIsSendingEmail(false);
     }
@@ -145,14 +147,10 @@ export function BillingDetailModal({
 
   const handleFileUpload = async (file: File) => {
     if (!file || !data?.id || !canSubmitTransfer || data.status==="paid") return;
-    let actualTransfer:string;
-    try{actualTransfer=transferAmount(enteredTransferAmount);}catch{notify.error(locale==="th"?"กรุณาระบุยอดโอนเป็นเงินบาทที่มากกว่าศูนย์และมีทศนิยมไม่เกิน 2 ตำแหน่ง":"Enter a positive THB transfer amount with at most two decimal places.");return;}
     if (!["image/jpeg", "image/png", "application/pdf"].includes(file.type) || file.size > 10 * 1024 * 1024) {
       notify.error(locale==="th"?"กรุณาเลือกไฟล์ PNG, JPEG หรือ PDF ขนาดไม่เกิน 10 MB":"Choose a PNG, JPEG or PDF file no larger than 10 MB");
       return;
     }
-    let metadata:PaymentMetadata;
-    try{metadata=normalizePaymentMetadata(payerMetadata);}catch{notify.error(paymentMetadataCopy[locale].invalid);return;}
     setIsUploadingSlip(true);
     try {
       const reader = new FileReader();
@@ -160,11 +158,8 @@ export function BillingDetailModal({
         const dataUrl = e.target?.result as string;
         try {
           await apiClient.post(`/v1/billing-cycles/${data.id}/pay`, {
-            amount: financial.financialScope==="TEST"?actualTransfer:Number(actualTransfer),
-            ...metadata,
             slipUrl: dataUrl,
-            paidAt: new Date().toISOString(),
-            note: "Uploaded via Billing Detail Modal",
+            note: evidenceNote.trim() || undefined,
           });
           notify.success(
             locale === "th"
@@ -211,56 +206,6 @@ export function BillingDetailModal({
 
   if (!data) return null;
 
-  const handleApprovePayment = async () => {
-    if (!data.id) return;
-    setIsSubmitting(true);
-    try {
-      await apiClient.patch(`/v1/billing-cycles/${data.id}/verify-payment`, {
-        status: "approved",
-      });
-      notify.success(
-        locale === "th"
-          ? "อนุมัติการชำระเงินและออกใบเสร็จรับเงินเรียบร้อยแล้ว"
-          : "Payment approved and receipt generated"
-      );
-      setData((prev) => prev ? { ...prev, status: "paid", paymentStatus: "approved" } : null);
-      await fetchDetails(data.id);
-      onUpdated?.();
-    } catch (err: any) {
-      notify.error(err?.message || "เกิดข้อผิดพลาดในการอนุมัติ");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleRejectPayment = async () => {
-    if (!data.id) return;
-    if (!rejectionReason.trim()) {
-      notify.error(locale === "th" ? "กรุณาระบุเหตุผลการปฏิเสธ" : "Please provide a reason");
-      return;
-    }
-    setIsSubmitting(true);
-    try {
-      await apiClient.patch(`/v1/billing-cycles/${data.id}/verify-payment`, {
-        status: "rejected",
-        reason: rejectionReason.trim(),
-      });
-      notify.success(
-        locale === "th"
-          ? "ปฏิเสธหลักฐานการชำระเงินเรียบร้อยแล้ว"
-          : "Payment slip rejected"
-      );
-      setData((prev) => prev ? { ...prev, status: "rejected", paymentStatus: "rejected", rejectionReason: rejectionReason.trim() } : null);
-      setShowRejectInput(false);
-      await fetchDetails(data.id);
-      onUpdated?.();
-    } catch (err: any) {
-      notify.error(err?.message || "เกิดข้อผิดพลาดในการปฏิเสธ");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
   const amountNum = Number(data.amount) || 0;
   const isPaid = data.status === "paid" || data.paymentStatus === "approved" || data.paymentStatus === "paid";
   const hasSlip = Boolean(data.slipUrl);
@@ -304,7 +249,7 @@ export function BillingDetailModal({
                   </Badge>
                 </div>
                 <DialogDescription className="text-xs text-muted-foreground mt-0.5">
-                  {data.schoolName || "องค์กร"} • {locale === "th" ? "รอบบิลประจำเดือน " : "Period "}{data.period || data.periodEnd}
+                  {data.customerName || "องค์กร"} • {locale === "th" ? "รอบบิลประจำเดือน " : "Period "}{data.period || data.periodEnd}
                 </DialogDescription>
               </div>
             </div>
@@ -318,7 +263,7 @@ export function BillingDetailModal({
                 className="h-10 text-xs gap-1.5 cursor-pointer text-foreground border-border hover:bg-accent"
               >
                 <Mail className="size-3.5 text-primary" />
-                <span>{locale === "th" ? "ส่งอีเมลใบแจ้งหนี้" : "Email Invoice"}</span>
+                <span>{locale === "th" ? "ส่งอีเมลใบวางบิล" : "Email Invoice"}</span>
               </Button>}
               {onOpenInvoice && (
                 <Button
@@ -328,7 +273,7 @@ export function BillingDetailModal({
                   className="h-10 text-xs gap-1.5 cursor-pointer text-primary"
                 >
                   <FileText className="size-3.5" />
-                  <span>{locale === "th" ? "ดูใบแจ้งหนี้" : "View Invoice"}</span>
+                  <span>{locale === "th" ? "ดูใบวางบิล" : "View Invoice"}</span>
                 </Button>
               )}
               {isPaid && onOpenReceipt && (
@@ -395,7 +340,7 @@ export function BillingDetailModal({
                   <span className="font-mono font-medium">{formatNumber(data.consumedKwh)} kWh</span>
                 </div>
                 <div className="py-2 flex items-center justify-between">
-                  <span className="text-muted-foreground">{locale === "th" ? "อัตราค่าไฟตามสัญญา" : "Fixed PPA Tariff"}</span>
+                  <span className="text-muted-foreground">{locale === "th" ? "อัตราค่าไฟ" : "Electricity tariff"}</span>
                   <span className="font-mono font-medium">฿{formatNumber(data.rate)} / kWh</span>
                 </div>
                 <div className="py-2.5 flex items-center justify-between border-t border-border font-bold text-sm text-foreground">
@@ -408,7 +353,7 @@ export function BillingDetailModal({
             {/* Meta Information */}
             <div className="grid grid-cols-2 gap-2 text-xs">
               <div className="space-y-0.5 border-t pt-4">
-                <span className="text-[10px] text-muted-foreground block">{locale === "th" ? "เลขที่ใบแจ้งหนี้" : "Invoice No."}</span>
+                <span className="text-[10px] text-muted-foreground block">{locale === "th" ? "เลขที่ใบวางบิล" : "Invoice No."}</span>
                 <span className="font-mono font-medium">{data.invoiceNumber || "-"}</span>
               </div>
               <div className="space-y-0.5 border-t pt-4">
@@ -422,12 +367,12 @@ export function BillingDetailModal({
           {/* RIGHT COLUMN: Payment Evidence & Verification Action (5 Cols) */}
           {/* ============================================================== */}
           <div className="lg:col-span-5 space-y-4 text-xs">
-            <PaymentHistory payments={payments} locale={locale}/>
+            <BillRateEditor id={data.id} status={data.status} rate={data.rate} kind={data.billingKind??data.kind} payments={payments} onUpdated={()=>{void fetchDetails(data.id);onUpdated?.();}}/><PaymentHistory payments={payments} locale={locale}/>
             <div className="space-y-3 border-t pt-4">
               <div className="flex items-center justify-between font-semibold text-foreground">
                 <span className="flex items-center gap-1.5">
                   <ShieldCheck className="size-4 text-primary" />
-                  <span>{locale === "th" ? "หลักฐานการโอนเงิน (Slip)" : "Payment Slip Evidence"}</span>
+                  <span>{locale === "th" ? "หลักฐานการโอนเงิน" : "Payment Slip Evidence"}</span>
                 </span>
                 {hasSlip && (
                   <Button
@@ -443,10 +388,9 @@ export function BillingDetailModal({
               </div>
 
               {canSubmitTransfer&&!isPaid&&<div className="space-y-2">
-                <PaymentMetadataFields locale={locale} value={payerMetadata} onChange={setPayerMetadata} disabled={isUploadingSlip}/>
-                <Label htmlFor="detail-transfer-amount" required>{locale==='th'?'ยอดที่โอนครั้งนี้ (บาท)':'This transfer amount (THB)'}</Label>
-                <Input id="detail-transfer-amount" inputMode="decimal" value={enteredTransferAmount} onChange={event=>setEnteredTransferAmount(event.target.value)} disabled={isUploadingSlip} aria-describedby="detail-transfer-amount-help"/>
-                <p id="detail-transfer-amount-help" className="text-muted-foreground">{locale==='th'?'ระบุยอดโอนของหลักฐานแต่ละรายการก่อนอัปโหลด ระบบเก็บรายการที่โอนแต่ละครั้งแยกกัน':'Enter the amount for this evidence before uploading. Each transfer is retained separately.'}</p>
+                <Label htmlFor="detail-evidence-note">{locale==='th'?'หมายเหตุ (ถ้ามี)':'Note (optional)'}</Label>
+                <Textarea id="detail-evidence-note" value={evidenceNote} maxLength={2000} onChange={event=>setEvidenceNote(event.target.value)} disabled={isUploadingSlip}/>
+                <p className="text-muted-foreground">{locale==='th'?'แนบหลักฐานได้เลย เจ้าหน้าที่จะตรวจยอดและวันเวลาโอนจากไฟล์':'Attach evidence. Staff will verify the amount and transfer time from the file.'}</p>
               </div>}
               {/* Slip Image Box */}
               {hasSlip ? (
@@ -473,7 +417,7 @@ export function BillingDetailModal({
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">{locale === "th" ? "ยอดเงินในสลิป:" : "Slip Amount:"}</span>
-                      <span className="font-bold text-success ">฿{payments.some(payment=>payment.id===data.paymentId)?formatTransferAmount(payments.find(payment=>payment.id===data.paymentId)!.amount):formatNumber(data.paidAmount)}</span>
+                      <span className="font-bold text-success ">{payments.find(payment=>payment.id===data.paymentId)?.verifiedAmount ? '฿'+formatTransferAmount(payments.find(payment=>payment.id===data.paymentId)!.verifiedAmount!) : locale==='th'?'รอตรวจยอด':'Awaiting amount verification'}</span>
                     </div>
                   </div>
                   <div className="flex justify-end pt-1">
@@ -578,72 +522,9 @@ export function BillingDetailModal({
                 </div>
               )}
 
-              {/* Admin/Owner Actions: Approve or Reject Inline */}
-              {financial.actions.includes("approve_payment") && !isPaid && (hasPendingTransfers||hasSlip) && (
-                <div className="pt-2 space-y-2 border-t border-border/60">
-                  <div className="text-[11px] font-semibold text-foreground uppercase tracking-wider">
-                    {locale === "th" ? "การตรวจสอบโดยผู้ดูแลระบบ" : "Administrative Verification"}
-                  </div>
+              {financial.actions.includes("approve_payment")&&!isPaid&&hasPendingTransfers&&<Button onClick={()=>setReviewOpen(true)}>{locale==='th'?'ตรวจหลักฐานการชำระเงิน':'Review payment evidence'}</Button>}
+              <PaymentVerificationDialog open={reviewOpen} onOpenChange={setReviewOpen} billingCycle={data} onSuccess={()=>{void fetchDetails(data.id);onUpdated?.();}}/>
 
-                  {!showRejectInput ? (
-                    <div className="grid grid-cols-2 gap-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        onClick={handleApprovePayment}
-                        disabled={isSubmitting}
-                        className="h-10 text-xs font-semibold gap-1.5 bg-success hover:bg-success/90 text-success-foreground cursor-pointer"
-                      >
-                        {isSubmitting ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
-                        <span>{locale === "th" ? "อนุมัติการชำระเงิน" : "Approve Slip"}</span>
-                      </Button>
-
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setShowRejectInput(true)}
-                        disabled={isSubmitting}
-                        className="h-10 text-xs font-semibold gap-1.5 text-destructive border-destructive/30 hover:bg-destructive/10 cursor-pointer"
-                      >
-                        <XCircle className="size-3.5" />
-                        <span>{locale === "th" ? "ปฏิเสธสลิป" : "Reject"}</span>
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="space-y-2 border-t pt-4">
-                      <Label className="text-[11px] text-foreground font-medium">
-                        {locale === "th" ? "ระบุเหตุผลการปฏิเสธสลิป" : "Specify Rejection Reason"}
-                      </Label>
-                      <Textarea
-                        placeholder={locale === "th" ? "เช่น ยอดเงินไม่ตรงกับใบแจ้งหนี้, ภาพไม่ชัดเจน..." : "e.g. Amount mismatch, blurry slip..."}
-                        value={rejectionReason}
-                        onChange={(e) => setRejectionReason(e.target.value)}
-                        className="text-xs min-h-[60px]"
-                      />
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setShowRejectInput(false)}
-                          className="h-10 text-xs"
-                        >
-                          {locale === "th" ? "ยกเลิก" : "Cancel"}
-                        </Button>
-                        <Button
-                          size="sm"
-                          onClick={handleRejectPayment}
-                          disabled={isSubmitting || !rejectionReason.trim()}
-                          className="h-10 text-xs bg-destructive hover:bg-destructive/90 text-destructive-foreground font-semibold"
-                        >
-                          {isSubmitting ? <Loader2 className="size-3 animate-spin" /> : null}
-                          <span>{locale === "th" ? "ยืนยันปฏิเสธ" : "Confirm Reject"}</span>
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
           </div>
         </div>
@@ -674,11 +555,11 @@ export function BillingDetailModal({
             <DialogHeader>
               <DialogTitle className="text-base font-semibold flex items-center gap-2">
                 <Mail className="size-4 text-success" />
-                <span>{locale === "th" ? "ส่งอีเมลใบแจ้งหนี้" : "Send Invoice Email"}</span>
+                <span>{locale === "th" ? "ส่งอีเมลใบวางบิล" : "Send Invoice Email"}</span>
               </DialogTitle>
               <DialogDescription className="text-xs text-muted-foreground">
                 {locale === "th"
-                  ? `ส่งใบแจ้งหนี้รอบบิล ${data?.period || ""} พร้อมไฟล์แนบให้ลูกค้าทางอีเมล`
+                  ? `ส่งใบวางบิลรอบบิล ${data?.period || ""} พร้อมไฟล์แนบให้ลูกค้าทางอีเมล`
                   : `Send billing invoice for period ${data?.period || ""} with attachment.`}
               </DialogDescription>
             </DialogHeader>

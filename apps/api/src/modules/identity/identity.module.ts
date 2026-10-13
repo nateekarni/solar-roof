@@ -10,11 +10,19 @@ import { JwtAuthGuard } from "./jwt.guard.js";
 import { MeController } from "./me.controller.js";
 import { InvitationController } from "./invitation.controller.js";
 import { UsersController } from "./users.controller.js";
-import {SiteSchoolUsersService} from './site-school-users.service.js';
+import {SiteCustomerUsersService} from './site-customer-users.service.js';
+import { AuthorizationService } from './authorization.service.js';
+import { TeamService } from './team.service.js';
+import { TeamController } from './team.controller.js';
+import {TwoFactorController} from './two-factor.controller.js';
+import {TwoFactorService} from './two-factor.service.js';
+import {PasswordResetController} from './password-reset.controller.js';
+import {AvatarController} from './avatar.controller.js';
+import {DatabaseService} from '../../database/database.service.js';
 
 @Module({
   imports: [DatabaseModule],
-  controllers: [AuthController, MeController, UsersController, InvitationController],
+  controllers: [AuthController, MeController, UsersController, InvitationController, TeamController, TwoFactorController, AvatarController, PasswordResetController],
   providers: [
     FinancialReadinessService,
     {
@@ -25,10 +33,13 @@ import {SiteSchoolUsersService} from './site-school-users.service.js';
       },
     },
     SessionService,
+    {provide:TwoFactorService,inject:[DatabaseService,AuthService],useFactory:(db:DatabaseService,auth:AuthService)=>new TwoFactorService(db,auth)},
+    AuthorizationService,
+    TeamService,
     InvitationService,
-    SiteSchoolUsersService,
+    SiteCustomerUsersService,
     JwtAuthGuard,
   ],
-  exports: [SessionService, AuthService, InvitationService, JwtAuthGuard],
+  exports: [SessionService, AuthService, InvitationService, JwtAuthGuard, AuthorizationService],
 })
 export class IdentityModule {}

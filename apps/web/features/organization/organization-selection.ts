@@ -17,7 +17,7 @@ export function selectOrganizationText(organizations:OrganizationRecord[],text:s
 /** Existing selections send an ID only; drafts are committed by the site transaction. */
 export function organizationSitePayload(selection:OrganizationSelection|null){
  if(!selection)return null;
- return selection.kind==='existing'?{schoolId:selection.organization.id}:{newOrganization:selection.organization};
+ return selection.kind==='existing'?{customerId:selection.organization.id}:{newOrganization:selection.organization};
 }
 export function organizationDocumentComplete(organization:OrganizationDocumentDefaults){
  return Boolean(organization.legalName?.trim()&&/^[0-9]{13}$/.test(organization.taxId?.trim()??'')&&organization.taxAddress?.trim());

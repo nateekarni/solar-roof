@@ -1,4 +1,7 @@
-import { BadRequestException, Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, ConflictException, Inject, Injectable } from "@nestjs/common";
+import { randomUUID } from 'node:crypto';
+import { DOMAIN_SETTING_DEFAULTS, validateSettingsPatch } from './domain-settings.js';
+import type { PermissionDomain } from '../../common/auth/authorization.js';
 import { DatabaseService } from "../../database/database.service.js";
 
 export interface SystemSettings {
@@ -24,6 +27,7 @@ export interface CompanyProfile {
   logoUrl?: string;
   signatoryName?: string;
   signatoryTitle?: string;
+  signatureDataUri?: string;
   updatedAt?: string;
 }
 
@@ -43,6 +47,26 @@ export interface CompanyBankAccount {
 @Injectable()
 export class SettingsService {
   constructor(@Inject(DatabaseService) private readonly db: DatabaseService) {}
+
+  async getDomainSettings(domain:PermissionDomain){
+    const keys=Object.keys(DOMAIN_SETTING_DEFAULTS[domain]);
+    const rows=(await this.db.query('SELECT key,value FROM system_settings WHERE key=ANY($1::text[])',[keys])).rows;
+    const settings={...DOMAIN_SETTING_DEFAULTS[domain]};
+    for(const row of rows)settings[row.key]=typeof settings[row.key]==='boolean'?row.value==='true':Number(row.value);
+    const revision=Number((await this.db.query('SELECT revision FROM settings_domain_revisions WHERE domain=$1',[domain])).rows[0]?.revision??0);
+    return {domain,revision,settings};
+  }
+  async updateDomainSettings(domain:PermissionDomain,input:unknown,actorId:string){
+    const body=validateSettingsPatch(domain,input);
+    await this.db.transaction(async client=>{
+      const current=(await client.query('SELECT revision FROM settings_domain_revisions WHERE domain=$1 FOR UPDATE',[domain])).rows[0];
+      if(current?.revision!==body.revision)throw new ConflictException('Settings changed; reload before saving');
+      for(const [key,value]of Object.entries(body.settings))await client.query(`INSERT INTO system_settings(key,value,updated_at) VALUES($1,$2,now()) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=now()`,[key,String(value)]);
+      await client.query('UPDATE settings_domain_revisions SET revision=revision+1 WHERE domain=$1',[domain]);
+      await client.query(`INSERT INTO audit_events(id,actor_id,action,entity_type,entity_id,correlation_id) VALUES($1,$2,$3,'settings',$4,$5)`,[randomUUID(),actorId,`${domain}.settings.updated`,domain,randomUUID()]);
+    });
+    return this.getDomainSettings(domain);
+  }
 
   async getSettings(): Promise<SystemSettings> {
     const res = await this.db.query<{ key: string; value: string }>(
@@ -78,7 +102,7 @@ export class SettingsService {
 
   async getCompanyProfile(): Promise<CompanyProfile> {
     const res = await this.db.query<CompanyProfile>(
-      `SELECT id, company_name AS "companyName", tax_id AS "taxId", branch, address, phone, email, logo_url AS "logoUrl", signatory_name AS "signatoryName", signatory_title AS "signatoryTitle", updated_at AS "updatedAt"
+      `SELECT id, company_name AS "companyName", tax_id AS "taxId", branch, address, phone, email, logo_url AS "logoUrl", signatory_name AS "signatoryName", signatory_title AS "signatoryTitle", signature_data_uri AS "signatureDataUri", updated_at AS "updatedAt"
        FROM company_profile
        ORDER BY updated_at DESC
        LIMIT 1`
@@ -111,18 +135,20 @@ export class SettingsService {
     const signatoryName = input.signatoryName?.trim() ?? current.signatoryName ?? '';
     const signatoryTitle = input.signatoryTitle?.trim() ?? current.signatoryTitle ?? '';
 
+    const signatureDataUri = input.signatureDataUri ?? current.signatureDataUri ?? '';
+    if (signatureDataUri && (!/^data:image\/(png|jpeg);base64,[A-Za-z0-9+/]+=*$/.test(signatureDataUri) || signatureDataUri.length > 1400000)) throw new BadRequestException('Signature must be a PNG/JPEG image up to 1 MB');
     if (current.id) {
       await this.db.query(
         `UPDATE company_profile
-         SET company_name = $1, tax_id = $2, branch = $3, address = $4, phone = $5, email = $6, logo_url = $7, signatory_name = $8, signatory_title = $9, updated_at = now()
-         WHERE id = $10`,
-        [name, taxId, branch, address, phone, email, logoUrl, signatoryName, signatoryTitle, current.id]
+         SET company_name = $1, tax_id = $2, branch = $3, address = $4, phone = $5, email = $6, logo_url = $7, signatory_name = $8, signatory_title = $9, signature_data_uri = $10, updated_at = now()
+         WHERE id = $11`,
+        [name, taxId, branch, address, phone, email, logoUrl, signatoryName, signatoryTitle, signatureDataUri, current.id]
       );
     } else {
       await this.db.query(
-        `INSERT INTO company_profile (company_name, tax_id, branch, address, phone, email, logo_url, signatory_name, signatory_title, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())`,
-        [name, taxId, branch, address, phone, email, logoUrl, signatoryName, signatoryTitle]
+        `INSERT INTO company_profile (company_name, tax_id, branch, address, phone, email, logo_url, signatory_name, signatory_title, signature_data_uri, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now())`,
+        [name, taxId, branch, address, phone, email, logoUrl, signatoryName, signatoryTitle, signatureDataUri]
       );
     }
     return this.getCompanyProfile();

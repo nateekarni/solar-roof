@@ -21,7 +21,7 @@ export function MobileBottomNav() {
   const th = useLocale() === "th";
   const user = useSessionUser();
  const t = useT();
- const tabs: MobileTab[] = getBottomNavItems(user.role).map(item => ({label: navLabel(item, th ? "th" : "en", t), href: item.href!, icon:item.icon}));
+ const tabs: MobileTab[] = getBottomNavItems(user.role,user.authorization).map(item => ({label: navLabel(item, th ? "th" : "en", t), href: item.href!, icon:item.icon}));
   // Don't render inside login or public pages
   if (pathname === "/login") return null;
 
@@ -42,10 +42,11 @@ export function MobileBottomNav() {
             <Link
               key={tab.href + tab.label}
               href={tab.href}
+              aria-current={isActive ? "page" : undefined}
               className={cn(
                 "group relative flex flex-col items-center justify-center min-w-[56px] min-h-11 py-1.5 px-2 rounded-lg text-xs font-medium transition-all select-none active:scale-95",
                 isActive
-                  ? "bg-primary text-primary-foreground"
+                  ? "text-warning-emphasis"
                   : "text-muted-foreground hover:text-foreground"
               )}
             >
@@ -54,7 +55,7 @@ export function MobileBottomNav() {
                   className={cn(
                     "size-5 transition-all",
                     isActive
-                      ? "text-primary-foreground stroke-[2.25px] scale-110"
+                      ? "text-warning-emphasis stroke-[2.25px] scale-110"
                       : "text-muted-foreground stroke-[1.75px] group-hover:text-foreground"
                   )}
                 />
@@ -66,7 +67,7 @@ export function MobileBottomNav() {
                 className={cn(
                   "text-[11px] leading-none tracking-tight transition-colors",
                   isActive
-                    ? "font-semibold text-primary-foreground"
+                    ? "font-semibold text-warning-emphasis"
                     : "font-normal text-muted-foreground group-hover:text-foreground"
                 )}
               >

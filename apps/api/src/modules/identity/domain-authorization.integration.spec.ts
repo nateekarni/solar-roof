@@ -1,0 +1,53 @@
+import 'reflect-metadata';
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { readFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { Pool } from 'pg';
+import { TeamService } from './team.service.js';
+import { AuthorizationService } from './authorization.service.js';
+import { SettingsService } from '../settings/settings.service.js';
+import { hasPermission,siteScope } from '../../common/auth/authorization.js';
+import type { DatabaseService } from '../../database/database.service.js';
+
+test('PostgreSQL domain presets overrides scope revision and revocation remain live and atomic',{skip:process.env.RBAC_SQL_TEST!=='true'},async()=>{
+ const url=process.env.DATABASE_URL!;
+ assert.ok(url);const location=new URL(url);assert.ok(['127.0.0.1','localhost'].includes(location.hostname));assert.equal(location.port,'15449');
+ const pool=new Pool({connectionString:url});const client=await pool.connect();
+ const owner={id:randomUUID(),role:'owner'},admin={id:randomUUID(),role:'admin'},employee=randomUUID(),siteA=randomUUID(),siteB=randomUUID();
+ try{
+  await client.query('BEGIN');await client.query(`CREATE SCHEMA rbac_domain_test; SET LOCAL search_path=rbac_domain_test,public`);
+  await client.query(`CREATE TABLE users(id uuid PRIMARY KEY,email text,display_name text,role text,status text,updated_at timestamptz);
+   CREATE TABLE sites(id uuid PRIMARY KEY);
+   CREATE TABLE site_account_assignments(user_id uuid,site_id uuid,revoked_at timestamptz);
+   CREATE TABLE auth_sessions(id uuid PRIMARY KEY,user_id uuid,revoked_at timestamptz,refresh_hash text);
+   CREATE TABLE audit_events(id uuid PRIMARY KEY,actor_id uuid,action text,entity_type text,entity_id text,correlation_id uuid);
+   CREATE TABLE system_settings(key text PRIMARY KEY,value text,updated_at timestamptz);
+  `);
+  await client.query(await readFile(new URL('../../../../../infra/migrations/047_employee_domain_permissions.sql',import.meta.url),'utf8'));
+  await client.query(await readFile(new URL('../../../../../infra/migrations/049_live_notification_permissions.sql',import.meta.url),'utf8'));
+  await client.query("INSERT INTO users(id,email,display_name,role,status) VALUES($1,'owner@test.local','Owner','owner','active'),($2,'admin@test.local','Admin','admin','active'),($3,'employee@test.local','Employee','operator','active')",[owner.id,admin.id,employee]);
+  await client.query('INSERT INTO sites(id) VALUES($1),($2)',[siteA,siteB]);
+  const db={query:client.query.bind(client),transaction:async(work:any)=>{await client.query('SAVEPOINT service_work');try{const result=await work(client);await client.query('RELEASE SAVEPOINT service_work');return result;}catch(error){await client.query('ROLLBACK TO SAVEPOINT service_work');throw error;}}} as unknown as DatabaseService;
+  const team=new TeamService(db),authorization=new AuthorizationService(db),settings=new SettingsService(db);
+  const position=await team.savePosition(owner,'business',{name:'Finance',rules:{'business.billing.view':true,'business.billing.approve':true}});
+  await team.updateGrant(owner,employee,'business',{revision:0,positionId:position.id,overrides:{'business.billing.approve':false},scope:{mode:'selected',siteIds:[siteA]}});
+  await team.updateGrant(admin,employee,'technical',{revision:1,positionId:null,overrides:{'technical.gateways.view':true},scope:{mode:'selected',siteIds:[siteB]}});
+  let live=await authorization.load(employee,'operator');assert.equal(live.revision,2);assert.equal(hasPermission({role:'operator',authorization:live},'business.billing.view'),true);assert.equal(hasPermission({role:'operator',authorization:live},'business.billing.approve'),false);
+  assert.deepEqual(siteScope({role:'operator',authorization:live},'business'),[siteA]);assert.deepEqual(siteScope({role:'operator',authorization:live},'technical'),[siteB]);
+  const access=async(domain:string,key:string,site:string)=>(await client.query('SELECT employee_can_access($1,$2,$3,$4) AS allowed',[employee,domain,key,site])).rows[0].allowed;
+  assert.equal(await access('business','business.billing.view',siteA),true);assert.equal(await access('business','business.billing.view',siteB),false);assert.equal(await access('business','business.billing.approve',siteA),false);
+  const impact=await team.positionImpact(owner,position.id,'business',{rules:{'business.billing.view':false,'business.billing.approve':true}});assert.deepEqual(impact.employees[0]?.changes,[{permission:'business.billing.view',before:true,after:false}]);
+  await team.savePosition(owner,'business',{name:'Finance',revision:0,rules:{'business.billing.view':false,'business.billing.approve':true}},position.id);
+  live=await authorization.load(employee,'operator');assert.equal(live.revision,3);assert.equal(hasPermission({role:'operator',authorization:live},'business.billing.view'),false);assert.equal(await access('business','business.billing.view',siteA),false);
+  await assert.rejects(()=>team.updateGrant(owner,employee,'business',{revision:2,positionId:null,overrides:{},scope:{mode:'all',siteIds:[]}}),/reload/);
+  await team.revokeGrant(owner,employee,'business',{revision:3});live=await authorization.load(employee,'operator');assert.equal(live.revision,4);assert.deepEqual(siteScope({role:'operator',authorization:live},'business'),[]);assert.equal(hasPermission({role:'operator',authorization:live},'technical.gateways.view'),true);
+  await settings.updateDomainSettings('business',{revision:0,settings:{documentRetentionYears:9,defaultUnitPriceThb:5}},owner.id);
+  await assert.rejects(()=>settings.updateDomainSettings('business',{revision:0,settings:{documentRetentionYears:2}},owner.id),/reload/);assert.equal((await settings.getDomainSettings('business')).settings.documentRetentionYears,9);
+  assert.equal((await settings.getDomainSettings('technical')).revision,0);
+  await client.query('INSERT INTO auth_sessions(id,user_id,refresh_hash) VALUES($1,$2,\'hash\')',[randomUUID(),employee]);
+  const preview=await team.deactivationImpact(owner,employee);assert.equal(preview.activeSessions,1);assert.equal(preview.domains[0]?.domain,'technical');
+  await team.deactivate(owner,employee,{revision:4,impactConfirmed:true});assert.equal(await access('technical','technical.gateways.view',siteB),false);assert.equal((await client.query('SELECT count(*)::int AS count FROM auth_sessions WHERE revoked_at IS NULL')).rows[0].count,0);
+  assert.equal((await client.query("SELECT count(*)::int AS count FROM audit_events WHERE action='business.settings.updated'")).rows[0].count,1);
+ }finally{await client.query('ROLLBACK');client.release();await pool.end();}
+});

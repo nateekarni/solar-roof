@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+
+<html lang="th"><head>
+<meta charset="utf-8"/>
+<meta content="width=390, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
+<title>Customer — Mobile | SOLAR ROOF Telemetry</title>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&amp;family=Noto+Sans:wght@400;500;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "on-surface-variant": "#3d4947",
+            "on-primary-fixed": "#00201d",
+            "surface-tint": "#006a61",
+            "tertiary": "#006948",
+            "surface-container": "#eaedff",
+            "on-primary": "#ffffff",
+            "outline-variant": "#bcc9c6",
+            "surface-dim": "#d2d9f4",
+            "error-container": "#ffdad6",
+            "secondary-container": "#5bb8fe",
+            "on-secondary-fixed-variant": "#004b73",
+            "inverse-on-surface": "#eef0ff",
+            "surface": "#faf8ff",
+            "on-tertiary": "#ffffff",
+            "surface-container-highest": "#dae2fd",
+            "tertiary-fixed": "#85f8c4",
+            "secondary": "#006398",
+            "tertiary-container": "#00855d",
+            "background": "#faf8ff",
+            "on-error-container": "#93000a",
+            "on-secondary-container": "#00476e",
+            "surface-container-low": "#f2f3ff",
+            "surface-container-high": "#e2e7ff",
+            "primary-fixed-dim": "#6bd8cb",
+            "on-tertiary-fixed-variant": "#005137",
+            "on-tertiary-container": "#f5fff7",
+            "on-background": "#131b2e",
+            "primary": "#00685f",
+            "inverse-primary": "#6bd8cb",
+            "secondary-fixed-dim": "#93ccff",
+            "on-tertiary-fixed": "#002114",
+            "surface-bright": "#faf8ff",
+            "surface-container-lowest": "#ffffff",
+            "on-secondary-fixed": "#001d31",
+            "on-error": "#ffffff",
+            "on-primary-container": "#f4fffc",
+            "primary-container": "#008378",
+            "on-primary-fixed-variant": "#005049",
+            "outline": "#6d7a77",
+            "inverse-surface": "#283044",
+            "error": "#ba1a1a",
+            "on-secondary": "#ffffff",
+            "tertiary-fixed-dim": "#68dba9",
+            "surface-variant": "#dae2fd",
+            "on-surface": "#131b2e",
+            "secondary-fixed": "#cce5ff",
+            "primary-fixed": "#89f5e7"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "space-xs": "0.25rem",
+            "space-sm": "0.5rem",
+            "space-md": "1rem",
+            "space-lg": "1.5rem",
+            "space-xl": "2rem",
+            "margin": "1rem",
+            "margin-md": "2rem",
+            "gutter": "1rem",
+            "gutter-md": "1.5rem"
+          },
+          "fontFamily": {
+            "body-sm": ["Noto Sans"],
+            "body-md": ["Noto Sans"],
+            "body-lg": ["Noto Sans"],
+            "headline-sm": ["Noto Sans"],
+            "headline-md": ["Space Grotesk"],
+            "headline-lg": ["Space Grotesk"],
+            "headline-lg-mobile": ["Space Grotesk"],
+            "headline-xl": ["Space Grotesk"],
+            "metric-display": ["Space Grotesk"],
+            "metric-display-mobile": ["Space Grotesk"],
+            "label-sm": ["Noto Sans"],
+            "label-md": ["Noto Sans"],
+            "code-telemetry": ["JetBrains Mono"]
+          },
+          "fontSize": {
+            "body-sm": ["13px", {"lineHeight": "20px", "fontWeight": "400"}],
+            "body-md": ["14px", {"lineHeight": "22px", "fontWeight": "400"}],
+            "body-lg": ["16px", {"lineHeight": "26px", "fontWeight": "400"}],
+            "headline-sm": ["16px", {"lineHeight": "24px", "fontWeight": "600"}],
+            "headline-md": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+            "headline-lg": ["28px", {"lineHeight": "36px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+            "headline-lg-mobile": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+            "headline-xl": ["36px", {"lineHeight": "44px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+            "metric-display": ["32px", {"lineHeight": "38px", "letterSpacing": "-0.03em", "fontWeight": "700"}],
+            "metric-display-mobile": ["26px", {"lineHeight": "32px", "fontWeight": "700"}],
+            "label-sm": ["11px", {"lineHeight": "14px", "letterSpacing": "0.02em", "fontWeight": "500"}],
+            "label-md": ["12px", {"lineHeight": "16px", "letterSpacing": "0.04em", "fontWeight": "600"}],
+            "code-telemetry": ["12px", {"lineHeight": "16px", "fontWeight": "500"}]
+          }
+        }
+      }
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      display: inline-block;
+      vertical-align: middle;
+      line-height: 1;
+    }
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+  </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+</head>
+<body class="bg-background text-on-surface antialiased font-body-md flex justify-center min-h-screen">
+<main class="w-full max-w-[390px] bg-background min-h-screen pb-28 relative shadow-xl overflow-x-hidden border-x border-outline-variant/30">
+<header class="sticky top-0 z-40 bg-surface-container-lowest/95 backdrop-blur-md shadow-sm border-b border-outline-variant/30">
+<div class="px-4 pt-3 pb-2 flex items-center justify-between">
+<div class="flex items-center gap-2">
+<div class="w-9 h-9 rounded-xl bg-primary-container flex items-center justify-center text-on-primary shadow-sm">
+<span class="material-symbols-outlined text-[20px]" data-icon="solar_power">solar_power</span>
+</div>
+<div>
+<div class="flex items-center gap-1.5">
+<span class="font-headline-sm text-headline-sm font-bold text-primary tracking-tight">SOLAR ROOF</span>
+<span class="font-label-sm text-[10px] px-1.5 py-0.5 rounded bg-primary-fixed text-on-primary-fixed font-semibold tracking-wide uppercase">ลูกค้า</span>
+</div>
+<p class="font-label-sm text-label-sm text-on-surface-variant">สำหรับลูกค้า (Customer Portal)</p>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<div class="inline-flex items-center px-2 py-0.5 rounded-full bg-surface-container-high border border-outline-variant/40 text-on-surface-variant font-label-sm text-[10px]">
+<span class="w-1.5 h-1.5 rounded-full bg-primary mr-1 animate-pulse"></span>
+            ข้อมูลตัวอย่าง (Prototype)
+          </div>
+<button aria-label="แจ้งเตือน" class="relative p-2 rounded-xl text-on-surface-variant hover:bg-surface-container-high transition-transform active:scale-95 min-h-[44px] min-w-[44px] flex items-center justify-center">
+<span class="material-symbols-outlined text-[22px]" data-icon="notifications">notifications</span>
+<span class="absolute top-2 right-2 w-2 h-2 rounded-full bg-error ring-2 ring-surface-container-lowest"></span>
+</button>
+</div>
+</div>
+<div class="px-4 py-2 bg-surface-container-low/60 border-t border-outline-variant/20 flex flex-col gap-2">
+<div class="flex items-center justify-between gap-2">
+<div class="relative flex-1">
+<select aria-label="เลือกไซต์พลังงานแสงอาทิตย์" class="w-full h-11 pl-9 pr-8 bg-surface-container-lowest border border-outline-variant/60 rounded-xl font-body-sm text-body-sm text-on-surface font-medium focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer">
+<option selected="" value="all">ทุกไซต์ของฉัน (3 ไซต์)</option>
+<option value="site1">โรงเรียนบ้านสวน (0.45 MWp)</option>
+<option value="site2">อาคารเรียน 2 (0.12 MWp)</option>
+<option value="site3">หอประชุม (0.08 MWp)</option>
+</select>
+<span class="material-symbols-outlined absolute left-2.5 top-3 text-[18px] text-primary pointer-events-none" data-icon="domain">domain</span>
+<span class="material-symbols-outlined absolute right-2.5 top-3 text-[18px] text-on-surface-variant pointer-events-none" data-icon="expand_more">expand_more</span>
+</div>
+<button class="h-11 px-3 bg-surface-container-lowest border border-outline-variant/60 hover:bg-surface-container-high text-on-surface-variant rounded-xl font-label-md text-label-md flex items-center gap-1 active:scale-95 transition-transform whitespace-nowrap">
+<span class="material-symbols-outlined text-[16px] text-primary" data-icon="refresh">refresh</span>
+<span>กลับทุกไซต์</span>
+</button>
+</div>
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-1 p-1 bg-surface-container-lowest border border-outline-variant/40 rounded-xl">
+<button class="px-2.5 py-1 rounded-lg bg-primary text-on-primary font-label-sm text-label-sm font-semibold shadow-xs">เดือนนี้</button>
+<button class="px-2.5 py-1 rounded-lg text-on-surface-variant font-label-sm text-label-sm hover:text-on-surface">วันนี้</button>
+<button class="px-2.5 py-1 rounded-lg text-on-surface-variant font-label-sm text-label-sm hover:text-on-surface">7 วัน</button>
+<button class="px-2 py-1 rounded-lg text-on-surface-variant font-label-sm text-label-sm hover:text-on-surface flex items-center">
+<span class="material-symbols-outlined text-[14px]" data-icon="calendar_today">calendar_today</span>
+</button>
+</div>
+<div class="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-surface-container-lowest border border-outline-variant/30">
+<span class="relative flex h-2 w-2">
+<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-tertiary-container opacity-75"></span>
+<span class="relative inline-flex rounded-full h-2 w-2 bg-tertiary-container"></span>
+</span>
+<span class="font-label-sm text-[11px] text-tertiary font-medium">สด (5 วิที่แล้ว)</span>
+</div>
+</div>
+<div class="flex items-center justify-between text-on-surface-variant font-label-sm text-[11px] px-0.5">
+<span>ช่วงเวลา: <strong class="text-on-surface font-semibold">1–30 ก.ย. 2569</strong></span>
+<span class="text-primary font-medium">รวม 3 ไซต์ในระบบ</span>
+</div>
+</div>
+</header>
+<div class="px-4 py-3.5 space-y-4">
+<section aria-label="ยอดค้างชำระเร่งด่วน" class="bg-surface-container-lowest rounded-2xl p-4 border border-error/30 shadow-sm relative overflow-hidden bg-gradient-to-br from-surface-container-lowest via-surface-container-lowest to-error-container/20">
+<div class="absolute top-0 left-0 bottom-0 w-1.5 bg-error"></div>
+<div class="flex items-start justify-between gap-3">
+<div class="flex items-center gap-2">
+<div class="w-8 h-8 rounded-lg bg-error-container flex items-center justify-center text-on-error-container shrink-0">
+<span class="material-symbols-outlined text-[18px]" data-icon="priority_high">priority_high</span>
+</div>
+<div>
+<span class="font-label-md text-label-md font-bold text-error uppercase tracking-wider">ต้องชำระด่วน</span>
+<h2 class="font-headline-sm text-headline-sm font-bold text-on-surface">ยอดคงเหลือที่ต้องชำระ</h2>
+</div>
+</div>
+<span class="px-2 py-1 bg-error-container text-on-error-container rounded-lg font-label-sm text-[11px] font-semibold">
+            ครบ 15 ต.ค. 69
+          </span>
+</div>
+<div class="mt-3 flex items-baseline justify-between">
+<div>
+<span class="font-headline-xl text-headline-xl font-bold font-metric-display text-on-surface tracking-tight">฿54,240</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant ml-1">บาท</span>
+</div>
+<div class="text-right">
+<span class="font-label-sm text-[11px] text-on-surface-variant block">จากยอดรอบนี้ ฿154,240</span>
+<span class="font-label-sm text-label-sm font-semibold text-primary">ชำระแล้ว 64.8%</span>
+</div>
+</div>
+<div class="mt-2.5">
+<div class="h-2 w-full bg-surface-container rounded-full overflow-hidden flex">
+<div class="bg-primary h-full rounded-full transition-all duration-500" style="width: 64.8%"></div>
+<div class="bg-error/70 h-full rounded-r-full" style="width: 35.2%"></div>
+</div>
+<div class="mt-1.5 flex justify-between font-label-sm text-[11px] text-on-surface-variant">
+<span>ชำระแล้ว ฿100,000 (ธ.กสิกรไทย)</span>
+<span class="text-error font-medium">คงเหลือ ฿54,240</span>
+</div>
+</div>
+<div class="mt-3.5 pt-3 border-t border-outline-variant/30 flex items-center gap-2">
+<button class="flex-1 h-11 bg-primary hover:bg-primary-container text-on-primary font-headline-sm text-[14px] font-semibold rounded-xl flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-transform">
+<span class="material-symbols-outlined text-[18px]" data-icon="payments">payments</span>
+<span>ชำระหรือแนบสลิป</span>
+</button>
+<button aria-label="ดูรายละเอียดการชำระเงิน" class="h-11 px-3 bg-surface-container-high text-on-surface font-label-md text-label-md rounded-xl hover:bg-surface-variant active:scale-95 transition-transform flex items-center justify-center">
+<span class="material-symbols-outlined text-[20px]" data-icon="receipt">receipt</span>
+</button>
+</div>
+</section>
+<section class="bg-surface-container-lowest rounded-2xl p-4 border border-outline-variant/40 shadow-sm">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<div class="w-8 h-8 rounded-lg bg-primary-fixed/50 flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[20px]" data-icon="bolt">bolt</span>
+</div>
+<div>
+<h2 class="font-headline-sm text-headline-sm font-bold text-on-surface">การผลิตพลังงานไฟฟ้ารายวัน</h2>
+<p class="font-label-sm text-label-sm text-on-surface-variant">รวม 3 ไซต์ (ก.ย. 2569)</p>
+</div>
+</div>
+<span class="px-2 py-0.5 bg-primary-fixed text-on-primary-fixed font-label-sm text-label-sm rounded-lg font-bold">
+            62,400 kWh
+          </span>
+</div>
+<div class="mt-3 flex items-center justify-between bg-surface-container-low/60 p-2.5 rounded-xl border border-outline-variant/30">
+<div>
+<span class="font-label-sm text-[11px] text-on-surface-variant block uppercase tracking-wide">ยอดผลิตรวมรอบนี้</span>
+<span class="font-metric-display-mobile text-metric-display-mobile font-bold text-on-surface">62,400 <span class="font-label-md text-label-md text-primary font-semibold">kWh</span></span>
+</div>
+<div class="text-right">
+<span class="font-label-sm text-[11px] text-on-surface-variant block">พีคสูงสุด (15 ก.ย.)</span>
+<span class="font-headline-sm text-headline-sm font-bold text-primary flex items-center justify-end gap-1">
+<span class="material-symbols-outlined text-[16px] text-primary" data-icon="trending_up">trending_up</span>
+              2,480 kWh
+            </span>
+</div>
+</div>
+<div class="mt-4 relative">
+<div class="flex items-center justify-between text-on-surface-variant font-code-telemetry text-[11px] mb-1 px-1">
+<span>2,500 kWh</span>
+<span class="text-tertiary font-semibold flex items-center gap-1">
+<span class="w-2 h-2 rounded-full bg-primary inline-block"></span> พีค 2,480 kWh (15 ก.ย.)
+            </span>
+</div>
+<div class="w-full h-44 bg-surface-container-lowest rounded-xl border border-outline-variant/30 p-1 relative overflow-hidden">
+<svg class="w-full h-full overflow-visible" preserveaspectratio="none" viewbox="0 0 340 140">
+<defs>
+<lineargradient id="solarGradient" x1="0" x2="0" y1="0" y2="1">
+<stop offset="0%" stop-color="#00685f" stop-opacity="0.38"></stop>
+<stop offset="60%" stop-color="#008378" stop-opacity="0.12"></stop>
+<stop offset="100%" stop-color="#00685f" stop-opacity="0"></stop>
+</lineargradient>
+<pattern height="28" id="gridPattern" patternunits="userSpaceOnUse" width="34">
+<path d="M 34 0 L 0 0 0 28" fill="none" stroke="#dae2fd" stroke-dasharray="2,2" stroke-width="0.7"></path>
+</pattern>
+</defs>
+<rect fill="url(#gridPattern)" height="100%" width="100%"></rect>
+<rect fill="#f2f3ff" height="100" opacity="0.8" rx="3" width="35" x="180" y="20"></rect>
+<line stroke="#bcc9c6" stroke-dasharray="2,2" stroke-width="1" x1="180" x2="180" y1="20" y2="120"></line>
+<line stroke="#bcc9c6" stroke-dasharray="2,2" stroke-width="1" x1="215" x2="215" y1="20" y2="120"></line>
+<text fill="#6d7a77" font-family="Noto Sans" font-size="8" text-anchor="middle" x="197" y="70">ขาดข้อมูล</text>
+<text fill="#6d7a77" font-family="Noto Sans" font-size="7" text-anchor="middle" x="197" y="80">(PEA ปรับปรุง)</text>
+<path d="M 10 105
+                       C 25 102, 35 98, 50 82
+                       C 65 65, 80 72, 95 55
+                       C 110 40, 125 50, 140 38
+                       C 152 28, 160 15, 170 12
+                       L 180 30" fill="none" stroke="#00685f" stroke-linecap="round" stroke-width="2.5"></path>
+<path d="M 10 105
+                       C 25 102, 35 98, 50 82
+                       C 65 65, 80 72, 95 55
+                       C 110 40, 125 50, 140 38
+                       C 152 28, 160 15, 170 12
+                       L 180 30 L 180 130 L 10 130 Z" fill="url(#solarGradient)"></path>
+<path d="M 215 45
+                       C 230 40, 245 60, 260 52
+                       C 275 44, 290 68, 305 75
+                       C 320 82, 330 90, 335 92" fill="none" stroke="#00685f" stroke-linecap="round" stroke-width="2.5"></path>
+<path d="M 215 45
+                       C 230 40, 245 60, 260 52
+                       C 275 44, 290 68, 305 75
+                       C 320 82, 330 90, 335 92 L 335 130 L 215 130 Z" fill="url(#solarGradient)"></path>
+<line stroke="#008378" stroke-dasharray="2,2" stroke-width="1.2" x1="170" x2="170" y1="12" y2="130"></line>
+<circle cx="170" cy="12" fill="#00685f" r="5" stroke="#ffffff" stroke-width="2.5"></circle>
+<circle cx="140" cy="38" fill="#00685f" r="3"></circle>
+<circle cx="260" cy="52" fill="#00685f" r="3"></circle>
+</svg>
+<div class="absolute top-2 left-32 bg-inverse-surface text-inverse-on-surface px-2 py-1 rounded-md text-[10px] font-code-telemetry shadow flex items-center gap-1">
+<span>15 ก.ย.: 2,480 kWh</span>
+</div>
+</div>
+<div class="flex justify-between text-on-surface-variant font-label-sm text-[10px] mt-1.5 px-2">
+<span>1 ก.ย.</span>
+<span>7 ก.ย.</span>
+<span class="text-primary font-bold">15 ก.ย. (พีค)</span>
+<span class="text-outline">18-20 (Gap)</span>
+<span>25 ก.ย.</span>
+<span>30 ก.ย.</span>
+</div>
+</div>
+<div class="mt-3.5 pt-3 border-t border-outline-variant/30">
+<span class="font-label-md text-label-md text-on-surface font-semibold block mb-2">สัดส่วนการผลิตแยกรายไซต์:</span>
+<div class="grid grid-cols-3 gap-2">
+<button class="p-2 rounded-xl bg-surface-container-low border border-primary/30 text-left active:scale-95 transition-transform">
+<span class="font-label-sm text-[10px] text-on-surface-variant block truncate">1. โรงเรียนบ้านสวน</span>
+<span class="font-headline-sm text-[13px] font-bold text-primary">77.2%</span>
+<span class="font-code-telemetry text-[10px] text-on-surface-variant block">48,200 kWh</span>
+</button>
+<button class="p-2 rounded-xl bg-surface-container-low/50 border border-outline-variant/30 text-left active:scale-95 transition-transform">
+<span class="font-label-sm text-[10px] text-on-surface-variant block truncate">2. อาคารเรียน 2</span>
+<span class="font-headline-sm text-[13px] font-bold text-secondary">15.4%</span>
+<span class="font-code-telemetry text-[10px] text-on-surface-variant block">9,600 kWh</span>
+</button>
+<button class="p-2 rounded-xl bg-surface-container-low/50 border border-outline-variant/30 text-left active:scale-95 transition-transform">
+<span class="font-label-sm text-[10px] text-on-surface-variant block truncate">3. หอประชุม</span>
+<span class="font-headline-sm text-[13px] font-bold text-tertiary">7.4%</span>
+<span class="font-code-telemetry text-[10px] text-on-surface-variant block">4,600 kWh</span>
+</button>
+</div>
+</div>
+</section>
+<section class="space-y-3">
+<div class="flex items-center justify-between">
+<div>
+<h2 class="font-headline-sm text-headline-sm font-bold text-on-surface">3 ไซต์ของฉัน (จ.ชลบุรี)</h2>
+<p class="font-label-sm text-label-sm text-on-surface-variant">กำลังการผลิตรวม 0.65 MWp</p>
+</div>
+<span class="px-2 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant font-label-sm text-[11px] font-semibold">
+            เลื่อนดู 3 ไซต์ →
+          </span>
+</div>
+<div class="relative w-full h-36 rounded-2xl overflow-hidden border border-outline-variant/40 shadow-sm bg-surface-container-lowest">
+<div class="w-full h-full bg-cover bg-center" data-alt="A clean top-down architectural satellite map view of Chonburi Thailand showing sunny solar panel rooftop rooftops on a modern school campus and civic auditorium with geographic telemetry pins" data-location="Chonburi, Thailand" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuB9WUMU3CDNmKLxCc5aNOxwdHAMFOL6jcQnK-LadvKTnl2Nv0dR3qT_2Of0rZd1vYjzwg7Dc0B6dhzUVHyhoRL14m1uOae23ztSTZyi0Ro5YRKgT7i-OSUZtxHoPjwMQVs39mPM5xqKqPkMvP_c7I3XmXIqnmDxMlBpjZSMrXZxyiFkShFpTsQuZhQy1rMxn8mkSgDrP76PC0AxpIieliqzYgIQEUWZF5ilt21TX44rz8RrLUnRfITQeuA_GyNH8IAZ_13jTebOdjAD')"></div>
+<div class="absolute inset-0 bg-gradient-to-t from-inverse-surface/80 via-transparent to-transparent"></div>
+<div class="absolute top-3 left-3 bg-surface-container-lowest/90 backdrop-blur-md px-2.5 py-1 rounded-lg border border-outline-variant/40 shadow-xs flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[16px] text-primary" data-icon="pin_drop">pin_drop</span>
+<span class="font-label-sm text-[11px] font-semibold text-on-surface">อ.เมือง &amp; อ.ศรีราชา (3 ไซต์)</span>
+</div>
+<div class="absolute bottom-2.5 left-3 right-3 flex items-center justify-between text-inverse-on-surface font-label-sm text-[11px]">
+<span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-tertiary-fixed"></span> ทุกไซต์ออนไลน์สมบูรณ์</span>
+<span class="font-code-telemetry text-inverse-on-surface">13.361° N, 100.985° E</span>
+</div>
+</div>
+<div class="flex gap-3 overflow-x-auto pb-1 pt-0.5 no-scrollbar snap-x snap-mandatory -mx-4 px-4">
+<article class="min-w-[270px] max-w-[270px] bg-surface-container-lowest rounded-2xl p-3.5 border border-primary/30 shadow-sm snap-center flex flex-col justify-between shrink-0 relative overflow-hidden">
+<div class="absolute top-0 right-0 w-16 h-16 bg-primary-fixed/20 rounded-bl-full pointer-events-none"></div>
+<div>
+<div class="flex items-start justify-between">
+<span class="font-label-sm text-[10px] font-bold px-2 py-0.5 rounded bg-primary-container text-on-primary">เมื่อเลือกโรงเรียนบ้านสวน (หลัก)</span>
+<span class="font-label-sm text-[10px] px-2 py-0.5 rounded-full bg-error-container text-on-error-container font-semibold">รอชำระส่วนที่เหลือ</span>
+</div>
+<h3 class="font-headline-sm text-[15px] font-bold text-on-surface mt-2">โรงเรียนบ้านสวน</h3>
+<p class="font-label-sm text-label-sm text-on-surface-variant">ขนาดติดตั้ง 0.45 MWp</p>
+<div class="mt-2.5 py-2 px-2.5 bg-surface-container-low rounded-xl space-y-1">
+<div class="flex justify-between text-body-sm text-[12px]">
+<span class="text-on-surface-variant">ผลิตรอบนี้:</span>
+<span class="font-code-telemetry font-bold text-primary">48,200 kWh</span>
+</div>
+<div class="flex justify-between text-body-sm text-[12px]">
+<span class="text-on-surface-variant">ยอดเรียกเก็บ:</span>
+<span class="font-bold text-on-surface">฿154,240</span>
+</div>
+<div class="flex justify-between text-body-sm text-[12px] pt-1 border-t border-outline-variant/30">
+<span class="text-error font-medium">ยอดคงเหลือ:</span>
+<span class="font-bold text-error">฿54,240</span>
+</div>
+</div>
+</div>
+<button class="mt-3 w-full h-11 bg-primary text-on-primary font-label-md text-label-md font-semibold rounded-xl active:scale-95 transition-transform flex items-center justify-center gap-1.5 shadow-xs">
+<span class="material-symbols-outlined text-[16px]" data-icon="credit_card">credit_card</span>
+<span>จัดการบิลไซต์นี้</span>
+</button>
+</article>
+<article class="min-w-[270px] max-w-[270px] bg-surface-container-lowest rounded-2xl p-3.5 border border-outline-variant/40 shadow-sm snap-center flex flex-col justify-between shrink-0">
+<div>
+<div class="flex items-start justify-between">
+<span class="font-label-sm text-[10px] font-bold px-2 py-0.5 rounded bg-secondary text-on-secondary">ไซต์ 2</span>
+<span class="font-label-sm text-[10px] px-2 py-0.5 rounded-full bg-secondary-fixed text-on-secondary-fixed-variant font-semibold">รอตรวจสอบสลิป</span>
+</div>
+<h3 class="font-headline-sm text-[15px] font-bold text-on-surface mt-2">อาคารเรียน 2</h3>
+<p class="font-label-sm text-label-sm text-on-surface-variant">ขนาดติดตั้ง 0.12 MWp</p>
+<div class="mt-2.5 py-2 px-2.5 bg-surface-container-low rounded-xl space-y-1">
+<div class="flex justify-between text-body-sm text-[12px]">
+<span class="text-on-surface-variant">ผลิตรอบนี้:</span>
+<span class="font-code-telemetry font-bold text-secondary">9,600 kWh</span>
+</div>
+<div class="flex justify-between text-body-sm text-[12px]">
+<span class="text-on-surface-variant">ยอดเรียกเก็บ:</span>
+<span class="font-bold text-on-surface">฿30,720</span>
+</div>
+<div class="flex justify-between text-body-sm text-[12px] pt-1 border-t border-outline-variant/30">
+<span class="text-secondary font-medium">สลิปที่แนบ:</span>
+<span class="font-bold text-secondary">฿30,720 (ส่งแล้ว)</span>
+</div>
+</div>
+</div>
+<button class="mt-3 w-full h-11 bg-surface-container-high text-on-surface font-label-md text-label-md font-semibold rounded-xl hover:bg-surface-variant active:scale-95 transition-transform flex items-center justify-center gap-1.5">
+<span class="material-symbols-outlined text-[16px] text-secondary" data-icon="receipt_long">receipt_long</span>
+<span>ดูสลิปที่ส่งแล้ว</span>
+</button>
+</article>
+<article class="min-w-[270px] max-w-[270px] bg-surface-container-lowest rounded-2xl p-3.5 border border-outline-variant/40 shadow-sm snap-center flex flex-col justify-between shrink-0">
+<div>
+<div class="flex items-start justify-between">
+<span class="font-label-sm text-[10px] font-bold px-2 py-0.5 rounded bg-tertiary text-on-tertiary">ไซต์ 3</span>
+<span class="font-label-sm text-[10px] px-2 py-0.5 rounded-full bg-tertiary-fixed text-on-tertiary-fixed font-semibold">ชำระแล้ว</span>
+</div>
+<h3 class="font-headline-sm text-[15px] font-bold text-on-surface mt-2">หอประชุม</h3>
+<p class="font-label-sm text-label-sm text-on-surface-variant">ขนาดติดตั้ง 0.08 MWp</p>
+<div class="mt-2.5 py-2 px-2.5 bg-surface-container-low rounded-xl space-y-1">
+<div class="flex justify-between text-body-sm text-[12px]">
+<span class="text-on-surface-variant">ผลิตรอบนี้:</span>
+<span class="font-code-telemetry font-bold text-tertiary">4,600 kWh</span>
+</div>
+<div class="flex justify-between text-body-sm text-[12px]">
+<span class="text-on-surface-variant">ยอดเรียกเก็บ:</span>
+<span class="font-bold text-on-surface">฿14,720</span>
+</div>
+<div class="flex justify-between text-body-sm text-[12px] pt-1 border-t border-outline-variant/30">
+<span class="text-tertiary font-medium">สถานะบัญชี:</span>
+<span class="font-bold text-tertiary">เรียบร้อย (มีใบเสร็จ)</span>
+</div>
+</div>
+</div>
+<button class="mt-3 w-full h-11 bg-surface-container-high text-on-surface font-label-md text-label-md font-semibold rounded-xl hover:bg-surface-variant active:scale-95 transition-transform flex items-center justify-center gap-1.5">
+<span class="material-symbols-outlined text-[16px] text-tertiary" data-icon="download">download</span>
+<span>ดาวน์โหลดใบเสร็จ</span>
+</button>
+</article>
+</div>
+</section>
+<section class="space-y-3 pt-1">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-[22px]" data-icon="receipt_long">receipt_long</span>
+<div>
+<h2 class="font-headline-sm text-headline-sm font-bold text-on-surface">เอกสารการเงิน &amp; บิลของฉัน</h2>
+<p class="font-label-sm text-label-sm text-on-surface-variant">สำหรับตรวจสอบและชำระค่าไฟโซลาร์</p>
+</div>
+</div>
+<span class="px-2 py-0.5 rounded-lg bg-surface-container text-on-surface font-label-sm text-label-sm font-semibold">
+            3 รายการ
+          </span>
+</div>
+<div class="space-y-3">
+<article class="bg-surface-container-lowest rounded-2xl p-4 border border-outline-variant/50 shadow-sm relative overflow-hidden">
+<div class="flex items-start justify-between">
+<div>
+<div class="flex items-center gap-1.5">
+<span class="font-code-telemetry font-bold text-on-surface text-[13px]">INV-202609-001</span>
+<span class="text-on-surface-variant">•</span>
+<span class="font-label-md text-label-md font-semibold text-primary">โรงเรียนบ้านสวน</span>
+</div>
+<p class="font-label-sm text-[11px] text-on-surface-variant mt-0.5">รอบบิล: 1–30 ก.ย. 2569 | ออกบิล: 1 ต.ค. 2569</p>
+</div>
+<span class="px-2 py-1 bg-error-container text-on-error-container font-label-sm text-[11px] font-bold rounded-lg shrink-0">
+                รอชำระส่วนที่เหลือ
+              </span>
+</div>
+<div class="mt-3 p-3 bg-surface-container-low/70 rounded-xl space-y-1.5 border border-outline-variant/30">
+<div class="flex justify-between items-center text-body-sm text-[12px]">
+<span class="text-on-surface-variant">ยอดรวมสุทธิ:</span>
+<span class="font-bold text-on-surface">฿154,240</span>
+</div>
+<div class="flex justify-between items-center text-body-sm text-[12px]">
+<span class="text-on-surface-variant">ชำระแล้ว (กสิกร):</span>
+<span class="font-semibold text-primary">฿100,000</span>
+</div>
+<div class="flex justify-between items-center text-body-sm text-[13px] pt-1 border-t border-outline-variant/40">
+<span class="text-error font-bold">ยอดคงเหลือที่ต้องชำระ:</span>
+<span class="font-headline-sm text-headline-sm font-bold text-error">฿54,240</span>
+</div>
+<div class="text-right">
+<span class="font-label-sm text-[11px] text-error font-medium">กำหนดชำระ: 15 ต.ค. 2569</span>
+</div>
+</div>
+<div class="mt-3 flex items-center gap-2">
+<button class="h-11 px-3.5 bg-surface-container-high hover:bg-surface-variant text-on-surface font-label-md text-label-md font-semibold rounded-xl flex items-center justify-center gap-1 active:scale-95 transition-transform min-w-[90px]">
+<span class="material-symbols-outlined text-[18px] text-primary" data-icon="picture_as_pdf">picture_as_pdf</span>
+<span>ดู PDF</span>
+</button>
+<button class="flex-1 h-11 bg-primary hover:bg-primary-container text-on-primary font-headline-sm text-[13px] font-semibold rounded-xl flex items-center justify-center gap-1.5 shadow-sm active:scale-95 transition-transform">
+<span class="material-symbols-outlined text-[18px]" data-icon="attach_money">attach_money</span>
+<span>ชำระหรือแนบสลิป (฿54,240)</span>
+</button>
+</div>
+</article>
+<article class="bg-surface-container-lowest rounded-2xl p-4 border border-outline-variant/50 shadow-sm relative">
+<div class="flex items-start justify-between">
+<div>
+<div class="flex items-center gap-1.5">
+<span class="font-code-telemetry font-bold text-on-surface text-[13px]">INV-202609-002</span>
+<span class="text-on-surface-variant">•</span>
+<span class="font-label-md text-label-md font-semibold text-secondary">อาคารเรียน 2</span>
+</div>
+<p class="font-label-sm text-[11px] text-on-surface-variant mt-0.5">ออกบิล: 1 ต.ค. 2569 | ยอดที่แนบสลิป: ฿30,720</p>
+</div>
+<span class="px-2 py-1 bg-secondary-fixed text-on-secondary-fixed-variant font-label-sm text-[11px] font-bold rounded-lg shrink-0">
+                รอตรวจสอบสลิป
+              </span>
+</div>
+<div class="mt-3 p-3 bg-secondary-fixed/20 rounded-xl border border-secondary/20 flex items-center justify-between">
+<div>
+<span class="font-label-sm text-[11px] text-on-secondary-fixed-variant block">ส่งหลักฐานเมื่อ: 8 ต.ค. 69 14:32 น.</span>
+<span class="font-headline-sm text-[15px] font-bold text-on-surface">฿30,720 <span class="font-label-sm text-[11px] font-normal text-on-surface-variant">(เต็มจำนวน)</span></span>
+</div>
+<div class="flex items-center text-secondary font-label-sm text-[11px] font-semibold gap-1">
+<span class="material-symbols-outlined text-[18px]" data-icon="schedule">schedule</span>
+                เจ้าหน้าที่กำลังตรวจ
+              </div>
+</div>
+<div class="mt-3 flex items-center gap-2">
+<button class="flex-1 h-11 bg-surface-container-high hover:bg-surface-variant text-on-surface font-label-md text-label-md font-semibold rounded-xl flex items-center justify-center gap-1.5 active:scale-95 transition-transform">
+<span class="material-symbols-outlined text-[18px] text-secondary" data-icon="visibility">visibility</span>
+<span>ดูสลิปที่แนบ</span>
+</button>
+<button class="h-11 px-3 bg-surface-container-high hover:bg-surface-variant text-on-surface font-label-md text-label-md font-semibold rounded-xl flex items-center justify-center gap-1 active:scale-95 transition-transform min-w-[100px]">
+<span class="material-symbols-outlined text-[18px] text-primary" data-icon="description">description</span>
+<span>ดู PDF บิล</span>
+</button>
+</div>
+</article>
+<article class="bg-surface-container-lowest rounded-2xl p-4 border border-outline-variant/50 shadow-sm relative">
+<div class="flex items-start justify-between">
+<div>
+<div class="flex items-center gap-1.5">
+<span class="font-code-telemetry font-bold text-on-surface text-[13px]">RC-202608-001</span>
+<span class="text-on-surface-variant">•</span>
+<span class="font-label-md text-label-md font-semibold text-tertiary">หอประชุม</span>
+</div>
+<p class="font-label-sm text-[11px] text-on-surface-variant mt-0.5">รอบบิล: ส.ค. 2569 | ออกบิล: 5 ก.ย. 2569</p>
+</div>
+<span class="px-2 py-1 bg-tertiary-fixed text-on-tertiary-fixed font-label-sm text-[11px] font-bold rounded-lg shrink-0 flex items-center gap-0.5">
+<span class="material-symbols-outlined text-[14px]" data-icon="check_circle">check_circle</span>
+                ชำระแล้วสมบูรณ์
+              </span>
+</div>
+<div class="mt-3 p-3 bg-surface-container-low rounded-xl flex items-center justify-between border border-outline-variant/30">
+<div>
+<span class="font-label-sm text-[11px] text-on-surface-variant block">ยอดชำระเสร็จสิ้น</span>
+<span class="font-headline-sm text-[15px] font-bold text-tertiary">฿48,900</span>
+</div>
+<div class="border border-tertiary text-tertiary px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase rotate-[-3deg]">
+                PAID / รับเงินแล้ว
+              </div>
+</div>
+<div class="mt-3">
+<button class="w-full h-11 bg-surface-container-high hover:bg-surface-variant text-on-surface font-label-md text-label-md font-semibold rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-transform">
+<span class="material-symbols-outlined text-[18px] text-tertiary" data-icon="file_download">file_download</span>
+<span>ดาวน์โหลดใบเสร็จ (PDF)</span>
+</button>
+</div>
+</article>
+</div>
+</section>
+<section class="bg-surface-container-low/70 rounded-2xl p-3.5 border border-outline-variant/30 flex items-center justify-between">
+<div class="flex items-center gap-2.5">
+<div class="w-9 h-9 rounded-xl bg-surface-container-lowest flex items-center justify-center text-primary shadow-xs">
+<span class="material-symbols-outlined text-[20px]" data-icon="support_agent">support_agent</span>
+</div>
+<div>
+<h3 class="font-headline-sm text-[13px] font-bold text-on-surface">ต้องการความช่วยเหลือด้านระบบ?</h3>
+<p class="font-label-sm text-[11px] text-on-surface-variant">วิศวกรดูแลประจำโซนชลบุรี: 038-000-xxxx</p>
+</div>
+</div>
+<button class="h-9 px-3 bg-primary text-on-primary font-label-md text-label-md rounded-lg active:scale-95 transition-transform">
+          โทรด่วน
+        </button>
+</section>
+</div>
+<nav aria-label="แถบการนำทางหลัก" class="fixed bottom-0 left-0 right-0 w-full z-50 flex justify-around items-center px-2 py-2 max-w-[390px] mx-auto bg-surface-container-lowest dark:bg-inverse-surface shadow-md dark:shadow-none border-t border-outline-variant dark:border-outline">
+<button class="flex flex-col items-center justify-center bg-primary-container dark:bg-primary text-on-primary-container dark:text-on-primary rounded-xl px-2 py-1.5 active:scale-95 transition-transform duration-150 min-h-[44px] min-w-[56px]">
+<span class="material-symbols-outlined text-[22px]" data-icon="dashboard">dashboard</span>
+<span class="text-label-sm font-label-sm mt-0.5">ภาพรวม</span>
+</button>
+<button class="flex flex-col items-center justify-center text-on-surface-variant dark:text-outline-variant px-2 py-1.5 hover:bg-surface-container-high dark:hover:bg-surface-variant active:scale-95 transition-transform duration-150 min-h-[44px] min-w-[56px]">
+<span class="material-symbols-outlined text-[22px]" data-icon="solar_power">solar_power</span>
+<span class="text-label-sm font-label-sm mt-0.5">อุปกรณ์</span>
+</button>
+<button class="flex flex-col items-center justify-center text-on-surface-variant dark:text-outline-variant px-2 py-1.5 hover:bg-surface-container-high dark:hover:bg-surface-variant active:scale-95 transition-transform duration-150 min-h-[44px] min-w-[56px] relative">
+<span class="material-symbols-outlined text-[22px]" data-icon="receipt_long">receipt_long</span>
+<span class="text-label-sm font-label-sm mt-0.5">บันทึก</span>
+<span class="absolute top-1 right-2 w-2 h-2 rounded-full bg-error"></span>
+</button>
+<button class="flex flex-col items-center justify-center text-on-surface-variant dark:text-outline-variant px-2 py-1.5 hover:bg-surface-container-high dark:hover:bg-surface-variant active:scale-95 transition-transform duration-150 min-h-[44px] min-w-[56px]">
+<span class="material-symbols-outlined text-[22px]" data-icon="notifications">notifications</span>
+<span class="text-label-sm font-label-sm mt-0.5">แจ้งเตือน</span>
+</button>
+<button class="flex flex-col items-center justify-center text-on-surface-variant dark:text-outline-variant px-2 py-1.5 hover:bg-surface-container-high dark:hover:bg-surface-variant active:scale-95 transition-transform duration-150 min-h-[44px] min-w-[56px]">
+<span class="material-symbols-outlined text-[22px]" data-icon="router">router</span>
+<span class="text-label-sm font-label-sm mt-0.5">เกตเวย์</span>
+</button>
+</nav>
+</main>
+</body></html>

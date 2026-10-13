@@ -1,5 +1,75 @@
 # Local financial flow fixture
 
+Seed preflight and commands (PowerShell, repository root):
+
+```powershell
+. ./scripts/local-financial-review/environment.ps1
+node scripts/local-review/verify-target.mjs financial
+# September fixture; repeat execution preserves existing accounts/documents:
+node scripts/local-financial-review/seed-september.mjs
+# Alternatively, three-site prerequisite fixture (also safe to repeat):
+node scripts/local-financial-review/seed.mjs
+```
+
+Every seed validates the running local Docker PostgreSQL container's Compose
+ownership, database and loopback port before connecting. Remote Docker daemons,
+production/staging environments and URL query overrides are refused. Seeding never
+resets or truncates. Both seeds recognize owned data and normalize bracketed display
+prefixes only on deterministic fixture IDs. They preserve passwords and completed
+financial records, and backfill absent explicit customer site assignments after
+migration 040. Conflicting assignments are preserved and reported as an error.
+Readable displays retain fixture names without bracketed test prefixes. User
+displays use Thai role labels because verified personal names were not supplied.
+Tax and banking values remain the previously approved synthetic fixture values;
+these commands do not verify or invent real tax or banking data.
+
+Repeat execution also replaces opaque acceptance fixture suffixes with readable
+site/gateway labels when an exact known label, matching technical code and a
+`billing_source.bind` audit establish ownership. Existing customer reference names
+are บ้านคลองแสน, บ้านดอนแก้ว and บ้านไผ่เมือง; role names are used for people.
+Historical document snapshots and immutable payload revisions retain their original
+contents. Cleaned current payload displays use new revisions rather than rewriting
+history. Technical IDs, external codes and login addresses remain deterministic.
+
+`seed-pilot-users.ts` and `seed-site-customer-user.ts` now require these dedicated
+local Docker review targets. The capacity seed requires its owned local Docker
+readiness target. Production account provisioning must use the normal account API.
+
+## September 2026 manual billing test
+
+From the repository root, run `pwsh -NoProfile -File scripts/local-financial-review/start-test.ps1 -RunBilling`.
+This starts the isolated infrastructure, applies pending migrations, seeds the September fixture once,
+starts API/web in hidden processes, then creates the contract, billing cycle, invoice and local SMTP email
+through the normal API. Existing fixture accounts and financial documents are preserved on replay.
+Open [the test app](http://localhost:13049) and [Mailpit](http://localhost:18049).
+
+All five synthetic accounts use password `LocalFinancial2026!` by default:
+
+| Role | Email |
+| --- | --- |
+| admin | admin.september@example.test |
+| owner | owner.september@example.test |
+| operator | operator.september@example.test |
+| accountant | accountant.september@example.test |
+| customer_user | customer.september@example.test |
+
+Set `LOCAL_FINANCIAL_TEST_PASSWORD` before the first seed to override the password. Replays preserve
+the original passwords; the runner must use that same override. The customer account belongs only to
+the new test customer. The site is `SEP-SITE-001`, gateway `SEP-GW-001`, with independently configured
+meter and logger profiles. History is synthetic hourly September data in Asia/Bangkok, including both
+month boundaries: 11,900 kWh at 3.50 THB/kWh, subtotal 41,650.00, VAT 2,915.50, total 44,565.50 THB.
+It is not a record of actual customer usage. Email is captured locally, with no real recipient.
+
+For seed/start without issuing an invoice, omit `-RunBilling`. For billing replay with servers already
+running, source `./scripts/local-financial-review/environment.ps1` then run
+`pnpm exec tsx scripts/local-financial-review/run-september.mjs`.
+The runner verifies all five logins, one invoice, stored PDF hash and matching Mailpit attachment.
+Results are saved to `.superpowers/september-billing-result.json` and `.superpowers/september-invoice.pdf`.
+Invoice numbering uses the issue date; the usage period remains September.
+
+The older fixture instructions below describe the previous acceptance dataset; no reset is needed
+to add or replay the September fixture.
+
 Run from the repository root. All credentials below are synthetic local-only fixtures. No real email recipient or real payment slip belongs here.
 
 ```powershell
@@ -24,7 +94,7 @@ Workflow acceptance must capture issued downloadable PDF and Mailpit attachment 
 
 The real guarded seed transaction passed after migrations 029 and 031. Database evidence showed 2 organizations, 3 sites, 6 users, 2 contracts, 13,252 raw readings and 13,252 canonical payload samples, all `good/online`. Documents and payments remained zero. Exact fixture marker `solar-financial-flow-review-v1` persisted with policy state `verification_in_progress` and purpose `real_api_workflow_verification`.
 
-The old dataset deletion completed after rechecking Compose labels, its audit marker `solar-dashboard-review-v1`, 18 synthetic REVIEW schools, 5 review.local users and no client application sessions. Only owned old project containers and exact volumes `solar-dashboard-review_review-postgres` and `solar-dashboard-review_review-storage` were removed. Other volumes and networks were preserved.
+The old dataset deletion completed after rechecking Compose labels, its audit marker `solar-dashboard-review-v1`, 18 synthetic REVIEW customers, 5 review.local users and no client application sessions. Only owned old project containers and exact volumes `solar-dashboard-review_review-postgres` and `solar-dashboard-review_review-storage` were removed. Other volumes and networks were preserved.
 
 The canonical history provides cumulative meter import and independent logger total yield. It provides no current solar active-power sample, so current generation remains unavailable until supported ingestion supplies it.
 

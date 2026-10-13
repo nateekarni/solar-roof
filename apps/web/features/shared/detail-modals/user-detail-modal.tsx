@@ -5,7 +5,7 @@ import {
   Check,
   Copy,
   Mail,
-  School,
+  Building2,
   Shield,
   ShieldAlert,
   ShieldCheck,
@@ -31,7 +31,7 @@ export interface UserItemData {
   displayName?: string;
   email?: string;
   role?: string;
-  schoolName?: string;
+  customerName?: string;
   lastActive?: string;
   createdAt?: string;
   status?: string;
@@ -64,13 +64,13 @@ export function UserDetailModal({
   const role = user.role?.toLowerCase() || "";
   const isOwner = role === "owner";
   const isAdmin = role === "admin";
-  const isSchoolUser = role === "school_user";
+  const isCustomerUser = role === "customer_user";
 
   const getRoleLabel = () => {
     if (!role) return locale === "th" ? "ไม่มีข้อมูลบทบาท" : "Role unavailable";
     if (isOwner) return locale === "th" ? "เจ้าของระบบ (Owner)" : "System Owner";
     if (isAdmin) return locale === "th" ? "ผู้ดูแลระบบ (Admin)" : "Administrator";
-    if (isSchoolUser) return locale === "th" ? "ผู้ใช้งานองค์กร" : "Organization User";
+    if (isCustomerUser) return locale === "th" ? "ผู้ใช้งานองค์กร" : "Organization User";
     return role;
   };
 
@@ -87,8 +87,8 @@ export function UserDetailModal({
         : "Manage records and equipment within the scope assigned to this account.";
     }
     return locale === "th"
-      ? `เข้าถึงและจัดการข้อมูลเฉพาะ ${user.schoolName || "องค์กรต้นสังกัด"} ดูยอดบิล และอัปโหลดสลิป`
-      : `Access restricted to ${user.schoolName || "assigned organization"} dashboards and payment submissions.`;
+      ? `เข้าถึงและจัดการข้อมูลเฉพาะ ${user.customerName || "องค์กรต้นสังกัด"} ดูยอดบิล และอัปโหลดสลิป`
+      : `Access restricted to ${user.customerName || "assigned organization"} dashboards and payment submissions.`;
   };
 
   const isActive = user.status === "active" || user.status === "ใช้งานปกติ";
@@ -178,11 +178,11 @@ export function UserDetailModal({
 
             <div className="space-y-1 border-t pt-4">
               <div className="text-xs text-muted-foreground flex items-center gap-1.5">
-                <School className="size-3.5" />
+                <Building2 className="size-3.5" />
                 <span>{locale === "th" ? "สังกัดองค์กร" : "Organization Assignment"}</span>
               </div>
               <div className="font-medium text-xs text-foreground truncate">
-                {user.schoolName || "—"}
+                {user.customerName || "—"}
               </div>
             </div>
 

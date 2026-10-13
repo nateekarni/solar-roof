@@ -13,11 +13,22 @@ const fields=[
  ['taxId','เลขประจำตัวผู้เสียภาษี','Tax ID'],['taxBranch','สาขาภาษี','Tax branch'],['taxAddress','ที่อยู่สำหรับออกเอกสาร','Billing address'],
  ['contactName','ชื่อผู้ติดต่อ','Contact name'],['phone','โทรศัพท์','Phone'],['documentEmail','อีเมลรับเอกสาร','Document email'],
 ] as const;
+const placeholders:Record<(typeof fields)[number][0],readonly [string,string]>={
+ name:['เช่น บริษัท แสงอาทิตย์','e.g. Sunshine Solar'],
+ code:['เช่น ORG-001','e.g. ORG-001'],
+ legalName:['เช่น บริษัท แสงอาทิตย์ จำกัด','e.g. Sunshine Solar Co., Ltd.'],
+ taxId:['เลขประจำตัวผู้เสียภาษี 13 หลัก','13-digit tax identification number'],
+ taxBranch:['เช่น 00000 (สำนักงานใหญ่)','e.g. 00000 (head office)'],
+ taxAddress:['เลขที่ ถนน ตำบล/แขวง อำเภอ/เขต จังหวัด รหัสไปรษณีย์','Street address, district, province and postal code'],
+ contactName:['เช่น สมชาย ใจดี','e.g. Somchai Jaidee'],
+ phone:['เช่น 0812345678','e.g. 0812345678'],
+ documentEmail:['เช่น billing@example.com','e.g. billing@example.com'],
+};
 export function OrganizationIdentityFields({value,onChange,locale,disabled=false,allowBlankCode=false}:{value:OrganizationDraft;onChange:(value:OrganizationDraft)=>void;locale:'th'|'en';disabled?:boolean;allowBlankCode?:boolean}){
  const prefix=React.useId();
  return <div className="grid gap-3 sm:grid-cols-2">{fields.map(([key,th,en])=><div key={key} className={key==='taxAddress'?'space-y-2 sm:col-span-2':'space-y-2'}>
   <Label htmlFor={prefix+key} required={key==='name'||(key==='code'&&!allowBlankCode)}>{locale==='th'?th:en}</Label>
-  {key==='taxAddress'?<Textarea id={prefix+key} value={value[key]??''} disabled={disabled} onChange={e=>onChange({...value,[key]:e.target.value})}/>:<Input id={prefix+key} placeholder={key==='code'&&allowBlankCode?(locale==='th'?'เว้นว่างเพื่อสุ่มรหัสอัตโนมัติ':'Leave blank to generate a code'):undefined} value={value[key]??''} disabled={disabled} maxLength={key==='taxId'?13:key==='code'?64:undefined} inputMode={key==='taxId'?'numeric':undefined} type={key==='documentEmail'?'email':'text'} onChange={e=>onChange({...value,[key]:e.target.value})}/>}
+  {key==='taxAddress'?<Textarea id={prefix+key} placeholder={placeholders[key][locale==='th'?0:1]} value={value[key]??''} disabled={disabled} onChange={e=>onChange({...value,[key]:e.target.value})}/>:<Input id={prefix+key} placeholder={key==='code'&&allowBlankCode?(locale==='th'?'เว้นว่างเพื่อสุ่มรหัสอัตโนมัติ':'Leave blank to generate a code'):placeholders[key][locale==='th'?0:1]} value={value[key]??''} disabled={disabled} maxLength={key==='taxId'?13:key==='code'?64:undefined} inputMode={key==='taxId'?'numeric':undefined} type={key==='documentEmail'?'email':'text'} onChange={e=>onChange({...value,[key]:e.target.value})}/>}
  </div>)}</div>;
 }
 export function OrganizationEditDialog({open,onOpenChange,organization,onSave,locale}:{open:boolean;onOpenChange:(open:boolean)=>void;organization:OrganizationRecord|OrganizationDraft;onSave:(organization:OrganizationRecord|OrganizationDraft)=>void;locale:'th'|'en'}){
@@ -33,7 +44,7 @@ export function OrganizationEditDialog({open,onOpenChange,organization,onSave,lo
   if(existing&&!confirmed)return;
   setSaving(true);
   try {
-   const result=existing?await apiClient.patch<OrganizationRecord>(`/v1/schools/${organization.id}`,{...draft,impactConfirmed:true,expectedUpdatedAt:organization.updatedAt}):{...draft,name:draft.name.trim(),code:draft.code.trim()};
+   const result=existing?await apiClient.patch<OrganizationRecord>(`/v1/customers/${organization.id}`,{...draft,impactConfirmed:true,expectedUpdatedAt:organization.updatedAt}):{...draft,name:draft.name.trim(),code:draft.code.trim()};
    onSave(result);onOpenChange(false);
   }catch(e){setError(e instanceof Error?e.message:(locale==='th'?'บันทึกไม่สำเร็จ':'Unable to save'));}
   finally{setSaving(false);}

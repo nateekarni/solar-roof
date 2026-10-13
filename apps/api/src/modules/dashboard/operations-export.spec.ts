@@ -42,7 +42,7 @@ test("export includes every cursor page and preserves date filters and principal
 });
 
 test("date filters work for all catalogues and use Bangkok calendar days for timestamps", () => {
-  for (const resource of ["sites","schools","users"]) {
+  for (const resource of ["sites","customers","users"]) {
     const query=parseOperationQuery(resource,{from:"2026-10-01",to:"2026-10-06"});
     const params:unknown[]=[];
     assert.ok(operationPredicate(resource,query,params).join(" ").includes('q."createdAt"'));

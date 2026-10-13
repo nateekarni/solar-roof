@@ -64,3 +64,5 @@ test("clearing document filters restores only the selected contract's documents"
   assert.deepEqual(filterDocuments(selected, "", "").map(row => row.id), ["october", "september"]);
   assert.deepEqual(filterDocuments(documentsForContract(rows, null), "", "").map(row => row.id), ["unlinked"]);
 });
+
+test('document text search combines with month and payment status',()=>{const rows=[{id:'a',documentNumber:'INV-001',siteName:'Roof A',period:'2026-10',status:'issued'},{id:'b',documentNumber:'INV-002',siteName:'Roof B',period:'2026-10',status:'issued'}];assert.deepEqual(filterDocuments(rows,'2026-10','issued',' roof a ').map(row=>row.id),['a']);});

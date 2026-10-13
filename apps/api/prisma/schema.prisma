@@ -10,7 +10,7 @@ generator client {
 enum UserRole {
   owner
   admin
-  school_user
+  customer_user
 }
 
 enum RecordStatus {
@@ -44,14 +44,14 @@ model User {
   email       String       @unique
   displayName String
   role        UserRole
-  schoolId    String?
-  school      School?      @relation(fields: [schoolId], references: [id])
+  customerId    String?
+  customer      Customer?      @relation(fields: [customerId], references: [id])
   status      RecordStatus @default(active)
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 }
 
-model School {
+model Customer {
   id        String       @id @default(uuid())
   name      String
   status    RecordStatus @default(active)
@@ -62,7 +62,7 @@ model School {
 
 model Site {
   id        String       @id @default(uuid())
-  schoolId  String
+  customerId  String
   name      String
   timezone  String       @default("Asia/Bangkok")
   status    RecordStatus @default(active)
@@ -199,7 +199,7 @@ model MeterPreset {
 model Invoice {
   id             String        @id @default(uuid())
   invoiceNumber  String        @unique
-  schoolId       String
+  customerId       String
   siteId         String
   billingCycleId String        @unique
   periodStart    DateTime
@@ -222,7 +222,7 @@ model Receipt {
   receiptNumber String   @unique
   invoiceId     String   @unique
   invoice       Invoice  @relation(fields: [invoiceId], references: [id])
-  schoolId      String
+  customerId      String
   taxId         String?
   subTotal      Decimal  @db.Decimal(20, 8)
   vatRate       Decimal  @db.Decimal(5, 4) @default(0.0700)

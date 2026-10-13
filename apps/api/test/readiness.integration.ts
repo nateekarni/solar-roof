@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {randomUUID,createHash} from 'node:crypto';
+import {randomUUID} from 'node:crypto';
 import {writeFile} from 'node:fs/promises';
 import {Pool} from 'pg';
 import mqtt from 'mqtt';
@@ -31,29 +31,36 @@ try {
   }
   const unauthenticated=await fetch(base+'/v1/sites');
   assert.equal(unauthenticated.status,401);
-  for (const role of ['owner','operator','accountant']) assert.equal((await request(role,'/v1/sites','POST',{})).status,403);
+  for (const role of ['admin','operator','accountant']) assert.equal((await request(role,'/v1/sites','POST',{})).status,403);
   const bootstrapLogin=await fetch(base+'/v1/auth/login',{method:'POST',headers:{'Content-Type':'application/json',Origin:'http://localhost:13000'},body:JSON.stringify({email:'bootstrap@example.test',password:'Ci-bootstrap-original-123!'})});
   assert.equal(bootstrapLogin.status,200,'Bootstrap rerun must preserve original password');
   const name=`readiness-${suffix}`;
-  const created=await request('admin','/v1/sites','POST',{name,schoolName:`School ${suffix}`,gatewayName:name,protocol:'mqtt',endpoint:`energy/${name}/#`,deviceSerial:`meter-${suffix}`,capacityMwp:0.1,pollingIntervalSeconds:10});
+  const created=await request('owner','/v1/sites','POST',{name,customerName:`Customer ${suffix}`,capacityMwp:0.1});
   assert.equal(created.status,201,JSON.stringify(created.body));
   const site=created.body;
-  // Organizations may own multiple sites; only an existing meter serial is a conflict.
-  const duplicate=await request('admin','/v1/sites','POST',{name:'Duplicate serial',schoolId:site.schoolId,gatewayName:`duplicate-${suffix}`,deviceSerial:`meter-${suffix}`});
-  assert.equal(duplicate.status,400,JSON.stringify(duplicate.body));
-  assert.match(duplicate.body.message,/ซีเรียล.*มีอยู่ในระบบแล้ว/);
-  assert.ok(duplicate.body.message.includes(`meter-${suffix}`));
-  assert.equal((await db.query('SELECT count(*)::int AS count FROM sites WHERE school_id=$1',[site.schoolId])).rows[0].count,1,'Rejected duplicate serial must not create another site');
+  const duplicate=await request('owner','/v1/sites','POST',{name:'Duplicate customer attachment',customerId:site.customerId});
+  assert.equal(duplicate.status,409,JSON.stringify(duplicate.body));
+  assert.equal((await db.query('SELECT count(*)::int AS count FROM sites WHERE customer_id=$1',[site.customerId])).rows[0].count,1,'Rejected attachment must not create another site');
+  const gateway=await request('admin',`/v1/sites/${site.id}/gateway`,'POST',{name,topicContract:'legacy-energy',subscriptionTopic:`energy/${name}/#`,pollingIntervalSeconds:10});
+  assert.equal(gateway.status,201,JSON.stringify(gateway.body));
+  // Legacy ingestion fixture intentionally has a billing meter, with no PV profile.
+  const device=randomUUID();
+  await db.query("INSERT INTO devices(id,gateway_id,site_id,name,device_type,model,serial_number) VALUES($1,$2,$3,'Readiness meter','meter','fixture',$4)",[device,gateway.body.id,site.id,`meter-${suffix}`]);
+  for(const [role,domain,rules] of [
+    ['operator','technical',{'technical.dashboard.view':true,'technical.gateways.view':true,'technical.telemetry.view':true}],
+    ['accountant','business',{'business.dashboard.view':true,'business.billing.view':true,'business.documents.view':true}],
+  ] as const)await db.query("INSERT INTO employee_domain_grants(user_id,domain,overrides,scope_mode,site_ids) VALUES($1,$2,$3::jsonb,'selected',$4::uuid[])",[users[role]!.id,domain,JSON.stringify(rules),[site.id]]);
   const userId=randomUUID();
-  await db.query("INSERT INTO users(id,email,display_name,role,status,school_id,password_hash) VALUES($1,$2,'School user','school_user','active',$3,$4)",[userId,`school-${suffix}@example.test`,site.schoolId,auth.hashPassword('Local-test-only-123!')]);
-  users.school={id:userId,token:await loginToken(`school-${suffix}@example.test`,'school_user')};
-  const other=await request('admin','/v1/sites','POST',{name:`Other ${suffix}`,schoolName:`Other school ${suffix}`,gatewayName:`other-${suffix}`,protocol:'mqtt',deviceSerial:`other-meter-${suffix}`});
+  await db.query("INSERT INTO users(id,email,display_name,role,status,customer_id,password_hash) VALUES($1,$2,'Customer user','customer_user','active',$3,$4)",[userId,`customer-${suffix}@example.test`,site.customerId,auth.hashPassword('Local-test-only-123!')]);
+  await db.query('INSERT INTO site_account_assignments(id,user_id,site_id) VALUES($1,$2,$3)',[randomUUID(),userId,site.id]);
+  users.customer={id:userId,token:await loginToken(`customer-${suffix}@example.test`,'customer_user')};
+  const other=await request('owner','/v1/sites','POST',{name:`Other ${suffix}`,customerName:`Other customer ${suffix}`});
   assert.equal(other.status,201,JSON.stringify(other.body));
-  assert.equal((await request('school',`/v1/sites/${other.body.id}`)).status,403);
-  assert.equal((await request('school','/v1/operations/users')).status,403);
-  assert.equal((await request('school',`/v1/dashboard/summary?site_id=${other.body.id}`)).status,403);
+  assert.equal((await request('customer',`/v1/sites/${other.body.id}`)).status,403);
+  assert.equal((await request('customer','/v1/operations/users')).status,403);
+  assert.equal((await request('customer',`/v1/dashboard/summary?site_id=${other.body.id}`)).status,403);
   // A fixed historical range avoids dependence on the CI runner's current month.
-  const summary=await request('school','/v1/dashboard/summary?start_date=2026-01-01&end_date=2026-01-03');
+  const summary=await request('customer','/v1/dashboard/summary?start_date=2026-01-01&end_date=2026-01-03');
   assert.equal(summary.status,200,JSON.stringify(summary.body));
   assert.deepEqual(summary.body.range,{start:'2026-01-01',end:'2026-01-03'});
   assert.deepEqual(summary.body.sites.map((row:{id:string})=>row.id),[site.id]);
@@ -62,33 +69,30 @@ try {
   assert.equal(summary.body.sites[0].productionKwh,null);assert.deepEqual(summary.body.rankings,[]);
   // This fixture has a billing meter and no Solar Logger: preserve unknown PV, never zero.
   assert.deepEqual(summary.body.production,['2026-01-01','2026-01-02','2026-01-03'].map(date=>({
-    date,value:null,quality:'missing',watermark:null,
+    date,value:null,observedValue:null,quality:'missing',watermark:null,
     reason:'solar_logger_unavailable_or_ambiguous',reasons:['solar_logger_unavailable_or_ambiguous'],
   })));
-  assert.equal((await request('school',`/v1/sites/${site.id}/live-telemetry`)).status,403);
-  assert.equal((await request('admin',`/v1/sites/${site.id}/live-telemetry`)).body,null);
-  for(const role of ['school','owner']) assert.equal((await request(role,'/v1/reports','POST',{type:'energy',format:'csv'})).status,403);
+  assert.equal((await request('customer',`/v1/sites/${site.id}/live-telemetry`)).status,403);
+  const initialLive=await request('admin',`/v1/sites/${site.id}/live-telemetry`);
+  assert.equal(initialLive.status,200);assert.equal(initialLive.body,null);
+  assert.equal((await db.query('SELECT count(*)::int AS count FROM telemetry_raw WHERE device_id=$1',[device])).rows[0].count,0);
+  for(const role of ['customer','owner']) assert.equal((await request(role,'/v1/reports','POST',{type:'energy',format:'csv'})).status,403);
   const scopeId=randomUUID();
-  await db.query("INSERT INTO users(id,email,display_name,role,status,school_id,password_hash) VALUES($1,$2,'Scoped admin','admin','active',$3,$4)",[scopeId,`scoped-${suffix}@example.test`,site.schoolId,auth.hashPassword('Local-test-only-123!')]);
+  await db.query("INSERT INTO users(id,email,display_name,role,status,customer_id,password_hash) VALUES($1,$2,'Scoped admin','admin','active',$3,$4)",[scopeId,`scoped-${suffix}@example.test`,site.customerId,auth.hashPassword('Local-test-only-123!')]);
   users.scoped={id:scopeId,token:await loginToken(`scoped-${suffix}@example.test`,'admin')};
-  assert.equal((await request('scoped',`/v1/sites/${other.body.id}`)).status,200,'Super Admin retains global access even with legacy school metadata');
-  // Technical report coverage belongs to a scoped operator, not the school role.
-  await db.query('UPDATE users SET school_id=$1 WHERE id=$2',[site.schoolId,users.operator!.id]);
+  assert.equal((await request('scoped',`/v1/sites/${other.body.id}`)).status,403,'Technical manager cannot read business site detail');
+  assert.equal((await request('scoped','/v1/gateways')).status,200,'Technical manager retains gateway access with legacy customer metadata');
+  // Legacy customer metadata must not replace the operator's explicit site grant.
+  await db.query('UPDATE users SET customer_id=$1 WHERE id=$2',[site.customerId,users.operator!.id]);
   users.operator!.token=await loginToken(`operator-${suffix}@example.test`,'operator');
   assert.equal((await request('owner','/v1/dashboard/summary?start_date=2026-01-01&end_date=2026-04-01')).status,400);
   assert.equal((await request('owner','/v1/dashboard/summary?period=year')).status,400);
-  const report=await request('operator','/v1/reports','POST',{type:'energy',format:'csv',dateFrom:'2026-09-01',dateTo:'2026-09-30'});
-  assert.equal(report.status,202,JSON.stringify(report.body));assert.equal(report.body.status,'queued');assert.match(report.body.jobId,/^[a-f0-9-]{36}$/);
-  let completed:any;const reportDeadline=Date.now()+45000;
-  do{const state=await request('operator',`/v1/jobs/${report.body.jobId}`);assert.equal(state.status,200);completed=state.body;if(completed.status==='ready')break;assert.ok(['queued','running'].includes(completed.status),JSON.stringify(completed));await new Promise(resolve=>setTimeout(resolve,100));}while(Date.now()<reportDeadline);
-  assert.equal(completed.status,'ready',JSON.stringify(completed));assert.equal(completed.report.dataKind,'raw');assert.equal(completed.report.format,'csv');assert.equal(completed.rowCount,0,'September fixture contains no telemetry yet');
-  const downloadPath=`/v1/jobs/${report.body.jobId}/download`,download=await fetch(base+downloadPath,{headers:{Authorization:`Bearer ${users.operator!.token}`}});
-  assert.equal(download.status,200);assert.ok(download.headers.get('content-type')?.includes('text/csv'));
-  const bytes=Buffer.from(await download.arrayBuffer()),manifest=(await db.query('SELECT manifest FROM platform_jobs WHERE id=$1',[report.body.jobId])).rows[0].manifest;
-  assert.equal(createHash('sha256').update(bytes).digest('hex'),manifest.checksum);
-  assert.equal((await fetch(base+downloadPath,{headers:{Authorization:`Bearer ${users.owner!.token}`}})).status,403,'Another actor cannot download a school-owned job');
-  const device=(await db.query('SELECT id FROM devices WHERE site_id=$1',[site.id])).rows[0].id;
-  broker=await mqtt.connectAsync(process.env.READINESS_MQTT_URL || 'mqtt://127.0.0.1:18883');
+    for(const role of ['owner','admin','operator','accountant','customer']) {
+    assert.equal((await request(role,'/v1/reports','POST',{type:'energy',format:'csv'})).status,403,`${role} legacy report creation stays disabled`);
+    assert.equal((await request(role,`/v1/jobs/${randomUUID()}`)).status,403,`${role} legacy jobs stay disabled`);
+    assert.equal((await request(role,'/v1/history/options')).status,403,`${role} legacy history stays disabled`);
+  }
+broker=await mqtt.connectAsync(process.env.READINESS_MQTT_URL || 'mqtt://127.0.0.1:18883');
   const acknowledgements:Array<{duplicate:boolean}>=[],responses:unknown[]=[];
   await broker.subscribeAsync(`energy/${name}/response`);
   broker.on('message',(topic,message)=>{const response=JSON.parse(message.toString());if(topic===`energy/${name}/response`){responses.push(response);if(response.ingestionId===`test-${suffix}`&&response.deviceId===device)acknowledgements.push(response);}});
@@ -123,11 +127,14 @@ try {
   const raw=await db.query('SELECT * FROM telemetry_raw WHERE device_id=$1',[device]);
   assert.equal(raw.rows.length,1);assert.equal(Number(raw.rows[0].active_power_w),1200);assert.ok(raw.rows[0].received_time);
   const live=await request('admin',`/v1/sites/${site.id}/live-telemetry`);
-  assert.equal(live.body.metrics.activePower,1200);assert.equal(live.body.metrics.current,null);
+  assert.equal(live.status,200);assert.equal(live.body.metrics.activePower,1200);assert.equal(live.body.metrics.current,null);
   assert.equal(live.body.status,'online');
-  const schoolLive=await request('school','/v1/dashboard/summary');
-  assert.equal(schoolLive.status,200);assert.equal(schoolLive.body.sites.length,1);assert.equal(schoolLive.body.stats.currentMw,0.0012);
-  console.log('PASS: real HTTP authorization, school isolation, cardinality, truthful missing generation, periods, persisted report and MQTT durability/replay/ACK checks');
-  if(process.env.READINESS_ACCOUNTS_FILE)await writeFile(process.env.READINESS_ACCOUNTS_FILE,JSON.stringify({password:'Local-test-only-123!',accounts:Object.fromEntries(['owner','admin','operator','accountant','school'].map(role=>[role,role+'-'+suffix+'@example.test'])),siteId:site.id,otherSiteId:other.body.id,siteName:name,device,payload,ingestionId:`test-${suffix}`,reportJobId:report.body.jobId,reportChecksum:manifest.checksum}));
+  const scopedLive=await request('operator',`/v1/sites/${site.id}/live-telemetry`);
+  assert.equal(scopedLive.status,200);assert.equal(scopedLive.body.metrics.activePower,1200);
+  assert.equal((await request('operator',`/v1/sites/${other.body.id}/live-telemetry`)).status,403,'Technical telemetry grant stays within its site scope');
+  const customerLive=await request('customer','/v1/dashboard/summary');
+  assert.equal(customerLive.status,200);assert.equal(customerLive.body.sites.length,1);assert.equal(customerLive.body.stats.currentMw,null);
+  console.log('PASS: real HTTP authorization, customer isolation, cardinality, truthful missing generation, periods, denied legacy routes and MQTT durability/replay/ACK checks');
+  if(process.env.READINESS_ACCOUNTS_FILE)await writeFile(process.env.READINESS_ACCOUNTS_FILE,JSON.stringify({password:'Local-test-only-123!',accounts:Object.fromEntries(['owner','admin','operator','accountant','customer'].map(role=>[role,role+'-'+suffix+'@example.test'])),siteId:site.id,otherSiteId:other.body.id,siteName:name,device,payload,ingestionId:`test-${suffix}`}));
   console.log('Browser accounts written for isolated E2E run');
 } finally {await broker?.endAsync();await db.end();}

@@ -21,7 +21,7 @@ for (const scenario of [
     });
   }
   test(`${scenario.locale} organization user receives status without internal readiness details`, () => {
-    const html = renderToStaticMarkup(<FinancialAvailabilityNotice locale={scenario.locale} role="school_user" resource={scenario.resource} />);
+    const html = renderToStaticMarkup(<FinancialAvailabilityNotice locale={scenario.locale} role="customer_user" resource={scenario.resource} />);
     assert.match(html, scenario.status);
     assert.doesNotMatch(html, /<details|accounting|implementation|บัญชี|ความพร้อมของระบบ|Financial workflows await|settings|ตั้งค่า/);
   });
@@ -40,7 +40,7 @@ test("unknown roles do not receive internal readiness details", () => {
 });
 
 test('billing and receipts omit the unused availability notice for every viewer', () => {
-  for (const resource of ['billing', 'receipts']) for (const role of ['admin', 'accountant', 'school_user']) {
+  for (const resource of ['billing', 'receipts']) for (const role of ['admin', 'accountant', 'customer_user']) {
     assert.equal(renderToStaticMarkup(<FinancialAvailabilityNotice locale="th" role={role} resource={resource} />), '');
   }
 });

@@ -1,6 +1,7 @@
 "use client";
 import {BrandMark, BRAND_NAME} from "../brand/brand-mark";
 import {ProfilePreferences} from "./profile-preferences";
+import {settingsSections} from './settings-sections';
 import {NotificationBell} from './notification-bell';
 import {useSiteSelection} from '../../features/dashboard/site-selection-provider';
 import { useSessionUser } from "../../providers/session-user-provider";
@@ -23,7 +24,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import * as React from "react";
 import { MobileMenuSheet } from "./mobile-menu-sheet";
-import { Avatar, AvatarFallback } from "../../components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "../../components/ui/avatar";
 import { Badge } from "../../components/ui/badge";
 import {
   Breadcrumb,
@@ -79,20 +80,22 @@ export function AppHeader() {
   };
 
   const getPageTitle = (path: string) => {
+    const setting=settingsSections(user.role,user.authorization).flatMap(section=>section.items).find(item=>item.href===path);
+    if(setting)return setting.label[locale==='en'?1:0];
     if (path.startsWith("/records/")) return locale === "th" ? "รายละเอียดรายการ" : "Record details";
     switch (path) {
       case "/":
         return locale === "th" ? "หน้าแรก" : "Home";
       case "/system":
         return t("navigation.system");
-      case "/schools":
-        return t("navigation.schools");
+      case "/customers":
+        return t("navigation.customers");
       case "/sites":
         return t("navigation.sites");
       case "/billing":
         return t("navigation.billing");
       case "/contracts":
-        return user.role === "school_user" ? (locale === "th" ? "เอกสาร" : "Documents") : t("navigation.contracts");
+        return user.role === "customer_user" ? (locale === "th" ? "เอกสาร" : "Documents") : t("navigation.contracts");
       case "/receipts":
         return t("navigation.receipts");
       case "/reports":
@@ -132,7 +135,7 @@ export function AppHeader() {
       ? t("profile.owner")
       : user?.role === "admin"
       ? t("profile.admin")
-      : t("profile.schoolUser");
+      : t("profile.customerUser");
 
   return (
     <header className="sticky top-0 z-40 flex h-14 shrink-0 items-center justify-between border-b border-border bg-card/95 px-3.5 backdrop-blur-sm md:px-6">
@@ -189,6 +192,7 @@ export function AppHeader() {
                 aria-label={t("profile.userMenu")}
               >
                 <Avatar className="size-8.5 border border-border">
+                  {user.avatarData&&<AvatarImage src={user.avatarData} alt=""/>}
                   <AvatarFallback className="bg-primary text-primary-foreground font-bold text-xs">
                     {initials}
                   </AvatarFallback>
@@ -211,6 +215,7 @@ export function AppHeader() {
               {/* User Profile Header */}
               <div className="flex items-center gap-3 p-3.5 border-b border-border bg-muted/30">
                 <Avatar className="size-10 border border-border">
+                  {user.avatarData&&<AvatarImage src={user.avatarData} alt=""/>}
                   <AvatarFallback className="bg-primary text-primary-foreground font-bold text-sm">
                     {initials}
                   </AvatarFallback>
@@ -247,15 +252,7 @@ export function AppHeader() {
                   className="flex items-center gap-2.5 px-2.5 min-h-10 py-2 rounded-lg text-sm font-normal text-foreground hover:bg-muted/80 transition-colors"
                 >
                   <User className="size-3.5 text-muted-foreground" />
-                  <span>{locale === "en" ? "Account Settings" : "การตั้งค่าบัญชี"}</span>
-                </Link>
-                <Link
-                  href="/settings/security"
-                  onClick={() => setProfileOpen(false)}
-                  className="flex items-center gap-2.5 px-2.5 min-h-10 py-2 rounded-lg text-sm font-normal text-foreground hover:bg-muted/80 transition-colors"
-                >
-                  <Shield className="size-3.5 text-muted-foreground" />
-                  <span>{locale === "en" ? "Security & Password" : "ความปลอดภัยและรหัสผ่าน"}</span>
+                  <span>{locale === "en" ? "My Account" : "บัญชีของฉัน"}</span>
                 </Link>
               </div>
 

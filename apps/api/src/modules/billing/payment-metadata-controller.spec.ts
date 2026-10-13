@@ -18,14 +18,13 @@ function legacyHarness(existing?:Record<string,unknown>){
  return {controller,get saved(){return saved;},get writes(){return writes;}};
 }
 const req={user:{id:'actor',role:'owner'}} as any;
-test('legacy submission captures trimmed payer metadata with the existing numeric amount contract',async()=>{
+test('legacy submission retains payer metadata and declared values without fabricating verified transactions',async()=>{
  const h=legacyHarness();await h.controller.payBillingCycle('cycle',{amount:107,slipUrl:'synthetic-slip',payerName:' Payer ',paymentMethod:'bank_transfer',originBank:' Origin bank ',originAccount:' 00123 '} as any,req);
- assert.equal(h.saved!.amount,107);assert.equal(h.saved!.payer_name,'Payer');assert.equal(h.saved!.payment_method,'bank_transfer');assert.equal(h.saved!.origin_bank,'Origin bank');assert.equal(h.saved!.origin_account,'00123');
+ assert.equal(h.saved!.amount,'NULL');assert.equal(h.saved!.paid_at,'NULL');assert.equal(h.saved!.declared_amount,107);assert.equal(h.saved!.payer_name,'Payer');assert.equal(h.saved!.payment_method,'bank_transfer');assert.equal(h.saved!.origin_bank,'Origin bank');assert.equal(h.saved!.origin_account,'00123');
 });
-test('legacy resubmission updates provided metadata and preserves omitted prior metadata',async()=>{
- const h=legacyHarness({id:'payment',payer_name:'Old payer',payment_method:'promptpay',origin_bank:'Prior bank',origin_account:'00001'});
- await h.controller.payBillingCycle('cycle',{amount:107,slipUrl:'new-slip',payerName:' New payer '} as any,req);assert.equal(h.saved!.payer_name,'New payer');
- await h.controller.payBillingCycle('cycle',{amount:107,slipUrl:'second-slip'},req);assert.deepEqual(h.saved,{id:'payment',payer_name:'New payer',payment_method:'promptpay',origin_bank:'Prior bank',origin_account:'00001'});assert.equal(h.writes,2);
+test('duplicate evidence cannot overwrite an earlier submission or its metadata',async()=>{
+ const existing={id:'payment',payer_name:'Old payer',payment_method:'promptpay',origin_bank:'Prior bank',origin_account:'00001'};const h=legacyHarness(existing);
+ await assert.rejects(h.controller.payBillingCycle('cycle',{amount:107,slipUrl:'new-slip',payerName:' New payer '} as any,req),/already submitted/);assert.deepEqual(h.saved,existing);assert.equal(h.writes,0);
 });
 test('legacy submission rejects malformed metadata before database writes',async()=>{
  for(const metadata of [{payerName:42},{paymentMethod:'cash'},{paymentMethod:'card'},{originAccount:'0'.repeat(81)}]){

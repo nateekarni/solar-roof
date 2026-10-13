@@ -14,7 +14,7 @@ test('physical PITR reaches the target and preserves persisted evidence and ever
  assert.equal(r.rawChecksPassed,true);assert.equal(r.mqttReplayVerification,'passed-fixture');
  assert.equal(r.artifactChecksPassed,true);assert.equal(r.configChecksPassed,true);
  assert.equal(r.nonemptyRestoreRejected,true);assert.equal(r.inaccessibleRepositoryRejected,true);assert.equal(r.missingWalRejected,true);
- assert.deepEqual(r.rolesVerified,['owner','admin','operator','accountant','school_user']);
+ assert.deepEqual(r.rolesVerified,['owner','admin','operator','accountant','customer_user']);
  assert.equal(r.postgresMajor,16);assert.equal(r.timescaleVersion,'2.18.2');
  assert.equal(r.productionRecoveryVerified,false,'A local fixture cannot prove independent-host recovery');
 });

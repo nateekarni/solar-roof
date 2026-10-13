@@ -1,4 +1,5 @@
 "use client";
+import { focusInvalidFields } from "../../lib/form-feedback";
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
@@ -132,7 +133,7 @@ export function BillingCycleDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 pt-3.5">
+        <form onSubmit={handleSubmit(onSubmit, errors => focusInvalidFields(errors))} className="space-y-4 pt-3.5">
           <div className="space-y-2">
             <Label htmlFor="site-select" required className="text-xs font-medium">
               {locale === "th" ? "ไซต์พลังงาน" : "Solar Site"}

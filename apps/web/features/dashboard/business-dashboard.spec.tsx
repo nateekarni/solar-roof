@@ -4,17 +4,17 @@ import test from 'node:test';
 import {renderToStaticMarkup} from 'react-dom/server';
 import type {DashboardSummaryResponse} from '@solar/api-contracts';
 import {BusinessDashboard,BusinessProductionTrend} from './business-dashboard';
-const data: DashboardSummaryResponse={range:{start:'2026-10-01',end:'2026-10-06'},availableSites:[{id:'s',name:'School A'}],sites:[{id:'s',name:'Site A',schoolName:'School A',latitude:null,longitude:null,status:'online',capacityMwp:1,productionKwh:null}],stats:{totalSites:1,onlineSites:1,installedMwp:1,currentMw:null,periodKwh:null,periodAmount:2500,billCount:1,paidBillCount:0},production:[],revenue:[],rankings:[],alerts:[{title:'Gateway failed',detail:'raw telemetry',severity:'critical',status:'offline',occurred_at:''}],collection:{total:1,paid:0,pending:1,paidPercent:0}};
+const data: DashboardSummaryResponse={range:{start:'2026-10-01',end:'2026-10-06'},availableSites:[{id:'s',name:'Customer A'}],sites:[{id:'s',name:'Site A',customerName:'Customer A',latitude:null,longitude:null,status:'online',capacityMwp:1,productionKwh:null}],stats:{totalSites:1,onlineSites:1,installedMwp:1,currentMw:null,periodKwh:null,periodAmount:2500,billCount:1,paidBillCount:0},production:[],revenue:[],rankings:[],alerts:[{title:'Gateway failed',detail:'raw telemetry',severity:'critical',status:'offline',occurred_at:''}],collection:{total:1,paid:0,pending:1,paidPercent:0}};
 test('owner home presents production, billed revenue and documents without operational content',()=>{
  const html=renderToStaticMarkup(<BusinessDashboard data={data} role="owner" locale="en"/>);
- assert.match(html,/Billed revenue/);assert.match(html,/2,500/);assert.match(html,/href="\/billing"/);assert.match(html,/href="\/contracts"/);assert.match(html,/href="\/receipts"/);assert.match(html,/Unavailable/);assert.doesNotMatch(html,/Gateway|telemetry|\/alerts|Power flow|Compare/);
+ assert.match(html,/Billed revenue/);assert.match(html,/2,500/);assert.match(html,/href="\/billing"/);assert.doesNotMatch(html,/href="\/contracts"/);assert.match(html,/href="\/receipts"/);assert.match(html,/Unavailable/);assert.doesNotMatch(html,/Gateway|telemetry|\/alerts|Power flow|Compare/);
 });
-test('school home identifies own school and charges with no company revenue or school selector',()=>{
- const html=renderToStaticMarkup(<BusinessDashboard data={data} role="school_user" locale="en"/>);
- assert.match(html,/School A/);assert.match(html,/Billed amount in period/);assert.doesNotMatch(html,/revenue|Gateway|Compare|<select/);assert.match(html,/href="\/contracts"/);
+test('customer home identifies own customer and charges with no company revenue or customer selector',()=>{
+ const html=renderToStaticMarkup(<BusinessDashboard data={data} role="customer_user" locale="en"/>);
+ assert.match(html,/Customer A/);assert.match(html,/Billed amount in period/);assert.doesNotMatch(html,/revenue|Gateway|Compare|<select/);assert.doesNotMatch(html,/href="\/contracts"/);
 });
 test('missing financial records remain unavailable rather than zero revenue',()=>{
- const html=renderToStaticMarkup(<BusinessDashboard data={{...data,sites:[],stats:{...data.stats,periodAmount:0,billCount:0}}} role="school_user" locale="en"/>);
+ const html=renderToStaticMarkup(<BusinessDashboard data={{...data,sites:[],stats:{...data.stats,periodAmount:0,billCount:0}}} role="customer_user" locale="en"/>);
  assert.match(html,/Organization assignment unavailable/);assert.doesNotMatch(html,/>0 THB</);assert.match(html,/No outstanding invoices in the loaded records/);
 });
 test('unknown production samples cannot corrupt valid trend bars or imply measured zero',()=>{

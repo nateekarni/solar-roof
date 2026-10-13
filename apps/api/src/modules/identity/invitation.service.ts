@@ -4,13 +4,13 @@ import type {PoolClient} from 'pg';
 import nodemailer from 'nodemailer';
 import {DatabaseService} from '../../database/database.service.js';
 import {AuthService} from './auth.service.js';
-import {schoolScope, type ScopePrincipal} from '../../common/auth/route-policy.js';
+import {customerScope, type ScopePrincipal} from '../../common/auth/route-policy.js';
 export type InvitationStatus='pending_delivery'|'sent'|'delivery_failed';
-export interface InviteInput {email:string;displayName:string;role:string;schoolId?:string|null}
-export function canGrantInvitation(actor:ScopePrincipal & {status?:string}, role:string, schoolId:string|null):boolean {
-  if(actor.status!=='active' || actor.role !== 'admin' || !['owner','admin','operator','accountant','school_user'].includes(role))return false;
-  if(role==='school_user'&&!schoolId)return false;
-  const scope=schoolScope(actor);return scope===null || (!!schoolId&&scope.includes(schoolId));
+export interface InviteInput {email:string;displayName:string;role:string;customerId?:string|null;siteId?:string}
+export function canGrantInvitation(actor:ScopePrincipal & {status?:string}, role:string, customerId:string|null):boolean {
+  if(actor.status!=='active'||!['owner','admin'].includes(actor.role??'')||!['operator','accountant','customer_user'].includes(role))return false;
+  if(role==='customer_user')return actor.role==='owner'&&Boolean(customerId);
+  return customerId===null;
 }
 const digest=(token:string)=>createHash('sha256').update(token).digest('hex');
 const invalid=()=>new UnauthorizedException('Invitation is invalid or expired');
@@ -32,32 +32,46 @@ export class InvitationService {
     return result.rows[0].window_started_at;
   }
   private async actor(client:PoolClient,id:string) {
-    return (await client.query('SELECT id,role,status,school_id AS "schoolId" FROM users WHERE id=$1 FOR SHARE',[id])).rows[0];
+    return (await client.query('SELECT id,role,status,customer_id AS "customerId" FROM users WHERE id=$1 FOR SHARE',[id])).rows[0];
   }
-  private authorize(actor:any,role:string,schoolId:string|null) {
-    if(!actor||!canGrantInvitation(actor,role,schoolId))throw new ForbiddenException('Cannot grant invitation role or school scope');
+  private authorize(actor:any,role:string,customerId:string|null) {
+    if(!actor||!canGrantInvitation(actor,role,customerId))throw new ForbiddenException('Cannot grant invitation role or customer scope');
   }
-  async invite(input:InviteInput,actor:ScopePrincipal & {id:string}):Promise<{invitationId:string;status:InvitationStatus}> {
+  async invite(input:InviteInput,actor:ScopePrincipal & {id:string}):Promise<{invitationId:string|null;status:InvitationStatus|'existing';userId:string}> {
     const email=typeof input.email==='string'?input.email.trim().toLowerCase():'';
     const displayName=typeof input.displayName==='string'?input.displayName.trim():'';
-    const role=input.role ?? 'school_user';let schoolId=input.schoolId || null;
+    const role=input.role ?? 'customer_user';let customerId=input.customerId || null;
     if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||email.length>254||!displayName||displayName.length>200)throw new BadRequestException('Valid email and displayName are required');
-    if(schoolId&&!/^[a-f0-9-]{36}$/i.test(schoolId))throw new BadRequestException('Invalid schoolId');
+    if(customerId&&!/^[a-f0-9-]{36}$/i.test(customerId))throw new BadRequestException('Invalid customerId');
     const token=randomBytes(32).toString('base64url'),invitationId=randomUUID(),userId=randomUUID();
+    let existingUserId:string|undefined;
     await this.db.transaction(async client=>{
       const current=await this.actor(client,actor.id);
-      if(!schoolId&&current?.schoolId&&role==='school_user')schoolId=current.schoolId;
-      this.authorize(current,role,schoolId);
-      if(schoolId&&!(await client.query('SELECT id FROM schools WHERE id=$1',[schoolId])).rows[0])throw new BadRequestException('School not found');
+      if(!customerId&&current?.customerId&&role==='customer_user')customerId=current.customerId;
+      this.authorize(current,role,customerId);
+      const existing=(await client.query('SELECT id,role FROM users WHERE email=$1 FOR UPDATE',[email])).rows[0];
+      if(existing&&['operator','accountant'].includes(role)&&['operator','accountant'].includes(existing.role)){
+        existingUserId=existing.id;
+        await client.query(`INSERT INTO employee_domain_grants(user_id,domain,updated_by) VALUES($1,$2,$3) ON CONFLICT(user_id,domain) DO NOTHING`,[existing.id,current.role==='owner'?'business':'technical',actor.id]);
+        return;
+      }
+      if(customerId&&!(await client.query('SELECT id FROM customers WHERE id=$1',[customerId])).rows[0])throw new BadRequestException('Customer not found');
       await this.limit(client,`delivery:${actor.id}:${email}`,3600);
-      const inserted=await client.query(`INSERT INTO users(id,email,display_name,role,status,school_id,password_hash)
-        VALUES($1,$2,$3,$4,'invited',$5,NULL) ON CONFLICT(email) DO NOTHING RETURNING id`,[userId,email,displayName,role,schoolId]);
+      const inserted=await client.query(`INSERT INTO users(id,email,display_name,role,status,customer_id,password_hash)
+        VALUES($1,$2,$3,$4,'invited',$5,NULL) ON CONFLICT(email) DO NOTHING RETURNING id`,[userId,email,displayName,role,customerId]);
       if(!inserted.rows[0])throw new ConflictException('User already exists; use resend for an outstanding invitation');
-      await client.query(`INSERT INTO user_invitations(id,user_id,issuer_id,email,role,school_id,token_hash,expires_at,delivery_status)
-        VALUES($1,$2,$3,$4,$5,$6,$7,now()+interval '24 hours','pending_delivery')`,[invitationId,userId,actor.id,email,role,schoolId,digest(token)]);
+      if(role!=='customer_user')await client.query(`INSERT INTO employee_domain_grants(user_id,domain,updated_by) VALUES($1,$2,$3)`,[userId,current.role==='owner'?'business':'technical',actor.id]);
+      if(input.siteId) {
+        const site=(await client.query('SELECT customer_id FROM sites WHERE id=$1 AND customer_id=$2 FOR SHARE',[input.siteId,customerId])).rows[0];
+        if(role!=='customer_user'||!site)throw new BadRequestException('Invalid site assignment');
+        await client.query('INSERT INTO site_account_assignments(id,user_id,site_id,assigned_by) VALUES($1,$2,$3,$4)',[randomUUID(),userId,input.siteId,actor.id]);
+      }
+      await client.query(`INSERT INTO user_invitations(id,user_id,issuer_id,email,role,customer_id,token_hash,expires_at,delivery_status)
+        VALUES($1,$2,$3,$4,$5,$6,$7,now()+interval '24 hours','pending_delivery')`,[invitationId,userId,actor.id,email,role,customerId,digest(token)]);
       await client.query("INSERT INTO audit_events(id,actor_id,action,entity_type,entity_id,correlation_id,occurred_at) VALUES($1,$2,'user.invited','user',$3,$4,now())",[randomUUID(),actor.id,userId,invitationId]);
     });
-    return {invitationId,status:await this.deliver(invitationId,email,token)};
+    if(existingUserId)return {invitationId:null,status:'existing',userId:existingUserId};
+    return {invitationId,status:await this.deliver(invitationId,email,token),userId};
   }
   async findOutstanding(email:string,actor:ScopePrincipal & {id:string}) {
     if(typeof email!=='string'||!email.trim())throw new BadRequestException('Email is required');
@@ -65,7 +79,7 @@ export class InvitationService {
       const invitation=(await client.query(`SELECT i.* FROM user_invitations i JOIN users u ON u.id=i.user_id
         WHERE i.email=$1 AND i.consumed_at IS NULL AND u.status='invited'`,[email.trim().toLowerCase()])).rows[0];
       if(!invitation)throw new NotFoundException('Outstanding invitation not found');
-      this.authorize(await this.actor(client,actor.id),invitation.role,invitation.school_id);
+      this.authorize(await this.actor(client,actor.id),invitation.role,invitation.customer_id);
       return {invitationId:invitation.id,status:invitation.delivery_status as InvitationStatus};
     });
   }
@@ -75,9 +89,9 @@ export class InvitationService {
     const email=await this.db.transaction(async client=>{
       const invitation=(await client.query('SELECT * FROM user_invitations WHERE id=$1 FOR UPDATE',[invitationId])).rows[0];
       if(!invitation)throw new NotFoundException('Invitation not found');
-      this.authorize(await this.actor(client,actor.id),invitation.role,invitation.school_id);
+      this.authorize(await this.actor(client,actor.id),invitation.role,invitation.customer_id);
       const recipient=(await client.query('SELECT * FROM users WHERE id=$1 FOR UPDATE',[invitation.user_id])).rows[0];
-      if(!recipient||recipient.status!=='invited'||recipient.role!==invitation.role||recipient.school_id!==invitation.school_id||recipient.email!==invitation.email||recipient.password_hash||invitation.consumed_at)throw new ConflictException('Invitation is no longer eligible for resend');
+      if(!recipient||recipient.status!=='invited'||recipient.role!==invitation.role||recipient.customer_id!==invitation.customer_id||recipient.email!==invitation.email||recipient.password_hash||invitation.consumed_at)throw new ConflictException('Invitation is no longer eligible for resend');
       await this.limit(client,`delivery:${actor.id}:${invitation.email}`,3600);
       // Replacing the hash immediately revokes the previous link, including on SMTP failure.
       await client.query("UPDATE user_invitations SET issuer_id=$2,token_hash=$3,expires_at=now()+interval '24 hours',revoked_at=NULL,delivery_status='pending_delivery',updated_at=now() WHERE id=$1",[invitationId,actor.id,digest(token)]);
@@ -110,9 +124,9 @@ export class InvitationService {
     await this.db.transaction(async client=>{
       const invitation=(await client.query('SELECT * FROM user_invitations WHERE token_hash=$1 FOR UPDATE',[digest(token)])).rows[0];
       if(!invitation||invitation.consumed_at||invitation.revoked_at||invitation.delivery_status!=='sent'||new Date(invitation.expires_at).getTime()<=Date.now())throw invalid();
-      const people=(await client.query('SELECT id,email,role,status,school_id,password_hash FROM users WHERE id=ANY($1::uuid[]) ORDER BY id FOR UPDATE',[[invitation.user_id,invitation.issuer_id]])).rows;
+      const people=(await client.query('SELECT id,email,role,status,customer_id,password_hash FROM users WHERE id=ANY($1::uuid[]) ORDER BY id FOR UPDATE',[[invitation.user_id,invitation.issuer_id]])).rows;
       const recipient=people.find(person=>person.id===invitation.user_id),issuer=people.find(person=>person.id===invitation.issuer_id);
-      if(!recipient||recipient.status!=='invited'||recipient.password_hash||recipient.role!==invitation.role||recipient.school_id!==invitation.school_id||recipient.email!==invitation.email||!issuer||!canGrantInvitation({...issuer,schoolId:issuer.school_id},invitation.role,invitation.school_id))throw invalid();
+      if(!recipient||recipient.status!=='invited'||recipient.password_hash||recipient.role!==invitation.role||recipient.customer_id!==invitation.customer_id||recipient.email!==invitation.email||!issuer||!canGrantInvitation({...issuer,customerId:issuer.customer_id},invitation.role,invitation.customer_id))throw invalid();
       const consumed=await client.query('UPDATE user_invitations SET consumed_at=now(),updated_at=now() WHERE id=$1 AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at>clock_timestamp() RETURNING id',[invitation.id]);
       if(!consumed.rows[0])throw invalid();
       await client.query("UPDATE users SET status='active',password_hash=$2,updated_at=now() WHERE id=$1",[recipient.id,passwordHash]);

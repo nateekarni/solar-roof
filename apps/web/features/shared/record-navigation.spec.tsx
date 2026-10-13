@@ -6,7 +6,7 @@ import {recordBackLink} from './record-back-link';
 import {renderRecordValue} from './record-value';
 test('Organization financial records return to Documents in both locales',()=>{
  for(const resource of ['billing','documents','receipts'])for(const locale of ['th','en'] as const){
-  assert.deepEqual(recordBackLink(resource,'school_user','/billing',locale),{href:'/contracts',label:locale==='th'?'กลับไปหน้าเอกสาร':'Back to documents'});
+  assert.deepEqual(recordBackLink(resource,'customer_user','/billing',locale),{href:'/contracts',label:locale==='th'?'กลับไปหน้าเอกสาร':'Back to documents'});
  }
  assert.deepEqual(recordBackLink('billing','admin','/billing','en'),{href:'/billing',label:'Back to list'});
 });

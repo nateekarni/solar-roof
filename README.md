@@ -92,7 +92,7 @@ pnpm db:seed
 pnpm dev
 ```
 
-The demo seed is deterministic and recreates local/demo data only. It creates 12 schools, 18 sites, 18 gateways, 36 devices, 60-second raw telemetry for 7 days, 15-minute/hour/day/month aggregates, contracts, rate versions, billing cycles, invoices, payments, alerts and audit events.
+The demo seed is deterministic and recreates local/demo data only. It creates 12 customers, 18 sites, 18 gateways, 36 devices, 60-second raw telemetry for 7 days, 15-minute/hour/day/month aggregates, contracts, rate versions, billing cycles, invoices, payments, alerts and audit events.
 
 To intentionally recreate the local dataset:
 

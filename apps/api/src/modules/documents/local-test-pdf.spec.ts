@@ -24,14 +24,14 @@ test('financial snapshot adapter retains every saved meter/rate and approved tra
   const snapshot = localTestDocumentSnapshot(document);
   assert.equal(snapshot.issuer.name, 'บริษัทจริง');
   assert.equal(snapshot.siteExternalId,'SITE-002');
-  assert.equal(snapshot.templateVersion,'sarabun-a4-v5');
+  assert.equal(snapshot.templateVersion,'sarabun-a4-v6');
   assert.deepEqual(snapshot.items.map((item: any) => [item.period, item.quantity, item.rate, item.amount]), [
     ['2026-09-01 - 2026-09-15', '1000.123', '4.1234', '4123.91'],
     ['2026-09-16 - 2026-09-30', '2000.456', '4.5678', '9137.68'],
   ]);
   assert.equal(snapshot.totals?.total, '90071992547409.91');
   assert.deepEqual(snapshot.approvedTransfers.map((p: any) => p.evidence), ['approved-original']);
-  assert.equal(snapshot.syntheticTest, true);
+  assert.equal(snapshot.syntheticTest, false);
   assert.equal(JSON.stringify(document), original);
 });
 

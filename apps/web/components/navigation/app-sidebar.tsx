@@ -37,7 +37,8 @@ import { getNavItems, navLabel } from "./nav-config";
 
 export function AppSidebar() {
   const currentPath = usePathname();
-  const navItems = getNavItems(useSessionUser().role);
+  const sessionUser=useSessionUser();
+  const navItems = getNavItems(sessionUser.role,sessionUser.authorization);
   const recordResource = currentPath.startsWith("/records/") ? currentPath.split("/")[2] : undefined;
   const pathname = recordResource ? (["users","audit"].includes(recordResource) ? `/settings/${recordResource}` : `/${recordResource}`) : currentPath;
   const searchParams = useSearchParams();
@@ -166,7 +167,7 @@ export function AppSidebar() {
                   );
                 }
 
-                // Direct links without subItems (Dashboard, Schools, Sites, Alerts, etc.)
+                // Direct links without subItems (Dashboard, Customers, Sites, Alerts, etc.)
                 const isActive = pathname === item.href;
                 return (
                   <SidebarMenuItem key={item.key}>

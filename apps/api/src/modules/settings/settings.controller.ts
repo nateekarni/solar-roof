@@ -1,10 +1,22 @@
-import { Body, Controller, Delete, Get, Inject, Param, Patch, Put } from "@nestjs/common";
+import { Body, Controller, Delete, ForbiddenException, Get, Inject, Param, Patch, Put, Req } from "@nestjs/common";
+import { hasPermission, type AuthorizationPrincipal } from '../../common/auth/authorization.js';
 import { SettingsService, type SystemSettings } from "./settings.service.js";
 import { Roles } from "../../common/roles.decorator.js";
 
 @Controller("v1/settings")
 export class SettingsController {
   constructor(@Inject(SettingsService) private readonly settingsService: SettingsService) {}
+
+  @Get('business') getBusiness(){return this.settingsService.getDomainSettings('business');}
+  @Get('technical') getTechnical(){return this.settingsService.getDomainSettings('technical');}
+  @Patch('business') updateBusiness(@Body() body:unknown,@Req() req:{user:AuthorizationPrincipal&{id:string}}){
+    if(!hasPermission(req.user,'business.settings.edit'))throw new ForbiddenException();
+    return this.settingsService.updateDomainSettings('business',body,req.user.id);
+  }
+  @Patch('technical') updateTechnical(@Body() body:unknown,@Req() req:{user:AuthorizationPrincipal&{id:string}}){
+    if(!hasPermission(req.user,'technical.settings.edit'))throw new ForbiddenException();
+    return this.settingsService.updateDomainSettings('technical',body,req.user.id);
+  }
 
   @Get()
   async getSettings(): Promise<SystemSettings> {
@@ -14,13 +26,13 @@ export class SettingsController {
   @Roles("owner")
   @Put()
   async updateSettingsPut(@Body() body: Partial<SystemSettings>): Promise<SystemSettings> {
-    return this.settingsService.updateSettings(body);
+    throw new ForbiddenException('Use revisioned domain settings');
   }
 
   @Roles("owner")
   @Patch()
   async updateSettingsPatch(@Body() body: Partial<SystemSettings>): Promise<SystemSettings> {
-    return this.settingsService.updateSettings(body);
+    throw new ForbiddenException('Use revisioned domain settings');
   }
 
   @Roles("owner", "admin")
@@ -29,18 +41,7 @@ export class SettingsController {
     criticalEmailAlert?: boolean;
     inAppNotification?: boolean;
   }) {
-    const patch: Partial<SystemSettings> = {};
-    if (typeof body.criticalEmailAlert === "boolean") {
-      patch.criticalEmailAlert = body.criticalEmailAlert;
-    }
-    if (typeof body.inAppNotification === "boolean") {
-      patch.inAppNotification = body.inAppNotification;
-    }
-    await this.settingsService.updateSettings(patch);
-    return {
-      success: true,
-      message: "บันทึกการตั้งค่าการแจ้งเตือนเรียบร้อยแล้ว",
-    };
+    throw new ForbiddenException('Use revisioned technical settings');
   }
 
   @Get("company")

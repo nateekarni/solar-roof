@@ -37,12 +37,12 @@ export function BillingSourcePanel({state,draft,onChange,onSave,onReload,locale,
  let canSave=false;try{buildBillingSourceInput(state,draft,profilePending);canSave=true;}catch{}
  const change=(patch:Partial<BillingSourceDraft>)=>onChange({...draft,...patch,confirmed:false});
  const details:Array<[string,React.ReactNode]>=[
- [label("มิเตอร์หลัก","Main meter"),state.device?.name??"—"],["Device ID",state.device?.externalDeviceId??"—"],
+ [label("มิเตอร์หลัก","Main meter"),state.device?.name??"—"],[label("รหัสอุปกรณ์","Device ID"),state.device?.externalDeviceId??"—"],
  [label("Profile ปัจจุบัน","Current profile"),state.device?.profileRevisionId??"—"],
  [label("ฟิลด์ต้นทาง","Source tag"),field?.sourceTag??bound?.sourceTag??"—"],
- ["Canonical tag",field?.canonicalTag??bound?.canonicalTag??"—"],
+ [label("ชื่อค่ามาตรฐาน","Canonical tag"),field?.canonicalTag??bound?.canonicalTag??"—"],
  [label("ตำแหน่งค่าต้นทาง","Source path"),field?sourcePath??`data.values[${JSON.stringify(field.sourceTag)}]`:"—"],
- ["Poll group",field?.pollGroup??"—"],
+ [label("กลุ่มการอ่านข้อมูล","Poll group"),field?.pollGroup??"—"],
  [label("หน่วยต้นทาง","Source unit"),field?.sourceUnit??bound?.sourceUnit??"—"],
  [label("หน่วยปลายทาง","Target unit"),field?.targetUnit??bound?.targetUnit??"—"],
  [label("การแปลงค่า","Conversion"),field?.conversion??bound?.conversion??"—"]
@@ -55,7 +55,7 @@ export function BillingSourcePanel({state,draft,onChange,onSave,onReload,locale,
    {profilePending&&<Alert><AlertTitle>{label("บันทึก Profile ก่อนผูกแหล่งข้อมูล","Apply the main meter profile before binding")}</AlertTitle><AlertDescription>{label("มีการแก้ไขมิเตอร์หลักที่ยังไม่ได้บันทึก หรือกำลังเปิดใช้ Profile ใหม่","The main meter has unsaved changes or a profile activation is in progress.")}</AlertDescription></Alert>}
    {!draft.sourceTag&&field&&<p className="text-sm text-muted-foreground">{label("ฟิลด์สะสมที่ตั้งค่าไว้ — เลือกฟิลด์ด้านล่างเพื่อผูกแหล่งข้อมูล","Configured cumulative field — choose below to bind it")}</p>}<dl className="grid min-w-0 gap-3 text-sm sm:grid-cols-2">{details.map(([title,value])=><div key={title} className="min-w-0"><dt className="text-muted-foreground">{title}</dt><dd className="mt-1 break-all">{value}</dd></div>)}</dl>
    {bound&&<details><summary className="cursor-pointer text-sm">{label("แหล่งข้อมูลที่บันทึกอยู่","Saved binding")}</summary><dl className="mt-2 grid gap-2 text-sm sm:grid-cols-2">{[
-    ["Binding ID",bound.id],["Profile",bound.profileRevisionId],["Source tag",bound.sourceTag],["Canonical tag",bound.canonicalTag],["Units",`${bound.sourceUnit} → ${bound.targetUnit}`],["Conversion",bound.conversion],
+    [label("รหัสการผูกข้อมูล","Binding ID"),bound.id],[label("รายการข้อมูล","Profile"),bound.profileRevisionId],[label("ฟิลด์ต้นทาง","Source tag"),bound.sourceTag],[label("ชื่อค่ามาตรฐาน","Canonical tag"),bound.canonicalTag],[label("หน่วย","Units"),`${bound.sourceUnit} → ${bound.targetUnit}`],[label("การแปลงค่า","Conversion"),bound.conversion],
     [label("วัตถุประสงค์ที่บันทึก","Saved physical purpose"),purposeLabels[bound.measurementPurpose][th?0:1]],[label("รายละเอียด","Description"),bound.purposeDescription??"—"]
    ].map(([title,value])=><div key={title}><dt className="text-muted-foreground">{title}</dt><dd className="break-all">{value}</dd></div>)}</dl></details>}
    <section className="flex flex-col gap-2 rounded-lg bg-muted p-3" aria-label={label("ค่าพลังงานจริง","Actual energy reading")}>

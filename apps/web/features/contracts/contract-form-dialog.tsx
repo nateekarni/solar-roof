@@ -1,4 +1,5 @@
 "use client";
+import { focusInvalidFields } from "../../lib/form-feedback";
 import {BRAND_NAME} from "../../components/brand/brand-mark";
 import {useFinancialCapabilities} from '../../lib/financial-capabilities';
 import {financialContractInput,nextRateStart,contractRatePayload} from './contract-financial-input';
@@ -43,7 +44,7 @@ interface SiteOption {
   externalSiteId?: string | null;
   id: string;
   name: string;
-  schoolName?: string;
+  customerName?: string;
 }
 
 interface RateRow {
@@ -249,7 +250,7 @@ export function ContractFormDialog({
           </div>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="min-w-0 space-y-4 pt-2">
+        <form onSubmit={handleSubmit(onSubmit, errors => focusInvalidFields(errors))} className="min-w-0 space-y-6 pt-2">
           {/* Section 1: Site and Signer Information */}
           <div className="space-y-3">
             <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
@@ -258,10 +259,6 @@ export function ContractFormDialog({
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <div className="space-y-2">
-                <Label htmlFor="payment-term-days" required={localTestMode}>{locale==='th'?'จำนวนวันชำระเงิน':'Payment term (calendar days)'}</Label>
-                <Input id="payment-term-days" type="number" min="0" max="3650" step="1" required={localTestMode} value={paymentTermDays} onChange={event=>setPaymentTermDays(event.target.value)}/>
-              </div>
               <div className="space-y-2">
                 {localTestMode&&<><Label htmlFor="contract-recipient" required>{locale==='th'?'บัญชีผู้รับเอกสาร':'Document recipient account'}</Label>
                 <Select value={recipientUserId} onValueChange={setRecipientUserId} disabled={!selectedSiteId}>
@@ -284,7 +281,7 @@ export function ContractFormDialog({
                   <SelectContent>
                     {sites.map((s) => (
                       <SelectItem key={s.id} value={s.id} className="text-xs">
-                        {s.name} · {s.externalSiteId || (locale==='th'?'ยังไม่มีรหัส':'No registered code')} {s.schoolName ? `(${s.schoolName})` : ""}
+                        {s.name} · {s.externalSiteId || (locale==='th'?'ยังไม่มีรหัส':'No registered code')} {s.customerName ? `(${s.customerName})` : ""}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -343,6 +340,10 @@ export function ContractFormDialog({
               <div className="space-y-2">
                 <Label htmlFor="customer-signer-title">{locale==='th'?'ตำแหน่งผู้ลงนามฝ่ายลูกค้า (ไม่บังคับ)':'Customer signatory title (optional)'}</Label>
                 <Input id="customer-signer-title" {...register('customerSignerTitle')}/>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="payment-term-days" required={localTestMode}>{locale==='th'?'จำนวนวันชำระเงิน':'Payment term (calendar days)'}</Label>
+                <Input id="payment-term-days" type="number" min="0" max="3650" step="1" required={localTestMode} placeholder={locale==='th'?'เช่น 30 วัน':'e.g. 30 days'} value={paymentTermDays} onChange={event=>setPaymentTermDays(event.target.value)}/>
               </div>
             </div>
           </div>
@@ -405,7 +406,7 @@ export function ContractFormDialog({
 
               <div className="space-y-2">
                 <Label htmlFor="billing-email" className="text-xs font-medium">
-                  {locale === "th" ? "อีเมลรับใบแจ้งหนี้ / ใบกำกับภาษี" : "Billing Email"}
+                  {locale === "th" ? "อีเมลรับใบวางบิล / ใบกำกับภาษี" : "Billing Email"}
                 </Label>
                 <Input
                   id="billing-email"
@@ -451,7 +452,7 @@ export function ContractFormDialog({
 
             <div className="min-w-0 max-w-full overflow-x-auto rounded-lg border border-border">
               <Table className="w-full text-left text-xs">
-                <TableHeader className="bg-muted/60 text-[11px] font-semibold text-muted-foreground uppercase">
+                <TableHeader className="text-[11px] font-semibold text-muted-foreground uppercase">
                   <TableRow>
                     <TableHead className="p-2.5 pl-3">{locale === "th" ? "วันเริ่มต้น" : "Start Date"}</TableHead>
                     <TableHead className="p-2.5">{locale === "th" ? "วันสิ้นสุด (เว้นว่าง = ไม่มีกำหนด)" : "End Date (Blank = Ongoing)"}</TableHead>

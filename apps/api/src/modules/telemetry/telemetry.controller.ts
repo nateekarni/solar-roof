@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { decodeRegisterBatch, type RegisterFieldMapping } from '@solar/domain';
 import { DatabaseService } from '../../database/database.service.js';
 import { MqttIngestionService } from './mqtt-ingestion.service.js';
+import { snapshotGatewayConfiguration } from '../assets/gateway-lifecycle.js';
 
 @Controller('v1')
 export class TelemetryController {
@@ -36,7 +37,7 @@ export class TelemetryController {
     const client = await this.db.pool.connect();
     try {
       await client.query('BEGIN');
-      const device = await client.query('SELECT id FROM devices WHERE id = $1 FOR UPDATE', [deviceId]);
+      const device = await client.query('SELECT id,gateway_id FROM devices WHERE id = $1 FOR UPDATE', [deviceId]);
       if (!device.rows.length) throw new NotFoundException('Device not found');
       if (body.id) {
         const previous = await client.query('SELECT id FROM register_mapping_versions WHERE id = $1 AND device_id = $2 AND effective_to IS NULL', [body.id, deviceId]);
@@ -47,6 +48,7 @@ export class TelemetryController {
         (id,device_id,semantic_field,register_address,register_count,word_order,byte_order,data_type,scale,unit,polling_interval_seconds,effective_from)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,transaction_timestamp()) RETURNING *`,
         [randomUUID(),deviceId,body.semanticField.trim(),body.registerAddress.trim(),count,body.wordOrder ?? 'little_word_first',body.byteOrder ?? 'big_endian',body.dataType,scale,body.unit,interval]);
+      await snapshotGatewayConfiguration(client,device.rows[0].gateway_id);
       await client.query('COMMIT'); return result.rows[0];
     } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
   }

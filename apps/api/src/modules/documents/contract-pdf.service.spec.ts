@@ -6,7 +6,7 @@ const logoHash=(uri:string)=>createHash('sha256').update(Buffer.from(uri.split('
 import { buildContractSnapshot, ContractPdfService } from './contract-pdf.service.js';
 import type { DatabaseService } from '../../database/database.service.js';
 const issuer={company_name:'บริษัท ผู้ขาย',tax_id:'1234567890123',address:'กรุงเทพ',branch:'00000',phone:'02',email:'issuer@example.com'};
-const contract={document_number:'PPA261000001',id:'contract-a',site_id:'site-a',site_name:'ไซต์หนึ่ง',school_id:'school-a',start_date:'2026-10-08',end_date:null,created_date:'2026-10-08',company_name:'Customer Ltd',tax_id:'9876543210123',tax_address:'Customer address',branch:'00000',payment_terms:'30 days',payment_term_days:30,signer_name:'Provider Person',signer_title:'Director',customer_signer_name:'Buyer Person',customer_signer_title:'Manager'};
+const contract={document_number:'PPA261000001',id:'contract-a',site_id:'site-a',site_name:'ไซต์หนึ่ง',customer_id:'customer-a',start_date:'2026-10-08',end_date:null,created_date:'2026-10-08',company_name:'Customer Ltd',tax_id:'9876543210123',tax_address:'Customer address',branch:'00000',payment_terms:'30 days',payment_term_days:30,signer_name:'Provider Person',signer_title:'Director',customer_signer_name:'Buyer Person',customer_signer_title:'Manager'};
 const rates=[{startDate:'2026-10-08',rate:'4.2500'}];
 const logo='data:image/png;base64,approved';
 test('snapshot freezes exact rates, both signatories and identities from recorded contract',()=>{
@@ -32,7 +32,7 @@ function fixture(){
   queries.push(sql);
   if(sql.includes('AS day'))return {rows:[{day:'2026-10-08'}]};
   if(sql.includes('document_number_series'))return {rows:[{last_value:1}]};
-  if(sql.includes('FROM contracts c JOIN sites'))return {rows:params[1]&& !params[1].includes('school-a')?[]:[contract]};
+  if(sql.includes('FROM contracts c JOIN sites'))return {rows:params[1]&& (!params[1].includes('site-a') || params[2]!=='assigned-user')?[]:[contract]};
   if(sql.includes('FROM documents'))return {rows:original?[original]:[]};
   if(sql.includes('FROM company_profile')){companyReads++;return {rows:[issuer]};}
   if(sql.includes('FROM rate_versions'))return {rows:rates};
@@ -48,14 +48,14 @@ function fixture(){
  return {service,queries,historical:()=>{original={documentId:'historic-document',documentNumber:'historical-contract-uuid',sha256:'a'.repeat(64),deliveryAvailable:false};},stats:()=>({artifacts,companyReads,renders}),fail:()=>{failRender=true;}};
 }
 test('concurrent first accesses share one original and later company changes cannot rerender bytes',async()=>{
- const f=fixture();const actor={role:'school_user',schoolId:'school-a'};
+ const f=fixture();const actor={id:'assigned-user',role:'customer_user',customerId:'customer-a',assignedSiteIds:['site-a']};
  const [a,b]=await Promise.all([f.service.ensureContractOriginal('contract-a',actor),f.service.ensureContractOriginal('contract-a',actor)]);
  assert.deepEqual(a,b);assert.equal(a.documentNumber,'PPA261000001');assert.equal(f.queries.filter(q=>q.includes('document_number_series')).length,1);assert.equal(a.sha256.length,64);assert.equal(f.stats().artifacts,1);
  issuer.company_name='Later setting';const c=await f.service.ensureContractOriginal('contract-a',actor);assert.deepEqual(c,a);
  assert.deepEqual(f.stats(),{artifacts:1,companyReads:1,renders:1});issuer.company_name='บริษัท ผู้ขาย';
 });
 test('unauthorized organization cannot read or create an original',async()=>{
- const f=fixture();await assert.rejects(f.service.ensureContractOriginal('contract-a',{role:'school_user',schoolId:'other'}));
+ const f=fixture();await assert.rejects(f.service.ensureContractOriginal('contract-a',{id:'other-user',role:'customer_user',customerId:'other',assignedSiteIds:['site-b']}));
  assert.deepEqual(f.stats(),{artifacts:0,companyReads:0,renders:0});
  assert.equal(f.queries.length,1);
  const noActor=fixture();await assert.rejects(noActor.service.ensureContractOriginal('contract-a',{}));assert.equal(noActor.queries.length,0);

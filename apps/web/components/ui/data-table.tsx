@@ -21,7 +21,6 @@ import {
   ChevronsRight,
   Database,
   ArrowUpDown,
-  Search,
 } from "lucide-react";
 import {
   Table,
@@ -32,13 +31,12 @@ import {
   TableRow,
 } from "./table";
 import { Button } from "./button";
-import { Input } from "./input";
 import { SearchInput } from "./search-input";
-import { Label } from "./label";
 import {
   Select,
   SelectContent,
   SelectItem,
+  SelectGroup,
   SelectTrigger,
   SelectValue,
 } from "./select";
@@ -51,6 +49,9 @@ interface DataTableProps<TData, TValue> {
   data: TData[];
   getRowId?: (row:TData)=>string;
   searchKey?: string;
+  hideSearch?: boolean;
+  renderMobileRow?: (row: TData) => React.ReactNode;
+  renderPageToolbar?: (rows: TData[]) => React.ReactNode;
   searchPlaceholder?: string;
   filterComponent?: React.ReactNode;
   actionsComponent?: React.ReactNode;
@@ -67,6 +68,9 @@ export function DataTable<TData, TValue>({
   data,
   getRowId,
   searchKey,
+  hideSearch = false,
+  renderMobileRow,
+  renderPageToolbar,
   searchPlaceholder,
   filterComponent,
   actionsComponent,
@@ -78,7 +82,6 @@ export function DataTable<TData, TValue>({
   emptyContent,
 }: DataTableProps<TData, TValue>) {
   const locale = useLocale();
-  const searchId = React.useId();
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
   const [globalFilter, setGlobalFilter] = React.useState("");
@@ -114,18 +117,13 @@ export function DataTable<TData, TValue>({
     <div className="space-y-3.5 w-full">
       {renderSearchToolbar?.(<SearchInput aria-label={searchPlaceholder ?? (locale === "th" ? "ค้นหาในตาราง" : "Search table")} placeholder={searchPlaceholder ?? (locale === "th" ? "ค้นหา…" : "Search…")} value={globalFilter} onChange={event=>setGlobalFilter(event.target.value)} />)}
       {/* Table Toolbar */}
-      {!renderSearchToolbar && (!serverManaged || filterComponent || actionsComponent) && <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      {!renderSearchToolbar && ((!serverManaged && !hideSearch) || filterComponent || actionsComponent) && <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="w-full max-w-xs">
-          {!serverManaged && <div className="space-y-2"><Label htmlFor={searchId}>{locale === "th" ? "ค้นหา" : "Search"}</Label><div className="relative w-full">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-            <Input
-              id={searchId}
-              placeholder={searchPlaceholder ?? (locale === "th" ? "ค้นหา…" : "Search…")}
-              value={globalFilter ?? ""}
-              onChange={(event) => setGlobalFilter(event.target.value)}
-              className="h-10 pl-8 bg-card dark:bg-card border-border shadow-2xs"
-            />
-          </div></div>}
+          {!serverManaged && !hideSearch && <SearchInput
+            aria-label={locale === 'th' ? 'ค้นหาในตาราง' : 'Search table'}
+            placeholder={searchPlaceholder ?? (locale === 'th' ? 'ค้นหา…' : 'Search…')}
+            value={globalFilter} onChange={event => setGlobalFilter(event.target.value)} />}
+
         </div>
 
         <div className="flex items-center gap-2">
@@ -135,17 +133,21 @@ export function DataTable<TData, TValue>({
         </div>
       </div>}
 
+      {renderPageToolbar?.(table.getRowModel().rows.map(row => row.original))}
+      {renderMobileRow && <div className="flex flex-col gap-3 md:hidden">
+        {table.getRowModel().rows.length ? table.getRowModel().rows.map(row => <React.Fragment key={row.id}>{renderMobileRow(row.original)}</React.Fragment>) : emptyContent ?? <Empty><EmptyTitle>{locale === 'th' ? 'ไม่พบข้อมูล' : 'No results'}</EmptyTitle></Empty>}
+      </div>}
       {/* Table Container */}
-      <div className={cn("overflow-hidden bg-card", variant === "embedded" ? "border-0" : "rounded-xl border border-border shadow-xs")} style={{containerType:"inline-size"}}>
-        <div className="overflow-x-auto">
+      <div className={cn("overflow-hidden bg-card", variant === "embedded" ? "border-0" : "rounded-xl border border-border shadow-xs", renderMobileRow && "border-0 rounded-none shadow-none md:rounded-xl md:border md:shadow-xs")} style={{containerType:"inline-size"}}>
+        <div className={cn("overflow-x-auto", renderMobileRow && "hidden md:block")}>
           <Table>
             <TableHeader>
               {table.getHeaderGroups().map((headerGroup) => (
-                <TableRow key={headerGroup.id} className="h-10 bg-muted/40 hover:bg-muted/40">
+                <TableRow key={headerGroup.id} className="h-10 bg-card hover:bg-card">
                   {headerGroup.headers.map((header) => (
                     <TableHead
                       key={header.id}
-                      style={header.column.id === "actions" ? {width:64,minWidth:64,maxWidth:64} : undefined}
+                      style={header.column.id === "actions" ? {width:64,minWidth:64,maxWidth:64} : ['selection','select'].includes(header.column.id) ? {width:1,minWidth:40,maxWidth:40} : undefined}
                       className="h-10 py-0 text-xs font-semibold text-muted-foreground whitespace-nowrap"
                     >
                       {header.isPlaceholder
@@ -186,8 +188,8 @@ export function DataTable<TData, TValue>({
                     }}
                   >
                     {row.getVisibleCells().map((cell) => (
-                      <TableCell key={cell.id} className="text-xs py-3" style={cell.column.id === "actions" ? {width:64,minWidth:64,maxWidth:64} : undefined}>
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      <TableCell key={cell.id} className={cn("text-xs py-3", cell.column.id === "actions" && "text-right")} style={cell.column.id === "actions" ? {width:64,minWidth:64,maxWidth:64} : ['selection','select'].includes(cell.column.id) ? {width:1,minWidth:40,maxWidth:40} : undefined}>
+                        {cell.column.id === "actions" ? <div className="flex justify-end">{flexRender(cell.column.columnDef.cell, cell.getContext())}</div> : flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </TableCell>
                     ))}
                   </TableRow>
@@ -212,7 +214,7 @@ export function DataTable<TData, TValue>({
         </div>
 
         {/* Pagination Bar */}
-        {!serverManaged && <div data-slot="table-pagination" className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-4 py-3 bg-card/60">
+        {!serverManaged && <div data-slot="table-pagination" className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-4 py-3 bg-card">
           <div className="text-xs text-muted-foreground">
             {locale === "th" ? "แสดง" : "Showing"} <span className="font-semibold text-foreground">{table.getRowModel().rows.length}</span> {locale === "th" ? "จากทั้งหมด" : "of"}{" "}
             <span className="font-semibold text-foreground">{table.getFilteredRowModel().rows.length}</span> {locale === "th" ? "รายการ" : "records"}
@@ -227,16 +229,16 @@ export function DataTable<TData, TValue>({
                   table.setPageSize(Number(value));
                 }}
               >
-                <SelectTrigger className="h-10 w-16 text-xs">
+                <SelectTrigger aria-label={locale === "th" ? "จำนวนรายการต่อหน้า" : "Rows per page"} className="h-10 w-16 text-xs">
                   <SelectValue placeholder={table.getState().pagination.pageSize} />
                 </SelectTrigger>
-                <SelectContent side="top">
+                <SelectContent side="top"><SelectGroup>
                   {[10, 20, 30, 50].map((pageSize) => (
                     <SelectItem key={pageSize} value={`${pageSize}`} className="text-xs">
                       {pageSize}
                     </SelectItem>
                   ))}
-                </SelectContent>
+                </SelectGroup></SelectContent>
               </Select>
             </div>
 

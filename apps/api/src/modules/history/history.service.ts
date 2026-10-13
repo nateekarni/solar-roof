@@ -15,9 +15,9 @@ export class HistoryService {
   return this.db.transaction(async c=>{
    await c.query('SELECT pg_advisory_xact_lock(73501934)');
    const {scope}=await this.access.current(actorId,undefined,c.query.bind(c));
-   const site=(await c.query('SELECT school_id FROM sites WHERE id=$1',[siteId])).rows[0];
-   if(!site||scope!==null&&!scope.includes(site.school_id))throw new ForbiddenException();
-   const payload={siteId,from,to,format:'jsonl.gz'},jobScope=[site.school_id];
+   const site=(await c.query('SELECT customer_id FROM sites WHERE id=$1',[siteId])).rows[0];
+   if(!site||scope!==null&&!scope.includes(site.customer_id))throw new ForbiddenException();
+   const payload={siteId,from,to,format:'jsonl.gz'},jobScope=[site.customer_id];
    const hash=createHash('sha256').update(JSON.stringify({kind:'restore',payload,scope:jobScope})).digest('hex');
    if(key){const old=(await c.query('SELECT id,payload_hash,status FROM platform_jobs WHERE created_by=$1 AND idempotency_key=$2',[actorId,key])).rows[0];if(old){if(old.payload_hash!==hash)throw new ConflictException('Idempotency key used for another request');return {jobId:old.id,status:old.status};}}
    const count=(await c.query("SELECT count(*) FILTER(WHERE created_by=$1) mine,count(*) total FROM platform_jobs WHERE kind IN ('report','restore') AND status IN ('queued','running')",[actorId])).rows[0];

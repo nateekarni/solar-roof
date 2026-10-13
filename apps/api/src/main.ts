@@ -6,15 +6,16 @@ config({ path: fileURLToPath(new URL("../../../.env", import.meta.url)) });
 import { NestFactory } from "@nestjs/core";
 import { SwaggerModule, DocumentBuilder } from "@nestjs/swagger";
 import helmet from "helmet";
-import { rateLimit } from "express-rate-limit";
+import {registerAuthRateLimits} from './common/auth/auth-rate-limits.js';
 import type {Request,Response,NextFunction} from 'express';
+import {scopedJsonParser} from './common/body-limit.js';
 import {isAllowedRequestOrigin} from './common/auth/request-origin.guard.js';
 import { AppModule } from "./app.module.js";
 import { AllExceptionsFilter } from "./common/http-exception.filter.js";
 import { RequestTimingInterceptor, requestTimingMiddleware } from "./common/observability/request-timing.interceptor.js";
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { logger: ["error", "warn"] });
+  const app = await NestFactory.create(AppModule, { logger: ["error", "warn"],bodyParser:false });
   app.enableShutdownHooks();
 
   app.useGlobalFilters(new AllExceptionsFilter());
@@ -27,15 +28,6 @@ async function bootstrap() {
       crossOriginResourcePolicy: { policy: "cross-origin" },
     })
   );
-
-  const authLimiter = rateLimit({
-    windowMs: 60 * 1000,
-    limit: 10,
-    standardHeaders: true,
-    legacyHeaders: false,
-    validate: { xForwardedForHeader: false },
-    message: { statusCode: 429, message: "Too many authentication requests, please try again in 1 minute" },
-  });
 
   const expressApp = app.getHttpAdapter().getInstance();
   // CIDR trust is evaluated from the actual socket outwards, never by hop count.
@@ -52,8 +44,8 @@ async function bootstrap() {
     }
     next();
   });
-  expressApp.use("/v1/auth/login", authLimiter);
-  expressApp.use("/v1/auth/refresh", authLimiter);
+  registerAuthRateLimits(expressApp);
+  expressApp.use(scopedJsonParser);
 
   // Enable CORS — required for browser-to-API cross-origin requests
   // WEB_URL must be set in .env for production. Defaults to localhost:3000 for dev.
@@ -73,7 +65,7 @@ async function bootstrap() {
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle("Solar Energy Management API")
-    .setDescription("Multi-school solar monitoring, billing and documents API")
+    .setDescription("Multi-customer solar monitoring, billing and documents API")
     .setVersion("1.0")
     .addBearerAuth()
     .build();

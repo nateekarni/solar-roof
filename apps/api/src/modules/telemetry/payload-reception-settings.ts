@@ -6,12 +6,13 @@ import { decodePayloadMessages, validateReceiveConfig, type PayloadReceiveConfig
 import { normalizePayloadEnvelope, validatePayloadProfile, type PayloadEnvelope, type PayloadProfile } from './payload-profile.js';
 import { payloadTopic } from './payload-ingestion.js';
 import { parseBoundedPayload } from './ingestion-limiter.js';
+import { snapshotGatewayConfiguration } from '../assets/gateway-lifecycle.js';
 
 type Device = { externalDeviceId:string;config:PayloadProfile };
 export class PayloadReceptionSettings {
  constructor(private readonly db:DatabaseService) {}
  async context(siteId:string) {
-  const gateway=(await this.db.query<{gatewayId:string;externalSiteId:string;externalGatewayId:string;endpoint:string}>(`SELECT g.id AS "gatewayId",g.endpoint,s.external_site_id AS "externalSiteId",g.external_gateway_id AS "externalGatewayId" FROM gateways g JOIN sites s ON s.id=g.site_id WHERE s.id=$1 AND s.status<>'archived' AND g.protocol='mqtt' AND g.endpoint LIKE 'solar/v1/%'`,[siteId])).rows[0];
+  const gateway=(await this.db.query<{gatewayId:string;externalSiteId:string;externalGatewayId:string;endpoint:string}>(`SELECT g.id AS "gatewayId",g.endpoint,s.external_site_id AS "externalSiteId",g.external_gateway_id AS "externalGatewayId" FROM gateways g JOIN sites s ON s.id=g.site_id WHERE s.id=$1 AND s.status<>'archived' AND g.retired_at IS NULL AND g.protocol='mqtt' AND g.endpoint LIKE 'solar/v1/%'`,[siteId])).rows[0];
   if(!gateway?.externalSiteId || !gateway.externalGatewayId || !gateway.endpoint?.startsWith("solar/v1/"))throw new NotFoundException('Standard MQTT gateway not found');
   const devices=(await this.db.query<Device>(`SELECT d.external_device_id AS "externalDeviceId",p.config FROM devices d JOIN payload_profile_revisions p ON p.id=d.payload_profile_revision_id WHERE d.gateway_id=$1 AND d.site_id=$2`,[gateway.gatewayId,siteId])).rows;
   return {...gateway,devices};
@@ -43,6 +44,7 @@ export class PayloadReceptionSettings {
    const previous=(await client.query('SELECT version FROM gateway_payload_receive_revisions WHERE gateway_id=$1 ORDER BY version DESC LIMIT 1',[context.gatewayId])).rows[0];
    if((previous?.version??0)!==parsed.data.baseVersion)throw new ConflictException('Receive configuration changed; reload before saving');
    const revision=(await client.query('INSERT INTO gateway_payload_receive_revisions(id,gateway_id,version,config) VALUES($1,$2,$3,$4::jsonb) RETURNING id,version,config,created_at AS "createdAt"',[randomUUID(),context.gatewayId,parsed.data.baseVersion+1,JSON.stringify(config)])).rows[0];
+   await snapshotGatewayConfiguration(client,context.gatewayId);
    await client.query('COMMIT');return revision;
   }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
  }

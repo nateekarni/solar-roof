@@ -1,4 +1,6 @@
 "use client";
+import { focusInvalidFields } from "../../lib/form-feedback";
+import { FormErrorSummary } from "../../components/feedback/form-feedback";
 import { resolveSiteIdentityDraft, type SiteIdentityDraft } from "./site-identity-draft";
 import { OrganizationPicker, useOrganizationCatalog } from "../organization/organization-picker";
 import { organizationSitePayload, type OrganizationSelection } from "../organization/organization-selection";
@@ -59,7 +61,7 @@ import { useLocale, useT } from "../../providers/locale-provider";
 const siteSchema = z.object({
   // Step 1: Site Info
   name: z.string().min(2, "ชื่อไซต์งานต้องมีอย่างน้อย 2 ตัวอักษร"),
-  schoolName: z.string().min(1, "กรุณากรอกชื่อองค์กร"),
+  customerName: z.string().min(1, "กรุณากรอกชื่อองค์กร"),
   capacityMwp: z.number().min(0.01, "กำลังติดตั้งต้องมากกว่า 0"),
   latitude: z.number().optional(),
   longitude: z.number().optional(),
@@ -130,6 +132,7 @@ export function SiteFormDialog({
 
   const {
     register,
+    getFieldState,
     handleSubmit,
     setValue,
     watch,
@@ -142,7 +145,7 @@ export function SiteFormDialog({
   });
 
   const formValues = watch();
-  const selectOrganization=React.useCallback((selection:OrganizationSelection|null)=>{setOrganization(selection);setValue("schoolName",selection?.organization.name??"",{shouldValidate:true});},[setValue]);
+  const selectOrganization=React.useCallback((selection:OrganizationSelection|null)=>{setOrganization(selection);setValue("customerName",selection?.organization.name??"",{shouldValidate:true});},[setValue]);
 
   React.useEffect(() => {
     if (open) {
@@ -196,7 +199,15 @@ export function SiteFormDialog({
     setFormError(""); return true;
   };
   const handleNextStep = async () => {
-    const valid = await trigger(["name", "schoolName", "capacityMwp", "latitude", "longitude", "gatewayName", "protocol", "deviceSerial"]);
+    const valid = await trigger(["name", "customerName", "capacityMwp", "latitude", "longitude", "gatewayName", "protocol", "deviceSerial"]);
+    if (!valid) {
+      setStep(1);
+      requestAnimationFrame(() => {
+        const fields = ["name", "customerName", "capacityMwp", "latitude", "longitude", "gatewayName", "protocol", "deviceSerial"] as const;
+        focusInvalidFields(Object.fromEntries(fields.map(name => [name, getFieldState(name).error])));
+      });
+      return;
+    }
     if (!dataFormat || (!payloadMode && !formValues.meterPresetId)) {
       setFormError(!dataFormat ? "เลือก Preset มิเตอร์หลัก หรือเพิ่ม Preset ด้วยตัวเอง" : "เลือกแม่แบบมิเตอร์หลักก่อนดำเนินการต่อ");
       return;
@@ -211,7 +222,7 @@ export function SiteFormDialog({
           if(payloadMode)setAdditionalDevices(current=>current.map((d,i)=>({...d,externalDeviceId:resolved.additionalDevices[i]!.externalDeviceId})));
         } catch(error){setFormError(error instanceof Error?error.message:"Unable to resolve codes");return;} finally {setLoading(false);}
       }
-      if(!await trigger("endpoint"))return;
+      if(!await trigger("endpoint")){focusInvalidFields({endpoint:getFieldState("endpoint").error});return;}
       setStep(3);
       setPingStatus("idle");
       setPingMessage("");
@@ -327,7 +338,7 @@ export function SiteFormDialog({
           }}
           className={siteFormClassName}
         >
-          {formError && <p role="alert" className="text-destructive">{formError}</p>}
+          {formError && <FormErrorSummary>{formError}</FormErrorSummary>}
           <Tabs value={step === 1 ? "settings" : "test"} onValueChange={value => { if (value === "settings") setStep(1); else void handleNextStep(); }}>
             <TabsList className={siteTabsListClassName}>
               <TabsTrigger value="settings" className={siteTabsTriggerClassName}>{locale === "th" ? "การตั้งค่าไซต์งานและ Gateway" : "Site & Gateway settings"}</TabsTrigger>
@@ -358,7 +369,7 @@ export function SiteFormDialog({
               <Field><FieldLabel htmlFor="site-id">{locale === "th" ? "รหัสไซต์งาน" : "Site ID"}</FieldLabel><Input placeholder={locale==='th'?'เว้นว่างเพื่อสุ่มรหัสอัตโนมัติ':'Leave blank to generate a code'} id="site-id" {...register("externalSiteId")}/></Field>
               <OrganizationPicker {...organizationCatalog} value={organization} onChange={selectOrganization} locale={locale} canEdit={user?.role==="admin"} disabled={loading}/>
               {organizationCatalog.error&&<p role="alert" className="text-sm text-destructive">{organizationCatalog.error}</p>}
-              {errors.schoolName&&<p className="text-sm text-destructive">{errors.schoolName.message}</p>}
+              {errors.customerName&&<p className="text-sm text-destructive">{errors.customerName.message}</p>}
 
               </div>
               <div className="grid gap-3 sm:grid-cols-3">
@@ -499,7 +510,7 @@ export function SiteFormDialog({
                       </div>
                       <div className="max-h-36 overflow-y-auto rounded-lg border border-border bg-card">
                         <Table className="w-full text-left text-sm">
-                          <TableHeader className="bg-muted/70 sticky top-0 border-b border-border text-sm font-semibold text-muted-foreground uppercase">
+                          <TableHeader className="bg-white dark:bg-card sticky top-0 border-b border-border text-sm font-semibold text-muted-foreground uppercase">
                             <TableRow>
                               <TableHead className="p-1.5 pl-2">ฟิลด์</TableHead>
                               <TableHead className="p-1.5">ชื่อ</TableHead>
@@ -545,7 +556,7 @@ export function SiteFormDialog({
                   </div>
                   <div>
                     <span className="text-muted-foreground">{locale === "th" ? "องค์กร:" : "Organization:"}</span>{" "}
-                    <strong className="text-foreground">{formValues.schoolName}</strong>
+                    <strong className="text-foreground">{formValues.customerName}</strong>
                   </div>
                   <div>
                     <span className="text-muted-foreground">{locale === "th" ? "กำลังติดตั้ง:" : "Capacity:"}</span>{" "}
@@ -702,7 +713,7 @@ export function SiteFormDialog({
                 <Button
                   key="save-site"
                   type="button"
-                  onClick={handleSubmit(onSubmit)}
+                  onClick={handleSubmit(onSubmit, errors => { setStep(1); requestAnimationFrame(() => focusInvalidFields(errors)); })}
                   size="sm"
                   disabled={loading}
                   className="text-sm h-10 px-5 font-semibold cursor-pointer bg-primary text-primary-foreground hover:bg-primary/90 shadow-xs"

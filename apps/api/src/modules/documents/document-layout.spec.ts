@@ -6,7 +6,7 @@ import { documentDefinition, formatDocumentDate, formatDocumentMoney, thaiAmount
 const fixture: DocumentSnapshot = {
   type: 'invoice', documentNumber: 'INV2026100001', issueDate: '2026-10-08',
   issuer: { name: 'บริษัท โซลาร์รูฟ ทดสอบ จำกัด', address: 'กรุงเทพมหานคร', taxId: '0000000000000' },
-  customer: { name: 'โรงเรียนทดสอบ', address: 'จังหวัดนนทบุรี', taxId: '1111111111111' },
+  customer: { name: 'ลูกค้าทดสอบ', address: 'จังหวัดนนทบุรี', taxId: '1111111111111' },
   signatories: {}, rates: [],
   items: [{ description: 'ค่าไฟฟ้าพลังงานแสงอาทิตย์', period: '2026-09-01 - 2026-09-30', quantity: '1000.125', rate: '4.1234', amount: '4123.91' }],
   totals: { subtotal: '4123.91', tax: '288.67', taxLabel: 'ภาษีทดสอบ 7% / Simulated tax 7%', total: '4412.58' },
@@ -17,8 +17,8 @@ const fixture: DocumentSnapshot = {
 const serialized = (definition: ReturnType<typeof documentDefinition>) => JSON.stringify(definition.content, (key, value) => key === 'image' ? '[approved-logo]' : value);
 
 test('document layout prints reference A4 pages and keeps visible footer identity empty', () => {
- const d=documentDefinition(fixture);assert.equal(d.pageSize,'A4');assert.equal(d.defaultStyle.font,'THSarabunNew');assert.equal(d.defaultStyle.fontSize,16);assert.ok(serialized(d).includes('#f3f4f5'));assert.equal(d.footer(1,2),null);assert.doesNotMatch(visibleText(d.footer(2,2)),/INV|Page/);
- const t=d.content.find((n:any)=>n.table?.headerRows===1).table;assert.equal(t.dontBreakRows,false);assert.equal(t.keepWithHeaderRows,0);assert.match(visibleText(d.footer(1,1)),/Prepared by/);
+ const d=documentDefinition(fixture);assert.equal(d.pageSize,'A4');assert.equal(d.defaultStyle.font,'THSarabunNew');assert.equal(d.defaultStyle.fontSize,11);assert.ok(serialized(d).includes('#f5f5f7'));assert.match(visibleText(d.footer(1,2)),/หน้า 1 \/ 2/);assert.doesNotMatch(visibleText(d.footer(2,2)),/INV|Page/);
+ const t=d.content.find((n:any)=>n.table?.headerRows===1).table;assert.equal(t.dontBreakRows,false);assert.equal(t.keepWithHeaderRows,0);assert.match(visibleText(d.footer(1,1)),/ผู้วางบิล/);
 });
 
 test('invoice uses exact saved rate rows and totals without changing the snapshot', () => {
@@ -70,11 +70,11 @@ test('long Thai identity cells stay within the printable A4 width', () => {
   const definition = documentDefinition({ ...fixture, issuer: { ...fixture.issuer, name: 'บริษัทโซลาร์รูฟทดสอบชื่อภาษาไทยที่ยาวมากและไม่มีเว้นวรรคเพื่อทดสอบการตัดบรรทัด', address: 'ที่อยู่ภาษาไทยที่ยาวมากและไม่มีเว้นวรรคเพื่อยืนยันว่าข้อมูลไม่ล้นออกนอกหน้ากระดาษ' } });
   const identity = definition.content[0].columns[1];
   assert.equal(identity.width,'*');
-  assert.ok(definition.content.some((node: any) => node.table && visibleText(node).includes('Customer')));
+  assert.ok(definition.content.some((node: any) => node.columns && visibleText(node).includes('ข้อมูลลูกค้า')));
 });
 
 test('receipt payment card retains the complete saved evidence while allowing long blocks to continue',()=>{
- const d=documentDefinition({...fixture,type:'receipt',approvedTransfers:[{status:'paid',paidAt:'2026-10-08',amount:'4412.58',evidence:'original-evidence'}]});const card=d.content.find((n:any)=>n.table&&visibleText(n).includes('original-evidence'));assert.ok(card);assert.equal(card.table.dontBreakRows,false);assert.match(visibleText(card),/Payment Information/);
+ const d=documentDefinition({...fixture,type:'receipt',approvedTransfers:[{status:'paid',paidAt:'2026-10-08',amount:'4412.58',evidence:'original-evidence'}]});const card=d.content.find((n:any)=>n.stack&&visibleText(n).includes('original-evidence'));assert.ok(card);assert.match(visibleText(card),/ข้อมูลการชำระเงิน/);
 });
 
 test('a non-TEST receipt does not claim tax-invoice status', () => {
@@ -133,8 +133,8 @@ test('date-only fields ignore host timezones and transfer instants display their
       assert.equal(formatDocumentDate('2026-10-08'), '8 ตุลาคม 2569');
       assert.equal(formatDocumentDate('2026-06-01 - 2026-06-30'), '1-30 มิถุนายน 2569');
       assert.equal(formatDocumentDate('2026-06-25 - 2026-07-05'), '25 มิถุนายน - 5 กรกฎาคม 2569');
-      assert.equal(formatDocumentDate('2026-10-08T18:30:00Z'), '9 ตุลาคม 2569 เวลา 01:30:00 (Asia/Bangkok)');
-      assert.equal(formatDocumentDate('2026-10-09T01:30:00+07:00'), '9 ตุลาคม 2569 เวลา 01:30:00 (Asia/Bangkok)');
+      assert.equal(formatDocumentDate('2026-10-08T18:30:00Z'), '9 ตุลาคม 2569 เวลา 01:30:00 (เวลาไทย)');
+      assert.equal(formatDocumentDate('2026-10-09T01:30:00+07:00'), '9 ตุลาคม 2569 เวลา 01:30:00 (เวลาไทย)');
     }
     assert.equal(formatDocumentDate('2026-10-08T18:30:00'), '2026-10-08T18:30:00');
     assert.equal(formatDocumentDate('2026-02-30T18:30:00Z'), '2026-02-30T18:30:00Z');
@@ -156,17 +156,17 @@ test('issue, schedule, period, due and approved transfer dates share Thai presen
   const invoice = { ...fixture, period: '2026-09-01 - 2026-09-30', dueDate: '2026-10-23' };
   const saved = JSON.stringify(invoice);
   const invoiceText = visibleText(documentDefinition(invoice).content);
-  assert.match(invoiceText, /วันที่ \/ Issued: 8 ตุลาคม 2569/);
-  assert.match(invoiceText, /รอบบิล \/ Period: 1-30 กันยายน 2569/);
+  assert.match(invoiceText, /วันที่: 8 ตุลาคม 2569/);
+  assert.match(invoiceText, /รอบบิล: 1-30 กันยายน 2569/);
   assert.match(invoiceText, /1-30 กันยายน 2569/);
-  assert.match(invoiceText, /กำหนดชำระ \/ Due: 23 ตุลาคม 2569/);
+  assert.match(invoiceText, /กำหนดชำระ: 23 ตุลาคม 2569/);
   assert.match(invoiceText, /INV2026100001/);
   assert.doesNotMatch(invoiceText, /2026-09-01|2026-09-30|2026-10-08|2026-10-23/);
   const contractText = visibleText(documentDefinition({ ...fixture, type: 'contract', rates: [{ startDate: '2026-01-01', endDate: '2026-12-31', rate: '4.1234' }] }).content);
   assert.match(contractText, /1 มกราคม 2569/);
   assert.match(contractText, /31 ธันวาคม 2569/);
   const receiptText = visibleText(documentDefinition({ ...fixture, type: 'receipt', approvedTransfers: [{ status: 'paid', paidAt: '2026-10-08T18:30:00Z', amount: '4412.58' }] }).content);
-  assert.match(receiptText, /9 ตุลาคม 2569 เวลา 01:30:00 \(Asia\/Bangkok\)/);
+  assert.match(receiptText, /9 ตุลาคม 2569 เวลา 01:30:00 \(เวลาไทย\)/);
   assert.doesNotMatch(receiptText, /2026-10-08T18:30:00Z|undefined|null|กำหนดชำระ/);
   assert.equal(JSON.stringify(invoice), saved);
 });
@@ -192,14 +192,14 @@ test('long financial documents paginate instead of shrinking or dropping saved r
  assert.ok(pdfPageCount(bytes)>1);assert.equal(JSON.stringify(snapshot),saved);
  const definition=documentDefinition(snapshot);const rows=definition.content.find((node:any)=>node.table?.headerRows===1).table;
  assert.equal(rows.body.length,46);assert.equal(rows.dontBreakRows,false);assert.equal(rows.keepWithHeaderRows,0);
- assert.match(visibleText(definition.footer(2,2)), /Prepared by/);
+ assert.match(visibleText(definition.footer(2,2)), /ผู้วางบิล/);
 });
 
 
 test('PPA presents frozen effective dates, every dated rate and payment days as factual prose', () => {
- const snapshot = {...fixture, type:'contract' as const, siteName:'ไซต์หนึ่ง',siteExternalId:'SCHOOL-001',contractNumber:'contract-record', startDate:'2026-01-01',endDate:'2046-12-31',paymentTermDays:30,paymentTerms:'ชำระตามข้อมูลสัญญาที่บันทึกไว้',rates:[{startDate:'2026-01-01',endDate:'2026-12-31',rate:'4.1234'},{startDate:'2027-01-01',rate:'3.9876'}]};
+ const snapshot = {...fixture, type:'contract' as const, siteName:'ไซต์หนึ่ง',siteExternalId:'CUSTOMER-001',contractNumber:'contract-record', startDate:'2026-01-01',endDate:'2046-12-31',paymentTermDays:30,paymentTerms:'ชำระตามข้อมูลสัญญาที่บันทึกไว้',rates:[{startDate:'2026-01-01',endDate:'2026-12-31',rate:'4.1234'},{startDate:'2027-01-01',rate:'3.9876'}]};
  const saved=JSON.stringify(snapshot);const d=documentDefinition(snapshot);const text=visibleText(d.content);
- assert.match(text,/ไซต์งาน: ไซต์หนึ่ง \(SCHOOL-001\)/);assert.match(text,/1 มกราคม 2569/);assert.match(text,/31 ธันวาคม 2589/);
+ assert.match(text,/ไซต์งาน: ไซต์หนึ่ง \(CUSTOMER-001\)/);assert.match(text,/1 มกราคม 2569/);assert.match(text,/31 ธันวาคม 2589/);
  assert.match(text,/4\.1234/);assert.match(text,/3\.9876/);assert.match(text,/30 วัน/);assert.match(text,/ชำระตามข้อมูลสัญญาที่บันทึกไว้/);
  assert.equal(d.content.some((node:any)=>node.table?.headerRows===1),true);assert.equal(JSON.stringify(snapshot),saved);
  const footer=visibleText(d.footer(1,1));assert.equal((footer.match(/วันที่ลงนาม: ____________________/g)??[]).length,2);assert.doesNotMatch(footer,/8 ตุลาคม 2569/);
@@ -207,8 +207,8 @@ test('PPA presents frozen effective dates, every dated rate and payment days as 
 test('legacy site identity stays name-only and continuation signatures occur only on final page',()=>{
  const d=documentDefinition({...fixture,siteName:'ไซต์เก่า',contractNumber:'internal-contract',...{siteId:'internal-uuid'}});
  assert.match(visibleText(d.content),/ไซต์งาน: ไซต์เก่า/);assert.doesNotMatch(visibleText(d.content),/internal-uuid/);
- assert.doesNotMatch(visibleText(d.footer(1,2)),/Prepared by/);assert.match(visibleText(d.footer(2,2)),/Prepared by/);
- const header=(d as any).header;assert.ok(header);assert.equal(header(1),null);assert.match(visibleText(header(2)),/INV2026100001/);assert.match(visibleText(header(2)),/Invoice/);assert.ok(header(2).columns.some((n:any)=>n.image));
+ assert.doesNotMatch(visibleText(d.footer(1,2)),/ผู้วางบิล/);assert.match(visibleText(d.footer(2,2)),/ผู้วางบิล/);
+ const header=(d as any).header;assert.ok(header);assert.equal(header(1),null);assert.match(visibleText(header(2)),/INV2026100001/);assert.match(visibleText(header(2)),/ใบวางบิล/);assert.ok(header(2).columns.some((n:any)=>n.image));
 });
 
 test('a signatory block taller than A4 fails explicitly instead of producing negative body space or clipping facts',()=>{
@@ -217,5 +217,5 @@ test('a signatory block taller than A4 fails explicitly instead of producing neg
 
 
 test('reference header places issuer close to logo and includes saved title number issued and invoice due metadata',()=>{
- const snapshot={...fixture,dueDate:'2026-11-07'};const header=documentDefinition(snapshot).content[0];assert.deepEqual(header.columns.map((c:any)=>c.width),[65,'*',190]);assert.equal(header.columnGap,10);assert.equal(header.columns[0].image,snapshot.logoDataUri);assert.match(visibleText(header.columns[1]),/Tax ID/);assert.match(visibleText(header.columns[2]),/Invoice.*INV2026100001.*Issued.*Due/s);assert.ok(header.columns[2].stack.every((n:any)=>n.noWrap!==true));
+ const snapshot={...fixture,dueDate:'2026-11-07'};const definition=documentDefinition(snapshot);const header=definition.content[0];assert.deepEqual(header.columns.map((c:any)=>c.width),[55,'*',245]);assert.equal(header.columnGap,8);assert.equal(header.columns[0].image,snapshot.logoDataUri);assert.ok(visibleText(header.columns[1]).includes(snapshot.issuer.name));assert.match(visibleText(definition.content),/เลขประจำตัวผู้เสียภาษี/);assert.match(visibleText(header.columns[2]),/ใบวางบิล.*INV2026100001.*วันที่.*กำหนดชำระ/s);assert.ok(header.columns[2].stack.every((n:any)=>n.noWrap!==true));
 });

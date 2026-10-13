@@ -17,6 +17,11 @@ import {
 import { organizationColumns, parseOrganization, insertOrganization, resolveSiteOrganization, organizationCodeError, type OrganizationInput } from "./organization-master.js";
 import { siteHistoryFilter } from "./site-history.js";
 import { randomUUID } from "node:crypto";
+import { validateCadence } from './gateway-reconciliation.js';
+import { hasPermission, siteScope, type AuthorizationPrincipal } from '../../common/auth/authorization.js';
+import { snapshotGatewayConfiguration, recordGatewayPublished } from './gateway-lifecycle.js';
+import { MeasurementComparisons } from './measurement-comparisons.js';
+import { z } from 'zod';
 import { identityDraft, operationalCode, identityConflict, retryGeneratedIdentity, type IdentityDraftInput } from "./identity-allocation.js";
 
 import mqtt from "mqtt";
@@ -35,6 +40,125 @@ export class AssetsController {
     @Inject(DatabaseService) private readonly db: DatabaseService,
     @Inject(MqttIngestionService) private readonly mqttService: MqttIngestionService
   ) {}
+
+  @Get('gateways')
+  async listGateways(@Req() req?:{user?:AuthorizationPrincipal}) {
+        return (await this.db.query(`SELECT g.id,g.site_id AS "siteId",s.name AS "siteName",s.external_site_id AS "siteCode",g.name,g.external_gateway_id AS "externalGatewayId",g.endpoint AS "subscriptionTopic",g.last_seen_at AS "lastSeenAt",g.polling_interval_seconds AS "pollingIntervalSeconds",
+      CASE WHEN g.last_seen_at BETWEEN now()-make_interval(secs=>greatest(120,g.polling_interval_seconds*2)) AND now() THEN 'online' ELSE 'offline' END AS status,
+      g.desired_config_version AS "desiredVersion",g.published_config_version AS "publishedVersion",g.acknowledged_config_version AS "acknowledgedVersion",g.applied_config_version AS "appliedVersion",
+      (SELECT count(*)::int FROM devices WHERE gateway_id=g.id) AS "deviceCount",latest.measured AS "lastMeasuredAt",latest.received AS "lastReceivedAt",pv.kw AS "currentProductionKw"
+      FROM gateways g JOIN sites s ON s.id=g.site_id LEFT JOIN LATERAL (SELECT max(coalesce(ps.measured_at,ps.polled_at)) AS measured,max(ps.received_at) AS received FROM payload_samples ps JOIN devices d ON d.id=ps.device_id WHERE d.gateway_id=g.id) latest ON true
+      LEFT JOIN LATERAL (SELECT CASE WHEN count(*)=1 AND bool_and(ps.quality='good' AND ps.communication='online' AND ps.unit IN('W','kW') AND ps.value>=0 AND ps.value<'Infinity'::float8
+        AND coalesce(ps.measured_at,ps.polled_at) BETWEEN now()-make_interval(secs=>greatest(120,d.expected_interval_seconds*2)) AND now() AND ps.received_at BETWEEN now()-make_interval(secs=>greatest(120,d.expected_interval_seconds*2)) AND now()) THEN max(CASE WHEN ps.unit='W' THEN ps.value/1000 ELSE ps.value END) ELSE NULL END AS kw
+        FROM devices d JOIN payload_profile_revisions p ON p.id=d.payload_profile_revision_id LEFT JOIN LATERAL (SELECT * FROM payload_samples WHERE device_id=d.id AND profile_revision_id=d.payload_profile_revision_id AND tag='solar.active_power' ORDER BY coalesce(measured_at,polled_at) DESC,received_at DESC,id DESC LIMIT 1) ps ON true
+        WHERE d.gateway_id=g.id AND (EXISTS(SELECT 1 FROM gateway_dashboard_sources chosen WHERE chosen.gateway_id=g.id AND chosen.metric='power' AND chosen.device_id=d.id AND chosen.tag='solar.active_power') OR (NOT EXISTS(SELECT 1 FROM gateway_dashboard_sources chosen WHERE chosen.gateway_id=g.id AND chosen.metric='power') AND p.config->>'deviceType'='solar-logger'))) pv ON true
+      WHERE s.status<>'archived' AND g.retired_at IS NULL AND ($1::uuid[] IS NULL OR g.site_id=ANY($1::uuid[])) ORDER BY g.name,g.id`,[siteScope(req?.user,'technical')] )).rows;
+  }
+
+  @Get('gateways/site-options')
+  async gatewaySiteOptions(@Query('gatewayId') gatewayId?:string,@Req() req?:{user?:AuthorizationPrincipal},@Query('includeAssigned') includeAssigned?:string) {
+    return (await this.db.query(`SELECT s.id,s.name,s.external_site_id AS code,true AS active,g.id AS "assignedGatewayId" FROM sites s LEFT JOIN gateways g ON g.site_id=s.id AND g.retired_at IS NULL WHERE s.status<>'archived' AND ($3 OR g.id IS NULL OR g.id::text=$1) AND ($2::uuid[] IS NULL OR s.id=ANY($2::uuid[])) ORDER BY s.name,s.id`,[gatewayId??null,siteScope(req?.user,'technical'),includeAssigned==='true'])).rows;
+  }
+
+  @Get('gateways/:id/configuration')
+  async gatewayConfiguration(@Param('id') id:string) {
+    const gateway=(await this.db.query(`SELECT site_id AS "siteId",desired_config_version AS "desiredVersion",published_config_version AS "publishedVersion",acknowledged_config_version AS "acknowledgedVersion",applied_config_version AS "appliedVersion" FROM gateways WHERE id::text=$1 AND retired_at IS NULL`,[id])).rows[0];
+    if(!gateway)throw new NotFoundException('Gateway not found');
+    const context=await this.payloadConfig(gateway.siteId);
+    const cadence=(await this.db.query(`SELECT id,expected_interval_seconds AS "expectedIntervalSeconds",poll_group_cadence AS "pollGroups" FROM devices WHERE gateway_id=$1 ORDER BY id`,[id])).rows;
+    const revisions=(await this.db.query(`SELECT version,desired_at AS "desiredAt",published_at AS "publishedAt",acknowledged_at AS "acknowledgedAt",applied_at AS "appliedAt" FROM gateway_configuration_revisions WHERE gateway_id=$1 ORDER BY version DESC`,[id])).rows;
+    const sources=(await this.db.query(`SELECT metric,device_id AS "deviceId",tag FROM gateway_dashboard_sources WHERE gateway_id=$1 ORDER BY metric`,[id])).rows;
+    const metricSources=Object.fromEntries(sources.map(row=>[row.metric,{deviceId:row.deviceId,tag:row.tag}]));
+    return {...context,configuration:gateway,cadence,revisions,metricSources};
+  }
+
+  @Patch('gateways/:id/dashboard-sources')
+  async setGatewayDashboardSources(@Param('id') id:string,@Body() body:unknown,@Req() req:{user?:AuthorizationPrincipal&{id?:string}}) {
+    const source=z.object({deviceId:z.uuid(),tag:z.string().min(1).max(128)}).strict().nullable();
+    const parsed=z.object({impactConfirmed:z.literal(true),sources:z.object({energy:source.optional(),power:source.optional()}).strict().refine(value=>Object.keys(value).length>0)}).strict().safeParse(body);
+    if(!parsed.success)throw new BadRequestException('Confirm the production source impact and specify energy or power');
+    return this.db.transaction(async client=>{
+      const gateway=(await client.query(`SELECT id,site_id FROM gateways WHERE id::text=$1 AND retired_at IS NULL FOR UPDATE`,[id])).rows[0];if(!gateway)throw new NotFoundException('Gateway not found');
+      const before=(await client.query(`SELECT metric,device_id AS "deviceId",tag FROM gateway_dashboard_sources WHERE gateway_id=$1 ORDER BY metric`,[id])).rows;
+      // Validate every source before any mutation, preserving partial-update atomicity.
+      for(const [metric,selection] of Object.entries(parsed.data.sources))if(selection){
+        const device=(await client.query(`SELECT p.config FROM devices d JOIN payload_profile_revisions p ON p.id=d.payload_profile_revision_id WHERE d.id=$1 AND d.gateway_id=$2 AND d.site_id=$3 FOR SHARE OF d`,[selection.deviceId,id,gateway.site_id])).rows[0];
+        const tag=metric==='energy'?'solar.total_yield':'solar.active_power';
+        const field=device?.config?.fields?.find((f:{tag:string})=>f.tag===selection.tag);
+        if(selection.tag!==tag||!field||!(metric==='energy'?['Wh','kWh']:['W','kW']).includes(field.targetUnit))throw new BadRequestException('Production source must be the registered PV energy or power field in this gateway');
+      }
+      for(const [metric,selection] of Object.entries(parsed.data.sources)){
+        if(selection)await client.query(`INSERT INTO gateway_dashboard_sources(gateway_id,metric,device_id,tag,updated_by) VALUES($1,$2,$3,$4,$5) ON CONFLICT(gateway_id,metric) DO UPDATE SET device_id=EXCLUDED.device_id,tag=EXCLUDED.tag,updated_by=EXCLUDED.updated_by,updated_at=now()`,[id,metric,selection.deviceId,selection.tag,req.user?.id??null]);
+        else await client.query('DELETE FROM gateway_dashboard_sources WHERE gateway_id=$1 AND metric=$2',[id,metric]);
+      }
+      const after=(await client.query(`SELECT metric,device_id AS "deviceId",tag FROM gateway_dashboard_sources WHERE gateway_id=$1 ORDER BY metric`,[id])).rows;
+      await client.query(`INSERT INTO audit_events(id,actor_id,action,entity_type,entity_id,before_json,after_json,reason,correlation_id) VALUES($1,$2,'technical.dashboard-sources.update','gateway',$3,$4::jsonb,$5::jsonb,'Explicit production metric source selection; billing source unchanged',$6)`,[randomUUID(),req.user?.id??null,id,JSON.stringify(before),JSON.stringify(after),randomUUID()]);
+      return {metricSources:Object.fromEntries(after.map(row=>[row.metric,{deviceId:row.deviceId,tag:row.tag}]))};
+    });
+  }
+
+  @Post('gateways/:id/configuration/publish')
+  async publishGatewayConfiguration(@Param('id') id:string,@Body() body:{baseVersion:number}) {
+    if(!Number.isSafeInteger(body.baseVersion)||body.baseVersion<0)throw new BadRequestException('Configuration baseVersion required');
+    const revision=await this.db.transaction(async client=>{
+      const g=(await client.query(`SELECT name,desired_config_version AS version FROM gateways WHERE id::text=$1 AND retired_at IS NULL FOR UPDATE`,[id])).rows[0];
+      if(!g)throw new NotFoundException('Gateway not found');
+      if(Number(g.version)!==body.baseVersion)throw new ConflictException('Configuration changed; reload before publishing');
+      return {...await snapshotGatewayConfiguration(client,id),name:g.name};
+    });
+    const published=await this.mqttService.publishHardwareConfig(revision.name,{...revision.config,configurationVersion:revision.version}).catch(()=>false);
+    if(published)await recordGatewayPublished(this.db,id,revision.version);
+    return {version:revision.version,delivery:published?'published':'pending',acknowledged:false,applied:false};
+  }
+
+  @Patch('devices/:id/cadence')
+  async saveDeviceCadence(@Param('id') id:string,@Body() body:unknown) {
+    const cadence=validateCadence(body);
+    return this.db.transaction(async client=>{
+      const device=(await client.query(`SELECT gateway_id FROM devices WHERE id::text=$1`,[id])).rows[0];if(!device)throw new NotFoundException('Device not found');
+      await client.query('SELECT id FROM gateways WHERE id=$1 AND retired_at IS NULL FOR UPDATE',[device.gateway_id]);
+      const result=await client.query(`UPDATE devices SET expected_interval_seconds=$2,poll_group_cadence=$3::jsonb WHERE id::text=$1 RETURNING id,expected_interval_seconds AS "expectedIntervalSeconds",poll_group_cadence AS "pollGroups"`,[id,cadence.expectedIntervalSeconds,JSON.stringify(cadence.pollGroups)]);
+      const revision=await snapshotGatewayConfiguration(client,device.gateway_id);
+      await client.query(`INSERT INTO measurement_comparison_dirty(pair_id,from_time) SELECT p.id,min(coalesce(s.measured_at,s.polled_at)) FROM measurement_comparison_pairs p JOIN payload_samples s ON s.device_id IN (p.left_device_id,p.right_device_id) WHERE p.left_device_id=$1 OR p.right_device_id=$1 GROUP BY p.id ON CONFLICT(pair_id) DO UPDATE SET from_time=LEAST(measurement_comparison_dirty.from_time,EXCLUDED.from_time)`,[id]);
+      return {...result.rows[0],desiredVersion:revision.version};
+    });
+  }
+
+  @Get('gateways/:id/comparisons')
+  async gatewayComparisons(@Param('id') id:string){return new MeasurementComparisons(this.db).list(id);}
+  @Post('gateways/:id/comparisons')
+  async createGatewayComparison(@Param('id') id:string,@Body() body:unknown){return new MeasurementComparisons(this.db).create(id,body);}
+  @Patch('gateways/:id/comparisons/:pairId')
+  async commissionGatewayComparison(@Param('id') id:string,@Param('pairId') pairId:string,@Body() body:unknown){return new MeasurementComparisons(this.db).commission(id,pairId,body);}
+
+  @Get('gateways/:id/history')
+  async gatewayHistory(@Param('id') id:string){return (await this.db.query(`SELECT h.id,h.gateway_id AS "gatewayId",g.name,g.external_gateway_id AS "externalGatewayId",h.site_id AS "siteId",h.installed_at AS "installedAt",h.removed_at AS "removedAt",h.replaced_by_gateway_id AS "replacedByGatewayId" FROM gateway_installation_history h JOIN gateways g ON g.id=h.gateway_id WHERE h.site_id=(SELECT site_id FROM gateways WHERE id::text=$1) ORDER BY installed_at DESC,h.id`,[id])).rows;}
+
+  @Get('gateways/:id/topics')
+  async gatewayTopics(@Param('id') id:string){
+    const gateway=(await this.db.query(`SELECT g.endpoint,s.external_site_id AS "siteCode",g.external_gateway_id AS "gatewayCode" FROM gateways g JOIN sites s ON s.id=g.site_id WHERE g.id::text=$1 AND g.retired_at IS NULL`,[id])).rows[0];
+    if(!gateway)throw new NotFoundException('Gateway not found');
+    const devices=(await this.db.query(`SELECT id,name,external_device_id AS code FROM devices WHERE gateway_id=$1 ORDER BY name,id`,[id])).rows;
+    return {contract:gateway.endpoint.startsWith('solar/v1/')?'solar-v1':'legacy-energy',subscriptionTopic:gateway.endpoint,publishTopics:gateway.endpoint.startsWith('solar/v1/')?devices.filter(d=>d.code).map(d=>({...d,topic:payloadTopic(gateway.siteCode,gateway.gatewayCode,d.code)})):[],suggestions:{siteCode:gateway.siteCode,gatewayCode:gateway.gatewayCode,deviceCodes:devices.map(d=>d.code).filter(Boolean)}};
+  }
+
+  @Post('gateways/:id/replace')
+  async replaceGateway(@Param('id') id:string,@Body() body:{name:string;externalGatewayId?:string;mqttBrokerId?:string;pollingIntervalSeconds?:number}) {
+    if(!body.name?.trim()||/[/+#]/.test(body.name))throw new BadRequestException('Gateway name required without MQTT separators');
+    const code=operationalCode(body.externalGatewayId,'GW');externalIdentifier(code);const interval=validatedInterval(body.pollingIntervalSeconds??10);
+    const replacement=await this.db.transaction(async client=>{
+      const previous=(await client.query(`SELECT g.site_id,s.external_site_id FROM gateways g JOIN sites s ON s.id=g.site_id WHERE g.id::text=$1 AND g.retired_at IS NULL AND s.status<>'archived' FOR UPDATE OF g,s`,[id])).rows[0];
+      if(!previous)throw new NotFoundException('Active gateway not found');
+      if(!previous.external_site_id)throw new BadRequestException('Register a site code before replacing the gateway');
+      if(body.mqttBrokerId&&!(await client.query('SELECT id FROM mqtt_brokers WHERE id=$1',[body.mqttBrokerId])).rows[0])throw new BadRequestException('Broker not found');
+      await client.query(`UPDATE gateways SET retired_at=now(),status='offline' WHERE id=$1`,[id]);
+      const newId=randomUUID(),endpoint=payloadTopic(previous.external_site_id,code);
+      const saved=(await client.query(`INSERT INTO gateways(id,site_id,name,protocol,endpoint,status,external_gateway_id,mqtt_broker_id,polling_interval_seconds) VALUES($1,$2,$3,'mqtt',$4,'offline',$5,$6,$7) RETURNING id,site_id AS "siteId",name,external_gateway_id AS "externalGatewayId",endpoint`,[newId,previous.site_id,body.name.trim(),endpoint,code,body.mqttBrokerId||null,interval])).rows[0];
+      await client.query('UPDATE gateway_installation_history SET replaced_by_gateway_id=$2 WHERE gateway_id=$1 AND removed_at IS NOT NULL',[id,newId]);
+      return saved;
+    });
+    await this.mqttService.refreshSubscriptions().catch(()=>{});return replacement;
+  }
 
   @Get('mqtt-brokers')
   async listBrokers() {
@@ -76,33 +200,33 @@ export class AssetsController {
     }
   }
 
-  @Get("schools")
-  async listSchools(@Req() req: { user?: { role?: string; schoolId?: string | null } }) {
+  @Get("customers")
+  async listCustomers(@Req() req: { user?: AuthorizationPrincipal }) {
     const res = await this.db.query(
-      `SELECT ${organizationColumns} FROM schools WHERE ($1::uuid IS NULL OR id = $1) AND $2 ORDER BY name`,
-      [req.user?.role === "admin" ? null : req.user?.schoolId ?? null, req.user?.role !== "school_user" || Boolean(req.user?.schoolId)]
+      `SELECT ${organizationColumns} FROM customers WHERE ($1::uuid[] IS NULL OR EXISTS(SELECT 1 FROM sites s WHERE s.customer_id=customers.id AND s.id=ANY($1::uuid[]))) ORDER BY name`,
+      [siteScope(req.user,'business')]
     );
     return res.rows;
   }
 
-  @Post("schools")
-  async createSchool(@Body() body: OrganizationInput & { region?: string }) {
+  @Post("customers")
+  async createCustomer(@Body() body: OrganizationInput & { region?: string }) {
     const input=parseOrganization(body);
     try { return await insertOrganization(this.db,input,body.region?.trim()||"ภาคกลาง"); }
     catch(error) { organizationCodeError(error); }
   }
 
-  @Patch("schools/:id")
-  async updateSchool(@Param("id") id:string,@Body() body:OrganizationInput & {impactConfirmed?:boolean;expectedUpdatedAt?:string},@Req() req:{user?:{role?:string;schoolId?:string}}){
-    if(req.user?.role!=="admin")throw new ForbiddenException("This action is not permitted for your role");
+  @Patch("customers/:id")
+  async updateCustomer(@Param("id") id:string,@Body() body:OrganizationInput & {impactConfirmed?:boolean;expectedUpdatedAt?:string},@Req() req:{user?:AuthorizationPrincipal}){
+    if(!hasPermission(req.user,'business.customers.edit'))throw new ForbiddenException("This action is not permitted for your role");
     if(body.impactConfirmed!==true)throw new BadRequestException("Confirm the impact on all linked sites and future contracts");
     if(!body.expectedUpdatedAt||!Number.isFinite(Date.parse(body.expectedUpdatedAt)))throw new BadRequestException("Reload organization before saving");
     const input=parseOrganization(body);
     if(!body.code?.trim())throw new BadRequestException("Organization code is required");
     try {
-      const result=await this.db.query(`UPDATE schools SET name=$2,code=$3,legal_name=$4,tax_id=$5,tax_branch=$6,tax_address=$7,contact_name=$8,phone=$9,document_email=$10,updated_at=now()
-        WHERE id=$1 AND updated_at=$11::timestamptz RETURNING ${organizationColumns}`,
-        [id,input.name,input.code,input.legalName,input.taxId,input.taxBranch,input.taxAddress,input.contactName,input.phone,input.documentEmail,body.expectedUpdatedAt]);
+      const result=await this.db.query(`UPDATE customers SET name=$2,code=$3,legal_name=$4,tax_id=$5,tax_branch=$6,tax_address=$7,contact_name=$8,phone=$9,document_email=$10,updated_at=now()
+        WHERE id=$1 AND updated_at=$11::timestamptz AND ($12::uuid[] IS NULL OR EXISTS(SELECT 1 FROM sites s WHERE s.customer_id=customers.id AND s.id=ANY($12::uuid[]))) RETURNING ${organizationColumns}`,
+        [id,input.name,input.code,input.legalName,input.taxId,input.taxBranch,input.taxAddress,input.contactName,input.phone,input.documentEmail,body.expectedUpdatedAt,siteScope(req.user,'business')]);
       if(!result.rows[0])throw new ConflictException("Organization changed; reload before editing");
       return result.rows[0];
     }catch(error){organizationCodeError(error);}
@@ -198,17 +322,17 @@ export class AssetsController {
   }
 
   @Get("sites")
-  async listSites(@Req() req: { user?: { role?: string; schoolId?: string | null } }) {
+  async listSites(@Req() req: { user?: AuthorizationPrincipal }) {
     const sql = `
       SELECT
         si.id,
         si.external_site_id AS "externalSiteId",
-        si.school_id AS "schoolId",
+        si.customer_id AS "customerId",
         si.name,
         coalesce(round(si.capacity_mwp::numeric, 4), 0) AS "capacityMwp",
         CASE WHEN si.status = 'archived' THEN 'archived' WHEN g.last_seen_at >= now() - interval '120 seconds' THEN 'online' ELSE 'offline' END AS status,
-        s.name AS "schoolName",
-        s.code AS "schoolCode",
+        s.name AS "customerName",
+        s.code AS "customerCode",
         g.id AS "gatewayId",
         g.external_gateway_id AS "externalGatewayId",
         g.name AS "gatewayName",
@@ -220,7 +344,7 @@ export class AssetsController {
         coalesce(bc_stats.paid_count, 0) AS "paidInvoiceCount",
         coalesce(round(bc_stats.total_amount::numeric, 2), 0) AS "totalAmount"
       FROM sites si
-      JOIN schools s ON s.id = si.school_id
+      JOIN customers s ON s.id = si.customer_id
       LEFT JOIN gateways g ON g.site_id = si.id
       LEFT JOIN (
         SELECT
@@ -231,11 +355,11 @@ export class AssetsController {
         FROM billing_cycles
         GROUP BY site_id
       ) bc_stats ON bc_stats.site_id = si.id
-      WHERE ($1::uuid IS NULL OR si.school_id = $1) AND $2
+      WHERE ($1::uuid[] IS NULL OR si.id=ANY($1::uuid[]))
       ORDER BY si.name
     `;
-    const res = await this.db.query(sql, [req.user?.role === "admin" ? null : req.user?.schoolId ?? null, req.user?.role !== "school_user" || Boolean(req.user?.schoolId)]);
-    return res.rows;
+    const res = await this.db.query(sql, [siteScope(req.user,'business')]);
+    return ['admin','operator'].includes(req.user?.role??'')?res.rows.map(({invoiceCount,paidInvoiceCount,totalAmount,...site})=>site):res.rows;
   }
 
   @Get("sites/:id")
@@ -244,14 +368,14 @@ export class AssetsController {
       SELECT
         si.id,
         si.external_site_id AS "externalSiteId",
-        si.school_id AS "schoolId",
+        si.customer_id AS "customerId",
         si.name,
         coalesce(round(si.capacity_mwp::numeric, 4), 0) AS "capacityMwp",
         si.latitude,
         si.longitude,
         CASE WHEN si.status = 'archived' THEN 'archived' WHEN g.last_seen_at >= now() - interval '120 seconds' THEN 'online' ELSE 'offline' END AS status,
-        s.name AS "schoolName",
-        s.code AS "schoolCode",
+        s.name AS "customerName",
+        s.code AS "customerCode",
         g.id AS "gatewayId",
         g.external_gateway_id AS "externalGatewayId",
         g.name AS "gatewayName",
@@ -266,7 +390,7 @@ export class AssetsController {
         d.model AS "deviceModel",
         coalesce(d.serial_number, '') AS "deviceSerial"
       FROM sites si
-      JOIN schools s ON s.id = si.school_id
+      JOIN customers s ON s.id = si.customer_id
       LEFT JOIN gateways g ON g.site_id = si.id
       LEFT JOIN devices d ON d.site_id = si.id AND d.device_type = 'meter'
       WHERE si.id = $1
@@ -289,6 +413,31 @@ export class AssetsController {
     throw new ConflictException('Unable to allocate site code; retry creation');
   }
 
+  @Post('sites/:id/gateway')
+  async configureGateway(@Param('id') id:string,@Body() body:{name:string;externalGatewayId?:string;mqttBrokerId?:string;pollingIntervalSeconds?:number;topicContract?:'solar-v1'|'legacy-energy';subscriptionTopic?:string}){
+    if(!body.name?.trim())throw new BadRequestException('ระบุชื่อเกตเวย์');
+    if(body.pollingIntervalSeconds!==undefined)validatedInterval(body.pollingIntervalSeconds);
+    const result=await this.db.transaction(async client=>{
+      const site=(await client.query('SELECT id,external_site_id FROM sites WHERE id=$1 FOR UPDATE',[id])).rows[0];if(!site)throw new NotFoundException('ไม่พบไซต์งาน');
+      const existing=(await client.query('SELECT * FROM gateways WHERE site_id=$1 AND retired_at IS NULL FOR UPDATE',[id])).rows;
+      if(existing.length>1)throw new ConflictException('ไซต์งานมีเกตเวย์เกินหนึ่งรายการ กรุณาจัดการก่อนตั้งค่า');
+      if(body.mqttBrokerId&&!(await client.query('SELECT id FROM mqtt_brokers WHERE id=$1',[body.mqttBrokerId])).rows.length)throw new BadRequestException('ไม่พบ broker');
+      const interval=validatedInterval(body.pollingIntervalSeconds??existing[0]?.polling_interval_seconds??10);
+      const brokerId=body.mqttBrokerId===undefined?existing[0]?.mqtt_broker_id??null:body.mqttBrokerId||null;
+      const code=existing[0]?.external_gateway_id||body.externalGatewayId?.trim()||`GW-${randomUUID().slice(0,8).toUpperCase()}`;externalIdentifier(code);
+      if(body.topicContract!==undefined&&!['solar-v1','legacy-energy'].includes(body.topicContract))throw new BadRequestException('Invalid topic contract');
+      const contract=body.topicContract??(existing[0]?.endpoint?.startsWith('energy/')||existing[0]?.endpoint?.startsWith('/')?'legacy-energy':'solar-v1');
+      const endpoint=contract==='legacy-energy'?gatewayTopic(body.name.trim(),body.subscriptionTopic??(existing[0]?.name===body.name.trim()&&!existing[0]?.endpoint?.startsWith('solar/v1/')?existing[0]?.endpoint:undefined)):payloadSubscription(site.external_site_id,code,body.subscriptionTopic??(existing[0]?.endpoint?.startsWith('solar/v1/')?existing[0]?.endpoint:undefined));
+      const gatewayId=existing[0]?.id||randomUUID();
+      const saved=(await client.query(`INSERT INTO gateways(id,site_id,name,protocol,endpoint,status,external_gateway_id,mqtt_broker_id,polling_interval_seconds) VALUES($1,$2,$3,'mqtt',$4,'offline',$5,$6,$7) ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,endpoint=EXCLUDED.endpoint,mqtt_broker_id=EXCLUDED.mqtt_broker_id,polling_interval_seconds=EXCLUDED.polling_interval_seconds RETURNING id,name,external_gateway_id AS "externalGatewayId",endpoint,polling_interval_seconds AS "pollingIntervalSeconds"`,[gatewayId,id,body.name.trim(),endpoint,code,brokerId,interval])).rows[0];
+      const revision=await snapshotGatewayConfiguration(client,gatewayId);return {...saved,configurationVersion:revision.version,configuration:revision.config};
+    });
+    await this.mqttService.refreshSubscriptions().catch(()=>{});
+    const delivered=await this.mqttService.publishHardwareConfig(result.name,{...result.configuration,configurationVersion:result.configurationVersion}).catch(()=>false);
+    if(delivered)await recordGatewayPublished(this.db,result.id,result.configurationVersion);
+    const {configuration,...safeResult}=result;return {...safeResult,configDelivery:delivered?'published':'pending'};
+  }
+
   @Post('sites/payload-preview')
   async previewPlannedPayload(@Body() body:{externalSiteId:string;externalGatewayId:string;devices:{externalDeviceId:string;payloadProfileRevisionId?:string;localOverrideConfig?:unknown;sourcePresetRevisionId?:string}[];config:unknown;input:unknown;topic:string}) {
     try {
@@ -304,8 +453,8 @@ export class AssetsController {
     @Body()
     body: {
       name?: string;
-      schoolId?: string;
-      schoolName?: string;
+      customerId?: string;
+      customerName?: string;
       newOrganization?: OrganizationInput;
       capacityMwp?: number;
       latitude?: number;
@@ -332,20 +481,33 @@ export class AssetsController {
       status?: string;
     },
     allocationAttempt = 0
-  ): Promise<{id:string;schoolId:string;externalSiteId:string;configDelivery:string;[key:string]:unknown}> {
+  ): Promise<{id:string;customerId:string;externalSiteId:string;configDelivery:string;[key:string]:unknown}> {
+    if((body.latitude===undefined)!==(body.longitude===undefined))throw new BadRequestException('Provide both coordinates or neither / กรุณาระบุพิกัดทั้งสองค่า');
+    for(const [value,max] of [[body.latitude,90],[body.longitude,180]] as const)if(value!==undefined&&(typeof value!=='number'||!Number.isFinite(value)||Math.abs(value)>max))throw new BadRequestException('Invalid coordinates / พิกัดไม่ถูกต้อง');
+    if(!body.deviceSerial&&!body.gatewayName&&!body.externalGatewayId&&!body.payloadProfileRevisionId&&!body.meterPresetId){
+      const name=body.name?.trim(),capacity=Number(body.capacityMwp??0);
+      if(!name||!Number.isFinite(capacity)||capacity<0)throw new BadRequestException('ระบุชื่อไซต์ ลูกค้า และกำลังติดตั้งที่ถูกต้อง');
+      try { return await this.db.transaction(async client=>{
+        const customerId=await resolveSiteOrganization(client,{...body,customerId:body.customerId?.trim()});
+        const id=randomUUID(),externalSiteId=body.externalSiteId?.trim()||`SITE-${randomUUID().slice(0,8).toUpperCase()}`;
+        externalIdentifier(externalSiteId);
+        const site=(await client.query(`INSERT INTO sites(id,customer_id,name,capacity_mwp,timezone,status,latitude,longitude,external_site_id) VALUES($1,$2,$3,$4,'Asia/Bangkok','offline',$5,$6,$7) RETURNING id,customer_id AS "customerId",external_site_id AS "externalSiteId"`,[id,customerId,name,capacity,body.latitude??null,body.longitude??null,externalSiteId])).rows[0];
+        return {...site,configDelivery:'pending'};
+      }); } catch(error) { organizationCodeError(error); }
+    }
     const originalBody = body;
     const draft = identityDraft(body);
     body = {...body,externalSiteId:draft.externalSiteId,externalGatewayId:draft.externalGatewayId,externalDeviceId:draft.externalDeviceId,...(body.additionalDevices?{additionalDevices:body.additionalDevices.map((device,index)=>({...device,externalDeviceId:draft.additionalDevices[index]!.externalDeviceId}))}:{})};
     const name = body.name?.trim();
-    let schoolId = body.schoolId?.trim();
-    const schoolName = body.schoolName?.trim();
+    let customerId = body.customerId?.trim();
+    const customerName = body.customerName?.trim();
     if (body.protocol && body.protocol !== "mqtt") throw new BadRequestException("Only MQTT is supported");
     const capacityMwp = Number(body.capacityMwp ?? 0.5);
     const lat = body.latitude === undefined || body.latitude === null ? null : Number(body.latitude);
     const lng = body.longitude === undefined || body.longitude === null ? null : Number(body.longitude);
 
-    if (!name || (!schoolId && !schoolName && !body.newOrganization?.name)) {
-      throw new BadRequestException("กรุณาระบุชื่อไซต์งานและโรงเรียนสังกัด");
+    if (!name || (!customerId && !customerName && !body.newOrganization?.name)) {
+      throw new BadRequestException("กรุณาระบุชื่อไซต์งานและลูกค้าสังกัด");
     }
 
     const siteId = randomUUID();
@@ -397,14 +559,14 @@ export class AssetsController {
     try {
       await client.query("BEGIN");
 
-      schoolId = await resolveSiteOrganization(client,body);
+      customerId = await resolveSiteOrganization(client,body);
       // 1. Create Site
       const siteSql = `
-        INSERT INTO sites (id, school_id, name, capacity_mwp, latitude, longitude, status, external_site_id)
+        INSERT INTO sites (id, customer_id, name, capacity_mwp, latitude, longitude, status, external_site_id)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        RETURNING id, school_id AS "schoolId", name, capacity_mwp AS "capacityMwp", status, external_site_id AS "externalSiteId"
+        RETURNING id, customer_id AS "customerId", name, capacity_mwp AS "capacityMwp", status, external_site_id AS "externalSiteId"
       `;
-      const res = await client.query(siteSql, [siteId, schoolId, name, capacityMwp, lat, lng, initialStatus, body.externalSiteId]);
+      const res = await client.query(siteSql, [siteId, customerId, name, capacityMwp, lat, lng, initialStatus, body.externalSiteId]);
 
       // 2. Create Gateway
       await client.query(
@@ -493,8 +655,8 @@ export class AssetsController {
     @Body()
     body: {
       name?: string;
-      schoolId?: string;
-      schoolName?: string;
+      customerId?: string;
+      customerName?: string;
       newOrganization?: OrganizationInput;
       deviceId?: string;
       pollingIntervalSeconds?: number;
@@ -518,14 +680,14 @@ export class AssetsController {
     try {
       await client.query("BEGIN");
 
-      const siteCheck = await client.query("SELECT id, school_id FROM sites WHERE id = $1 FOR UPDATE", [id]);
+      const siteCheck = await client.query("SELECT id, customer_id FROM sites WHERE id = $1 FOR UPDATE", [id]);
       if (siteCheck.rows.length === 0) {
         throw new NotFoundException("ไม่พบไซต์งานที่ต้องการแก้ไข");
       }
 
-      if(body.schoolId !== undefined || body.newOrganization) {
-        body.schoolId=await resolveSiteOrganization(client,{schoolId:body.schoolId,...(body.newOrganization?{newOrganization:body.newOrganization}:{})});
-        if (body.schoolId !== siteCheck.rows[0].school_id) {
+      if(body.customerId !== undefined || body.newOrganization) {
+        body.customerId=await resolveSiteOrganization(client,{customerId:body.customerId,...(body.newOrganization?{newOrganization:body.newOrganization}:{})},{id,customerId:siteCheck.rows[0].customer_id});
+        if (body.customerId !== siteCheck.rows[0].customer_id) {
           const history = await client.query(`SELECT (
             EXISTS(SELECT 1 FROM contracts WHERE site_id=$1)
             OR EXISTS(SELECT 1 FROM billing_cycles WHERE site_id=$1)
@@ -536,7 +698,7 @@ export class AssetsController {
           );
         }
       }
-      const gateway = await client.query(`SELECT g.id,g.name,g.endpoint,g.external_gateway_id AS "externalGatewayId",s.external_site_id AS "externalSiteId" FROM gateways g JOIN sites s ON s.id=g.site_id WHERE g.site_id = $1 FOR UPDATE OF g`, [id]);
+      const gateway = await client.query(`SELECT g.id,g.name,g.endpoint,g.external_gateway_id AS "externalGatewayId",s.external_site_id AS "externalSiteId" FROM gateways g JOIN sites s ON s.id=g.site_id WHERE g.site_id = $1 AND g.retired_at IS NULL FOR UPDATE OF g`, [id]);
       const gw = gateway.rows[0];
       if (gw && (body.gatewayName !== undefined || body.endpoint !== undefined)) {
         body.gatewayName = body.gatewayName?.trim() || gw.name;
@@ -566,9 +728,9 @@ export class AssetsController {
         updates.push(`name = $${pIdx++}`);
         values.push(body.name.trim());
       }
-      if (body.schoolId !== undefined) {
-        updates.push(`school_id = $${pIdx++}`);
-        values.push(body.schoolId);
+      if (body.customerId !== undefined) {
+        updates.push(`customer_id = $${pIdx++}`);
+        values.push(body.customerId);
       }
       if (body.capacityMwp !== undefined) {
         updates.push(`capacity_mwp = $${pIdx++}`);
@@ -768,8 +930,8 @@ export class AssetsController {
   }
 
   @Get("sites/:id/devices")
-  async listDevices(@Param("id") siteId: string) {
-    const result = await this.db.query(`SELECT id, name, model, serial_number AS "serialNumber", device_type AS "deviceType", slave_id AS "slaveId", external_device_id AS "externalDeviceId",payload_profile_revision_id AS "payloadProfileRevisionId" FROM devices WHERE site_id = $1 ORDER BY name, id`, [siteId]);
+  async listDevices(@Param("id") siteId: string,@Req() req?:{user?:AuthorizationPrincipal}) {
+    const result = await this.db.query(`SELECT id, name, model, serial_number AS "serialNumber", device_type AS "deviceType", slave_id AS "slaveId", external_device_id AS "externalDeviceId",payload_profile_revision_id AS "payloadProfileRevisionId",expected_interval_seconds AS "expectedIntervalSeconds",poll_group_cadence AS "pollGroups" FROM devices WHERE site_id = $1 AND gateway_id IN (SELECT id FROM gateways WHERE site_id=$1 AND retired_at IS NULL) AND ($2::uuid[] IS NULL OR site_id=ANY($2::uuid[])) ORDER BY name, id`, [siteId,siteScope(req?.user,'technical')]);
     return result.rows;
   }
 
@@ -786,7 +948,7 @@ export class AssetsController {
     const client = await this.db.pool.connect();
     try {
       await client.query("BEGIN");
-      const gateway = await client.query(`SELECT g.id,g.endpoint,s.external_site_id AS "externalSiteId",g.external_gateway_id AS "externalGatewayId" FROM gateways g JOIN sites s ON s.id=g.site_id WHERE g.site_id = $1 FOR UPDATE OF g`, [siteId]);
+      const gateway = await client.query(`SELECT g.id,g.endpoint,s.external_site_id AS "externalSiteId",g.external_gateway_id AS "externalGatewayId" FROM gateways g JOIN sites s ON s.id=g.site_id WHERE g.site_id = $1 AND g.retired_at IS NULL FOR UPDATE OF g`, [siteId]);
       if (gateway.rows.length !== 1) throw new BadRequestException("Site must have one configured gateway");
       if (!revision && gateway.rows[0].endpoint?.startsWith("solar/v1/")) throw new BadRequestException("Standard gateway devices require a payload profile");
       if (revision && (!gateway.rows[0].endpoint?.startsWith("solar/v1/") || !gateway.rows[0].externalSiteId || !gateway.rows[0].externalGatewayId)) throw new BadRequestException("Legacy gateway requires coordinated standard commissioning before adding a payload profile");
@@ -800,6 +962,7 @@ export class AssetsController {
           (id,device_id,semantic_field,register_address,register_count,word_order,byte_order,data_type,scale,unit,effective_from)
           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now())`, [randomUUID(),deviceId,reg.semanticField ?? reg.semantic_field,String(reg.registerAddress ?? reg.register_address),reg.registerCount ?? reg.register_count ?? 1,reg.wordOrder ?? reg.word_order ?? 'little_word_first',reg.byteOrder ?? reg.byte_order ?? 'big_endian',reg.dataType ?? reg.data_type,reg.scale ?? 1,reg.unit ?? '']);
       }
+      await snapshotGatewayConfiguration(client,gateway.rows[0].id);
       await client.query("COMMIT");
       return { id: deviceId, siteId, gatewayId: gateway.rows[0].id, externalDeviceId:body.externalDeviceId };
     } catch (error) { await client.query("ROLLBACK"); if(retryGeneratedIdentity(error,originalBody,allocationAttempt))return this.addDevice(siteId,originalBody,allocationAttempt+1); identityConflict(error); } finally { client.release(); }
@@ -850,6 +1013,7 @@ export class AssetsController {
       if((device.device_type==='logger') !== (revision.config.deviceType==='solar-logger'))throw new BadRequestException("Profile device type cannot change");
       await this.persistDeviceProfile(client,revision,id);
       await client.query("UPDATE devices SET payload_profile_revision_id=$2,name=coalesce($3,name),model=coalesce($4,model),serial_number=coalesce($5,serial_number) WHERE id=$1",[id,revision.id,body.name?.trim()??null,body.model?.trim()??null,body.serialNumber?.trim()??null]);
+      await snapshotGatewayConfiguration(client,device.gateway_id);
       await client.query('COMMIT');return {id,payloadProfileRevisionId:revision.id,profileId:revision.config.id,profileVersion:revision.config.version};
     }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
   }
@@ -871,10 +1035,10 @@ export class AssetsController {
 
   @Get("sites/:id/payload-config")
   async payloadConfig(@Param("id") siteId:string) {
-    const gateway=(await this.db.query(`SELECT g.id AS "gatewayId",s.external_site_id AS "externalSiteId",g.external_gateway_id AS "externalGatewayId",g.endpoint AS "subscriptionTopic",g.mqtt_broker_id AS "mqttBrokerId",b.name AS "brokerName",b.url AS "brokerUrl",b.username AS "brokerUsername",s.latitude,s.longitude,g.polling_interval_seconds AS "pollingIntervalSeconds",g.alert_rules AS "alertRules" FROM sites s JOIN gateways g ON g.site_id=s.id LEFT JOIN mqtt_brokers b ON b.id=g.mqtt_broker_id WHERE s.id=$1`,[siteId])).rows[0];
+    const gateway=(await this.db.query(`SELECT g.id AS "gatewayId",s.external_site_id AS "externalSiteId",g.external_gateway_id AS "externalGatewayId",g.endpoint AS "subscriptionTopic",g.mqtt_broker_id AS "mqttBrokerId",b.name AS "brokerName",b.url AS "brokerUrl",b.username AS "brokerUsername",s.latitude,s.longitude,g.polling_interval_seconds AS "pollingIntervalSeconds",g.alert_rules AS "alertRules" FROM sites s JOIN gateways g ON g.site_id=s.id LEFT JOIN mqtt_brokers b ON b.id=g.mqtt_broker_id WHERE s.id=$1 AND g.retired_at IS NULL`,[siteId])).rows[0];
     if(!gateway)throw new NotFoundException("Site gateway not found");
     if(!gateway.mqttBrokerId){const url=new URL(process.env.MQTT_URL || 'mqtt://localhost:1883');url.username='';url.password='';gateway.brokerName='Broker เริ่มต้นของระบบ';gateway.brokerUrl=url.toString();gateway.brokerUsername=process.env.MQTT_USERNAME||'';}
-    const devices=(await this.db.query(`SELECT d.id,d.name,d.model,d.serial_number AS "serialNumber",d.device_type AS "deviceType",d.external_device_id AS "externalDeviceId",p.id AS "profileRevisionId",p.profile_id AS "profileId",p.version AS "profileVersion",p.source_preset_revision_id AS "sourcePresetRevisionId",p.owner_device_id AS "profileOwnerDeviceId",p.config,EXISTS(SELECT 1 FROM billing_meters b WHERE b.device_id=d.id AND b.active) AS "billingMeter",(SELECT bs.source_tag FROM billing_meters b JOIN billing_source_bindings bs ON bs.id=b.billing_source_binding_id WHERE b.device_id=d.id AND b.active LIMIT 1) AS "billingSourceTag" FROM devices d JOIN payload_profile_revisions p ON p.id=d.payload_profile_revision_id WHERE d.site_id=$1 ORDER BY d.name,d.id`,[siteId])).rows.map(d=>{
+    const devices=(await this.db.query(`SELECT d.id,d.name,d.model,d.serial_number AS "serialNumber",d.device_type AS "deviceType",d.external_device_id AS "externalDeviceId",p.id AS "profileRevisionId",p.profile_id AS "profileId",p.version AS "profileVersion",p.source_preset_revision_id AS "sourcePresetRevisionId",p.owner_device_id AS "profileOwnerDeviceId",p.config,EXISTS(SELECT 1 FROM billing_meters b WHERE b.device_id=d.id AND b.active) AS "billingMeter",(SELECT bs.source_tag FROM billing_meters b JOIN billing_source_bindings bs ON bs.id=b.billing_source_binding_id WHERE b.device_id=d.id AND b.active LIMIT 1) AS "billingSourceTag" FROM devices d JOIN payload_profile_revisions p ON p.id=d.payload_profile_revision_id WHERE d.site_id=$1 AND d.gateway_id=(SELECT id FROM gateways WHERE site_id=$1 AND retired_at IS NULL) ORDER BY d.name,d.id`,[siteId])).rows.map(d=>{
       const config=validatePayloadProfile(d.config),polledAt=new Date().toISOString(),field=config.fields[0]!;
       const {config:_config,...info}=d;
       return {...info,profileConfig:config,profileDeviceType:config.deviceType,sourceProfileId:config.sourceProfile?.id??config.id,sourceProfileVersion:config.sourceProfile?.version??config.version,fields:config.fields,telemetryTopic:payloadTopic(gateway.externalSiteId,gateway.externalGatewayId,d.externalDeviceId),fixture:{schemaVersion:'1.1',messageType:'telemetry',messageId:randomUUID(),sequence:1,lotNumber:1,siteId:gateway.externalSiteId,gatewayId:gateway.externalGatewayId,device:{deviceId:d.externalDeviceId,deviceType:config.deviceType,profileId:config.sourceProfile?.id??config.id,profileVersion:config.sourceProfile?.version??config.version},pollGroup:field.pollGroup,timestamps:{polledAt,sentAt:polledAt},data:{values:Object.fromEntries(config.fields.filter(f=>f.pollGroup===field.pollGroup).map(f=>[f.sourceTag??f.tag,1])),units:Object.fromEntries(config.fields.filter(f=>f.pollGroup===field.pollGroup).map(f=>[f.sourceTag??f.tag,f.sourceUnit]))},quality:{status:'good',communication:'online'}}};
@@ -897,7 +1061,7 @@ export class AssetsController {
     const client=await this.db.pool.connect();
     try {
       await client.query('BEGIN');
-      const gateway=(await client.query(`SELECT g.id FROM gateways g JOIN sites s ON s.id=g.site_id WHERE s.id=$1 AND s.status<>'archived' AND s.external_site_id IS NOT NULL AND g.external_gateway_id IS NOT NULL AND g.endpoint LIKE 'solar/v1/%' FOR UPDATE OF g`,[siteId])).rows[0];
+      const gateway=(await client.query(`SELECT g.id FROM gateways g JOIN sites s ON s.id=g.site_id WHERE s.id=$1 AND s.status<>'archived' AND s.external_site_id IS NOT NULL AND g.external_gateway_id IS NOT NULL AND g.endpoint LIKE 'solar/v1/%' AND g.retired_at IS NULL FOR UPDATE OF g`,[siteId])).rows[0];
       if(!gateway)throw new BadRequestException('Standard gateway not found');
       const previous=(await client.query('SELECT version FROM gateway_payload_receive_revisions WHERE gateway_id=$1 ORDER BY version DESC LIMIT 1',[gateway.id])).rows[0];
       if((previous?.version??0)!==body.baseVersion)throw new BadRequestException('Configuration changed; reload before importing');
@@ -907,6 +1071,7 @@ export class AssetsController {
       }
       new PayloadReceptionSettings(this.db).validateTargets(config,[...existing,...planned.map(d=>({externalDeviceId:d.externalDeviceId,config:d.revision.config}))]);
       await client.query('INSERT INTO gateway_payload_receive_revisions(id,gateway_id,version,config) VALUES($1,$2,$3,$4::jsonb)',[randomUUID(),gateway.id,body.baseVersion+1,JSON.stringify(config)]);
+      await snapshotGatewayConfiguration(client,gateway.id);
       await client.query('COMMIT');return {version:body.baseVersion+1};
     }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
   }

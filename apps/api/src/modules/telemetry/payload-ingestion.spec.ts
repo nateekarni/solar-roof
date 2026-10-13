@@ -5,9 +5,11 @@ import { PayloadIngestion } from './payload-ingestion.js';
 import { DEFAULT_PAYLOAD_PROFILES, type PayloadProfile } from './payload-profile.js';
 const examples = JSON.parse(readFileSync(new URL('./fixtures/payload-examples-v1.1.json', import.meta.url), 'utf8')).payloads;
 const topic = 'solar/v1/sites/SITE-001/gateways/GW-001/devices/METER-001/telemetry';
-function fixture(options: { changedDuringCommit?:boolean; unbound?:boolean; mismatch?:boolean; fail?: boolean; commit?: () => Promise<void>; profile?:()=>PayloadProfile } = {}) {
+function fixture(options: {configurationProfileRevision?:string;assignedProfiles?:{revisionId:string;config:PayloadProfile}[];changedDuringCommit?:boolean; unbound?:boolean; mismatch?:boolean; fail?: boolean; commit?: () => Promise<void>; profile?:()=>PayloadProfile } = {}) {
  const events: string[] = [], samples: unknown[][] = [], raws: unknown[][] = [], rejects: unknown[][] = []; const messages = new Map<string, any>();
  const query = async (sql: string, values: any[] = []) => {
+  if(sql.includes('FROM device_profile_assignments'))return {rows:options.assignedProfiles??[]};
+  if(sql.includes('FROM gateway_configuration_revisions'))return {rows:options.configurationProfileRevision?[{config:{devices:[{deviceId:'METER-001',profileRevisionId:options.configurationProfileRevision}]}}]:[]};
   if(sql.includes('FROM devices WHERE'))return {rows:[{revisionId:options.changedDuringCommit?'changed':'r'}]};
   if(sql.includes('SELECT billing_source_binding_id'))return {rows:[{id:options.unbound?null:'binding'}]};
   if (sql.includes('FROM devices d')) return {rows:[{deviceId:'d',siteId:'s',gatewayId:'g',externalSiteId:'SITE-001',externalGatewayId:'GW-001',externalDeviceId:'METER-001',revisionId:'r',config:options.profile?.()??DEFAULT_PAYLOAD_PROFILES[0],billing:true,billingSource:options.unbound?null:{id:"binding",siteId:"s",deviceId:"d",profileRevisionId:options.mismatch?"other":"r",sourceTag:"energy.active.import.total",canonicalTag:"energy.active.import.total",sourceUnit:"Wh",targetUnit:"kWh",conversion:"wh-to-kwh"}}]};
@@ -50,3 +52,20 @@ test('future source and negative selected counters never become billable',async(
 test('missing selected energy field preserves binding for incomplete-data review',async()=>{const f=fixture();const p=structuredClone(examples.pm2230Energy);delete p.data.values['energy.active.import.total'];delete p.data.units['energy.active.import.total'];await f.ingest.accept(topic,p);assert.equal(f.raws[0]?.[6],null);assert.equal(f.raws[0]?.[17],'binding');});
 
 test('mapping changes between validation and commit abort before persistence',async()=>{const f=fixture({changedDuringCommit:true});await assert.rejects(f.ingest.accept(topic,examples.pm2230Energy),/changed.*retry/i);assert.equal(f.raws.length,0);assert.equal(f.samples.length,0);});
+
+test('new late messages from registered old sender versions retain their immutable decoder',async()=>{
+ const old=structuredClone(DEFAULT_PAYLOAD_PROFILES[0]!);const current={...structuredClone(old),version:'2.0.0'};
+ const f=fixture({profile:()=>current,assignedProfiles:[{revisionId:'old',config:old},{revisionId:'r',config:current}]});
+ const ack=await f.ingest.accept(topic,examples.pm2230Energy);
+ assert.ok(ack);assert.equal(f.samples[0]?.[5],'old');assert.equal(f.raws[0]?.[9],'old');assert.equal(f.raws[0]?.[6],null);
+});
+test('ambiguous sender identity after local profile edits is quarantined instead of guessed',async()=>{
+ const old=structuredClone(DEFAULT_PAYLOAD_PROFILES[0]!);const current=structuredClone(old);current.fields[0]!.tag='electrical.voltage.changed';
+ const f=fixture({profile:()=>current,assignedProfiles:[{revisionId:'old',config:old},{revisionId:'r',config:current}]});
+ assert.equal(await f.ingest.accept(topic,examples.pm2230Energy),null);assert.equal(f.samples.length,0);assert.match(String(f.rejects[0]?.[4]),/ambiguous/i);
+});
+test('explicit registered gateway configuration version resolves otherwise ambiguous decoder',async()=>{
+ const old=structuredClone(DEFAULT_PAYLOAD_PROFILES[0]!),current=structuredClone(old);current.fields[0]!.tag='electrical.voltage.changed';
+ const f=fixture({configurationProfileRevision:'old',profile:()=>current,assignedProfiles:[{revisionId:'old',config:old},{revisionId:'r',config:current}]});
+ assert.ok(await f.ingest.accept(topic,{...examples.pm2230Energy,configurationVersion:1}));assert.equal(f.samples[0]?.[5],'old');
+});

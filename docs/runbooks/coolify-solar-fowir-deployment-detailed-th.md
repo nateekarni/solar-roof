@@ -8,11 +8,11 @@
 |---|---|---|---|
 | เว็บไซต์ solar.fowir.com | [Deploy เว็บ](coolify-web-first-deployment-th.md) | /infra/docker/docker-compose.web.yml | API, WEB, WORKER, POSTGRES |
 | Broker ของเรา mqtt-solar.fowir.com | [Deploy MQTT แยก](coolify-mqtt-deployment-th.md) | /infra/docker/docker-compose.mqtt.yml | MQTT, CERTBOT |
-| เพิ่มบัญชี Admin / Owner / School User | [คำสั่งเพิ่ม user](coolify-manual-users-th.md) | รันใน Terminal ของ service api | ไม่ต้อง redeploy เพื่อเพิ่ม user |
+| เพิ่มบัญชี Admin / Owner / Customer User | [คำสั่งเพิ่ม user](coolify-manual-users-th.md) | รันใน Terminal ของ service api | ไม่ต้อง redeploy เพื่อเพิ่ม user |
 | Private Git repository / GHCR | [GitHub App และ registry](coolify-private-github-th.md) | ตั้งก่อน Deploy | Git กับ registry ใช้สิทธิ์คนละชุด |
 | Preset และตัวอย่าง payload | [Unified Presets](unified-presets-th.md) | จัดการผ่าน Admin หลังสร้างบัญชี | Pilot SPM91 มากับ migration 028 |
 
-**ลำดับแนะนำ:** Deploy เว็บ → สร้าง Admin ด้วยคำสั่ง → เพิ่มโรงเรียน/ไซต์ → เพิ่ม Owner/School User → ทดสอบเว็บ → เชื่อม broker ภายนอกที่ผู้ดูแล Gateway ให้ หรือ deploy MQTT ของเราเมื่อพร้อม
+**ลำดับแนะนำ:** Deploy เว็บ → สร้าง Admin ด้วยคำสั่ง → เพิ่มลูกค้า/ไซต์ → เพิ่ม Owner/Customer User → ทดสอบเว็บ → เชื่อม broker ภายนอกที่ผู้ดูแล Gateway ให้ หรือ deploy MQTT ของเราเมื่อพร้อม
 
 ## ผลตรวจโดเมน
 

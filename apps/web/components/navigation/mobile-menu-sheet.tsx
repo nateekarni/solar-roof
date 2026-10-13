@@ -33,7 +33,7 @@ export interface MobileMenuSheetProps {
 export function MobileMenuSheet({ open, onOpenChange }: MobileMenuSheetProps) {
   const pathname = usePathname();
   const user = useSessionUser();
-  const navItems = getNavItems(user.role);
+  const navItems = getNavItems(user.role,user.authorization);
   const searchParams = useSearchParams();
   const router = useRouter();
   const t = useT();
@@ -135,7 +135,7 @@ export function MobileMenuSheet({ open, onOpenChange }: MobileMenuSheetProps) {
       ? t("profile.owner")
       : user?.role === "admin"
       ? t("profile.admin")
-      : t("profile.schoolUser");
+      : t("profile.customerUser");
 
   const currentAction = searchParams?.get("action");
 

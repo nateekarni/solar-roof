@@ -1,0 +1,43 @@
+import 'reflect-metadata';
+import assert from 'node:assert/strict';
+import {randomUUID,createHash} from 'node:crypto';
+import {DatabaseService} from '../src/database/database.service.js';
+import {FinancialReadinessService} from '../src/modules/billing/financial-readiness.service.js';
+import {LocalFinancialApplicationService} from '../src/modules/billing/local-financial-application.service.js';
+import {SiteBillingService} from '../src/modules/billing/site-billing.service.js';
+import {localFinancialBinding,TEST_FINANCIAL_POLICY_HASH} from '../src/modules/billing/local-financial-policy.js';
+if(!localFinancialBinding())throw new Error('Exact local TEST binding required');
+const db=new DatabaseService(),client=await db.pool.connect();
+try{
+ await client.query('BEGIN');
+ const owner=(await client.query("SELECT id,role FROM users WHERE role='owner' AND status='active' LIMIT 1")).rows[0];assert.ok(owner);
+ const base=(await client.query(`SELECT s.*,a.user_id FROM sites s JOIN site_account_assignments a ON a.site_id=s.id AND a.revoked_at IS NULL JOIN users u ON u.id=a.user_id JOIN customers c ON c.id=s.customer_id WHERE u.status='active' AND c.status='active' AND u.email_verified_at IS NOT NULL AND u.verified_email=u.email LIMIT 1`)).rows[0];assert.ok(base,'Assigned verified fixture recipient required');
+ await client.query("UPDATE customers SET legal_name='Synthetic integration customer',tax_id='0999999999999',tax_address='Synthetic TEST address' WHERE id=$1",[base.customer_id]);
+ // All writes use the outer transaction and roll back, including generated original PDFs.
+ const transactional={query:client.query.bind(client),transaction:async(run:any)=>run(client),pool:db.pool} as unknown as DatabaseService;
+ const readiness=new FinancialReadinessService(db),financial=new LocalFinancialApplicationService(transactional,readiness);financial.send=async()=>({success:true});
+ const service=new SiteBillingService(transactional,financial);
+ await service.saveSettings(base.id,{serviceStartDate:'2026-01-01',paymentTermDays:30,recipientUserIds:[base.user_id],taxRate:'7',taxConfirmed:true,pricesIncludeTax:false},owner);
+ const settings=await service.settings(base.id,owner);assert.equal(settings.taxRate,'7.0000');
+ const preview=await service.manualPreview({siteId:base.id,lines:[{description:'Synthetic integration service',quantity:'2.5',unitPrice:'10.01'}]},owner);assert.equal(preview.total,'26.78');
+ const manual=await service.manual({siteId:base.id,lines:[{description:'Synthetic integration service',quantity:'2.5',unitPrice:'10.01'}],dueDate:'2026-11-01'},owner);assert.equal(manual.document.snapshot.cycle.billing_kind,'manual');assert.equal(manual.document.snapshot.dueDate,'2026-11-01');
+ await service.manual({siteId:base.id,lines:[{description:'Second same-day manual bill',quantity:'1',unitPrice:'1'}]},owner);
+ const id=randomUUID();
+ const cycle=(await client.query(`INSERT INTO billing_cycles(id,site_id,period_start,period_end,cutoff_time,status,quality,opening_energy,closing_energy,consumed_kwh,rate,amount,subtotal,simulated_tax,meter_snapshot,policy_hash,billing_settings_version) VALUES($1,$2,'2090-10-01','2090-10-31',now(),'approved','complete',0,10,10,3.5,37.45,35,2.45,$3,$4,$5) RETURNING *`,[id,base.id,JSON.stringify([{from:'2090-10-01',to:'2090-11-01',consumedKwh:'10.000',rate:'3.5000',subtotal:'35.00'}]),TEST_FINANCIAL_POLICY_HASH,settings.version])).rows[0];
+ const original=(await financial.issueInvoice(cycle.id)).document;
+ const originalBytes=(await client.query('SELECT pdf_bytes FROM document_artifacts WHERE document_id=$1',[original.id])).rows[0].pdf_bytes;
+ await service.applyRates({selection:'selected',siteIds:[base.id],effectiveDate:'2090-12-01',rate:'4.1',reason:'Scheduled December integration tariff',replaceFuture:true},owner);
+ await assert.rejects(service.reprice(cycle.id,{rate:'3.7',reason:'Synthetic integration correction'},owner),(error:any)=>error.getResponse().code==='FUTURE_RATE_REPLACEMENT_REQUIRED');
+ assert.equal((await client.query('SELECT is_current FROM documents WHERE id=$1',[original.id])).rows[0].is_current,true);
+ await service.reprice(cycle.id,{rate:'3.7',reason:'Synthetic integration correction',replaceFuture:true},owner);
+ const revisions=(await client.query("SELECT * FROM documents WHERE billing_cycle_id=$1 AND document_type='invoice' ORDER BY revision",[cycle.id])).rows;assert.equal(revisions.length,2);assert.equal(revisions[0].status,'superseded');assert.equal(revisions[0].is_current,false);assert.equal(revisions[1].is_current,true);assert.equal(revisions[1].supersedes_document_id,original.id);assert.equal(revisions[1].snapshot.dueDate,original.snapshot.dueDate);assert.equal(revisions[1].amount,'39.59000000');
+ assert.equal(createHash('sha256').update(originalBytes).digest('hex'),revisions[0].content_hash);
+ await service.applyRates({selection:'selected',siteIds:[base.id],effectiveDate:'2090-10-01',rate:'3.8',reason:'Synthetic retirement',replaceFuture:true},owner);
+ const retired=(await client.query('SELECT rate FROM rate_versions WHERE site_id=$1 AND retired_at IS NOT NULL',[base.id])).rows;assert.ok(retired.some(r=>r.rate==='3.70000000'));
+ const paymentId=randomUUID();await client.query("INSERT INTO payments(id,billing_cycle_id,amount,status,paid_at) VALUES($1,$2,1,'pending_verification',now())",[paymentId,cycle.id]);
+ await assert.rejects(service.reprice(cycle.id,{rate:'3.9',reason:'Blocked pending'},owner),/locked/);
+ await client.query("UPDATE payments SET status='paid',verified_amount=1,verified_transfer_at=now(),verified_by=$2 WHERE id=$1",[paymentId,owner.id]);
+ await assert.rejects(service.reprice(cycle.id,{rate:'3.9',reason:'Blocked partial approval'},owner),/locked/);
+ await client.query('SAVEPOINT immutable_check');await assert.rejects(client.query('UPDATE documents SET amount=999 WHERE id=$1',[original.id]),/immutable/);await client.query('ROLLBACK TO SAVEPOINT immutable_check');
+ console.log('PASS real database: configured tax, manual same-day bills, immutable revisions, preserved due dates, tariff retirement, pending/partial transfer locks');
+}finally{await client.query('ROLLBACK');client.release();await db.pool.end();}

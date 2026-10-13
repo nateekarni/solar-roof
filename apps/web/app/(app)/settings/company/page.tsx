@@ -33,7 +33,7 @@ import {
   SelectValue,
 } from "../../../../components/ui/select";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "../../../../components/ui/dropdown-menu";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../../components/ui/table";
+import { DataTable } from "../../../../components/ui/data-table";
 import { Button } from "../../../../components/ui/button";
 import {
   Dialog,
@@ -55,6 +55,7 @@ interface CompanyProfile {
   logoUrl?: string;
   signatoryName?: string;
   signatoryTitle?: string;
+  signatureDataUri?: string;
 }
 
 interface CompanyBankAccount {
@@ -246,7 +247,7 @@ export default function CompanyBankingPage() {
               </CardTitle>
               <CardDescription className="text-xs mt-0.5">
                 {locale === "th"
-                  ? "ข้อมูลที่จะปรากฏในหัวเอกสารใบแจ้งหนี้ ใบเสร็จรับเงิน/ใบกำกับภาษี และสัญญา PPA ตามมาตรฐาน FlowAccount"
+                  ? "ข้อมูลบริษัทที่แสดงในใบวางบิลและใบเสร็จรับเงิน/ใบกำกับภาษี"
                   : "Header information shown on invoices, tax receipts, and PPA contracts (FlowAccount standard)"}
               </CardDescription>
             </div>
@@ -257,6 +258,11 @@ export default function CompanyBankingPage() {
                 ['companyName', 'ชื่อบริษัท / นิติบุคคล', 'Company name'], ['taxId', 'เลขประจำตัวผู้เสียภาษี', 'Tax ID'], ['branch', 'สาขา', 'Branch'], ['phone', 'เบอร์โทรศัพท์', 'Phone'], ['email', 'อีเมลสำหรับการเงิน', 'Billing email'], ['address', 'ที่อยู่จดทะเบียนภาษี', 'Tax address'], ['signatoryName', 'ชื่อผู้ลงนามฝ่ายผู้ให้บริการ', 'Default provider signatory'], ['signatoryTitle', 'ตำแหน่งผู้ลงนาม', 'Default signatory title']
               ] as const).map(([key, th, en]) => <div key={key} className={key === "address" ? "space-y-1 md:col-span-2" : "space-y-1"}><dt className="text-sm text-muted-foreground">{locale === 'th' ? th : en}</dt><dd className="text-sm font-medium whitespace-pre-wrap break-words">{company[key] || '—'}</dd></div>)}</dl></div> : <form onSubmit={handleSaveCompany} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                {(['logoUrl','signatureDataUri'] as const).map(key=><div key={key} className="space-y-2">
+                  <Label htmlFor={`company-${key}`}>{key==='logoUrl'?(locale==='th'?'โลโก้บริษัท':'Company logo'):(locale==='th'?'ภาพลายเซ็นผู้วางบิล':'Billing signatory image')} (PNG/JPEG, 1 MB)</Label>
+                  <Input id={`company-${key}`} type="file" accept="image/png,image/jpeg" onChange={event=>{const file=event.target.files?.[0];if(!file)return;if(!['image/png','image/jpeg'].includes(file.type)||file.size>1048576){notify.error(locale==='th'?'เลือกภาพ PNG/JPEG ขนาดไม่เกิน 1 MB':'Choose a PNG/JPEG image up to 1 MB');return;}const reader=new FileReader();reader.onload=()=>setCompany(current=>({...current,[key]:String(reader.result)}));reader.readAsDataURL(file);}}/>
+                  {company[key]?<><img src={company[key]} alt={key==='logoUrl'?'Company logo':'Configured signature'} className="h-16 object-contain"/><Button type="button" variant="outline" onClick={()=>setCompany({...company,[key]:''})}>{locale==='th'?'ลบภาพ':'Remove image'}</Button></>:null}
+                </div>)}
                 {(['signatoryName','signatoryTitle'] as const).map(key=><div className="space-y-2" key={key}>
                   <Label htmlFor={`company-${key}`}>{key==='signatoryName'?(locale==='th'?'ชื่อผู้ลงนามฝ่ายผู้ให้บริการ':'Default provider signatory'):(locale==='th'?'ตำแหน่งผู้ลงนาม':'Default signatory title')}</Label>
                   <Input id={`company-${key}`} value={company[key]??''} onChange={event=>setCompany({...company,[key]:event.target.value})}/>
@@ -314,7 +320,7 @@ export default function CompanyBankingPage() {
 
                 <div className="space-y-2">
                   <Label htmlFor="company-email" className="text-xs font-medium text-foreground">
-                    {locale === "th" ? "อีเมลสำหรับการเงินและใบแจ้งหนี้ *" : "Billing Email *"}
+                    {locale === "th" ? "อีเมลสำหรับการเงินและใบวางบิล *" : "Billing Email *"}
                   </Label>
                   <Input id="company-email"
                     type="email"
@@ -364,7 +370,7 @@ export default function CompanyBankingPage() {
               </CardTitle>
               <CardDescription className="text-xs mt-0.5">
                 {locale === "th"
-                  ? "บัญชีที่จะแสดงในส่วนท้ายของใบแจ้งหนี้เพื่อให้ลูกค้าโอนชำระเงิน"
+                  ? "บัญชีที่จะแสดงในส่วนท้ายของใบวางบิลเพื่อให้ลูกค้าโอนชำระเงิน"
                   : "Bank accounts displayed in billing invoices for customer payment transfer"}
               </CardDescription>
             </div>
@@ -377,7 +383,7 @@ export default function CompanyBankingPage() {
               <span>{locale === "th" ? "เพิ่มบัญชี" : "Add Account"}</span>
             </AddButton>
           </CardHeader>
-          <CardContent className="px-0 [&_th:first-child]:pl-6 [&_td:first-child]:pl-6 [&_th:last-child]:pr-6 [&_td:last-child]:pr-6">
+          <CardContent className="px-0">
             {loadingBanks ? (
               <AppLoading fullPage={false} message={locale === "th" ? "กำลังโหลดข้อมูลบัญชีธนาคาร…" : "Loading bank accounts…"} />
             ) : bankAccounts.length === 0 ? (
@@ -389,16 +395,14 @@ export default function CompanyBankingPage() {
                 </AddButton>
               </div>
             ) : (
-              <Table className="text-xs">
-                <TableHeader className="[&_tr]:border-0"><TableRow className="border-0 bg-muted/50 hover:bg-muted/50">
-                  {[locale === "th" ? "ธนาคาร" : "Bank", locale === "th" ? "เลขที่บัญชี" : "Account number", locale === "th" ? "ชื่อบัญชี" : "Account name", locale === "th" ? "สาขา" : "Branch", locale === "th" ? "พร้อมเพย์" : "PromptPay"].map(label => <TableHead key={label} className="text-xs">{label}</TableHead>)}<TableHead style={{width:64,minWidth:64,maxWidth:64}} />
-                </TableRow></TableHeader>
-                <TableBody className="[&_tr]:border-y [&_tr]:border-border [&_tr:last-child]:border-t [&_tr:last-child]:border-b-0">{bankAccounts.map(b => <TableRow key={b.id || b.accountNumber}>
-                  <TableCell><div className="flex items-center gap-1.5"><span className="font-semibold">{bankDisplayName(b.bankName)}</span>{b.isDefault && <Badge className="text-[9px] px-1.5 py-0 bg-primary/10 text-primary border border-primary/20">{locale === "th" ? "บัญชีหลัก" : "Default"}</Badge>}</div></TableCell>
-                  <TableCell className="font-mono">{b.accountNumber}</TableCell><TableCell>{b.accountName}</TableCell><TableCell>{b.branchName || "—"}</TableCell><TableCell>{b.promptpayId || "—"}</TableCell>
-                  <TableCell style={{width:64,minWidth:64,maxWidth:64}}><div className="flex justify-end"><DropdownMenu><DropdownMenuTrigger asChild><Button type="button" variant="ghost" size="icon" className="size-10" aria-label={locale === "th" ? "เมนูบัญชีธนาคาร" : "Bank account actions"}><MoreHorizontal className="size-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onSelect={()=>handleOpenEditBank(b)}>{locale === "th" ? "แก้ไขบัญชีธนาคาร" : "Edit bank account"}</DropdownMenuItem><DropdownMenuItem variant="destructive" onSelect={()=>b.id && setBankToDelete(b.id)}>{locale === "th" ? "ลบบัญชีธนาคาร" : "Delete bank account"}</DropdownMenuItem></DropdownMenuContent></DropdownMenu></div></TableCell>
-                </TableRow>)}</TableBody>
-              </Table>
+              <DataTable<CompanyBankAccount,unknown> variant="embedded" hideSearch data={bankAccounts} getRowId={b=>b.id||b.accountNumber} columns={[
+ {accessorKey:'bankName',header:locale==='th'?'ธนาคาร':'Bank',cell:({row})=><div className="flex items-center gap-2"><span className="font-semibold">{bankDisplayName(row.original.bankName)}</span>{row.original.isDefault&&<Badge variant="secondary">{locale==='th'?'บัญชีหลัก':'Default'}</Badge>}</div>},
+ {accessorKey:'accountNumber',header:locale==='th'?'เลขที่บัญชี':'Account number'},
+ {accessorKey:'accountName',header:locale==='th'?'ชื่อบัญชี':'Account name'},
+ {accessorKey:'branchName',header:locale==='th'?'สาขา':'Branch',cell:({row})=>row.original.branchName||'—'},
+ {accessorKey:'promptpayId',header:locale==='th'?'พร้อมเพย์':'PromptPay',cell:({row})=>row.original.promptpayId||'—'},
+ {id:'actions',header:'',enableSorting:false,cell:({row})=><DropdownMenu><DropdownMenuTrigger asChild><Button type="button" variant="ghost" size="icon" aria-label={locale==='th'?'เมนูบัญชีธนาคาร':'Bank account actions'}><MoreHorizontal/></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onSelect={()=>handleOpenEditBank(row.original)}>{locale==='th'?'แก้ไขบัญชีธนาคาร':'Edit bank account'}</DropdownMenuItem><DropdownMenuItem variant="destructive" onSelect={()=>row.original.id&&setBankToDelete(row.original.id)}>{locale==='th'?'ลบบัญชีธนาคาร':'Delete bank account'}</DropdownMenuItem></DropdownMenuContent></DropdownMenu>}
+ ]}/>
             )}
           </CardContent>
         </Card>
@@ -421,7 +425,7 @@ export default function CompanyBankingPage() {
               </DialogTitle>
               <DialogDescription className="text-xs text-muted-foreground">
                 {locale === "th"
-                  ? "กรอกข้อมูลบัญชีเพื่อแสดงในใบแจ้งหนี้ให้ลูกค้าโอนชำระเงิน"
+                  ? "กรอกข้อมูลบัญชีเพื่อแสดงในใบวางบิลให้ลูกค้าโอนชำระเงิน"
                   : "Enter bank account details to display in billing invoices"}
               </DialogDescription>
             </DialogHeader>

@@ -8,8 +8,9 @@ import { observeDuration, observeValue } from '../../common/observability/metric
 import { IngestionDatabaseService } from './ingestion-database.service.js';
 import { PayloadIngestion, gatewayPrefix } from "./payload-ingestion.js";
 import { budget, IngestionLimiter, parseBoundedPayload } from './ingestion-limiter.js';
+import { acknowledgeGatewayConfiguration } from '../assets/gateway-lifecycle.js';
 
-export interface CanonicalLiveField {deviceId:string;externalDeviceId?:string|null;deviceName:string;tag:string;value:number;unit:string;rawValue:number;rawUnit:string;polledAt:string;receivedAt:string;quality:string;communication:string;profileId:string;profileVersion:string;pollGroup:string;ageSeconds:number;stale:boolean}
+export interface CanonicalLiveField {deviceId:string;externalDeviceId?:string|null;deviceName:string;tag:string;value:number;unit:string;rawValue:number;rawUnit:string;polledAt:string;sourceTime?:string;receivedAt:string;quality:string;communication:string;profileId:string;profileVersion:string;pollGroup:string;ageSeconds:number;stale:boolean}
 export interface LiveTelemetrySnapshot {
   canonicalFields?: CanonicalLiveField[];
   siteId: string; siteName?: string | undefined; gatewayId?: string | undefined;
@@ -74,7 +75,7 @@ export class MqttIngestionService implements OnModuleInit, OnModuleDestroy {
     this.remoteTimer.unref();
     if (!this.defaultBrokerEnabled) return;
     this.client = mqtt.connect(process.env.MQTT_URL || 'mqtt://localhost:1883', {
-      connectTimeout: 5000, reconnectPeriod: 5000,
+      connectTimeout: 5000, reconnectPeriod: 5000, resubscribe: false,
       ...(process.env.MQTT_USERNAME ? { username: process.env.MQTT_USERNAME } : {}),
       ...(process.env.MQTT_PASSWORD ? { password: process.env.MQTT_PASSWORD } : {}),
     });
@@ -155,7 +156,8 @@ export class MqttIngestionService implements OnModuleInit, OnModuleDestroy {
   }
   private async syncRemote() {
     if(this.stopping)return;
-    const result=await this.ingress.query(`SELECT b.id,b.url,b.username,b.password_cipher,array_agg(g.endpoint) AS topics FROM mqtt_brokers b JOIN gateways g ON g.mqtt_broker_id=b.id WHERE g.protocol='mqtt' GROUP BY b.id ORDER BY b.id LIMIT 33`);
+    const result=await this.ingress.query(`SELECT b.id,b.url,b.username,b.password_cipher,array_agg(g.endpoint) AS topics FROM mqtt_brokers b JOIN gateways g ON g.mqtt_broker_id=b.id WHERE g.protocol='mqtt' AND g.retired_at IS NULL GROUP BY b.id ORDER BY b.id LIMIT 33`);
+    for(const broker of result.rows)broker.topics=broker.topics.flatMap((topic:string)=>topic.startsWith('solar/v1/')?[topic,topic.replace(/\/devices\/[^/]+\/telemetry$/,'/configAck')]:[topic]);
     if(this.stopping)return;
     if(result.rows.length>32)throw Error('At most 32 active MQTT brokers are supported');
     const ids=new Set(result.rows.map(b=>b.id));
@@ -165,7 +167,7 @@ export class MqttIngestionService implements OnModuleInit, OnModuleDestroy {
       const settings=JSON.stringify([broker.url,broker.username,broker.password_cipher]);
       if(session && session.settings!==settings){session.ready=false;session.client.end(true);this.remote.delete(broker.id);session=undefined;}
       if(!session){
-        const client=mqtt.connect(broker.url,{connectTimeout:5000,reconnectPeriod:5000,username:broker.username||undefined,...(broker.password_cipher?{password:decryptBrokerPassword(broker.password_cipher)}:{})});
+        const client=mqtt.connect(broker.url,{connectTimeout:5000,reconnectPeriod:5000,resubscribe:false,username:broker.username||undefined,...(broker.password_cipher?{password:decryptBrokerPassword(broker.password_cipher)}:{})});
         session={client,topics:new Set(),desired:broker.topics,ready:false,settings};this.remote.set(broker.id,session);
         const current=session;
         client.on('connect',()=>{void (async()=>{
@@ -209,13 +211,13 @@ export class MqttIngestionService implements OnModuleInit, OnModuleDestroy {
     this.subscriptionsReady = false;
     if (!client?.connected) return;
     try {
-      const result = await this.ingress.query("SELECT endpoint FROM gateways WHERE protocol = 'mqtt' AND mqtt_broker_id IS NULL ORDER BY id LIMIT 1025");
+      const result = await this.ingress.query("SELECT endpoint FROM gateways WHERE protocol = 'mqtt' AND mqtt_broker_id IS NULL AND retired_at IS NULL ORDER BY id LIMIT 1025");
       if (result.rows.length > 1024 || result.rows.some(row => typeof row.endpoint !== 'string' || Buffer.byteLength(row.endpoint) > 1024)) throw new Error('Gateway subscription resource limit');
       if (generation !== this.connectionGeneration || !client.connected) return;
-      const topics = new Set<string>(result.rows.map(row => row.endpoint));
+      const topics = new Set<string>(result.rows.flatMap(row => row.endpoint.startsWith('solar/v1/')?[row.endpoint,row.endpoint.replace(/\/devices\/[^/]+\/telemetry$/,'/configAck')]:[row.endpoint]));
       for (const topic of this.subscribedTopics) if (!topics.has(topic)) client.unsubscribe(topic);
       for (const topic of topics) if (!this.subscribedTopics.has(topic)) {
-        await new Promise<void>((resolve, reject) => client.subscribe(topic, { qos: 1 }, error => error ? reject(error) : resolve()));
+        await new Promise<void>((resolve, reject) => client.subscribe(topic, { qos: 1 }, (error,granted) => error||granted?.some(item=>item.qos===128) ? reject(error||Error('Subscription refused')) : resolve()));
         if (generation !== this.connectionGeneration || !client.connected) return;
       }
       this.subscribedTopics = topics;
@@ -231,6 +233,11 @@ async handleIncomingMessage(topic: string, messageStr: string | Buffer, sourceCl
     let data: Record<string, any>;
     try { data = parseBoundedPayload(messageStr) as Record<string, any>; }
     catch (error) { if(topic.startsWith('solar/v1/')) await new PayloadIngestion(this.ingress).accept(topic,undefined,brokerId); observeValue('ingress_rejected',1); return; }
+    const configAck=/^solar\/v1\/sites\/([A-Za-z0-9_-]{1,128})\/gateways\/([A-Za-z0-9_-]{1,128})\/configAck$/.exec(topic);
+    if(configAck){
+      if(data.siteId===configAck[1]&&data.gatewayId===configAck[2]&&['acknowledged','applied'].includes(data.status))await acknowledgeGatewayConfiguration(this.ingress,configAck[1]!,configAck[2]!,brokerId,data.configurationVersion,data.status==='applied');
+      return;
+    }
     if (topic.startsWith('solar/v1/')) {
       let accepted=0;
       await new PayloadIngestion(this.ingress).acceptMany(topic,data,brokerId,ack=>{
@@ -319,7 +326,6 @@ async handleIncomingMessage(topic: string, messageStr: string | Buffer, sourceCl
     });
   }
   async publishHardwareConfig(gatewayName: string, configData: Record<string, unknown>) {
-    if (!this.client?.connected) return false;
     const result = await this.ingress.query(`SELECT g.mqtt_broker_id AS "brokerId",g.endpoint,g.external_gateway_id AS "externalGatewayId",s.external_site_id AS "externalSiteId" FROM gateways g JOIN sites s ON s.id=g.site_id WHERE g.name = $1 AND g.protocol = 'mqtt'`, [gatewayName]);
     if (result.rows.length !== 1) return false;
     const gateway=result.rows[0]!;
@@ -343,15 +349,15 @@ async handleIncomingMessage(topic: string, messageStr: string | Buffer, sourceCl
        FROM telemetry_raw tr JOIN sites s ON s.id = tr.site_id JOIN devices d ON d.id = tr.device_id JOIN gateways g ON g.id = d.gateway_id
        WHERE tr.site_id = $1 AND d.device_type<>'logger' AND (EXISTS(SELECT 1 FROM billing_meters b WHERE b.site_id=tr.site_id AND b.device_id=tr.device_id AND b.active) OR NOT EXISTS(SELECT 1 FROM billing_meters b WHERE b.site_id=tr.site_id AND b.active)) ORDER BY tr.source_time DESC, tr.received_time DESC LIMIT 1`, [siteId]);
     let row = result.rows[0];
-    const fields=await this.db.query(`SELECT DISTINCT ON (ps.device_id,ps.tag) ps.device_id AS "deviceId",d.external_device_id AS "externalDeviceId",d.name AS "deviceName",ps.tag,ps.value,ps.unit,ps.raw_value AS "rawValue",ps.raw_unit AS "rawUnit",ps.polled_at AS "polledAt",ps.received_at AS "receivedAt",ps.quality,ps.communication,p.profile_id AS "profileId",p.version AS "profileVersion",ps.poll_group AS "pollGroup",EXISTS(SELECT 1 FROM billing_meters b WHERE b.device_id=ps.device_id AND b.active) AS billing,(SELECT f->>'role' FROM jsonb_array_elements(p.config->'fields') f WHERE f->>'tag'=ps.tag) AS role
-      FROM payload_samples ps JOIN devices d ON d.id=ps.device_id JOIN payload_profile_revisions p ON p.id=ps.profile_revision_id WHERE ps.site_id=$1 ORDER BY ps.device_id,ps.tag,ps.polled_at DESC,ps.received_at DESC,ps.id DESC`,[siteId]);
+    const fields=await this.db.query(`SELECT DISTINCT ON (ps.device_id,ps.tag) ps.device_id AS "deviceId",d.external_device_id AS "externalDeviceId",d.name AS "deviceName",ps.tag,ps.value,ps.unit,ps.raw_value AS "rawValue",ps.raw_unit AS "rawUnit",ps.polled_at AS "polledAt",coalesce(ps.measured_at,ps.polled_at) AS "sourceTime",d.expected_interval_seconds AS "expectedIntervalSeconds",d.poll_group_cadence AS "pollGroups",ps.received_at AS "receivedAt",ps.quality,ps.communication,p.profile_id AS "profileId",p.version AS "profileVersion",ps.poll_group AS "pollGroup",EXISTS(SELECT 1 FROM billing_meters b WHERE b.device_id=ps.device_id AND b.active) AS billing,(SELECT f->>'role' FROM jsonb_array_elements(p.config->'fields') f WHERE f->>'tag'=ps.tag) AS role
+      FROM payload_samples ps JOIN devices d ON d.id=ps.device_id JOIN payload_profile_revisions p ON p.id=ps.profile_revision_id WHERE ps.site_id=$1 AND d.gateway_id IN (SELECT id FROM gateways WHERE site_id=$1 AND retired_at IS NULL) ORDER BY ps.device_id,ps.tag,coalesce(ps.measured_at,ps.polled_at) DESC,ps.received_at DESC,ps.id DESC`,[siteId]);
     if(!row) {
       if(!fields.rows.length)return null;
-      const newest=[...fields.rows].sort((a,b)=>new Date(b.polledAt).getTime()-new Date(a.polledAt).getTime())[0]!;
+      const newest=[...fields.rows].sort((a,b)=>new Date(b.sourceTime??b.polledAt).getTime()-new Date(a.sourceTime??a.polledAt).getTime())[0]!;
       const context=(await this.db.query(`SELECT s.name AS "siteName",s.external_site_id AS "externalSiteId",g.external_gateway_id AS "externalGatewayId",g.id AS "gatewayId",g.name AS "gatewayName",g.endpoint FROM sites s JOIN gateways g ON g.site_id=s.id WHERE s.id=$1`,[siteId])).rows[0]??{};
-      row={...context,externalDeviceId:newest.externalDeviceId,device_id:newest.deviceId,source_time:newest.polledAt,received_time:newest.receivedAt,quality:'partial'};
+      row={...context,externalDeviceId:newest.externalDeviceId,device_id:newest.deviceId,source_time:newest.sourceTime??newest.polledAt,received_time:newest.receivedAt,quality:'partial'};
     }
-    const canonicalFields=fields.rows.map(f=>{const {billing:_billing,role:_role,...publicField}=f;const ageSeconds=Math.max(0,(Date.now()-new Date(f.polledAt).getTime())/1000);return {...publicField,value:Number(f.value),rawValue:Number(f.rawValue),polledAt:new Date(f.polledAt).toISOString(),receivedAt:new Date(f.receivedAt).toISOString(),ageSeconds,stale:ageSeconds>120};}) as CanonicalLiveField[];
+    const canonicalFields=fields.rows.map(f=>{const {billing:_billing,role:_role,expectedIntervalSeconds:_expected,pollGroups:_groups,...publicField}=f;const sourceTime=f.sourceTime??f.polledAt;const ageSeconds=Math.max(0,(Date.now()-new Date(sourceTime).getTime())/1000);const cadence=Number(f.pollGroups?.[f.pollGroup]??f.expectedIntervalSeconds??60);return {...publicField,value:Number(f.value),rawValue:Number(f.rawValue),polledAt:new Date(f.polledAt).toISOString(),sourceTime:new Date(sourceTime).toISOString(),receivedAt:new Date(f.receivedAt).toISOString(),ageSeconds,stale:ageSeconds>2*cadence};}) as CanonicalLiveField[];
     const healthy=(f:Record<string,any>)=>['good','complete','ok'].includes(String(f.quality).toLowerCase())&&['online','ok','connected','success'].includes(String(f.communication).toLowerCase());
     const billingValue=(tag:string,fallback:unknown)=>{const f=fields.rows.find(f=>f.billing&&(tag==='power.active.total'?f.role==='active-power'&&f.unit==='W':f.tag===tag));
       if(!f)return fallback;

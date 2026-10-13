@@ -1,7 +1,7 @@
 export function profileConfig(name: string, historyDays: number) {
   if (!['smoke', 'target'].includes(name) || historyDays !== 90) throw new Error('Requires smoke|target and 90 history days');
   const target = name === 'target';
-  return { name, historyDays, schools: target ? 100 : 2, meters: target ? 1000 : 8, users: target ? 50 : 5,
+  return { name, historyDays, customers: target ? 100 : 2, meters: target ? 1000 : 8, users: target ? 50 : 5,
     historyRows: target ? 129_600_000 : 720, steadyPerMinute: target ? 1000 : 24,
     steadySeconds: 60, burst: target ? 1000 : 8, replayPerMinute: target ? 10000 : 240,
     replaySeconds: target ? 600 : 10, exports: 2 };

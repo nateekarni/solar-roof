@@ -3,11 +3,13 @@
 import { useSyncExternalStore } from "react";
 
 export interface AuthUser {
+  authorization?: import('../lib/effective-page-access').AuthorizationSnapshot;
   id: string;
   email: string;
   displayName: string;
-  role: "owner" | "admin" | "operator" | "accountant" | "school_user";
-  schoolId?: string | null;
+  avatarData?: string | null;
+  role: "owner" | "admin" | "operator" | "accountant" | "customer_user";
+  customerId?: string | null;
   preferredLanguage?: "th" | "en";
   preferredTheme?: "light" | "dark" | "system";
 }

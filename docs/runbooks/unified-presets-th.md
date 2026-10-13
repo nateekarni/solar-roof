@@ -5,7 +5,7 @@
 2. เลือก **Preset มิเตอร์หลัก** จุดเดียว ไม่ต้องเลือกรูปแบบ Profile/Register อีก ระบบใช้วิธีรับข้อมูลของ Preset ให้เอง
 3. สำหรับ Gateway ใน pilot เลือก **Pilot SPM91** (JSON) แล้วกำหนด Site ID `SITE-001`, Gateway ID `GW-001`, Device ID `SPM91-01`
 4. เลือก Broker ที่ผู้ดูแล Gateway ให้ พร้อมกำหนด Subscribe Topic `solar/v1/sites/SITE-001/gateways/GW-001/devices/SPM91-01/telemetry` (หรือ `devices/+/telemetry` เมื่อรับหลายอุปกรณ์)
-5. กรอกชื่อไซต์ โรงเรียน กำลังติดตั้ง และซีเรียลจริงให้ครบ ตรวจรายการ Field ก่อนบันทึก
+5. กรอกชื่อไซต์ ลูกค้า กำลังติดตั้ง และซีเรียลจริงให้ครบ ตรวจรายการ Field ก่อนบันทึก
 
 Register Preset เดิมยังเลือกได้จากช่องเดียวกัน ระบบจะแปล Register ดิบและใช้ Topic legacy ให้เอง อย่าเลือก Register ดิบสำหรับข้อความ JSON `solar/v1/...` ที่แปลค่าแล้ว
 

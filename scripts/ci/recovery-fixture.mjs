@@ -16,7 +16,7 @@ const args=['compose','-p',process.env.RECOVERY_COMPOSE_PROJECT,'-f','infra/ci/c
 function compose(command,{input,allowFailure=false,timeout=240000}={}){const r=withRecoveryProgress(command,()=>spawnSync('docker',[...args,...command],{encoding:'utf8',env:process.env,input,timeout,maxBuffer:8*1024*1024}));if(!allowFailure&&r.status!==0)throw Error(`Compose ${command[0]} failed (${r.status}): ${r.stderr}\n${r.stdout}`);return r;}
 function sql(service,query){return compose(['exec','-T',service,'psql','-U','solar','-d','solar_readiness','-At','-v','ON_ERROR_STOP=1','-c',query]).stdout.trim();}
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
-async function until(check){for(let i=0;i<150;i++){if(await check())return;await delay(100);}throw Error('Timed out waiting for recovery boundary');}
+async function until(check,{attempts=150,delayMs=100,label='recovery boundary'}={}){for(let i=0;i<attempts;i++){if(await check())return;await delay(delayMs);}throw Error(`Timed out waiting for ${label}`);}
 // Fixture-only fault: stop the scheduler's real backup, never the sampler or database.
 async function proveSamplerDuringLongBackup(){
  console.log('[recovery] phase=sampler-during-paused-backup; intentional pause=190s');
@@ -103,7 +103,9 @@ finally:
   await until(()=>compose(['exec','-T','postgres','test','-f',state+'.done'],{allowFailure:true}).status===0);
  }
 }
-async function mqttSession(gateway){const client=mqtt.connect('mqtt://127.0.0.1:18883',{reconnectPeriod:100}),acks=[];client.on('message',(_,bytes)=>acks.push(JSON.parse(bytes)));await until(()=>client.connected);await new Promise((resolve,reject)=>client.subscribe(`energy/${gateway}/response`,{qos:1},e=>e?reject(e):resolve()));return {client,acks,publish:body=>new Promise((resolve,reject)=>client.publish(`energy/${gateway}/telemetry`,body,{qos:1},e=>e?reject(e):resolve()))};}
+function subscribeToResponses(client,gateway){const topic=`energy/${gateway}/response`;return new Promise((resolve,reject)=>client.subscribe(topic,{qos:1},(error,grants)=>{if(error)return reject(error);if(!grants?.some(grant=>grant.topic===topic&&grant.qos<128))return reject(Error('MQTT response subscription denied'));resolve();}));}
+async function waitForResponseSubscription(client,gateway){await until(async()=>{if(!client.connected)return false;try{await subscribeToResponses(client,gateway);return true;}catch{return false;}},{attempts:240,delayMs:500,label:'MQTT gateway authorization restoration'});}
+async function mqttSession(gateway){const client=mqtt.connect('mqtt://127.0.0.1:18883',{reconnectPeriod:100,resubscribe:false}),acks=[];client.on('message',(_,bytes)=>acks.push(JSON.parse(bytes)));await until(()=>client.connected,{label:'MQTT connection'});await waitForResponseSubscription(client,gateway);return {client,acks,publish:body=>new Promise((resolve,reject)=>client.publish(`energy/${gateway}/telemetry`,body,{qos:1},e=>e?reject(e):resolve()))};}
 const base='http://127.0.0.1:13001',origin='http://localhost:13000';
 const s3=new S3Client({endpoint:`http://127.0.0.1:${process.env.PLATFORM_CI_STORAGE_PORT}`,region:'us-east-1',forcePathStyle:true,credentials:{accessKeyId:'solar-ci',secretAccessKey:'ci-storage-only-password'}});
 let db;
@@ -116,13 +118,29 @@ try {
  await s3.send(new CreateBucketCommand({Bucket:'stale-documents'}));
  compose(['up','-d','--wait','--wait-timeout','240','api','worker']);
  db=new Pool({connectionString:process.env.READINESS_DATABASE_URL});
- const school=randomUUID(),other=randomUUID(),site=randomUUID(),foreignSite=randomUUID(),document=randomUUID(),foreignDoc=randomUUID();
- await db.query("INSERT INTO schools(id,name,code,region) VALUES($1::uuid,'D2 School',$1::text,'fixture'),($2::uuid,'D2 Other',$2::text,'fixture')",[school,other]);
- await db.query("INSERT INTO sites(id,school_id,name,capacity_mwp) VALUES($1,$2,'D2 Site',0.1),($3,$4,'D2 Foreign',0.1)",[site,school,foreignSite,other]);
+ const customer=randomUUID(),other=randomUUID(),site=randomUUID(),foreignSite=randomUUID(),document=randomUUID(),foreignDoc=randomUUID();
+ await db.query("INSERT INTO customers(id,name,code,region) VALUES($1::uuid,'D2 Customer',$1::text,'fixture'),($2::uuid,'D2 Other',$2::text,'fixture')",[customer,other]);
+ await db.query("INSERT INTO sites(id,customer_id,name,capacity_mwp) VALUES($1,$2,'D2 Site',0.1),($3,$4,'D2 Foreign',0.1)",[site,customer,foreignSite,other]);
  const password='D2-recovery-password-123!',salt=randomBytes(16).toString('hex'),hash=`scrypt:${salt}:${scryptSync(password,salt,64).toString('hex')}`;
- const roles=['owner','admin','operator','accountant','school_user'];
+ const roles=['owner','admin','operator','accountant','customer_user'];
  const users=[];
- for(const role of roles){const id=randomUUID(),email=`d2-${id}@example.test`;users.push({role,email});await db.query("INSERT INTO users(id,email,display_name,role,status,password_hash,school_id) VALUES($1,$2,'D2 Actor',$3,'active',$4,$5)",[id,email,role,hash,school]);}
+ for(const role of roles){const id=randomUUID(),email=`d2-${id}@example.test`;users.push({id,role,email});await db.query("INSERT INTO users(id,email,display_name,role,status,password_hash,customer_id) VALUES($1,$2,'D2 Actor',$3,'active',$4,$5)",[id,email,role,hash,customer]);}
+ // New employees require explicit domain grants; customer access requires a live site assignment.
+ for(const [role,domain,rules] of [
+  ['operator','technical',{'technical.dashboard.view':true}],
+  ['accountant','business',{'business.dashboard.view':true,'business.documents.view':true}],
+ ])await db.query("INSERT INTO employee_domain_grants(user_id,domain,overrides,scope_mode,site_ids) VALUES($1,$2,$3::jsonb,'selected',$4::uuid[])",[users.find(user=>user.role===role).id,domain,JSON.stringify(rules),[site]]);
+ const customerUser=users.find(user=>user.role==='customer_user');
+ await db.query('INSERT INTO site_account_assignments(id,user_id,site_id) VALUES($1,$2,$3)',[randomUUID(),customerUser.id,site]);
+ // Compare persisted authorization metadata before backup and after physical restore.
+ const actorIds=users.map(user=>"'"+user.id+"'").join(',');
+ const authorizationSql=`SELECT jsonb_build_object(
+  'users',(SELECT jsonb_agg(jsonb_build_object('id',id,'role',role,'revision',permission_revision) ORDER BY id) FROM users WHERE id IN (${actorIds})),
+  'grants',(SELECT jsonb_agg(jsonb_build_object('userId',user_id,'domain',domain,'rules',overrides,'mode',scope_mode,'sites',site_ids) ORDER BY user_id,domain) FROM employee_domain_grants WHERE user_id IN (${actorIds})),
+  'assignments',(SELECT jsonb_agg(jsonb_build_object('id',id,'userId',user_id,'siteId',site_id,'revokedAt',revoked_at) ORDER BY id) FROM site_account_assignments WHERE user_id IN (${actorIds}))
+ ) AS evidence`;
+ const authorizationBefore=(await db.query(authorizationSql)).rows[0].evidence;
+ assert.equal(authorizationBefore.grants.length,2);assert.equal(authorizationBefore.assignments.length,1);
  // Synthetic original bytes are fixture-only, never published as a real issued artifact.
  const original=Buffer.from('%PDF-1.4\nD2 isolated original-byte preservation fixture\n%%EOF\n');
  await s3.send(new PutObjectCommand({Bucket:'solar-readiness',Key:'original/d2-fixture.pdf',Body:original}));
@@ -181,11 +199,23 @@ try {
  assert.deepEqual(restored.config,config);assert.equal(restored.manifest.objects.find(o=>o.key==='original/d2-fixture.pdf').sha256,createHash('sha256').update(original).digest('hex'));
  process.env.RECOVERY_DATABASE_HOST='restore-db';process.env.RECOVERY_STORAGE_BUCKET='restored-documents';
  compose(['up','-d','--no-deps','--force-recreate','--wait','--wait-timeout','120','api']);
- for(const actor of users){const login=await fetch(base+'/v1/auth/login',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify({email:actor.email,password})});assert.equal(login.status,200,actor.role+' restored login');const token=(await login.json()).accessToken;const get=p=>fetch(base+p,{headers:{Authorization:`Bearer ${token}`}});assert.equal((await get('/v1/operations/documents/'+document)).status,200);assert.equal((await get('/v1/operations/documents/'+foreignDoc)).status,['owner','admin'].includes(actor.role)?200:404);assert.equal((await get('/v1/dashboard/summary')).status,200);}
+ assert.deepEqual(JSON.parse(sql('restore-db',authorizationSql)),authorizationBefore,'Domain grants, permission revisions and site assignment survive PITR');
+ for(const actor of users){
+  const login=await fetch(base+'/v1/auth/login',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify({email:actor.email,password})});
+  assert.equal(login.status,200,actor.role+' restored login');const token=(await login.json()).accessToken;
+  const get=p=>fetch(base+p,{headers:{Authorization:`Bearer ${token}`}});
+  const business=['owner','accountant','customer_user'].includes(actor.role);
+  assert.equal((await get('/v1/operations/documents/'+document)).status,business?200:403,actor.role+' restored document permission');
+  assert.equal((await get('/v1/operations/documents/'+foreignDoc)).status,actor.role==='owner'?200:business?404:403,actor.role+' restored foreign document boundary');
+  const dashboard=await get('/v1/dashboard/summary');assert.equal(dashboard.status,200,actor.role+' restored dashboard');
+  const summary=await dashboard.json(),visible=summary.availableSites.map(row=>row.id).sort();
+  if(['owner','admin'].includes(actor.role)){assert.ok(visible.includes(site));assert.ok(visible.includes(foreignSite));}
+  else assert.deepEqual(visible,[site],actor.role+' restored selected-site scope');
+ }
   // Count persisted telemetry before replay: replay cannot mask loss in RPO.
  assert.equal(sql('restore-db',`SELECT count(*) FROM telemetry_raw WHERE device_id='${device}'`),'1');
  const replay=await mqttSession(gateway);
- try {await replay.publish(payload);await until(()=>replay.acks.length===1);assert.equal(replay.acks[0].duplicate,true);compose(['restart','mqtt']);await delay(100);compose(['up','-d','--no-deps','--wait','--wait-timeout','60','mqtt']);await until(()=>replay.client.connected);await new Promise((resolve,reject)=>replay.client.subscribe(`energy/${gateway}/response`,{qos:1},e=>e?reject(e):resolve()));await until(async()=>{try{return(await fetch(base+'/ready')).ok;}catch{return false;}});await replay.publish(payload);await until(()=>replay.acks.length===2);assert.equal(replay.acks[1].duplicate,true);assert.equal(sql('restore-db',`SELECT count(*) FROM telemetry_raw WHERE device_id='${device}'`),'1');}finally{replay.client.end(true);}
+ try {await replay.publish(payload);await until(()=>replay.acks.length===1,{label:'initial duplicate acknowledgement'});assert.equal(replay.acks[0].duplicate,true);compose(['stop','mqtt']);await until(async()=>{try{return(await fetch(base+'/ready/mqtt')).status===503;}catch{return false;}},{attempts:300,delayMs:100,label:'API observing the MQTT outage'});compose(['up','-d','--no-deps','--wait','--wait-timeout','60','mqtt']);await until(()=>replay.client.connected,{attempts:300,delayMs:100,label:'MQTT client reconnection'});await until(async()=>{try{return(await fetch(base+'/ready/mqtt')).ok;}catch{return false;}},{attempts:1200,delayMs:100,label:'restored MQTT readiness'});await waitForResponseSubscription(replay.client,gateway);await replay.publish(payload);await until(()=>replay.acks.length===2,{attempts:300,delayMs:100,label:'duplicate acknowledgement after MQTT restart'});assert.equal(replay.acks[1].duplicate,true);assert.equal(sql('restore-db',`SELECT count(*) FROM telemetry_raw WHERE device_id='${device}'`),'1');}finally{replay.client.end(true);}
  const usableAt=new Date();
  console.log('[recovery] phase=negative-recovery-boundaries');
  const nonempty=compose(['exec','-T','restore-db','/opt/solar-backup/restore.sh'],{allowFailure:true});assert.notEqual(nonempty.status,0);assert.match(nonempty.stderr,/nonempty/);
@@ -196,7 +226,7 @@ try {
  await s3.send(new DeleteObjectCommand({Bucket:'solar-backups',Key:segment.Key}));
  const missing=compose(['--profile','negative','up','-d','--wait','--wait-timeout','50','restore-negative'],{allowFailure:true,timeout:70000});assert.notEqual(missing.status,0,'Missing required WAL must fail target recovery');
  assert.notEqual(compose(['exec','-T','restore-negative','pg_isready','-U','solar','-d','solar_readiness'],{allowFailure:true}).status,0);
- const result={status:'passed',profile:'fixture',revision:spawnSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).stdout.trim(),runtimeImages:Object.fromEntries([process.env.RECOVERY_API_IMAGE||'solar-api:ci',process.env.RECOVERY_WORKER_IMAGE||'solar-worker:ci',process.env.RECOVERY_IMAGE||'solar-postgres-backup:ci'].map(image=>[image,spawnSync('docker',['image','inspect',image,'--format','{{.Id}}'],{encoding:'utf8'}).stdout.trim()])),backupId,targetTime,latestRestoredCommitTime,rpoSeconds:(outageDeclaredAt-new Date(latestRestoredCommitTime))/1000,rtoSeconds:(usableAt-outageDeclaredAt)/1000,outageDeclaredAt:outageDeclaredAt.toISOString(),usableAt:usableAt.toISOString(),beforeMarkerRestored:true,afterMarkerRestored:false,artifactChecksPassed:true,staleArtifactCheckpointRejected:true,backupStatusFingerprintVerified:true,longBackupSampler,configChecksPassed:true,rolesVerified:roles,nonemptyRestoreRejected:true,inaccessibleRepositoryRejected:true,missingWalRejected:true,postgresMajor:Number(sql('restore-db','SHOW server_version_num').slice(0,2)),timescaleVersion:sql('restore-db',"SELECT extversion FROM pg_extension WHERE extname='timescaledb'"),backupBytes:backup.info.repository.size,backupDurationSeconds:backup.timestamp.stop-backup.timestamp.start,effectiveBackupBytesPerSecond:backup.info.repository.size/Math.max(1,backup.timestamp.stop-backup.timestamp.start),retainedChain:info[0].backup.map(b=>b.label),productionRecoveryVerified:false,independentHostDrill:'pending',mqttReplayVerification:'passed-fixture',rawChecksPassed:true};
+ const result={status:'passed',profile:'fixture',revision:spawnSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).stdout.trim(),runtimeImages:Object.fromEntries([process.env.RECOVERY_API_IMAGE||'solar-api:ci',process.env.RECOVERY_WORKER_IMAGE||'solar-worker:ci',process.env.RECOVERY_IMAGE||'solar-postgres-backup:ci'].map(image=>[image,spawnSync('docker',['image','inspect',image,'--format','{{.Id}}'],{encoding:'utf8'}).stdout.trim()])),backupId,targetTime,latestRestoredCommitTime,rpoSeconds:(outageDeclaredAt-new Date(latestRestoredCommitTime))/1000,rtoSeconds:(usableAt-outageDeclaredAt)/1000,outageDeclaredAt:outageDeclaredAt.toISOString(),usableAt:usableAt.toISOString(),beforeMarkerRestored:true,afterMarkerRestored:false,artifactChecksPassed:true,staleArtifactCheckpointRejected:true,backupStatusFingerprintVerified:true,longBackupSampler,configChecksPassed:true,authorizationMetadataRestored:true,rolesVerified:roles,nonemptyRestoreRejected:true,inaccessibleRepositoryRejected:true,missingWalRejected:true,postgresMajor:Number(sql('restore-db','SHOW server_version_num').slice(0,2)),timescaleVersion:sql('restore-db',"SELECT extversion FROM pg_extension WHERE extname='timescaledb'"),backupBytes:backup.info.repository.size,backupDurationSeconds:backup.timestamp.stop-backup.timestamp.start,effectiveBackupBytesPerSecond:backup.info.repository.size/Math.max(1,backup.timestamp.stop-backup.timestamp.start),retainedChain:info[0].backup.map(b=>b.label),productionRecoveryVerified:false,independentHostDrill:'pending',mqttReplayVerification:'passed-fixture',rawChecksPassed:true};
  assert.ok(result.rpoSeconds<=900);assert.ok(result.rtoSeconds<=14400);
  writeFileSync(resultPath,JSON.stringify(result,null,2));console.log('PASS isolated physical PITR, original object/config, login/scope/dashboard and refusal checks; target-host drill remains pending');
 } catch(error){writeFileSync(resultPath,JSON.stringify({status:'failed',profile:'fixture',productionRecoveryVerified:false,error:String(error.message)},null,2));throw error;}finally{if(db)await db.end();s3.destroy();}

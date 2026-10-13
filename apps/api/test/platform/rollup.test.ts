@@ -27,14 +27,14 @@ test('late readings replace both days, duplicates stay idempotent, resets unknow
   const { EnergyReadService } = await import('../../src/modules/dashboard/energy-read.service.js');
   const job = new RefreshEnergySummaryJob(db);
   const reader = new EnergyReadService({query: db.query.bind(db)} as any);
-  const sites:string[]=[], devices:string[]=[], schools:string[]=[], gateways:string[]=[];
+  const sites:string[]=[], devices:string[]=[], customers:string[]=[], gateways:string[]=[];
   try {
     assert.ok((await db.query("SELECT name FROM schema_migrations WHERE name='infra/migrations/020_energy_read_models.sql'")).rows.length,'Migration registry must apply read models');
     for(let i=0;i<2;i++) {
-      const school=randomUUID(),site=randomUUID(),device=randomUUID(),gateway=randomUUID();
-      schools.push(school);sites.push(site);devices.push(device);gateways.push(gateway);
-      await db.query("INSERT INTO schools(id,name,code,region) VALUES($1::uuid,'Q3 fixture',$1::text,'fixture')",[school]);
-      await db.query("INSERT INTO sites(id,school_id,name,capacity_mwp) VALUES($1,$2,'Q3 fixture',0.1)",[site,school]);
+      const customer=randomUUID(),site=randomUUID(),device=randomUUID(),gateway=randomUUID();
+      customers.push(customer);sites.push(site);devices.push(device);gateways.push(gateway);
+      await db.query("INSERT INTO customers(id,name,code,region) VALUES($1::uuid,'Q3 fixture',$1::text,'fixture')",[customer]);
+      await db.query("INSERT INTO sites(id,customer_id,name,capacity_mwp) VALUES($1,$2,'Q3 fixture',0.1)",[site,customer]);
       await db.query("INSERT INTO gateways(id,site_id,name,protocol,endpoint) VALUES($1::uuid,$2,$1::text,'mqtt','energy/'||$1::text||'/#')",[gateway,site]);
       await db.query("INSERT INTO devices(id,gateway_id,site_id,name,device_type,model,serial_number) VALUES($1::uuid,$2,$3,'Q3 meter','meter','fixture',$1::text)",[device,gateway,site]);
       await db.query('INSERT INTO billing_meters(id,site_id,device_id) VALUES($1,$2,$3)',[randomUUID(),site,device]);
@@ -77,12 +77,13 @@ test('late readings replace both days, duplicates stay idempotent, resets unknow
     while(await job.runBatch(10)) {}
     const over=(await reader.daily([sites[0]!],'2026-01-10','2026-01-10'))[0]!;
     assert.equal(over.kwh,null);assert.equal(over.reason,'sample_limit');
-    // Organization generation and owner billing-meter energy have separate contracts.
-    // HTTP authorization must still use the current persisted organization scope.
+    // All dashboard roles read PV generation; billing-meter rollups remain separate.
+    // HTTP authorization uses both current customer metadata and site assignment.
     const user=randomUUID(),owner=randomUUID(),email=`q3-${user}@example.test`,ownerEmail=`q3-owner-${owner}@example.test`,password='Q3-fixture-password-123!';
     const { AuthService }=await import('../../src/modules/identity/auth.service.js');
     const auth=new AuthService('readiness-test-access-secret-000000000000','readiness-test-refresh-secret-000000000000');
-    await db.query("INSERT INTO users(id,email,display_name,role,status,password_hash,school_id) VALUES($1,$2,'Q3 actor','school_user','active',$3,$4)",[user,email,auth.hashPassword(password),schools[0]]);
+    await db.query("INSERT INTO users(id,email,display_name,role,status,password_hash,customer_id) VALUES($1,$2,'Q3 actor','customer_user','active',$3,$4)",[user,email,auth.hashPassword(password),customers[0]]);
+    await db.query('INSERT INTO site_account_assignments(id,user_id,site_id) VALUES($1,$2,$3)',[randomUUID(),user,sites[0]]);
     await db.query("INSERT INTO users(id,email,display_name,role,status,password_hash) VALUES($1,$2,'Q3 owner','owner','active',$3)",[owner,ownerEmail,auth.hashPassword(password)]);
     try {
       const base=process.env.READINESS_API_URL!,origin=process.env.READINESS_WEB_URL!;
@@ -97,28 +98,36 @@ test('late readings replace both days, duplicates stay idempotent, resets unknow
       const summary=await get('/v1/dashboard/summary?start_date=2026-01-02&end_date=2026-01-02');
       assert.equal(summary.status,200);const json=await summary.json();
       assert.deepEqual(json.sites.map((s:any)=>s.id),[sites[0]]);assert.equal(json.stats.periodKwh,null);assert.equal(json.sites[0].productionKwh,null);
-      assert.deepEqual(json.production,[{date:'2026-01-02',...missing}]);assert.deepEqual(json.rankings,[]);
+      assert.deepEqual(json.production,[{date:'2026-01-02',observedValue:null,...missing}]);assert.deepEqual(json.rankings,[]);
       const production=await get('/v1/dashboard/production?start_date=2026-01-02&end_date=2026-01-02');
       assert.equal(production.status,200);assert.deepEqual(await production.json(),[{label:'2026-01-02',unit:'kWh',...missing}]);
       const meterSummary=await getOwner(`/v1/dashboard/summary?site_id=${sites[0]}&start_date=2026-01-02&end_date=2026-01-02`);
       assert.equal(meterSummary.status,200);const meterJson=await meterSummary.json();
-      assert.deepEqual(meterJson.sites.map((s:any)=>s.id),[sites[0]]);assert.equal(meterJson.stats.periodKwh,35);assert.equal(meterJson.energyReadModel.enabled,true);
+      assert.deepEqual(meterJson.sites.map((s:any)=>s.id),[sites[0]]);assert.equal(meterJson.stats.periodKwh,null);assert.equal(meterJson.energyReadModel.enabled,true);
+      assert.deepEqual(meterJson.production,[{date:'2026-01-02',observedValue:null,...missing}]);
+      assert.equal((await reader.daily([sites[0]!],'2026-01-02','2026-01-02'))[0]!.kwh,35,'Real billing measurement remains available separately from PV');
       const meterProduction=await getOwner(`/v1/dashboard/production?site_id=${sites[0]}&start_date=2026-01-02&end_date=2026-01-02`);
       assert.equal(meterProduction.status,200);const measured=await meterProduction.json();
-      assert.equal(measured[0].value,35);assert.equal(measured[0].quality,'complete');assert.ok(measured[0].watermark);
+      assert.deepEqual(measured,[{label:'2026-01-02',unit:'kWh',...missing}]);
       const limited=await getOwner(`/v1/dashboard/production?site_id=${sites[0]}&start_date=2026-01-10&end_date=2026-01-10`);
-      assert.equal(limited.status,200);const unavailable=await limited.json();assert.equal(unavailable[0].value,null);assert.equal(unavailable[0].reason,'sample_limit');
+      assert.equal(limited.status,200);assert.deepEqual(await limited.json(),[{label:'2026-01-10',unit:'kWh',...missing}]);
+      assert.equal((await reader.daily([sites[0]!],'2026-01-10','2026-01-10'))[0]!.reason,'sample_limit');
       assert.equal((await get(`/v1/dashboard/summary?site_id=${sites[1]}&start_date=2026-01-02&end_date=2026-01-02`)).status,403);
       assert.equal((await get(`/v1/dashboard/compare?metric=periodKwh&site_ids=${sites[1]}&start_date=2026-01-02&end_date=2026-01-02`)).status,403);
-      await db.query('UPDATE users SET school_id=$1 WHERE id=$2',[schools[1],user]);
+      await db.query('UPDATE users SET customer_id=$1 WHERE id=$2',[customers[1],user]);
+      const mismatched=await get('/v1/dashboard/summary?start_date=2026-01-02&end_date=2026-01-02');
+      assert.equal(mismatched.status,200);assert.deepEqual((await mismatched.json()).sites,[],'Customer metadata alone cannot move the assigned site');
+      await db.query('UPDATE site_account_assignments SET revoked_at=now() WHERE user_id=$1 AND revoked_at IS NULL',[user]);
+      await db.query('INSERT INTO site_account_assignments(id,user_id,site_id) VALUES($1,$2,$3)',[randomUUID(),user,sites[1]]);
       const changed=await get('/v1/dashboard/summary?start_date=2026-01-02&end_date=2026-01-02');
       assert.equal(changed.status,200);const other=await changed.json();
-      assert.equal(other.stats.periodKwh,null);assert.deepEqual(other.sites.map((s:any)=>s.id),[sites[1]]);assert.deepEqual(other.production,[{date:'2026-01-02',...missing}]);
+      assert.equal(other.stats.periodKwh,null);assert.deepEqual(other.sites.map((s:any)=>s.id),[sites[1]]);assert.deepEqual(other.production,[{date:'2026-01-02',observedValue:null,...missing}]);
       assert.equal((await get(`/v1/dashboard/summary?site_id=${sites[0]}&start_date=2026-01-02&end_date=2026-01-02`)).status,403);
       const otherMeter=await getOwner(`/v1/dashboard/summary?site_id=${sites[1]}&start_date=2026-01-02&end_date=2026-01-02`);
       assert.equal(otherMeter.status,200);const otherMeasured=await otherMeter.json();
-      assert.equal(otherMeasured.stats.periodKwh,99);assert.deepEqual(otherMeasured.sites.map((s:any)=>s.id),[sites[1]]);
-    } finally {await db.query('DELETE FROM auth_sessions WHERE user_id=ANY($1::uuid[])',[[user,owner]]);await db.query('DELETE FROM users WHERE id=ANY($1::uuid[])',[[user,owner]]);}
+      assert.equal(otherMeasured.stats.periodKwh,null);assert.deepEqual(otherMeasured.sites.map((s:any)=>s.id),[sites[1]]);
+      assert.equal((await reader.daily([sites[1]!],'2026-01-02','2026-01-02'))[0]!.kwh,99);
+    } finally {await db.query('DELETE FROM site_account_assignments WHERE user_id=$1',[user]);await db.query('DELETE FROM auth_sessions WHERE user_id=ANY($1::uuid[])',[[user,owner]]);await db.query('DELETE FROM users WHERE id=ANY($1::uuid[])',[[user,owner]]);}
     // Checkpoint survives a new worker instance; coverage is gated until refresh.
     const checkpoint='q3-'+randomUUID();let queued=0,result;
     do {result=await job.backfill(checkpoint,'2026-01-02','2026-01-05',3);queued+=result.queued;}while(!result.complete);
@@ -210,9 +219,11 @@ test('late readings replace both days, duplicates stay idempotent, resets unknow
     await db.query('DELETE FROM telemetry_aggregate WHERE device_id=ANY($1::uuid[])',[devices]);
     await db.query('DELETE FROM billing_meters WHERE device_id=ANY($1::uuid[])',[devices]);
     await db.query('DELETE FROM devices WHERE id=ANY($1::uuid[])',[devices]);
+    await db.query('DELETE FROM gateway_configuration_revisions WHERE gateway_id=ANY($1::uuid[])',[gateways]);
+    await db.query('DELETE FROM gateway_installation_history WHERE gateway_id=ANY($1::uuid[]) OR replaced_by_gateway_id=ANY($1::uuid[])',[gateways]);
     await db.query('DELETE FROM gateways WHERE id=ANY($1::uuid[])',[gateways]);
     await db.query('DELETE FROM sites WHERE id=ANY($1::uuid[])',[sites]);
-    await db.query('DELETE FROM schools WHERE id=ANY($1::uuid[])',[schools]);await db.end();
+    await db.query('DELETE FROM customers WHERE id=ANY($1::uuid[])',[customers]);await db.end();
   }
 });
 
@@ -243,12 +254,12 @@ async function withFix1Fixture(count:number,run:(fixture:{db:Pool;sites:string[]
   const db=new Pool({connectionString:assertIsolatedDatabase(process.env.READINESS_DATABASE_URL!)});
   const compose=(...args:string[])=>execFileSync('docker',['compose','-f','infra/ci/compose.yml',...args],{cwd:new URL('../../../../',import.meta.url),stdio:'pipe'});
   assert.match(process.env.COMPOSE_PROJECT_NAME??'',/^solar-ci-[a-f0-9-]{36}$/);compose('stop','worker');
-  const schools:string[]=[],sites:string[]=[],gateways:string[]=[],devices:string[]=[],mappings:string[][]=[];
+  const customers:string[]=[],sites:string[]=[],gateways:string[]=[],devices:string[]=[],mappings:string[][]=[];
   try {
     for(let i=0;i<count;i++) {
-      const school=randomUUID(),site=randomUUID(),gateway=randomUUID(),device=randomUUID();schools.push(school);sites.push(site);gateways.push(gateway);devices.push(device);
-      await db.query("INSERT INTO schools(id,name,code,region) VALUES($1::uuid,'Q3 fix1',$1::text,'fixture')",[school]);
-      await db.query("INSERT INTO sites(id,school_id,name,capacity_mwp) VALUES($1,$2,'Q3 fix1',0.1)",[site,school]);
+      const customer=randomUUID(),site=randomUUID(),gateway=randomUUID(),device=randomUUID();customers.push(customer);sites.push(site);gateways.push(gateway);devices.push(device);
+      await db.query("INSERT INTO customers(id,name,code,region) VALUES($1::uuid,'Q3 fix1',$1::text,'fixture')",[customer]);
+      await db.query("INSERT INTO sites(id,customer_id,name,capacity_mwp) VALUES($1,$2,'Q3 fix1',0.1)",[site,customer]);
       await db.query("INSERT INTO gateways(id,site_id,name,protocol,endpoint) VALUES($1::uuid,$2,$1::text,'mqtt','energy/'||$1::text||'/#')",[gateway,site]);
       await db.query("INSERT INTO devices(id,gateway_id,site_id,name,device_type,model,serial_number) VALUES($1::uuid,$2,$3,'Q3 fix1 meter','meter','fixture',$1::text)",[device,gateway,site]);
       await db.query('INSERT INTO billing_meters(id,site_id,device_id) VALUES($1,$2,$3)',[randomUUID(),site,device]);
@@ -263,17 +274,21 @@ async function withFix1Fixture(count:number,run:(fixture:{db:Pool;sites:string[]
     await db.query('DELETE FROM telemetry_aggregate WHERE device_id=ANY($1::uuid[])',[devices]);
     await db.query('DELETE FROM billing_meters WHERE device_id=ANY($1::uuid[])',[devices]);
     await db.query('DELETE FROM register_mapping_versions WHERE device_id=ANY($1::uuid[])',[devices]);
-    await db.query('DELETE FROM devices WHERE id=ANY($1::uuid[])',[devices]);await db.query('DELETE FROM gateways WHERE id=ANY($1::uuid[])',[gateways]);
-    await db.query('DELETE FROM sites WHERE id=ANY($1::uuid[])',[sites]);await db.query('DELETE FROM schools WHERE id=ANY($1::uuid[])',[schools]);await db.end();
+    await db.query('DELETE FROM devices WHERE id=ANY($1::uuid[])',[devices]);
+    await db.query('DELETE FROM gateway_configuration_revisions WHERE gateway_id=ANY($1::uuid[])',[gateways]);
+    await db.query('DELETE FROM gateway_installation_history WHERE gateway_id=ANY($1::uuid[]) OR replaced_by_gateway_id=ANY($1::uuid[])',[gateways]);
+    await db.query('DELETE FROM gateways WHERE id=ANY($1::uuid[])',[gateways]);
+    await db.query('DELETE FROM sites WHERE id=ANY($1::uuid[])',[sites]);await db.query('DELETE FROM customers WHERE id=ANY($1::uuid[])',[customers]);await db.end();
   }
 }
 
-test('[Q3 fix1] multi-site metadata has stable severity and retains every unknown reason',async()=>withFix1Fixture(2,async({db,sites,devices})=>{
+test('[Q3 fix1] billing metadata retains every site quality and reason without becoming PV production',async()=>withFix1Fixture(2,async({db,sites,devices})=>{
   const {EnergyReadService}=await import('../../src/modules/dashboard/energy-read.service.js');
   const {DashboardService}=await import('../../src/modules/dashboard/dashboard.service.js');
   const {DashboardController}=await import('../../src/modules/dashboard/dashboard.controller.js');
   const adapter={query:db.query.bind(db)} as any;
-  const controller=new DashboardController(new DashboardService(adapter,new EnergyReadService(adapter)));
+  const reader=new EnergyReadService(adapter);
+  const controller=new DashboardController(new DashboardService(adapter,reader));
   const old=process.env.ENERGY_READ_MODEL_ENABLED;process.env.ENERGY_READ_MODEL_ENABLED='true';
   const day=new Date(Date.now()+7*3600000).toISOString().slice(0,10);
   const order=sites.map((site,i)=>({site,device:devices[i]!})).sort((a,b)=>a.site.localeCompare(b.site));
@@ -287,12 +302,17 @@ test('[Q3 fix1] multi-site metadata has stable severity and retains every unknow
           ON CONFLICT(device_id,day) DO UPDATE SET kwh=EXCLUDED.kwh,quality=EXCLUDED.quality,reason=EXCLUDED.reason`,[order[i]!.device,order[i]!.site,day,quality==='partial'?7:null,quality,reason]);
         if(unknown&&situation==='preparing')await db.query('INSERT INTO energy_dirty_days(device_id,day) VALUES($1,$2)',[order[i]!.device,day]);
       }
-      const result=await controller.getProduction({user:{role:'owner',assignedSiteIds:sites}},{start_date:day,end_date:day});
-      assert.equal(result[0]!.value,null);
-      assert.equal(result[0]!.quality,situation==='reasons'?'missing':situation,`stable severity ${situation}, reverse=${reverse}`);
+      const billing=await reader.daily(sites,day,day);
+      assert.equal(billing.length,2);
+      for(let i=0;i<2;i++) {
+        const unknown=i===(reverse?1:0),row=billing.find(row=>row.siteId===order[i]!.site)!;
+        assert.equal(row.quality,unknown?(situation==='reasons'?'missing':situation):(situation==='reasons'?'missing':'partial'));
+        assert.equal(row.kwh,unknown||situation==='reasons'?null:7);
+      }
       const expected=situation==='reasons'?['boundary_missing','sample_limit']:[situation==='reset'?'reset':'sample_limit'];
-      assert.deepEqual((result[0] as any).reasons,expected,`all reasons ${situation}, reverse=${reverse}`);
-      assert.equal(result[0]!.reason,expected.join(','));
+      assert.deepEqual(billing.flatMap(row=>row.reason?.split(',')??[]).sort(),expected,`all billing reasons ${situation}, reverse=${reverse}`);
+      const result=await controller.getProduction({user:{role:'owner'}},{site_id:sites[0],start_date:day,end_date:day});
+      assert.deepEqual(result,[{label:day,value:null,unit:'kWh',quality:'missing',watermark:null,reason:'solar_logger_unavailable_or_ambiguous',reasons:['solar_logger_unavailable_or_ambiguous']}]);
     }
   }finally{if(old===undefined)delete process.env.ENERGY_READ_MODEL_ENABLED;else process.env.ENERGY_READ_MODEL_ENABLED=old;}
 }));

@@ -12,7 +12,7 @@ import {
   Put,
   Req,
 } from "@nestjs/common";
-import { SiteSchoolUsersService } from "./site-school-users.service.js";
+import { SiteCustomerUsersService } from "./site-customer-users.service.js";
 
 import { DatabaseService } from "../../database/database.service.js";
 import { InvitationService, type InviteInput } from "./invitation.service.js";
@@ -23,17 +23,17 @@ export class UsersController {
   constructor(
     @Inject(InvitationService) private readonly invitations: InvitationService,
     @Inject(DatabaseService) private readonly db: DatabaseService,
-    @Inject(SiteSchoolUsersService)
-    private readonly siteUsers: SiteSchoolUsersService,
+    @Inject(SiteCustomerUsersService)
+    private readonly siteUsers: SiteCustomerUsersService,
   ) {}
 
-  @Roles("admin")
-  @Get("sites/:siteId/school-users")
+  @Roles("owner")
+  @Get("sites/:siteId/customer-users")
   listSiteUsers(@Param("siteId") siteId: string, @Req() req: any) {
     return this.siteUsers.list(siteId, req.user.id);
   }
-  @Roles("admin")
-  @Post("sites/:siteId/school-users")
+  @Roles("owner")
+  @Post("sites/:siteId/customer-users")
   inviteSiteUser(
     @Param("siteId") siteId: string,
     @Body() body: { email: string; displayName: string },
@@ -41,8 +41,8 @@ export class UsersController {
   ) {
     return this.siteUsers.invite(siteId, body, req.user.id);
   }
-  @Roles("admin")
-  @Put("sites/:siteId/school-users/:userId")
+  @Roles("owner")
+  @Put("sites/:siteId/customer-users/:userId")
   editSiteUser(
     @Param("siteId") siteId: string,
     @Param("userId") userId: string,
@@ -51,8 +51,8 @@ export class UsersController {
   ) {
     return this.siteUsers.update(siteId, userId, body, req.user.id);
   }
-  @Roles("admin")
-  @Delete("sites/:siteId/school-users/:userId")
+  @Roles("owner")
+  @Delete("sites/:siteId/customer-users/:userId")
   deleteSiteUser(
     @Param("siteId") siteId: string,
     @Param("userId") userId: string,
