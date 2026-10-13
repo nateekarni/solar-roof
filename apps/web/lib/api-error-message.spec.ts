@@ -16,3 +16,9 @@ test('known business validation explains the specific next step instead of gener
  assert.match(apiErrorMessage(400,'Recipients required','th'),/ผู้รับ/);
  assert.match(apiErrorMessage(409,'Confirmed accounting tax configuration required','en'),/tax/i);
 });
+test('branding API rejection explains image correction in either language',()=>{
+ assert.match(apiErrorMessage(400,'Company logo must be a PNG/JPEG image up to 1 MB','en'),/PNG\/JPEG.*1 MB/);
+ assert.match(apiErrorMessage(400,'Signatory image must be a PNG/JPEG image up to 1 MB','th'),/PNG\/JPEG.*1 MB/);
+ assert.match(apiErrorMessage(400,'Logo must be a PNG/JPEG image up to 1 MB','en'),/PNG\/JPEG.*1 MB/);
+ assert.match(apiErrorMessage(400,'Signature must be a PNG/JPEG image up to 1 MB','th'),/PNG\/JPEG.*1 MB/);
+});

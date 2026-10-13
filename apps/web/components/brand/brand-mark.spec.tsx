@@ -4,6 +4,7 @@ import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {BrandMark} from './brand-mark';
 import {DocumentBrand} from './document-brand';
+test('application marks load the public company logo',()=>{assert.match(renderToStaticMarkup(<BrandMark/>),/src="\/v1\/public\/branding\/logo"/);});
 test('adjacent brand text does not produce a second spoken logo label',()=>{const html=renderToStaticMarkup(<BrandMark/>);assert.match(html,/alt=""/);assert.match(html,/aria-hidden="true"/);});
 test('standalone mark exposes its accessible name',()=>{const html=renderToStaticMarkup(<BrandMark label="Solar Roof"/>);assert.match(html,/alt="Solar Roof"/);assert.doesNotMatch(html,/aria-hidden="true"/);});
 test('draft document displays the approved wordmark by default',()=>{assert.match(renderToStaticMarkup(<DocumentBrand issued={false}/>),/src="\/brand\/solar-roof-document.png"/);});

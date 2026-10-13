@@ -1,5 +1,6 @@
 export function apiErrorMessage(status:number,message:unknown,locale:'th'|'en'){
  const text=Array.isArray(message)?message.join(' · '):typeof message==='string'?message:'';
+ if(status===400&&/^(Logo|Signature|Company logo|Signatory image) must be a PNG\/JPEG image up to 1 MB$/.test(text))return locale==='th'?'เลือกภาพ PNG/JPEG ขนาดไม่เกิน 1 MB แล้วลองบันทึกอีกครั้ง':'Choose a PNG/JPEG image up to 1 MB and save again.';
  const business:Record<string,readonly [string,string]>={
   'Impact changed; preview again':['ข้อมูลอัตราค่าไฟเปลี่ยนแล้ว กรุณากลับไปตรวจผลกระทบใหม่ก่อนยืนยัน','Rates have changed. Go back and preview the impact again before confirming.'],
   'Confirm future rates replacement':['กรุณาตรวจสอบและยืนยันการแทนที่อัตราค่าไฟที่กำหนดไว้ในอนาคต','Review and confirm replacement of the scheduled future rates.'],
