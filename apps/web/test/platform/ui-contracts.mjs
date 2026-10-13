@@ -32,6 +32,7 @@ try {
     await page.setViewportSize({width,height:900});await page.goto(web+'/billing?search=U1%20Browser');
     await page.getByRole('searchbox').fill('U1 Browser');
     await page.getByRole('status').filter({hasText:/^25 / }).waitFor();
+    await page.waitForLoadState('networkidle');
     if(role==='operator')assert.equal(await page.getByText('ชำระเงินและแนบสลิป',{exact:true}).filter({visible:true}).count(),0,'Operator cannot submit evidence');
     const unavailablePeriod=page.getByText('2026-08',{exact:true});
     if(mobileMode){
@@ -42,8 +43,12 @@ try {
       await unavailableRow.getByRole('button',{name:/เมนูการดำเนินการ|Open actions menu/}).click();
       assert.equal(await page.getByRole('menuitem',{name:/^(ดูใบวางบิล|View Invoice)/}).getAttribute('aria-disabled'),'true');
       await page.keyboard.press('Escape');
+      await page.getByRole('menu').waitFor({state:'hidden'});
     }
-    await page.getByRole('button',{name:'Next operation page',exact:true}).click();await page.getByRole('status').filter({hasText:/^1 / }).waitFor();
+    const nextPage=page.getByRole('button',{name:'Next operation page',exact:true});
+    assert.equal(await nextPage.isDisabled(),false,'The 26-row fixture exposes a second page');
+    const nextResponse=page.waitForResponse(response=>response.url().startsWith(web+'/v1/operations/billing?')&&new URL(response.url()).searchParams.has('cursor'));
+    await nextPage.click();assert.equal((await nextResponse).status(),200);await page.getByRole('status').filter({hasText:/^1 / }).waitFor();
     const page2=page.url();await page.setViewportSize({width:width===390?1440:390,height:900});assert.equal(page.url(),page2,'Resize preserves server cursor');
     const menuMode=width===390||!business;
     if(menuMode) await page.getByRole('button',{name:/เมนูการดำเนินการ|Open actions menu/}).click();
