@@ -1,7 +1,5 @@
 import { dashboardLayout } from "./dashboard-layout";
 import { DashboardScope } from "./site-selection-provider";
-import { SolarGenerationDiagram } from "./solar-generation-diagram";
-import {DashboardAlertsCard} from "./dashboard-alerts-card";
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
@@ -10,21 +8,15 @@ import type {
 } from "@solar/api-contracts";
 import { createTranslator, type Locale } from "@solar/i18n";
 import { serverFetch, getApiBaseUrl } from "../../lib/server-fetch";
-import { CollectionChart } from "./collection-chart";
-import { CompareModal } from "./compare-modal";
+import { DeferredCompareModal } from "./deferred-compare-modal";
 import { DashboardAutoRefresh } from "./dashboard-auto-refresh";
 import { DashboardStatsClient } from "./dashboard-stats-client";
 import { SelectedSiteSummary } from "./selected-site-summary";
 import { PeriodPicker } from "./period-picker";
-import { PowerFlowCard } from "./power-flow-card";
-import { ProductionChart } from "./production-chart";
-
-import { AgingCard } from "./aging-card";
 import { SiteFilter } from "./site-filter";
-import { SiteMap } from "./site-map";
-import { GatewayStatusSummary } from "./gateway-status-summary";
 import { SummaryStatus } from "./summary-status";
 import { BusinessDashboard } from "./business-dashboard";
+import { DeferredDashboardDetails } from "./deferred-dashboard-details";
 import { requirePageAccess } from "../../lib/session-user";
 import type { CustomerInvoice as SchoolInvoice } from "./customer-dashboard";
 
@@ -102,7 +94,6 @@ export async function Dashboard({
   }
 
   const presentation=dashboardLayout(user.role);
-  const alerts = data.alerts || [];
   const selectedSite=resolvedParams?.site_id?data.sites.find(site=>site.id===resolvedParams.site_id):undefined;
 
   return (
@@ -117,7 +108,7 @@ export async function Dashboard({
         </div>
         <div className="flex flex-wrap items-center justify-end gap-1.5 sm:gap-2 min-w-0">
           <SiteFilter sites={data.availableSites} />
-          <CompareModal sites={data.availableSites} startDate={data.range.start} endDate={data.range.end} />
+          <DeferredCompareModal sites={data.availableSites} startDate={data.range.start} endDate={data.range.end} />
           <PeriodPicker />
         </div>
       </div>
@@ -128,42 +119,15 @@ export async function Dashboard({
       <SummaryStatus model={data.energyReadModel} locale={locale} />
       </DashboardScope>
 
-
-
-      {/* 3-Column Main Dashboard Grid */}
-      <section className="dashboard-main-grid w-full min-w-0 max-w-full">
-        {/* Left Column: All Schools Map */}
-        <SiteMap sites={data.sites || []} availableSites={data.availableMapSites} dataSiteId={resolvedParams?.site_id} />
-
-        {/* Center Column: Production Chart & Revenue Chart */}
-        <div className="dashboard-chart-grid w-full min-w-0 max-w-full">
-          <DashboardScope siteId={resolvedParams?.site_id} className="dashboard-energy">
-          <ProductionChart
-            initialData={data.production}
-            hasCustomRange={Boolean(
-              resolvedParams?.start_date && resolvedParams?.end_date
-            )}
-            startDate={data.range.start}
-            endDate={data.range.end}
-          />
-          </DashboardScope>
-          <DashboardScope siteId={resolvedParams?.site_id} className="dashboard-revenue">
-          <AgingCard insights={data.financialInsights} locale={locale} startDate={data.range.start} endDate={data.range.end} />
-          </DashboardScope>
-          <DashboardScope siteId={resolvedParams?.site_id} className="dashboard-collection">
-          <CollectionChart siteId={resolvedParams?.site_id} collection={data.collection} startDate={data.range.start} endDate={data.range.end} />
-          </DashboardScope>
-        </div>
-      </section>
-
-      <DashboardScope siteId={resolvedParams?.site_id} className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-2">
-        <SolarGenerationDiagram key={`solar-${resolvedParams?.site_id||'all'}`} locale={locale} siteId={resolvedParams?.site_id} />
-        <DashboardAlertsCard alerts={alerts} role={user.role} locale={locale}/>
-      </DashboardScope>
-      <DashboardScope siteId={resolvedParams?.site_id} className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {presentation.meteredPower && <PowerFlowCard key={`meter-${resolvedParams?.site_id||'all'}`} siteId={resolvedParams?.site_id} summaryMw={data.stats.currentMw}/>}
-        {presentation.gateway && <GatewayStatusSummary sites={data.sites || []} locale={locale} />}
-      </DashboardScope>
+      <DeferredDashboardDetails
+        data={data}
+        siteId={resolvedParams?.site_id}
+        role={user.role}
+        locale={locale}
+        hasCustomRange={Boolean(resolvedParams?.start_date && resolvedParams?.end_date)}
+        showMeteredPower={presentation.meteredPower}
+        showGateway={presentation.gateway}
+      />
     </div>
   );
 }

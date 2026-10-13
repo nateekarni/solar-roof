@@ -2,9 +2,7 @@
 
 import * as React from "react";
 import {
-  GraduationCap,
   Laptop,
-  SlidersHorizontal,
   Sun,
   SunMedium,
   TrendingUp,
@@ -12,12 +10,16 @@ import {
 } from "lucide-react";
 import type { DashboardSummaryStats } from "@solar/api-contracts";
 import { Badge } from "../../components/ui/badge";
-import { Button } from "../../components/ui/button";
 import { Card } from "../../components/ui/card";
 import { useLocale, useT } from "../../providers/locale-provider";
-import { CustomizeCardsModal } from "./customize-cards-modal";
 import {dashboardMetrics} from "./dashboard-metrics";
 import { formatPower } from "../../lib/power-format";
+
+const CustomizeCardsModal = React.lazy(() =>
+  import("./customize-cards-modal").then((module) => ({
+    default: module.CustomizeCardsModal,
+  })),
+);
 
 const STORAGE_KEY = "solar_dashboard_card_config";
 
@@ -190,14 +192,18 @@ export function DashboardStatsClient({
         })}
       </section>
 
-      <CustomizeCardsModal
-        open={isCustomizeOpen}
-        onOpenChange={setIsCustomizeOpen}
-        currentConfig={dashboardMetrics(role,cardConfig)}
-        onSave={handleSaveConfig}
-        availableMetrics={availableMetrics}
-        defaultConfig={dashboardMetrics(role,DEFAULT_CARD_CONFIG)}
-      />
+      {isCustomizeOpen ? (
+        <React.Suspense fallback={null}>
+          <CustomizeCardsModal
+            open
+            onOpenChange={setIsCustomizeOpen}
+            currentConfig={dashboardMetrics(role,cardConfig)}
+            onSave={handleSaveConfig}
+            availableMetrics={availableMetrics}
+            defaultConfig={dashboardMetrics(role,DEFAULT_CARD_CONFIG)}
+          />
+        </React.Suspense>
+      ) : null}
     </>
   );
 }

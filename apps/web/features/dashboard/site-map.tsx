@@ -17,7 +17,7 @@ import {
 } from "../../components/ui/card";
 import { useLocale } from "../../providers/locale-provider";
 
-type Site = {
+export type SiteMapSite = {
   id: string;
   name: string;
   latitude: number | null;
@@ -26,6 +26,12 @@ type Site = {
   capacityMwp?: number;
   customerName: string;
   productionKwh?: number | null;
+};
+
+export type SiteMapProps = {
+  sites: SiteMapSite[];
+  availableSites?: Pick<SiteMapSite,"id"|"name"|"customerName"|"latitude"|"longitude">[] | undefined;
+  dataSiteId?: string | undefined;
 };
 
 const style: StyleSpecification = {
@@ -41,7 +47,7 @@ const style: StyleSpecification = {
   layers: [{ id: "osm", type: "raster", source: "osm" }],
 } as const;
 
-export function SiteMap({ sites,availableSites,dataSiteId }: { sites: Site[]; availableSites?: Pick<Site,'id'|'name'|'customerName'|'latitude'|'longitude'>[]|undefined; dataSiteId?:string|undefined }) {
+export function SiteMap({ sites,availableSites,dataSiteId }: SiteMapProps) {
   const {selectedSiteId,chooseSite}=useSiteSelection();
   const scoped=dashboardScopeMatches(selectedSiteId,dataSiteId);
   const mapSites=(availableSites??sites).map(site=>({...site,...(scoped?sites.find(value=>value.id===site.id):undefined)}));
