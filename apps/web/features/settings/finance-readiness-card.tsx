@@ -5,6 +5,7 @@ import Link from 'next/link';
 import type {FinancialReadinessItem, FinancialReadinessStatus} from '@solar/api-contracts';
 import {Button} from '../../components/ui/button';
 import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '../../components/ui/card';
+import {formatAppDateTime} from '../../lib/date-format';
 
 const labels: Record<string, readonly [string,string]> = {
   'company.logo':['โลโก้บริษัท','Company logo'],
@@ -44,11 +45,14 @@ export function FinanceReadinessCard({status, locale, isOwner, confirming, onCon
 }) {
   const th = locale === 'th';
   const incomplete = status.items.filter(item => !item.ready);
-  const canConfirm = isOwner && status.items.some(item => item.id.startsWith('company.')) && status.items.some(item => item.id === 'approval.confirmation') &&
+  const ownerItems = status.items.filter(item => item.responsibility === 'owner');
+  const completedOwnerItems = ownerItems.filter(item => item.ready).length;
+  const globalOwnerComplete = status.items.some(item => item.id.startsWith('company.')) && status.items.some(item => item.id === 'approval.confirmation') &&
     !status.items.some(item => item.responsibility === 'owner' && !item.siteId && item.id !== 'approval.confirmation' && !item.ready);
+  const canConfirm = isOwner && globalOwnerComplete;
   const approved = status.scope === 'PRODUCTION' && !!status.approval && status.items.some(item => item.id === 'approval.confirmation' && item.ready);
   const ready = approved && incomplete.length === 0;
-  const title = ready ? (th ? 'พร้อมใช้งานการเงินจริง' : 'Ready for production') : approved ? (th ? 'ยืนยันข้อมูลสำหรับการเงินจริงแล้ว' : 'Production configuration confirmed') : (th ? 'ความพร้อมสำหรับการเงินจริง' : 'Production finance readiness');
+  const title = ready ? (th ? 'พร้อมใช้งานการเงินจริง' : 'Ready for production') : approved ? (th ? 'ยืนยันข้อมูลสำหรับการเงินจริงแล้ว' : 'Production configuration confirmed') : globalOwnerComplete ? (th ? 'รอการยืนยันจากเจ้าของ' : 'Awaiting Owner confirmation') : (th ? 'ความพร้อมสำหรับการเงินจริง' : 'Production finance readiness');
   const itemLabel = (item: FinancialReadinessItem) => (labels[item.id]?.[th ? 0 : 1] ?? (th ? 'รายการที่ต้องตรวจสอบ' : 'Readiness requirement')) + (item.siteId ? ` (${item.siteId})` : '');
   const destination = (item: FinancialReadinessItem) => item.siteId && item.destination === `/sites/${item.siteId}/settings`
     ? `/records/sites/${encodeURIComponent(item.siteId)}`
@@ -56,7 +60,12 @@ export function FinanceReadinessCard({status, locale, isOwner, confirming, onCon
   return <Card className="panel border-border/80 shadow-xs" aria-label={th ? 'ความพร้อมสำหรับการเงินจริง' : 'Production finance readiness'}>
     <CardHeader className="p-0 pb-3">
       <CardTitle className="text-sm">{title}</CardTitle>
+      <p className="text-sm font-medium" role="status">{th ? `รายการของเจ้าของ: ครบแล้ว ${completedOwnerItems} จาก ${ownerItems.length} รายการ` : `Owner checklist: ${completedOwnerItems} of ${ownerItems.length} complete`}</p>
       <CardDescription>{th ? 'ตรวจสอบข้อมูลบริษัทก่อนยืนยัน การเปลี่ยนข้อมูลบริษัทหรือบัญชีธนาคารจะต้องยืนยันใหม่' : 'Review company information before confirming. Changes to company information or bank accounts require confirmation again.'}</CardDescription>
+      {approved && status.approval && <dl className="space-y-1 text-sm">
+        <div className="flex flex-wrap gap-x-2"><dt className="text-muted-foreground">{th ? 'ยืนยันโดย' : 'Confirmed by'}</dt><dd className="break-all">{status.approval.approvedBy}</dd></div>
+        <div className="flex flex-wrap gap-x-2"><dt className="text-muted-foreground">{th ? 'ยืนยันเมื่อ' : 'Confirmed at'}</dt><dd><time dateTime={status.approval.approvedAt}>{formatAppDateTime(status.approval.approvedAt, locale)}</time></dd></div>
+      </dl>}
       {status.scope === 'TEST' && <p className="text-sm font-semibold">{th ? 'TEST — โหมดทดสอบ ยังไม่ใช่การยืนยันสำหรับใช้งานจริง' : 'TEST — Test mode does not confirm production readiness.'}</p>}
     </CardHeader>
     <CardContent className="p-0 space-y-4">
