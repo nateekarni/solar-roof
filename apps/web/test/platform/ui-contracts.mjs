@@ -99,6 +99,9 @@ try {
   const context=await browser.newContext({viewport:{width:1440,height:900}});await context.addCookies([{name:'access_token',value:tokens.accessToken,domain:'localhost',path:'/',httpOnly:true},{name:'locale',value:'en',domain:'localhost',path:'/'}]);
   const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
   await page.goto(web+'/billing?search=U1%20Browser');await page.getByRole('status').filter({hasText:/^25 / }).waitFor();
+  // The table is server-rendered before its sort handlers hydrate. Waiting for
+  // the initial network to settle prevents a pre-hydration click from vanishing.
+  await page.waitForLoadState('networkidle');
   const row=page.getByRole('row').filter({has:page.getByText('2025-08',{exact:true})});await row.waitFor();
   await row.evaluate(element=>{window.__u1PersistedRow=element;});
   const reordered=page.waitForResponse(response=>response.url().includes('/v1/operations/billing?')&&new URL(response.url()).searchParams.get('direction')==='asc');

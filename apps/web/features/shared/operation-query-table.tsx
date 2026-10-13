@@ -28,6 +28,7 @@ export function OperationQueryTable({ initial, ...props }: Omit<OperationTablePr
   const history=React.useRef<string[]>([]);
   const [,refreshHistory]=React.useReducer(value=>value+1,0);
   const revision=React.useRef(0);
+  const initialQuery=React.useRef(true);
   React.useEffect(() => {
     try{history.current=readCursorHistory(sessionStorage,props.resource,query);}catch{history.current=[];}
     refreshHistory();
@@ -50,6 +51,9 @@ export function OperationQueryTable({ initial, ...props }: Omit<OperationTablePr
     return()=>clearTimeout(timer);
   },[search,searchParams,update]);
   React.useEffect(()=>{
+    // The server already supplied the first page for this exact URL. Fetching it
+    // again during hydration delays interactivity and can replace identical rows.
+    if(initialQuery.current){initialQuery.current=false;return;}
     const controller=new AbortController(),current=++revision.current;
     setLoading(true);setError('');
     const suffix=query?'?'+query:'';
