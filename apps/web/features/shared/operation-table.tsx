@@ -139,10 +139,12 @@ export function OperationTable({
   const {query, setQuery} = useOperationQuery(["customers","sites","users"].includes(resource) ? "asc" : "desc");
   const user = useSessionUser();
   const financial = useFinancialCapabilities();
+  const [queryControlsReady,setQueryControlsReady]=React.useState(false);
   const [permissionError,setPermissionError]=React.useState(false);
   const [openingDetail,setOpeningDetail]=React.useState(false);
   const [navigationError,setNavigationError]=React.useState(false);
   const navigating=React.useRef(false);
+  React.useEffect(()=>setQueryControlsReady(true),[]);
   React.useEffect(()=>{const denied=()=>setPermissionError(true);window.addEventListener("operation-permission-denied",denied);return()=>window.removeEventListener("operation-permission-denied",denied);},[]);
   const isCustomerUser = user?.role === "customer_user";
   const isOwner = user?.role === "owner";
@@ -354,6 +356,7 @@ export function OperationTable({
               variant="ghost"
               size="sm"
               className="h-10 px-0 py-0 text-xs font-semibold hover:bg-transparent tracking-normal"
+              disabled={serverManaged && !queryControlsReady}
               onClick={() => serverManaged ? setQuery({sort: sortKey, direction: currentSort === sortKey && currentDirection === "asc" ? "desc" : "asc"}) : column.toggleSorting(column.getIsSorted() === "asc")}
             >
               {headerTitle}
@@ -485,7 +488,7 @@ export function OperationTable({
     });
 
     return cols;
-  }, [rows, rawColumns, idKey, locale, resource, openResourceDetail]);
+  }, [rows, rawColumns, idKey, locale, resource, openResourceDetail, query.sort, query.direction, queryControlsReady, serverManaged, setQuery]);
 
   const searchPlaceholder =
     locale === "th"
