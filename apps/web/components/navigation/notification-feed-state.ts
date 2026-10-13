@@ -2,6 +2,7 @@ import {canVisitPage} from '@solar/domain';
 
 export interface NotificationFeedItem {
  id:string;title:string;detail:string;destination:string|null;createdAt:string;readAt:string|null;kind:'alert'|'workflow';severity?:string;
+ metadata?:{type:'finance-readiness';missingCount:number}|undefined;
 }
 export interface NotificationFeed {rows:NotificationFeedItem[];unreadCount:number}
 export function accessibleFeedRows<T extends {destination:string|null}>(rows:T[],role:string):T[] {

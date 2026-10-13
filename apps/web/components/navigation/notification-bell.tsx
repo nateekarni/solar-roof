@@ -11,7 +11,16 @@ import {Skeleton} from '../ui/skeleton';
 import {Empty,EmptyHeader,EmptyMedia,EmptyTitle,EmptyDescription} from '../ui/empty';
 import {Alert,AlertDescription} from '../ui/alert';
 import {ResponsivePopover} from '../ui/responsive-popover';
-import {accessibleFeedRows,markFeedRead,type NotificationFeed} from './notification-feed-state';
+import {accessibleFeedRows,markFeedRead,type NotificationFeed,type NotificationFeedItem} from './notification-feed-state';
+
+export function NotificationFeedRow({row,th,onRead,onNavigate}:{row:NotificationFeedItem;th:boolean;onRead:(id:string)=>void;onNavigate?:()=>void}) {
+ const finance=row.metadata?.type==='finance-readiness';
+ const title=finance?(th?'ตั้งค่าการเงินให้ครบ':'Complete finance setup'):row.title;
+ const detail=finance?(th?`เหลือรายการที่ Owner ต้องดำเนินการ ${row.metadata!.missingCount} รายการ`:`${row.metadata!.missingCount} Owner setup items remaining`):row.detail;
+ const content=<><span className="mt-0.5 shrink-0 text-muted-foreground">{row.kind==='alert'?<AlertTriangle className="size-4"/>:<Bell className="size-4"/>}</span><span className="flex min-w-0 flex-1 flex-col gap-1"><span className="text-sm font-medium">{title}</span><span className="text-xs text-muted-foreground">{detail}</span><time dateTime={row.createdAt} className="text-xs text-muted-foreground">{new Intl.DateTimeFormat(th?'th-TH':'en-GB',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Bangkok'}).format(new Date(row.createdAt))}</time></span>{!row.readAt&&<span className="mt-1.5 size-2 shrink-0 rounded-full bg-primary"><span className="sr-only">{th?'ยังไม่อ่าน':'Unread'}</span></span>}</>;
+ const activate=()=>{if(!row.readAt)onRead(row.id);if(row.destination)onNavigate?.();};
+ return row.destination?<Button asChild variant="ghost" className="h-auto! justify-start rounded-none border-b p-3 text-left whitespace-normal"><Link href={row.destination} onClick={activate}>{content}</Link></Button>:<Button type="button" variant="ghost" className="h-auto! justify-start rounded-none border-b p-3 text-left whitespace-normal" onClick={activate}>{content}</Button>;
+}
 
 export function NotificationBell({siteId}:{siteId?:string|undefined}) {
  const user=useSessionUser(),th=useLocale()==='th';
@@ -51,10 +60,7 @@ export function NotificationBell({siteId}:{siteId?:string|undefined}) {
   <div className="flex items-center justify-between gap-2 border-b p-3"><div className="flex items-center gap-2"><span className="text-sm font-semibold">{th?'การแจ้งเตือน':'Notifications'}</span>{count>0&&<Badge variant="destructive">{count}</Badge>}</div><div className="flex gap-1"><Button type="button" variant="ghost" size="icon" disabled={busy||loading||!ready||count===0} onClick={()=>void read()} aria-label={th?'อ่านทั้งหมด':'Mark all as read'} title={th?'อ่านทั้งหมด':'Mark all as read'}><CheckCheck/></Button><Button type="button" variant="ghost" size="icon" onClick={()=>setOpen(false)} aria-label={th?'ปิด':'Close'}><X/></Button></div></div>
   <div className="flex min-h-0 flex-1 flex-col overflow-y-auto md:max-h-96">
    {error&&<Alert variant="destructive" className="m-3 w-auto"><AlertDescription><span>{error}</span><Button type="button" variant="outline" onClick={()=>void load()}>{th?'ลองอีกครั้ง':'Retry'}</Button></AlertDescription></Alert>}
-   {loading||!ready?<div className="flex flex-col gap-3 p-4" role="status" aria-label={th?'กำลังโหลดการแจ้งเตือน':'Loading notifications'}><Skeleton className="h-12 w-full"/><Skeleton className="h-12 w-full"/></div>:!error&&rows.length===0?<Empty className="rounded-none border-0 py-8"><EmptyHeader><EmptyMedia variant="icon"><Bell/></EmptyMedia><EmptyTitle>{th?'ไม่มีการแจ้งเตือน':'No notifications'}</EmptyTitle><EmptyDescription>{th?'รายการที่เกี่ยวข้องกับคุณจะแสดงที่นี่':'Notifications relevant to you will appear here.'}</EmptyDescription></EmptyHeader></Empty>:rows.map(row=>{
-    const content=<><span className="mt-0.5 shrink-0 text-muted-foreground">{row.kind==='alert'?<AlertTriangle className="size-4"/>:<Bell className="size-4"/>}</span><span className="flex min-w-0 flex-1 flex-col gap-1"><span className="text-sm font-medium">{row.title}</span><span className="text-xs text-muted-foreground">{row.detail}</span><time dateTime={row.createdAt} className="text-xs text-muted-foreground">{new Intl.DateTimeFormat(th?'th-TH':'en-GB',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Bangkok'}).format(new Date(row.createdAt))}</time></span>{!row.readAt&&<span className="mt-1.5 size-2 shrink-0 rounded-full bg-primary"><span className="sr-only">{th?'ยังไม่อ่าน':'Unread'}</span></span>}</>;
-    return row.destination?<Button asChild variant="ghost" key={row.id} className="h-auto! justify-start rounded-none border-b p-3 text-left whitespace-normal"><Link href={row.destination} onClick={()=>{if(!row.readAt)void read([row.id]);setOpen(false);}}>{content}</Link></Button>:<Button type="button" variant="ghost" key={row.id} className="h-auto! justify-start rounded-none border-b p-3 text-left whitespace-normal" onClick={()=>{if(!row.readAt)void read([row.id]);}}>{content}</Button>;
-   })}
+   {loading||!ready?<div className="flex flex-col gap-3 p-4" role="status" aria-label={th?'กำลังโหลดการแจ้งเตือน':'Loading notifications'}><Skeleton className="h-12 w-full"/><Skeleton className="h-12 w-full"/></div>:!error&&rows.length===0?<Empty className="rounded-none border-0 py-8"><EmptyHeader><EmptyMedia variant="icon"><Bell/></EmptyMedia><EmptyTitle>{th?'ไม่มีการแจ้งเตือน':'No notifications'}</EmptyTitle><EmptyDescription>{th?'รายการที่เกี่ยวข้องกับคุณจะแสดงที่นี่':'Notifications relevant to you will appear here.'}</EmptyDescription></EmptyHeader></Empty>:rows.map(row=><NotificationFeedRow key={row.id} row={row} th={th} onRead={id=>{void read([id]);}} onNavigate={()=>setOpen(false)}/>)}
   </div>
  </ResponsivePopover>;
 }
