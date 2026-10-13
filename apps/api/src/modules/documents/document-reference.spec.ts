@@ -23,6 +23,15 @@ const text = (v: any): string =>
               .map(([, x]) => text(x))
               .join("\n")
         : "";
+test('actual PDF first-page headers have no issuer identity beside the frozen logo',()=>{
+ for(const kind of ['contract','invoice','receipt']){
+  const snapshot={...fixtures[kind]!};delete snapshot.ppaClauses;delete snapshot.ppaOpening;const definition=documentDefinition(snapshot);const header=definition.content[0];
+  assert.equal(text(header.columns[1]),'');assert.equal(header.columns[0].image,snapshot.logoDataUri);
+  const lines=pageLines(layoutDocumentPages(snapshot)[0]);
+  const names=lines.filter(line=>lineText(line)===snapshot.issuer.name);
+  assert.equal(names.length,1,kind);assert.ok(names[0].y>80,`${kind} issuer belongs below header`);
+ }
+});
 test("reference typography, paired cards, frozen accent and blank footer identity", () => {
   const s = { ...fixtures.invoice!, brandPrimary: "#a25a00" };
   const d = documentDefinition(s);
@@ -158,7 +167,7 @@ test("PPA freezes exact converted capacity and ten dynamic draft clauses only un
     assert.match(snapshot.ppaClauses[0].body, /ผู้ขายจริง.*ผู้ซื้อจริง/s);
     assert.match(snapshot.ppaClauses[6].body, /30 วัน/);
     assert.match(snapshot.ppaClauses[8].body, /90วัน/);
-    assert.equal(snapshot.templateVersion, "ppa-th-sarabun-new-v4");
+    assert.equal(snapshot.templateVersion, "ppa-th-sarabun-new-v5");
     process.env.SMTP_HOST = "outside.test";
     const factual = buildContractSnapshot(
       source,

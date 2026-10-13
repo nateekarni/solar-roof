@@ -85,7 +85,7 @@ test('a non-TEST receipt does not claim tax-invoice status', () => {
 test('long Thai identities expose word boundaries for wrapping without altering saved input', () => {
   const name = 'บริษัทโซลาร์รูฟทดสอบชื่อภาษาไทยที่ยาวมากและไม่มีเว้นวรรค';
   const definition = documentDefinition({ ...fixture, issuer: { ...fixture.issuer, name } });
-  const renderedName = definition.content[0].columns[1].stack.find((node: any) => node.bold).text;
+  const renderedName = definition.content.find((node:any)=>node.columns && visibleText(node).includes('ข้อมูลบริษัท')).columns[0].stack[1].stack[0].text;
   assert.ok(Array.isArray(renderedName));
   assert.ok(renderedName.some((part: any) => part.text === '\u200b' && part.fontSize === 0 && part.opacity === 0));
   assert.equal(renderedName.map((part: any) => part.text).join('').replaceAll('\u200b', ''), name);
@@ -216,6 +216,14 @@ test('a signatory block taller than A4 fails explicitly instead of producing neg
 });
 
 
-test('reference header places issuer close to logo and includes saved title number issued and invoice due metadata',()=>{
- const snapshot={...fixture,dueDate:'2026-11-07'};const definition=documentDefinition(snapshot);const header=definition.content[0];assert.deepEqual(header.columns.map((c:any)=>c.width),[55,'*',245]);assert.equal(header.columnGap,8);assert.equal(header.columns[0].image,snapshot.logoDataUri);assert.ok(visibleText(header.columns[1]).includes(snapshot.issuer.name));assert.match(visibleText(definition.content),/เลขประจำตัวผู้เสียภาษี/);assert.match(visibleText(header.columns[2]),/ใบวางบิล.*INV2026100001.*วันที่.*กำหนดชำระ/s);assert.ok(header.columns[2].stack.every((n:any)=>n.noWrap!==true));
+test('financial headers keep frozen logo and metadata while issuer appears once in company information',()=>{
+ for(const type of ['invoice','receipt'] as const){
+ const snapshot={...fixture,type,dueDate:'2026-11-07'};const definition=documentDefinition(snapshot);const header=definition.content[0];assert.deepEqual(header.columns.map((c:any)=>c.width),[65,'*',245]);assert.equal(header.columnGap,8);assert.equal(header.columns[0].image,snapshot.logoDataUri);assert.equal(visibleText(header.columns[1]),'');assert.equal(visibleText(definition.content).split(snapshot.issuer.name).length-1,1);assert.match(visibleText(definition.content),/ข้อมูลบริษัท.*เลขประจำตัวผู้เสียภาษี/s);assert.match(visibleText(header.columns[2]),type==='invoice'?/ใบวางบิล.*INV2026100001.*วันที่.*กำหนดชำระ/s:/ใบเสร็จรับเงิน.*INV2026100001.*วันที่/s);assert.ok(header.columns[2].stack.every((n:any)=>n.noWrap!==true));
+ }
+});
+
+test('contract header keeps issuer details in the parties block below its frozen logo and metadata',()=>{
+ const snapshot={...fixture,type:'contract' as const};const definition=documentDefinition(snapshot);const header=definition.content[0];
+ assert.deepEqual(header.columns.map((column:any)=>column.width),[65,'*',245]);assert.equal(header.columns[0].image,snapshot.logoDataUri);assert.equal(visibleText(header.columns[1]),'');assert.equal(visibleText(definition.content).split(snapshot.issuer.name).length-1,1);
+ assert.match(visibleText(definition.content),/ข้อมูลบริษัท.*กรุงเทพมหานคร.*0000000000000/s);
 });

@@ -11,3 +11,8 @@ test('draft document displays the approved wordmark by default',()=>{assert.matc
 test('draft document honors a configured issuer logo',()=>{assert.match(renderToStaticMarkup(<DocumentBrand issued={false} company={{logoUrl:'/custom.png'}}/>),/src="\/custom.png"/);});
 test('issued document displays only the saved snapshot logo',()=>{for(const company of [{logoUrl:'/saved.png'},{logo_url:'/saved.png'}])assert.match(renderToStaticMarkup(<DocumentBrand issued company={company}/>),/src="\/saved.png"/);});
 test('historical documents without saved logo never acquire the current wordmark',()=>{assert.equal(renderToStaticMarkup(<DocumentBrand issued company={{}}/>),'');assert.equal(renderToStaticMarkup(<DocumentBrand issued/>),'');});
+
+test('document branding displays issuance-time logoDataUri before legacy company logo without visible issuer text',()=>{
+ const html=renderToStaticMarkup(<DocumentBrand issued company={{logoDataUri:'data:image/png;base64,SAVED',logoUrl:'/current.png',companyName:'Recorded issuer'}}/>);
+ assert.match(html,/src="data:image\/png;base64,SAVED"/);assert.doesNotMatch(html,/src="\/current.png"/);assert.equal(html.replace(/<[^>]*>/g,''),'');
+});

@@ -1,6 +1,6 @@
 import { formatDocumentMoney, renderDocumentPdf, type DocumentParty, type DocumentSnapshot } from './document-layout.js';
 
-export const FINANCIAL_TEMPLATE_VERSION = 'sarabun-a4-v6';
+export const FINANCIAL_TEMPLATE_VERSION = 'sarabun-a4-v7';
 interface SavedFinancialParty {
   company_name: string;
   signatory_name?: string;
@@ -43,6 +43,7 @@ interface SavedFinancialDocument {
     invoiceNumber?: string;
     dueDate?: string;
     logo: string;
+    logoDataUri?: string;
     banks: { bank_name: string; account_name: string; account_number: string }[];
     payments: { note?:string|null; payer_name?: string | null; payment_method?: 'bank_transfer' | 'promptpay' | null; origin_bank?: string | null; origin_account?: string | null; status: string; paid_at: string | Date; amount: string; evidence_key?: string; slip_url?: string }[];
   };
@@ -84,7 +85,7 @@ export function localTestDocumentSnapshot(document: SavedFinancialDocument): Doc
       ...(p.origin_account ? { originAccount: p.origin_account } : {}),
     })),
     paymentAccounts: s.banks.map(bank => ({ bankName: bank.bank_name, accountName: bank.account_name, accountNumber: bank.account_number })),
-    ...(s.dueDate ? { dueDate: s.dueDate } : {}), logoDataUri: s.logo, templateVersion: s.templateVersion ?? FINANCIAL_TEMPLATE_VERSION, syntheticTest: false,
+    ...(s.dueDate ? { dueDate: s.dueDate } : {}), logoDataUri: s.logoDataUri ?? s.logo, templateVersion: s.templateVersion ?? 'sarabun-a4-v6', syntheticTest: false,
   };
 }
 export async function renderLocalTestPdf(document: SavedFinancialDocument): Promise<Buffer> {

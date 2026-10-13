@@ -8,12 +8,13 @@ import {siteScope} from '../../common/auth/authorization.js';
 import type { FrozenRecipient } from '../billing/saved-document-delivery.js';
 import { BRAND_PRIMARY } from '@solar/domain';
 import { localFinancialBinding } from '../billing/local-financial-policy.js';
+import { frozenFinancialLogo } from '../billing/frozen-financial-logo.js';
 import { capacityKwp, freezeLocalPpaDraft } from './local-ppa-draft.js';
 import { allocateDocumentNumber } from './document-number.js';
 import { renderDocumentPdf, type DocumentSnapshot } from './document-layout.js';
 
 export type ScopedActor = ScopePrincipal;
-export const CONTRACT_TEMPLATE_VERSION = 'ppa-th-sarabun-new-v4';
+export const CONTRACT_TEMPLATE_VERSION = 'ppa-th-sarabun-new-v5';
 interface ContractSource {
  capacity_mwp?:string|null; id:string; site_id:string; site_name:string; external_site_id?:string|null; customer_id:string; version?:number;
  start_date:string; end_date:string|null; issue_date?:string; document_number?:string;
@@ -21,7 +22,7 @@ interface ContractSource {
  payment_terms:string; payment_term_days?:number|null; recipient_user_ids?:string[];
  signer_name:string; signer_title?:string|null; customer_signer_name?:string|null; customer_signer_title?:string|null;
 }
-interface IssuerSource {company_name:string;tax_id:string;address:string;branch?:string;phone?:string;email?:string;}
+interface IssuerSource {company_name:string;tax_id:string;address:string;branch?:string;phone?:string;email?:string;logo_url?:string;}
 export interface ContractSnapshot extends DocumentSnapshot {
  deliveryRecipients:FrozenRecipient[];
  contractId:string;siteId:string;customerId:string;contractVersion?:number|undefined;startDate:string;endDate?:string|undefined;paymentTermDays?:number|null|undefined;
@@ -98,7 +99,7 @@ export class ContractPdfService {
   const issuer=(await client.query<IssuerSource>('SELECT * FROM company_profile WHERE is_configured=true ORDER BY updated_at DESC LIMIT 1')).rows[0];
   const rates=(await client.query<DocumentSnapshot['rates'][number]>(`SELECT to_char(effective_from,'YYYY-MM-DD') AS "startDate",to_char(effective_to,'YYYY-MM-DD') AS "endDate",rate::text AS rate FROM rate_versions WHERE contract_id=$1 ORDER BY effective_from,id`,[contractId])).rows;
   const allocation=await allocateDocumentNumber(client,'contract');
-  const snapshot=buildContractSnapshot({...contract,document_number:allocation.number,issue_date:allocation.issueDate},issuer,rates,await this.logo());
+  const snapshot=buildContractSnapshot({...contract,document_number:allocation.number,issue_date:allocation.issueDate},issuer,rates,frozenFinancialLogo(undefined,issuer?.logo_url,await this.logo()));
   snapshot.deliveryRecipients=await contractDeliveryRecipients(client,contract);
   const bytes=await this.render(snapshot);const sha256=createHash('sha256').update(bytes).digest('hex');const documentId=randomUUID();
   await client.query(`INSERT INTO documents(id,site_id,contract_id,document_type,document_number,status,issue_date,snapshot,content_hash,file_key,template_version)

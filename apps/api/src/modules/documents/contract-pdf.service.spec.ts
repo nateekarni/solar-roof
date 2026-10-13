@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 const logoHash=(uri:string)=>createHash('sha256').update(Buffer.from(uri.split(',')[1]!, 'base64')).digest('hex');
 import { buildContractSnapshot, ContractPdfService } from './contract-pdf.service.js';
 import type { DatabaseService } from '../../database/database.service.js';
+import { renderDocumentPdf } from './document-layout.js';
 const issuer={company_name:'บริษัท ผู้ขาย',tax_id:'1234567890123',address:'กรุงเทพ',branch:'00000',phone:'02',email:'issuer@example.com'};
 const contract={document_number:'PPA261000001',id:'contract-a',site_id:'site-a',site_name:'ไซต์หนึ่ง',customer_id:'customer-a',start_date:'2026-10-08',end_date:null,created_date:'2026-10-08',company_name:'Customer Ltd',tax_id:'9876543210123',tax_address:'Customer address',branch:'00000',payment_terms:'30 days',payment_term_days:30,signer_name:'Provider Person',signer_title:'Director',customer_signer_name:'Buyer Person',customer_signer_title:'Manager'};
 const rates=[{startDate:'2026-10-08',rate:'4.2500'}];
@@ -93,7 +94,7 @@ test('future contract issuance freezes protocol Site ID from the site query into
  if(sql.includes('INSERT INTO documents'))persisted=JSON.parse(params[5]);return {rows:[]};}};
  const service=new ContractPdfService({transaction:async(work:any)=>work(client)} as unknown as DatabaseService,async(snapshot)=>{frozen=snapshot;return Buffer.from('%PDF-fixture');});
  await service.ensureContractOriginal('contract-a',{role:'owner'});
- assert.equal(logoHash(frozen.logoDataUri),createHash('sha256').update(readFileSync(new URL('../../../../web/public/brand/solar-roof-document-stacked.png',import.meta.url))).digest('hex'));assert.equal(persisted.logoDataUri,frozen.logoDataUri);assert.equal(frozen.siteExternalId,'TH-SITE-001');assert.equal(persisted.siteExternalId,'TH-SITE-001');assert.equal(persisted.startDate,'2026-10-08');assert.equal(persisted.endDate,'2046-10-07');assert.equal(persisted.paymentTermDays,30);assert.equal(persisted.templateVersion,'ppa-th-sarabun-new-v4');assert.equal(persisted.capacityKwp,'25.123');assert.equal(persisted.brandPrimary,'#f29700');
+ assert.equal(logoHash(frozen.logoDataUri),createHash('sha256').update(readFileSync(new URL('../../../../web/public/brand/solar-roof-document-stacked.png',import.meta.url))).digest('hex'));assert.equal(persisted.logoDataUri,frozen.logoDataUri);assert.equal(frozen.siteExternalId,'TH-SITE-001');assert.equal(persisted.siteExternalId,'TH-SITE-001');assert.equal(persisted.startDate,'2026-10-08');assert.equal(persisted.endDate,'2046-10-07');assert.equal(persisted.paymentTermDays,30);assert.equal(persisted.templateVersion,'ppa-th-sarabun-new-v5');assert.equal(persisted.capacityKwp,'25.123');assert.equal(persisted.brandPrimary,'#f29700');
  const legacy=buildContractSnapshot(contract,issuer,rates,logo);assert.equal(legacy.siteExternalId,undefined);
 });
 
@@ -101,4 +102,29 @@ test('historical saved contract returns its old actual number before allocation 
  const f=fixture();f.historical();const result=await f.service.ensureContractOriginal('contract-a',{role:'owner'});
  assert.equal(result.documentNumber,'historical-contract-uuid');assert.equal(result.sha256,'a'.repeat(64));
  assert.equal(f.queries.some(q=>q.includes('document_number_series')),false);assert.deepEqual(f.stats(),{artifacts:0,companyReads:0,renders:0});
+});
+
+// A real PDF renderer protects the saved branding/PDF boundary; only PostgreSQL I/O is doubled.
+test('uploaded contract logo is frozen in persisted snapshot and PDF across company replacement and retry',async()=>{
+ const uploaded=`data:image/png;base64,${readFileSync(new URL('../../../../web/public/brand/solar-roof-mark.png',import.meta.url)).toString('base64')}`;
+ const company={...issuer,logo_url:uploaded};let persisted:any;let bytes:Buffer|undefined;let renders=0;
+ const client={query:async(sql:string,params:any[]=[])=>{
+  if(sql.includes('FROM contracts c JOIN sites'))return {rows:[contract]};
+  if(sql.includes('FROM documents'))return {rows:persisted?[{documentId:'saved',documentNumber:persisted.documentNumber,sha256:persisted.sha256,deliveryAvailable:false}]:[]};
+  if(sql.includes('FROM company_profile'))return {rows:[company]};
+  if(sql.includes('FROM rate_versions'))return {rows:rates};
+  if(sql.includes('AS day'))return {rows:[{day:'2026-10-08'}]};
+  if(sql.includes('document_number_series'))return {rows:[{last_value:1}]};
+  if(sql.includes('INSERT INTO documents'))persisted={snapshot:JSON.parse(params[5]),documentNumber:params[3],sha256:params[6]};
+  if(sql.includes('INSERT INTO document_artifacts'))bytes=Buffer.from(params[1]);
+  return {rows:[]};
+ }};
+ const service=new ContractPdfService({transaction:async(work:any)=>work(client)} as unknown as DatabaseService,async(snapshot)=>{renders++;return renderDocumentPdf(snapshot);});
+ const first=await service.ensureContractOriginal('contract-a',{role:'owner'});
+ assert.equal(persisted.snapshot.logoDataUri,uploaded);assert.equal(persisted.snapshot.templateVersion,'ppa-th-sarabun-new-v5');
+ assert.equal(bytes!.subarray(0,5).toString(),'%PDF-');assert.equal(first.sha256,createHash('sha256').update(bytes!).digest('hex'));
+ const savedSnapshot=JSON.stringify(persisted.snapshot),savedBytes=Buffer.from(bytes!),savedHash=first.sha256;
+ company.logo_url='';company.company_name='Later issuer';
+ const retry=await service.ensureContractOriginal('contract-a',{role:'owner'});
+ assert.equal(retry.sha256,savedHash);assert.equal(renders,1);assert.equal(JSON.stringify(persisted.snapshot),savedSnapshot);assert.deepEqual(bytes,savedBytes);
 });

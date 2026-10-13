@@ -160,11 +160,11 @@ test("reference header and paired cards remain separated, with complete long sav
   for (const value of [
     snapshot.documentNumber,
     formatDocumentDate(snapshot.issueDate),
-    snapshot.issuer.name,
   ])
     assert.ok(joined.includes(value.replaceAll(/\s/g, "")), value);
   const allText=pages.flatMap(pageLines).map(lineText).join('').replaceAll(/\s/g,'');
-  for(const value of [snapshot.issuer.address,snapshot.issuer.email!])assert.ok(allText.includes(value.replaceAll(/\s/g,'')),value);
+  assert.equal(joined.includes(snapshot.issuer.name.replaceAll(/\s/g,'')),false);
+  for(const value of [snapshot.issuer.name,snapshot.issuer.address,snapshot.issuer.email!])assert.ok(allText.includes(value.replaceAll(/\s/g,'')),value);
   for (const page of pages) {
     for (const l of pageLines(page))
       assert.ok(
@@ -175,9 +175,9 @@ test("reference header and paired cards remain separated, with complete long sav
   const image = pages[0].items.find((i: any) => i.type === "image").item;
   assert.ok(Math.abs(image.x - 10) < 0.01);
   assert.ok(image._width <= 65.01);
-  const issuer = header.find((l) => lineText(l).includes("บริษัท"));
-  assert.ok(issuer.x - image.x < 80);
-  assert.equal(issuer.y, image.y);
+  const issuer = lines.find((l) => l.y > customer.y && lineText(l).includes("บริษัท"));
+  assert.ok(issuer);
+  assert.ok(issuer.y > image.y + image._height);
   for (const l of header) assert.ok(l.y + l.getHeight() < customer.y);
 });
 

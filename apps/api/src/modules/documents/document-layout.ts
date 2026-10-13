@@ -389,8 +389,8 @@ function financialDefinition(s: DocumentSnapshot): DocumentDefinition {
   const bottomMargin=signatureSpace+30;
   if(bottomMargin>=750) throw new Error("Signature block exceeds A4 capacity");
   const head={columns:[
-    {width:55,image:s.logoDataUri,fit:[55,48]},
-    {width:"*",stack:[bodyText(s.issuer.name,{bold:true,fontSize:10.5})]},
+    {width:65,image:s.logoDataUri,fit:[65,48]},
+    {width:"*",text:""},
     {width:245,alignment:"right",stack:[bodyText(title,{bold:true,fontSize:14}),bodyText(`เลขที่: ${s.documentNumber}`,{bold:true,fontSize:11.3}),bodyText(`วันที่: ${formatDocumentDate(s.issueDate)}`),...(s.type==='invoice'&&s.dueDate?[bodyText(`กำหนดชำระ: ${formatDocumentDate(s.dueDate)}`)]:[]),...(s.type==='receipt'?[bodyText(`ใบวางบิล: ${s.invoiceNumber||'-'}`)]:[])]}
   ],columnGap:8,margin:[0,0,0,5]};
   const content:any[]=[head];
@@ -510,9 +510,9 @@ function contractDefinition(s: DocumentSnapshot): DocumentDefinition {
     {
       columns: [
         { width: 65, image: s.logoDataUri, fit: [65, 70] },
-        { width: "*", ...(s.type === "contract" ? party(s.issuer) : {stack:[bodyText(s.issuer.name,{bold:true})]}), fontSize: 14 },
+        { width: "*", text: "" },
         {
-          width: 190,
+          width: 245,
           alignment: "right",
           stack: [
             bodyText(title[0]!, { fontSize: s.type === "receipt" ? 22 : 26, bold: true }),
@@ -593,6 +593,11 @@ function contractDefinition(s: DocumentSnapshot): DocumentDefinition {
       ],
       margin: [0, 3, 0, 8],
     });
+    // Frozen PPA clauses already contain the legal parties; do not duplicate or rebuild them.
+    if (!s.ppaClauses?.length) content.push(cards(
+      [section("ข้อมูลบริษัท / Company Information"), {...party(s.issuer), fontSize: 14}],
+      [section("ข้อมูลลูกค้า / Customer Information"), {...party(s.customer), fontSize: 14}],
+    ));
     if (s.ppaClauses?.length) {
       if (s.ppaOpening)
         content.push(bodyText(s.ppaOpening, { margin: [0, 0, 0, 4] }));
@@ -621,9 +626,6 @@ function contractDefinition(s: DocumentSnapshot): DocumentDefinition {
       }
     } else {
       content.push(
-        section("ข้อมูลคู่สัญญา / Parties"),
-        party(s.issuer),
-        party(s.customer),
         section("สถานที่ติดตั้งระบบ / Site"),
         bodyText(
           `ไซต์งาน: ${s.siteName || "ไม่ระบุ"}${s.siteExternalId ? ` (${s.siteExternalId})` : ""}`,

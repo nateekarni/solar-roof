@@ -3,6 +3,12 @@ import {formatTestMoney} from './local-test-pdf.js';
 test('PDF monetary formatting preserves exact large satang and PostgreSQL zero padding',()=>{assert.equal(formatTestMoney('90071992547409.91'),'90,071,992,547,409.91');assert.equal(formatTestMoney('4623.45000000'),'4,623.45');assert.equal(formatTestMoney('2000'),'2,000.00');assert.throws(()=>formatTestMoney('4623.450001'));});
 
 import { localTestDocumentSnapshot } from './local-test-pdf.js';
+
+test('financial PDF adapter uses frozen embedded logo before legacy logo and retains old template evidence',()=>{
+ const saved={document_type:'invoice',document_number:'INV-OLD',snapshot:{company:{company_name:'Saved issuer',tax_id:'123',address:'Saved address'},customer:{company_name:'Customer',tax_id:'456'},issueDate:'2026-10-08',logo:'legacy-logo',logoDataUri:'data:image/png;base64,UPLOADED',templateVersion:'historical-template',cycle:{period_start:'2026-09-01',period_end:'2026-09-30',subtotal:'0.00',simulated_tax:'0.00',amount:'0.00',meter_snapshot:[]},banks:[],payments:[]}};
+ const before=JSON.stringify(saved);const snapshot=localTestDocumentSnapshot(saved);
+ assert.equal(snapshot.logoDataUri,'data:image/png;base64,UPLOADED');assert.equal(snapshot.templateVersion,'historical-template');assert.equal(JSON.stringify(saved),before);
+});
 test('financial snapshot adapter retains every saved meter/rate and approved transfer while freezing identity', () => {
   const document = {
     document_type: 'receipt', document_number: 'RCT2026100001', snapshot: {

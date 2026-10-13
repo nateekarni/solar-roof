@@ -42,7 +42,7 @@ test('future financial originals freeze protocol site identity and persist the r
  if(sql.includes('AS starts'))return {rows:[{starts:'2026-09-01',ends:'2026-09-30'}]};
  if(sql.includes('INSERT INTO documents')){persisted=JSON.parse(params[7]);insertedVersion=params[10];return {rows:[{id:params[0],snapshot:persisted}]};}return {rows:[]};}})};
  const service=new LocalFinancialApplicationService(db as unknown as DatabaseService,{assertEnabled:async()=>{}} as unknown as FinancialReadinessService);
- const result=await service.issueInvoice('cycle');assert.equal(result.document.snapshot.customer.external_site_id,'PROTOCOL-002');assert.equal(persisted.templateVersion,'sarabun-a4-v6');assert.equal(insertedVersion,'sarabun-a4-v6');assert.equal(persisted.brandPrimary,'#f29700');assert.equal(persisted.policyHash,TEST_FINANCIAL_POLICY_HASH);assert.equal(persisted.policy.logo,'/brand/solar-roof-document.png');assert.equal(logoHash(persisted.logo),createHash('sha256').update(readFileSync(new URL('../../../../web/public/brand/solar-roof-document-stacked.png',import.meta.url))).digest('hex'));
+ const result=await service.issueInvoice('cycle');assert.equal(result.document.snapshot.customer.external_site_id,'PROTOCOL-002');assert.equal(persisted.templateVersion,'sarabun-a4-v7');assert.equal(insertedVersion,'sarabun-a4-v7');assert.equal(persisted.logoDataUri,persisted.logo);assert.equal(persisted.brandPrimary,'#f29700');assert.equal(persisted.policyHash,TEST_FINANCIAL_POLICY_HASH);assert.equal(persisted.policy.logo,'/brand/solar-roof-document.png');assert.equal(logoHash(persisted.logo),createHash('sha256').update(readFileSync(new URL('../../../../web/public/brand/solar-roof-document-stacked.png',import.meta.url))).digest('hex'));
 });
 
 // Missing persistence/normalization must fail here, independently of SQL column ordering.
@@ -120,4 +120,45 @@ test('additional TEST evidence retains each transfer metadata independently with
  await service.submitPayment('cycle',{amount:'57.00',evidenceKey:'first',payerName:'First payer',paymentMethod:'bank_transfer',originAccount:'00123'},'actor');
  await service.submitPayment('cycle',{amount:'50.00',evidenceKey:'second',payerName:'Second payer',paymentMethod:'promptpay'},'actor');
  assert.equal(saved.length,2);assert.equal(saved[0]!.payer_name,'First payer');assert.equal(saved[0]!.origin_account,'00123');assert.equal(saved[1]!.payer_name,'Second payer');assert.equal(saved[1]!.origin_account,null);assert.notEqual(saved[0]!.id,saved[1]!.id);
+});
+
+test('uploaded invoice and receipt logos stay frozen with saved PDF hashes after company replacement and replay',async()=>{
+ const uploaded=`data:image/png;base64,${readFileSync(new URL('../../../../web/public/brand/solar-roof-mark.png',import.meta.url)).toString('base64')}`;
+ const company={company_name:'Issuer at issuance',tax_id:'0000000000000',address:'Issuer address',logo_url:uploaded};
+ const cycle={id:'cycle',site_id:'site-a',contract_id:'contract-a',status:'pending_review',quality:'complete',policy_hash:TEST_FINANCIAL_POLICY_HASH,amount:'107.00',subtotal:'100.00',simulated_tax:'7.00',meter_snapshot:[]};
+ const payment={id:'payment',status:'pending_verification',amount:'107.00',verified_amount:null as string|null,paid_at:'2026-10-08T01:00:00Z'};
+ const documents:any[]=[];const artifacts=new Map<string,{bytes:Buffer;sha256:string}>();
+ const client={query:async(sql:string,params:any[]=[])=>{
+  if(sql.includes('SELECT role,status FROM users'))return {rows:[{role:'accountant',status:'active'}]};
+  if(sql.includes('SELECT employee_can_access'))return {rows:[{allowed:true}]};
+  if(sql.includes('SELECT * FROM billing_cycles'))return {rows:[cycle]};
+  if(sql.includes('SELECT * FROM documents'))return {rows:documents.filter(d=>d.document_type===(params[1]??'receipt'))};
+  if(sql.includes('FROM site_billing_settings cfg JOIN sites'))return {rows:[{company_name:'Customer at issuance',tax_id:'1111111111111',tax_address:'Customer address',payment_term_days:30,tax_confirmed:true,tax_rate:'7.0000',prices_include_tax:false,recipient_user_ids:['recipient']}]};
+  if(sql.includes('FROM company_profile'))return {rows:[company]};
+  if(sql.includes('FROM company_bank_accounts'))return {rows:[{bank_name:'Receiving bank',account_name:'Account name',account_number:'1234'}]};
+  if(sql.includes('FROM users u'))return {rows:[{id:'recipient',email:'verified@example.invalid',name:'Verified recipient'}]};
+  if(sql.includes('SELECT * FROM payments'))return {rows:sql.includes("status='paid'")&&payment.status!=='paid'?[]:[payment]};
+  if(sql.includes('UPDATE payments')){payment.status=params[1];payment.verified_amount=params[4];}
+  if(sql.includes('AS day'))return {rows:[{day:'2026-10-08'}]};
+  if(sql.includes('document_number_series'))return {rows:[{last_value:1}]};
+  if(sql.includes('SELECT document_number,snapshot'))return {rows:documents.filter(d=>d.document_type==='invoice')};
+  if(sql.includes('AS starts'))return {rows:[{starts:'2026-09-01',ends:'2026-09-30'}]};
+  if(sql.includes('INSERT INTO documents')){const saved={id:params[0],document_number:params[4],document_type:params[3],status:'issued',snapshot:JSON.parse(params[7]),content_hash:params[8]};documents.push(saved);return {rows:[saved]};}
+  if(sql.includes('INSERT INTO document_artifacts'))artifacts.set(params[0],{bytes:Buffer.from(params[1]),sha256:params[2]});
+  if(sql==='UPDATE billing_cycles SET status=$2 WHERE id=$1')cycle.status=params[1];
+  return {rows:[]};
+ }};
+ const service=new LocalFinancialApplicationService({transaction:async(run:any)=>run(client)} as unknown as DatabaseService,{assertEnabled:async()=>{}} as unknown as FinancialReadinessService);
+ const invoice=(await service.issueInvoice('cycle')).document;
+ assert.equal(invoice.snapshot.logoDataUri,uploaded);assert.equal(invoice.snapshot.logo,uploaded);
+ const invoiceSnapshot=JSON.stringify(invoice.snapshot),invoiceBytes=Buffer.from(artifacts.get(invoice.id)!.bytes),invoiceHash=invoice.content_hash;
+ company.logo_url='';company.company_name='Company after replacement';cycle.status='pending_verification';
+ const receipt=(await service.verifyPayment('cycle','approved',undefined,'accountant',{paymentId:'payment',verifiedAmount:'107.00',verifiedTransferAt:'2026-10-08T01:00:00Z'})).receipt;
+ assert.equal(receipt.snapshot.logoDataUri,uploaded);assert.equal(receipt.snapshot.logo,uploaded);assert.equal(receipt.snapshot.company.company_name,'Issuer at issuance');
+ const receiptSnapshot=JSON.stringify(receipt.snapshot),receiptBytes=Buffer.from(artifacts.get(receipt.id)!.bytes),receiptHash=receipt.content_hash;
+ await service.issueInvoice('cycle');await service.verifyPayment('cycle','approved',undefined,'accountant',{paymentId:'payment',verifiedAmount:'107.00',verifiedTransferAt:'2026-10-08T01:00:00Z'});
+ assert.equal(documents.length,2);assert.equal(artifacts.size,2);
+ for(const [document,snapshot,bytes,hash] of [[invoice,invoiceSnapshot,invoiceBytes,invoiceHash],[receipt,receiptSnapshot,receiptBytes,receiptHash]] as const){
+  assert.equal(JSON.stringify(document.snapshot),snapshot);assert.deepEqual(artifacts.get(document.id)!.bytes,bytes);assert.equal(artifacts.get(document.id)!.sha256,hash);assert.equal(createHash('sha256').update(bytes).digest('hex'),hash);assert.equal(bytes.subarray(0,5).toString(),'%PDF-');
+ }
 });
