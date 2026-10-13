@@ -60,3 +60,22 @@ test('default deletion promotes the oldest account using PostgreSQL Date timesta
  await new SettingsService(f.db).deleteBankAccount('default','owner-a');
  assert.deepEqual(f.state.banks.filter(b=>b.isDefault).map(b=>b.id),['bank-z']);
 });
+
+test('default deletion skips older unconfigured accounts and promotes the oldest configured account',async()=>{
+ const f=settingsDatabase({...testCompany},[
+  bank('bank-a',true),
+  {...bank('bank-b',false,false),createdAt:new Date('2026-10-10T00:00:00Z') as any},
+  {...bank('bank-c'),createdAt:new Date('2026-10-11T00:00:00Z') as any},
+  {...bank('bank-d'),createdAt:new Date('2026-10-12T00:00:00Z') as any},
+ ]);
+ await new SettingsService(f.db).deleteBankAccount('bank-a','owner-a');
+ assert.deepEqual(f.state.banks.filter(b=>b.isDefault).map(b=>b.id),['bank-c']);
+ assert.equal(f.state.banks.find(b=>b.id==='bank-b')?.isConfigured,false);
+});
+
+test('default deletion leaves no default when every remaining account is unconfigured',async()=>{
+ const f=settingsDatabase({...testCompany},[bank('bank-a',true),bank('bank-b',true,false)]);
+ await new SettingsService(f.db).deleteBankAccount('bank-a','owner-a');
+ assert.deepEqual(f.state.banks.filter(b=>b.isDefault),[]);
+ assert.equal(f.state.banks.length,1);
+});

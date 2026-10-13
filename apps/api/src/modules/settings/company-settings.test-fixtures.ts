@@ -2,12 +2,13 @@ import type { DatabaseService } from '../../database/database.service.js';
 import type { CompanyBankAccount, CompanyProfile } from './settings.service.js';
 
 export const testCompany: CompanyProfile = {id:'company-a',companyName:'Issuer',taxId:'1234567890123',branch:'Head office',address:'Address',phone:'02',email:'issuer@example.test',logoUrl:'',signatoryName:'Director',signatoryTitle:'Owner',signatureDataUri:''};
-export function bank(id: string, isDefault = false): CompanyBankAccount {
-  return {id,bankName:'Bank',bankCode:'bank',accountName:'Issuer',accountNumber:id,branchName:'Branch',promptpayId:'',isDefault,createdAt:id,updatedAt:'initial'};
+type ConfiguredBank = CompanyBankAccount & {isConfigured:boolean};
+export function bank(id: string, isDefault = false, isConfigured = true): ConfiguredBank {
+  return {id,bankName:'Bank',bankCode:'bank',accountName:'Issuer',accountNumber:id,branchName:'Branch',promptpayId:'',isDefault,isConfigured,createdAt:id,updatedAt:'initial'};
 }
 
 /** Stateful external SQL boundary: commits, rollback and returned rows are observable. */
-export function settingsDatabase(company = {...testCompany}, banks: CompanyBankAccount[] = [bank('bank-a',true)]) {
+export function settingsDatabase(company = {...testCompany}, banks: ConfiguredBank[] = [bank('bank-a',true)]) {
   let state = {company, banks, approval:{id:'approval-a',revokedBy:null as string|null}, audits:[] as {actor:string;action:string;entity:string}[]};
   const statements: {sql:string;transaction:boolean}[] = [];
   let inTransaction = false;
@@ -16,7 +17,10 @@ export function settingsDatabase(company = {...testCompany}, banks: CompanyBankA
     statements.push({sql,transaction:inTransaction});
     if(sql.includes('pg_advisory_xact_lock')) return {rows:[]};
     if(sql.includes('SELECT')&&sql.includes('FROM company_profile')) return {rows:state.company.id?[{...state.company}]:[]};
-    if(sql.includes('SELECT')&&sql.includes('FROM company_bank_accounts')) return {rows:state.banks.map(b=>({...b})).sort((a,b)=>a.id.localeCompare(b.id))};
+    if(sql.includes('SELECT')&&sql.includes('FROM company_bank_accounts')) return {rows:state.banks.map(b=>{
+      const {isConfigured,...fields}=b;
+      return sql.includes('is_configured AS "isConfigured"')?{...fields,isConfigured}:fields;
+    }).sort((a,b)=>a.id.localeCompare(b.id))};
     if(sql.includes('UPDATE company_profile')||sql.includes('INSERT INTO company_profile')) {
       state.company={id:state.company.id??'company-new',companyName:p[0],taxId:p[1],branch:p[2],address:p[3],phone:p[4],email:p[5],logoUrl:p[6],signatoryName:p[7],signatoryTitle:p[8],signatureDataUri:p[9]};
       return {rows:[{...state.company}]};
@@ -24,7 +28,7 @@ export function settingsDatabase(company = {...testCompany}, banks: CompanyBankA
     if(sql.includes('UPDATE company_bank_accounts SET is_default = false')) {state.banks.forEach(b=>b.isDefault=false);return {rows:[]};}
     if(sql.includes('UPDATE company_bank_accounts SET is_default = (id = $1)')) {state.banks.forEach(b=>b.isDefault=b.id===p[0]);return {rows:[]};}
     if(sql.includes('INSERT INTO company_bank_accounts')) {
-      const b:CompanyBankAccount={id:'bank-new',bankName:p[0],bankCode:p[1],accountName:p[2],accountNumber:p[3],branchName:p[4],promptpayId:p[5],isDefault:p[6],createdAt:'bank-new'};
+      const b:ConfiguredBank={id:'bank-new',bankName:p[0],bankCode:p[1],accountName:p[2],accountNumber:p[3],branchName:p[4],promptpayId:p[5],isDefault:p[6],isConfigured:true,createdAt:'bank-new'};
       state.banks.push(b);return {rows:[{...b}]};
     }
     if(sql.includes('UPDATE company_bank_accounts')) {

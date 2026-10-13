@@ -43,6 +43,7 @@ export interface CompanyBankAccount {
   branchName: string;
   promptpayId: string;
   isDefault: boolean;
+  isConfigured: boolean;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -159,7 +160,7 @@ export class SettingsService {
     const res = await client.query<CompanyBankAccount>(
       `SELECT id, bank_name AS "bankName", bank_code AS "bankCode", account_name AS "accountName",
               account_number AS "accountNumber", branch_name AS "branchName", promptpay_id AS "promptpayId",
-              is_default AS "isDefault", created_at AS "createdAt", updated_at AS "updatedAt"
+              is_default AS "isDefault", is_configured AS "isConfigured", created_at AS "createdAt", updated_at AS "updatedAt"
        FROM company_bank_accounts
        ORDER BY is_default DESC, created_at ASC, id ASC ${lock ? 'FOR UPDATE' : ''}`
     );
@@ -212,9 +213,11 @@ export class SettingsService {
 
   private async ensureDefaultBank(client: PoolClient, preferredId?: string) {
     const banks = await this.listBankAccounts(client);
-    const oldest = [...banks].sort((a,b)=>new Date(a.createdAt ?? 0).valueOf() - new Date(b.createdAt ?? 0).valueOf() || a.id.localeCompare(b.id))[0];
-    const id = preferredId ?? banks.find(bank=>bank.isDefault)?.id ?? oldest?.id;
+    const configured = banks.filter(bank=>bank.isConfigured);
+    const oldest = [...configured].sort((a,b)=>new Date(a.createdAt ?? 0).valueOf() - new Date(b.createdAt ?? 0).valueOf() || a.id.localeCompare(b.id))[0];
+    const id = configured.find(bank=>bank.id===preferredId)?.id ?? configured.find(bank=>bank.isDefault)?.id ?? oldest?.id;
     if(id) await client.query('UPDATE company_bank_accounts SET is_default = (id = $1), updated_at=CASE WHEN is_default IS DISTINCT FROM (id = $1) THEN now() ELSE updated_at END',[id]);
+    else await client.query('UPDATE company_bank_accounts SET is_default = false WHERE is_default = true');
     return this.listBankAccounts(client);
   }
 
