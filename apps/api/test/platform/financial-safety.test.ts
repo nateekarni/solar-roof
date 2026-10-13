@@ -5,7 +5,7 @@ import {Pool} from 'pg';
 import {AuthService} from '../../src/modules/identity/auth.service.js';
 import {assertIsolatedDatabase} from './fixtures.js';
 import {BillingController} from '../../src/modules/billing/billing.controller.js';
-import {FinancialReadinessService} from '../../src/modules/billing/financial-readiness.service.js';
+import {FinancialReadinessService} from '../../src/modules/financial-readiness/financial-readiness.service.js';
 import {FinancialApplicationService} from '../../src/modules/billing/financial-application.service.js';
 import {routeAllowed} from '../../src/common/auth/route-policy.js';
 const base=process.env.READINESS_API_URL!, web=process.env.READINESS_WEB_URL!;

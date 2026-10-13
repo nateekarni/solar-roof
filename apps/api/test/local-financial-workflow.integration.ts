@@ -2,7 +2,7 @@ import 'reflect-metadata';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { DatabaseService } from '../src/database/database.service.js';
-import { FinancialReadinessService } from '../src/modules/billing/financial-readiness.service.js';
+import { FinancialReadinessService } from '../src/modules/financial-readiness/financial-readiness.service.js';
 import { FinancialApplicationService } from '../src/modules/billing/financial-application.service.js';
 import { localFinancialBinding } from '../src/modules/billing/local-financial-policy.js';
 if(!localFinancialBinding())throw new Error('Exact local TEST binding required');
