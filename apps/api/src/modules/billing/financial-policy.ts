@@ -28,6 +28,6 @@ export function validateFinancialPolicy(cycle:{policy_snapshot?:any;policy_hash?
  const expected=policy?.scope==='TEST'?TEST_FINANCIAL_POLICY_HASH:financialPolicyHash(policy??null);
  if(!policy||!['TEST','PRODUCTION'].includes(policy.scope)||policy.scope!==cycle.financial_scope||cycle.policy_hash!==expected)throw new ConflictException('Frozen financial policy integrity check failed');
  if(policy.scope==='PRODUCTION'&&financialPolicyHash(financialPolicySnapshot({tax_rate:policy.taxRate,prices_include_tax:policy.pricesIncludeTax},'PRODUCTION'))!==expected)throw new ConflictException('Frozen financial policy configuration invalid');
- if(policy.scope==='TEST'&&JSON.stringify(policy)!==JSON.stringify(TEST_FINANCIAL_POLICY))throw new ConflictException('Frozen TEST financial policy invalid');
+ if(policy.scope==='TEST'&&financialPolicyHash(policy)!==financialPolicyHash(TEST_FINANCIAL_POLICY))throw new ConflictException('Frozen TEST financial policy invalid');
  return policy;
 }

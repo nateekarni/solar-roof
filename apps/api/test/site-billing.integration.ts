@@ -20,8 +20,12 @@ try{
  await service.saveSettings(base.id,{serviceStartDate:'2026-01-01',paymentTermDays:30,recipientUserIds:[base.user_id],taxRate:'7',taxConfirmed:true,pricesIncludeTax:false},owner);
  const settings=await service.settings(base.id,owner);assert.equal(settings.taxRate,'7.0000');
  const preview=await service.manualPreview({siteId:base.id,lines:[{description:'Synthetic integration service',quantity:'2.5',unitPrice:'10.01'}]},owner);assert.equal(preview.total,'26.78');
- const manual=await service.manual({siteId:base.id,lines:[{description:'Synthetic integration service',quantity:'2.5',unitPrice:'10.01'}],dueDate:'2026-11-01'},owner);assert.equal(manual.document.snapshot.cycle.billing_kind,'manual');assert.equal(manual.document.snapshot.dueDate,'2026-11-01');
- await service.manual({siteId:base.id,lines:[{description:'Second same-day manual bill',quantity:'1',unitPrice:'1'}]},owner);
+ const manualInput={siteId:base.id,lines:[{description:'Synthetic integration service',quantity:'2.5',unitPrice:'10.01'}],dueDate:'2026-11-01',idempotencyKey:randomUUID()};
+ const manual=await service.manual(manualInput,owner);assert.equal(manual.document.snapshot.cycle.billing_kind,'manual');assert.equal(manual.document.snapshot.dueDate,'2026-11-01');
+ const second=await service.manual({siteId:base.id,lines:[{description:'Second same-day manual bill',quantity:'1',unitPrice:'1'}],idempotencyKey:randomUUID()},owner);
+ assert.notEqual(second.cycle.id,manual.cycle.id);assert.notEqual(second.document.id,manual.document.id);
+ const replay=await service.manual(manualInput,owner);assert.equal(replay.cycle.id,manual.cycle.id);assert.equal(replay.document.id,manual.document.id);assert.equal(replay.document.document_number,manual.document.document_number);assert.equal(replay.document.content_hash,manual.document.content_hash);
+ const originals=(await client.query(`SELECT (SELECT count(*) FROM documents WHERE billing_cycle_id=$1)::int AS documents,(SELECT count(*) FROM document_artifacts WHERE document_id=$2)::int AS artifacts,(SELECT count(*) FROM financial_delivery_outbox WHERE document_id=$2)::int AS outboxes`,[manual.cycle.id,manual.document.id])).rows[0];assert.deepEqual(originals,{documents:1,artifacts:1,outboxes:1});
  const id=randomUUID();
  const cycle=(await client.query(`INSERT INTO billing_cycles(id,site_id,period_start,period_end,cutoff_time,status,quality,opening_energy,closing_energy,consumed_kwh,rate,amount,subtotal,simulated_tax,meter_snapshot,policy_hash,billing_settings_version) VALUES($1,$2,'2090-10-01','2090-10-31',now(),'approved','complete',0,10,10,3.5,37.45,35,2.45,$3,$4,$5) RETURNING *`,[id,base.id,JSON.stringify([{from:'2090-10-01',to:'2090-11-01',consumedKwh:'10.000',rate:'3.5000',subtotal:'35.00'}]),TEST_FINANCIAL_POLICY_HASH,settings.version])).rows[0];
  const original=(await financial.issueInvoice(cycle.id)).document;
@@ -39,5 +43,5 @@ try{
  await client.query("UPDATE payments SET status='paid',verified_amount=1,verified_transfer_at=now(),verified_by=$2 WHERE id=$1",[paymentId,owner.id]);
  await assert.rejects(service.reprice(cycle.id,{rate:'3.9',reason:'Blocked partial approval'},owner),/locked/);
  await client.query('SAVEPOINT immutable_check');await assert.rejects(client.query('UPDATE documents SET amount=999 WHERE id=$1',[original.id]),/immutable/);await client.query('ROLLBACK TO SAVEPOINT immutable_check');
- console.log('PASS real database: configured tax, manual same-day bills, immutable revisions, preserved due dates, tariff retirement, pending/partial transfer locks');
+ console.log('PASS real database: configured tax, distinct keyed same-day manual bills, same-key replay without duplicate document/artifact/outbox, immutable revisions, preserved due dates, tariff retirement, pending/partial transfer locks');
 }finally{await client.query('ROLLBACK');client.release();await db.pool.end();}

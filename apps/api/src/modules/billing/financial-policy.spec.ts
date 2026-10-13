@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {energyCharge,financialPolicySnapshot,financialPolicyHash,validateFinancialPolicy,financialTotals} from './financial-policy.js';
+import {TEST_FINANCIAL_POLICY,TEST_FINANCIAL_POLICY_HASH} from './local-financial-policy.js';
 
 // Catches TEST arithmetic leaking into production or rounding through binary floats.
 test('energy charges round exactly at half a satang without applying any tax',()=>{
@@ -27,4 +28,9 @@ test('policy hashes are canonical and change with confirmed tax and inclusion se
  assert.equal(validateFinancialPolicy({policy_snapshot:p,policy_hash:financialPolicyHash(p),financial_scope:'PRODUCTION'}).scope,'PRODUCTION');
  assert.throws(()=>validateFinancialPolicy({policy_snapshot:{...p,taxRate:'7.0000'},policy_hash:financialPolicyHash(p),financial_scope:'PRODUCTION'}),/policy/);
  assert.throws(()=>validateFinancialPolicy({policy_snapshot:p,policy_hash:financialPolicyHash(p),financial_scope:'TEST'}),/policy/);
+});
+test('TEST policy validation accepts PostgreSQL JSONB key order while rejecting changed frozen values',()=>{
+ const persisted=Object.fromEntries(Object.entries(TEST_FINANCIAL_POLICY).reverse());
+ assert.equal(validateFinancialPolicy({policy_snapshot:persisted,policy_hash:TEST_FINANCIAL_POLICY_HASH,financial_scope:'TEST'}).scope,'TEST');
+ assert.throws(()=>validateFinancialPolicy({policy_snapshot:{...persisted,taxPercent:8},policy_hash:TEST_FINANCIAL_POLICY_HASH,financial_scope:'TEST'}),/Frozen TEST financial policy invalid/);
 });
