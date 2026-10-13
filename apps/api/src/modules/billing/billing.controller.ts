@@ -9,6 +9,7 @@ import {hasPermission,siteScope,type AuthorizationPrincipal} from '../../common/
 import {normalizeTestRateSchedule,validFinancialDate} from './local-financial-policy.js';
 import {
   BadRequestException, ConflictException,
+  ServiceUnavailableException,
   ForbiddenException,
   Query,
   Body,
@@ -216,7 +217,7 @@ export class BillingController {
     }
   }
 
-  @Roles('owner','admin')
+  @Roles('owner','accountant')
   @Post('contracts/:id/send-email')
   async sendContractEmail(@Param('id') id:string,@Body() body:Record<string,unknown>,@Req() req:{user?:ScopedActor}) {
     if(Object.keys(body??{}).length)throw new BadRequestException('Contract delivery uses frozen recipients; no address override is permitted');
@@ -226,8 +227,10 @@ export class BillingController {
   @Get('operations/contracts/:id/original')
   async contractOriginal(@Param('id') id:string,@Req() req:{user?:ScopedActor}) {
     const original=await this.contractPdfs.ensureContractOriginal(id,req.user??{});
+    let deliveryEnabled=false;
+    if(hasPermission(req.user,'business.billing.edit'))try{await this.readiness.assertEnabled('send_contract',{documentId:original.documentId});deliveryEnabled=true;}catch(error){if(!(error instanceof ServiceUnavailableException))throw error;}
     const url=`/v1/operations/documents/${original.documentId}/pdf`;
-    return {...original,contentHash:original.sha256,previewUrl:url,downloadUrl:url};
+    return {...original,deliveryEnabled,contentHash:original.sha256,previewUrl:url,downloadUrl:url};
   }
 
   @Roles("owner", "accountant")

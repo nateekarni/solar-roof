@@ -15,6 +15,8 @@ import { originalArtifactHash, frozenRecipients } from '../billing/saved-documen
 import { scaledDecimal, assertRateEditable } from '../billing/site-billing-policy.js';
 
 const ACTIONS: readonly FinancialAction[] = ['calculate','issue','approve_payment','adjust','send'];
+export type FinancialWorkflowAction = FinancialAction|'send_contract'|'submit_payment';
+export type FinancialWorkflowContext = FinancialReadinessContext&{documentId?:string};
 type QueryBoundary = Pick<DatabaseService,'query'>;
 type Approval = {id:string;config_hash:string;approved_at:string|Date;approved_by:string};
 type Configuration = {company:CompanyProfile;banks:CompanyBankAccount[];snapshot:ReturnType<typeof canonicalGlobalFinancialConfiguration>;hash:string;approval:Approval|undefined;items:FinancialReadinessItem[]};
@@ -191,17 +193,34 @@ export class FinancialReadinessService {
     return items;
   }
 
-  async assertEnabled(action:FinancialAction,context:FinancialReadinessContext={},transactionClient?:PoolClient):Promise<{scope:FinancialScope;approvalId:string;policyHash:string}> {
+  async assertEnabled(action:FinancialWorkflowAction,context:FinancialWorkflowContext={},transactionClient?:PoolClient):Promise<{scope:FinancialScope;approvalId:string;policyHash:string}> {
     const local=await localTestReadiness(transactionClient??this.db);
-    if(local&&process.env.FINANCIAL_WRITES_ENABLED==='true'&&local.actions.includes(action))return {scope:'TEST',approvalId:local.accountingApprovalId,policyHash:TEST_FINANCIAL_POLICY_HASH};
+    const publicAction=action==='send_contract'?'send':action==='submit_payment'?'approve_payment':action;
+    if(local&&process.env.FINANCIAL_WRITES_ENABLED==='true'&&local.actions.includes(publicAction))return {scope:'TEST',approvalId:local.accountingApprovalId,policyHash:TEST_FINANCIAL_POLICY_HASH};
     if(!this.db)throw unavailable(['approval.confirmation']);
     const gate=async (client:PoolClient)=>{
       await client.query("SELECT pg_advisory_xact_lock(hashtext('production-financial-configuration'))");
+      if(action==='send_contract'){
+        if(!context.documentId)throw unavailable(['context.document']);
+        const document=(await client.query(`SELECT d.*,a.pdf_bytes,a.sha256 FROM documents d JOIN contracts c ON c.id=d.contract_id AND c.site_id=d.site_id LEFT JOIN document_artifacts a ON a.document_id=d.id WHERE d.id=$1 AND d.document_type='contract' AND d.status='issued'`,[context.documentId])).rows[0];
+        if(!document||document.id!==context.documentId)throw unavailable(['document.artifact']);
+        if(context.siteId&&context.siteId!==document.site_id)throw new BadRequestException('Document and site context disagree');
+        const status=await this.evaluate(client,{role:'owner'},{siteId:document.site_id});
+        const missing=[...status.actions.issue.missing,...(!smtpReady()?['environment.smtp']:[])];
+        try{originalArtifactHash(document);}catch{missing.push('document.artifact');}
+        try{const frozen=frozenRecipients(document);const live=(await this.recipients(client,document.site_id,frozen.map(r=>r.id))).rows;if(live.length!==frozen.length||frozen.some(r=>!live.some(l=>l.id===r.id&&l.email===r.email)))missing.push('document.recipient');}catch{missing.push('document.recipient');}
+        if(missing.length||status.scope!=='PRODUCTION'||!status.approval)throw unavailable([...new Set(missing)]);
+        return {scope:'PRODUCTION' as const,approvalId:status.approval.id,policyHash:(await this.configuration(client)).hash};
+      }
       const status=await this.evaluate(client,{role:'owner'},context);
-      const missing=[...status.actions[action].missing];
+      const missing=[...status.actions[action==='submit_payment'?'issue':action].missing];
       if(!context.siteId&&!context.billingCycleId)missing.push('context.site');
       if(action!=='calculate'&&!context.billingCycleId)missing.push('context.cycle');
       if(action==='calculate'&&!context.billingCycleId&&(!context.periodStart||!context.periodEnd))missing.push('context.period');
+      if(action==='submit_payment'&&context.billingCycleId){
+        const invoice=(await client.query(`SELECT d.*,a.pdf_bytes,a.sha256 FROM documents d LEFT JOIN document_artifacts a ON a.document_id=d.id WHERE d.billing_cycle_id=$1 AND d.document_type='invoice' AND d.is_current AND d.status='issued'`,[context.billingCycleId])).rows[0];
+        try{if(!invoice?.snapshot?.policy)throw Error('invoice');originalArtifactHash(invoice);}catch{missing.push('cycle.invoice');}
+      }
       if(missing.length||status.scope!=='PRODUCTION'||!status.approval)throw unavailable([...new Set(missing)]);
       const config=await this.configuration(client);
       return {scope:'PRODUCTION' as const,approvalId:status.approval.id,policyHash:config.hash};

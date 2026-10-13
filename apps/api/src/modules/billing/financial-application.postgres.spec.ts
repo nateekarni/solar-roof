@@ -8,7 +8,12 @@ import {DatabaseService} from '../../database/database.service.js';
 import {FinancialReadinessService} from '../financial-readiness/financial-readiness.service.js';
 import {FinancialApplicationService} from './financial-application.service.js';
 import {SiteBillingService} from './site-billing.service.js';
+import {SiteBillingController} from './site-billing.controller.js';
+import {BillingController} from './billing.controller.js';
 import {financialDocumentSnapshot} from '../documents/financial-document-pdf.js';
+import {ContractPdfService} from '../documents/contract-pdf.service.js';
+import {routeAllowed} from '../../common/auth/route-policy.js';
+import {authorizedRoute} from '../../common/auth/domain-route-policy.js';
 import nodemailer from 'nodemailer';
 
 // Real database SQL, transactions, readiness and PDF rendering; SMTP is the only external double.
@@ -22,7 +27,7 @@ test('production finance freezes configured policy and artifacts across calculat
  const savedEnv={...process.env};const originalTransport=nodemailer.createTransport;const messages:any[]=[];
  Object.assign(process.env,{NODE_ENV:'production',FINANCIAL_WRITES_ENABLED:'true',SMTP_HOST:'127.0.0.1',SMTP_PORT:'11049',SMTP_FROM:'finance@example.invalid',SMTP_SECURE:'false'});delete process.env.LOCAL_FINANCIAL_FIXTURE_MARKER;
  try{
-  const copy=['users','customers','sites','site_account_assignments','site_billing_settings','devices','payload_profile_revisions','billing_source_bindings','billing_meters','register_mapping_versions','rate_versions','company_profile','company_bank_accounts'];
+  const copy=['users','customers','sites','site_account_assignments','site_billing_settings','devices','payload_profile_revisions','billing_source_bindings','billing_meters','register_mapping_versions','rate_versions','company_profile','company_bank_accounts','contracts'];
   for(const table of [...copy,'billing_cycles','documents','document_artifacts','financial_delivery_outbox','document_number_series','payments','audit_events','financial_readiness_approvals','telemetry_raw']){
    await pool.query(`CREATE TABLE ${schema}.${table} (LIKE public.${table} INCLUDING ALL)`);
    if(copy.includes(table))await pool.query(`INSERT INTO ${schema}.${table} SELECT * FROM public.${table}`);
@@ -48,8 +53,23 @@ test('production finance freezes configured policy and artifacts across calculat
   readiness.assertEnabled=async(action,context={},client)=>{gates.push({action,context,transaction:!!client});return gate(action,context,client);};
   const service=new FinancialApplicationService(db,readiness);
   const siteBilling=new SiteBillingService(db,service);
+  const manualController=new SiteBillingController(siteBilling);
   nodemailer.createTransport=(()=>({sendMail:async(message:any)=>{messages.push(message);return {accepted:[message.to]};},close:()=>{}})) as any;
   let cycle:any,invoice:any;
+  await t.test('ordinary frozen production contracts deliver by persisted site without creating a billing cycle',async()=>{
+   const contract={id:randomUUID()};
+   await pool.query("INSERT INTO contracts(id,site_id,version,start_date,status,company_name,tax_id,tax_address,signer_name,signer_title,payment_terms,recipient_user_ids) VALUES($1,$2,1,'2026-09-01','active','Production customer','1234567890123','Customer address','Authorized signer','Director','30 days',(SELECT recipient_user_ids FROM site_billing_settings WHERE site_id=$2))",[contract.id,siteId]);
+   await pool.query("INSERT INTO rate_versions(id,contract_id,effective_from,rate_type,rate,currency) VALUES($1,$2,'2026-09-01','fixed_kwh',4.3210,'THB')",[randomUUID(),contract.id]);
+   const original=await new ContractPdfService(db).ensureContractOriginal(contract.id,{id:owner.id,role:'owner'});
+   const controller=new BillingController(db,readiness,service,new ContractPdfService(db),siteBilling);
+   const metadata=await controller.contractOriginal(contract.id,{user:{id:owner.id,role:'owner'}});assert.equal(metadata.deliveryEnabled,true);
+   process.env.FINANCIAL_WRITES_ENABLED='false';try{assert.equal((await controller.contractOriginal(contract.id,{user:{id:owner.id,role:'owner'}})).deliveryEnabled,false);}finally{process.env.FINANCIAL_WRITES_ENABLED='true';}
+   assert.equal((await pool.query('SELECT billing_cycle_id FROM documents WHERE id=$1',[original.documentId])).rows[0].billing_cycle_id,null);
+   assert.equal(routeAllowed('owner','POST',`/v1/contracts/${contract.id}/send-email`),true);assert.equal(authorizedRoute({role:'owner'},'POST',`/v1/contracts/${contract.id}/send-email`),true);
+   const before=messages.length;await service.sendContract(contract.id,{id:owner.id,role:'owner'});await service.sendContract(contract.id,{id:owner.id,role:'owner'});
+   assert.ok(messages.length>before);assert.equal((await pool.query('SELECT count(*)::int AS n FROM billing_cycles')).rows[0].n,0);
+   messages.length=0;
+  });
   await t.test('calculate persists production policy and literal configured tax rather than TEST tax',async()=>{
    cycle=(await service.calculate(siteId,'2026-09-01','2026-09-30',owner.id)).cycles[0];
    assert.equal(cycle.financial_scope,'PRODUCTION');assert.equal(cycle.policy_snapshot.taxRate,'10.0000');
@@ -64,10 +84,43 @@ test('production finance freezes configured policy and artifacts across calculat
    const replay=await service.issueInvoice(cycle.id,owner.id);assert.equal(replay.document.id,invoice.id);assert.equal(replay.created,false);
    const artifact=(await pool.query('SELECT * FROM document_artifacts WHERE document_id=$1',[invoice.id])).rows[0];assert.equal(createHash('sha256').update(artifact.pdf_bytes).digest('hex'),invoice.content_hash);
   });
+  await t.test('delivery intent audit failure rolls back sending state before SMTP acceptance',async()=>{
+   await pool.query(`CREATE FUNCTION reject_send_intent() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='finance.send_started' THEN RAISE EXCEPTION 'intent audit failure'; END IF; RETURN NEW; END $$; CREATE TRIGGER task7_reject_intent BEFORE INSERT ON audit_events FOR EACH ROW EXECUTE FUNCTION reject_send_intent();`);
+   const before=messages.length;try{await assert.rejects(service.send(cycle.id,owner.id),/intent audit failure/);assert.equal(messages.length,before);assert.equal((await pool.query('SELECT state FROM financial_delivery_outbox WHERE document_id=$1',[invoice.id])).rows[0].state,'pending');}finally{await pool.query('DROP TRIGGER task7_reject_intent ON audit_events');}
+  });
+  await t.test('delivery completion audit failure rolls back sent state and replay completes without resending',async()=>{
+   await pool.query(`CREATE FUNCTION reject_send_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='finance.send' THEN RAISE EXCEPTION 'completion audit failure'; END IF; RETURN NEW; END $$; CREATE TRIGGER task7_reject_send BEFORE INSERT ON audit_events FOR EACH ROW EXECUTE FUNCTION reject_send_audit();`);
+   const before=messages.length;await assert.rejects(service.send(cycle.id,owner.id),/completion audit failure/);
+   const row=(await pool.query('SELECT state,delivered_user_ids FROM financial_delivery_outbox WHERE document_id=$1',[invoice.id])).rows[0];assert.equal(row.state,'sending');assert.equal(row.delivered_user_ids.length,invoice.snapshot.recipients.length);
+   assert.equal((await pool.query("SELECT count(*)::int AS n FROM audit_events WHERE action='finance.send_started' AND entity_id=(SELECT id FROM financial_delivery_outbox WHERE document_id=$1)",[invoice.id])).rows[0].n,1);
+   await pool.query('DROP TRIGGER task7_reject_send ON audit_events');await service.send(cycle.id,owner.id);assert.equal(messages.length,before+invoice.snapshot.recipients.length);
+   assert.equal((await pool.query('SELECT state FROM financial_delivery_outbox WHERE document_id=$1',[invoice.id])).rows[0].state,'sent');
+   assert.equal((await pool.query("SELECT count(*)::int AS n FROM audit_events WHERE action='finance.send' AND entity_id=(SELECT id FROM financial_delivery_outbox WHERE document_id=$1) AND actor_id=$2",[invoice.id,owner.id])).rows[0].n,1);
+  });
   await t.test('send uses frozen production scope even under TEST environment and replays without new messages',async()=>{
    process.env.NODE_ENV='test';await service.send(cycle.id,owner.id);await service.send(cycle.id,owner.id);process.env.NODE_ENV='production';
    assert.equal(messages.length,invoice.snapshot.recipients.length);assert.ok(messages.every(m=>!m.subject.includes('TEST')&&!m.text.includes('Synthetic')));
    assert.equal(createHash('sha256').update(messages[0].attachments[0].content).digest('hex'),invoice.content_hash);
+  });
+  await t.test('replay repairs a historical sent row with missing outcome audit without resending or changing its initiating actor',async()=>{
+   const outbox=(await pool.query('SELECT id FROM financial_delivery_outbox WHERE document_id=$1',[invoice.id])).rows[0];
+   await pool.query("DELETE FROM audit_events WHERE action='finance.send' AND entity_id=$1",[outbox.id]);
+   const before=messages.length;const other=(await pool.query("SELECT id FROM users WHERE role='accountant' AND status='active' LIMIT 1")).rows[0];assert.ok(other);
+   await service.send(cycle.id,other.id);await service.send(cycle.id,other.id);assert.equal(messages.length,before);
+   const audits=(await pool.query("SELECT actor_id FROM audit_events WHERE action='finance.send' AND entity_id=$1",[outbox.id])).rows;
+   assert.equal(audits.length,1);assert.equal(audits[0].actor_id,owner.id);
+  });
+  await t.test('correction totals sum the individually rounded frozen meter lines exactly',async()=>{
+   const rollback=new Error('intentional rounding fixture rollback');
+   await assert.rejects(db.transaction(async client=>{
+    const original=(await client.query('SELECT * FROM billing_cycles WHERE id=$1 FOR UPDATE',[cycle.id])).rows[0];
+    const lines=[{...original.meter_snapshot[0],consumedKwh:'1.000'},{...original.meter_snapshot[0],consumedKwh:'1.000'}];
+    const changed=(await client.query('UPDATE billing_cycles SET consumed_kwh=2,meter_snapshot=$2 WHERE id=$1 RETURNING *',[cycle.id,JSON.stringify(lines)])).rows[0];
+    const corrected=await service.reviseInvoiceInTransaction(client,changed,'0.0050',owner.id);
+    assert.deepEqual(corrected.snapshot.cycle.meter_snapshot.map((line:any)=>line.subtotal),['0.01','0.01']);
+    assert.equal(Number(corrected.snapshot.cycle.subtotal),0.02);assert.equal(Number(corrected.snapshot.cycle.simulated_tax),0);assert.equal(Number(corrected.amount),0.02);
+    throw rollback;
+   }),error=>error===rollback);
   });
   await t.test('revision supersedes original and freezes policy with a new artifact',async()=>{
    invoice=await db.transaction(async client=>service.reviseInvoiceInTransaction(client,(await client.query('SELECT * FROM billing_cycles WHERE id=$1 FOR UPDATE',[cycle.id])).rows[0],'5.0000',owner.id));
@@ -84,7 +137,12 @@ test('production finance freezes configured policy and artifacts across calculat
   await t.test('approved full transfer creates one receipt from frozen invoice identity and survives replay',async()=>{
    const original=JSON.stringify(invoice.snapshot),originalHash=invoice.content_hash;
    await pool.query("UPDATE company_profile SET company_name='Replacement issuer',signatory_name='Replacement signer'");await readiness.confirm({id:owner.id,role:'owner'});
-   const recipient=invoice.snapshot.recipients[0];const payment=await service.submitPayment(cycle.id,{amount:'5500.00',evidenceKey:'task7-full-'+schema},recipient.id);
+   const recipient=invoice.snapshot.recipients[0];
+   process.env.FINANCIAL_WRITES_ENABLED='false';try{await assert.rejects(service.submitPayment(cycle.id,{amount:'5500.00',evidenceKey:'task7-blocked-'+schema},recipient.id),error=>(error as any).getStatus()===503);}finally{process.env.FINANCIAL_WRITES_ENABLED='true';}
+   assert.equal((await pool.query('SELECT count(*)::int AS n FROM payments')).rows[0].n,0);assert.equal((await pool.query('SELECT status FROM billing_cycles WHERE id=$1',[cycle.id])).rows[0].status,'approved');
+   await pool.query("UPDATE company_profile SET company_name='Unconfirmed issuer'");try{await assert.rejects(service.submitPayment(cycle.id,{amount:'5500.00',evidenceKey:'task7-stale-'+schema},recipient.id),error=>(error as any).getStatus()===503);}finally{await pool.query("UPDATE company_profile SET company_name='Replacement issuer'");}
+   assert.equal((await pool.query('SELECT count(*)::int AS n FROM payments')).rows[0].n,0);
+   const payment=await service.submitPayment(cycle.id,{amount:'5500.00',evidenceKey:'task7-full-'+schema},recipient.id);
    const result=await service.verifyPayment(cycle.id,'approved',undefined,owner.id,{paymentId:payment.paymentId,verifiedAmount:'5500.00',verifiedTransferAt:'2026-10-10T01:00:00Z'});
    assert.equal(result.billingCycleStatus,'paid');assert.equal(result.receipt.snapshot.policy.scope,'PRODUCTION');assert.equal(result.receipt.snapshot.logoDataUri,logo);assert.equal(result.receipt.snapshot.invoiceNumber,invoice.document_number);
    assert.equal(result.receipt.snapshot.company.company_name,'Production issuer');assert.equal(result.receipt.snapshot.company.signatory_name,'Authorized signer');
@@ -94,9 +152,12 @@ test('production finance freezes configured policy and artifacts across calculat
   await t.test('manual production invoice validates its authoritative cycle atomically and idempotently',async()=>{
    await pool.query('UPDATE site_billing_settings SET tax_rate=5.5,prices_include_tax=true,version=version+1 WHERE site_id=$1',[siteId]);
    const input={siteId,lines:[{description:'Maintenance',quantity:'1',unitPrice:'105.5000'}],idempotencyKey:'task7-manual-'+schema};
-   const first=await siteBilling.manual(input,{id:owner.id,role:'owner'}),replay=await siteBilling.manual(input,{id:owner.id,role:'owner'});
+   const {idempotencyKey,...unkeyed}=input;await assert.rejects(manualController.manual(unkeyed,{user:{id:owner.id,role:'owner'}}),/idempotency key/i);
+   const first=await manualController.manual(input,{user:{id:owner.id,role:'owner'}}),replay=await manualController.manual(input,{user:{id:owner.id,role:'owner'}});
    assert.equal(first.cycle.status,'approved');
    assert.equal(Number(first.cycle.subtotal),100);assert.equal(Number(first.cycle.simulated_tax),5.5);assert.equal(Number(first.cycle.amount),105.5);assert.equal(first.document.snapshot.policy.pricesIncludeTax,true);assert.equal(first.document.id,replay.document.id);
+   const second=await manualController.manual({...input,idempotencyKey:'second-identical-'+schema},{user:{id:owner.id,role:'owner'}});assert.notEqual(second.cycle.id,first.cycle.id);assert.notEqual(second.document.id,first.document.id);
+   await assert.rejects(manualController.manual({...input,lines:[{description:'Different work',quantity:'1',unitPrice:'105.5000'}]},{user:{id:owner.id,role:'owner'}}),/already used/);
    await pool.query('UPDATE site_billing_settings SET tax_confirmed=false WHERE site_id=$1',[siteId]);
    const before=(await pool.query('SELECT count(*)::int AS n FROM billing_cycles')).rows[0].n;
    await assert.rejects(service.manualInvoice({...input,idempotencyKey:'blocked-'+schema},owner.id),/tax|ready/i);
@@ -106,10 +167,11 @@ test('production finance freezes configured policy and artifacts across calculat
    assert.equal((await pool.query('SELECT count(*)::int AS n FROM billing_cycles')).rows[0].n,before,'The new draft cycle rolls back with its failed transaction-aware readiness gate');
   });
   const count=(await pool.query('SELECT (SELECT count(*) FROM billing_cycles)::int AS cycles,(SELECT count(*) FROM documents)::int AS documents,(SELECT count(*) FROM document_artifacts)::int AS artifacts,(SELECT count(*) FROM financial_delivery_outbox)::int AS outboxes,(SELECT count(*) FROM audit_events WHERE actor_id=$1)::int AS audits',[owner.id])).rows[0];
-  assert.equal(count.cycles,2);assert.equal(count.documents,4);assert.equal(count.artifacts,4);assert.equal(count.outboxes,4);assert.ok(count.audits>=7);t.diagnostic(JSON.stringify({schema,...count}));
+  assert.equal(count.cycles,3);assert.equal(count.documents,6);assert.equal(count.artifacts,6);assert.equal(count.outboxes,6);assert.ok(count.audits>=7);t.diagnostic(JSON.stringify({schema,...count}));
   assert.ok(gates.filter(g=>g.action==='calculate').every(g=>g.context.siteId===siteId&&g.context.periodStart==='2026-09-01'&&g.context.periodEnd==='2026-09-30'&&g.transaction));
   for(const action of ['issue','approve_payment','adjust','send'])assert.ok(gates.filter(g=>g.action===action).every(g=>typeof g.context.billingCycleId==='string'));
   assert.ok(gates.some(g=>g.action==='approve_payment'&&g.transaction),'Payment mutation must gate the same transaction to prevent approval revocation races');
-  assert.equal((await pool.query("SELECT count(*)::int AS n FROM audit_events WHERE action='finance.issue_invoice' AND actor_id=$1",[owner.id])).rows[0].n,3);
+  assert.ok(gates.filter(g=>g.action==='submit_payment').every(g=>g.transaction&&g.context.billingCycleId===cycle.id&&g.context.siteId===siteId));
+  assert.equal((await pool.query("SELECT count(*)::int AS n FROM audit_events WHERE action='finance.issue_invoice' AND actor_id=$1",[owner.id])).rows[0].n,4);
  }finally{nodemailer.createTransport=originalTransport;for(const k of Object.keys(process.env))if(!(k in savedEnv))delete process.env[k];Object.assign(process.env,savedEnv);await pool.end();await admin.query(`DROP SCHEMA ${schema} CASCADE`);await admin.end();}
 });

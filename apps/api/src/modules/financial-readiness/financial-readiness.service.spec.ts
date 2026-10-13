@@ -60,6 +60,14 @@ test('missing uploaded logo, signatory and default bank produces safe Owner chec
   assert.ok(result.items.every(i=>Object.keys(i).every(key=>['id','ready','responsibility','destination','siteId'].includes(key))));
   assert.ok(!JSON.stringify(result).includes('1234567890123'));
 }));
+test('contract delivery gates its persisted original and site without relaxing invoice cycle issuance',()=>environment(async()=>{
+ const f=fixture();f.approve();const bytes=Buffer.from('%PDF-1.7 saved contract');const hash=(await import('node:crypto')).createHash('sha256').update(bytes).digest('hex');
+ f.state.documents=[{id:'contract-doc',site_id:'site-a',document_type:'contract',status:'issued',snapshot:{deliveryRecipients:[{id:'recipient-a',email:'customer@example.com'}]},pdf_bytes:bytes,sha256:hash,content_hash:hash}];
+ assert.equal((await f.service.assertEnabled('send_contract' as any,{documentId:'contract-doc',siteId:'site-a'} as any)).scope,'PRODUCTION');
+ await assert.rejects(f.service.assertEnabled('issue',{siteId:'site-a'}),error=>(error as any).getResponse().missing.includes('context.cycle'));
+ await assert.rejects(f.service.assertEnabled('send_contract' as any,{documentId:'contract-doc',siteId:'site-b'} as any),/context|site/i);
+ f.state.company.companyName='Changed issuer';await assert.rejects(f.service.assertEnabled('send_contract' as any,{documentId:'contract-doc',siteId:'site-a'} as any),error=>(error as any).getStatus()===503);
+},{SMTP_HOST:'smtp.example.invalid',SMTP_PORT:'587',SMTP_FROM:'billing@example.com'}));
 test('complete global data still requires matching persisted approval',()=>environment(async()=>{
   const f=fixture();const pending=await f.service.status(owner,{siteId:'site-a'});
   assert.deepEqual(pending.actions.calculate.missing,['approval.confirmation']);assert.equal(pending.scope,null);

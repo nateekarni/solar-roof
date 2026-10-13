@@ -46,8 +46,8 @@ test('contract delivery requires author, frozen verified recipients and saved or
  }finally{f.restore();}
 });
 test('contract mail route follows author policy',()=>{
- for(const role of ['owner'])assert.equal(routeAllowed(role,'POST','/v1/contracts/id/send-email'),false);
- for(const role of ['admin','accountant','operator','customer_user'])assert.equal(routeAllowed(role,'POST','/v1/contracts/id/send-email'),false);
+ for(const role of ['owner','accountant'])assert.equal(routeAllowed(role,'POST','/v1/contracts/id/send-email'),true);
+ for(const role of ['admin','operator','customer_user'])assert.equal(routeAllowed(role,'POST','/v1/contracts/id/send-email'),false);
 });
 test('revoked or cross-organization frozen account prevents mail; no ad-hoc address is substituted',async()=>{
  const f=fixture('contract');const query=(f.service as any).db.pool.connect;

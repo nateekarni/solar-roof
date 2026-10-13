@@ -27,6 +27,7 @@ export function routeAllowed(role: string, method: string, rawPath: string): boo
   const path = rawPath.split("?")[0]!.replace(/\/$/, "");
   if (/^\/v1\/settings\/finance-readiness(?:\/|$)/.test(path)) return role==='owner' && (path==='/v1/settings/finance-readiness'&&['GET','HEAD'].includes(method) || path==='/v1/settings/finance-readiness/confirm'&&method==='POST');
   if (isOwnerCompanyMutation(method,path)) return role === 'owner';
+  if(/^\/v1\/contracts\/[^/]+\/send-email$/.test(path)&&method==='POST')return ['owner','accountant'].includes(role);
   if(/^\/v1\/contracts(?:\/|$)/.test(path)&&!['GET','HEAD'].includes(method))return false;
   if(role==='owner'&&/^\/v1\/operations\/sites(?:\/|$)/.test(path))return ['GET','HEAD'].includes(method);
   if(/^\/v1\/sites\/[^/]+\/billing-settings$/.test(path))return ['owner','accountant'].includes(role)&&['GET','HEAD','PUT'].includes(method);

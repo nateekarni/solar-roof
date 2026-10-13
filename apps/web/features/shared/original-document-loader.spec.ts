@@ -3,6 +3,11 @@ const pdf=new Blob(['%PDF-1.7\noriginal'],{type:'application/pdf'});const hash=c
 test('loads scoped persisted PDF and preserves exact bytes',async()=>{let path='';const result=await verifiedOriginalPdf(id,hash,async value=>{path=value;return pdf;});assert.equal(path,`/v1/operations/documents/${id}/pdf`);assert.equal(result,pdf);});
 test('rejects invalid references, error HTML and changed issued bytes',async()=>{await assert.rejects(verifiedOriginalPdf('../external',hash,async()=>pdf));await assert.rejects(verifiedOriginalPdf(id,hash,async()=>new Blob(['error'],{type:'text/html'})));await assert.rejects(verifiedOriginalPdf(id,'0'.repeat(64),async()=>pdf),/integrity/);});
 import {originalDocumentReference} from './original-document-loader';
+test('saved contract reference exposes authoritative per-original production delivery readiness',async()=>{
+ const ref=await originalDocumentReference({type:'contract',id},async()=>({documentId:id,contentHash:hash,documentNumber:'PPA261000001',deliveryAvailable:true,deliveryEnabled:true}));
+ assert.equal(ref.deliveryEnabled,true);assert.equal(ref.deliveryAvailable,true);
+ const blocked=await originalDocumentReference({type:'contract',id},async()=>({documentId:id,contentHash:hash,documentNumber:'PPA261000001',deliveryAvailable:true,deliveryEnabled:false}));assert.equal(blocked.deliveryEnabled,false);
+});
 test('original reference requires authoritative number and never substitutes routing id',async()=>{
  const ref=await originalDocumentReference({type:'contract',id},async()=>({documentId:id,contentHash:hash,documentNumber:'PPA261000001'}));assert.equal(ref.number,'PPA261000001');
  await assert.rejects(originalDocumentReference({type:'contract',id,documentNumber:'invented'},async()=>({documentId:id,contentHash:hash})),/number/i);

@@ -8,14 +8,14 @@ export async function verifiedOriginalPdf(id:string,hash:string,getBlob:(path:st
  return blob;
 }
 export interface OriginalDocumentSource {type:string;id?:string;documentId?:string;documentNumber?:string;}
-export interface OriginalDocumentReference {id:string;hash:string;number:string;deliveryAvailable?:boolean;}
+export interface OriginalDocumentReference {id:string;hash:string;number:string;deliveryAvailable?:boolean;deliveryEnabled?:boolean;}
 export async function originalDocumentReference(source:OriginalDocumentSource,get:(path:string)=>Promise<any>):Promise<OriginalDocumentReference> {
  const contract=source.type==='contract';const id=contract?source.id:source.documentId;
  if(!id)throw new Error('ยังไม่มีเอกสารที่ออกและบันทึกไว้สำหรับรายการนี้ / No issued document is available for this record.');
  if(!/^[0-9a-f-]{36}$/i.test(id))throw new Error('เอกสารต้นฉบับไม่ถูกต้อง / Invalid original document reference');
  const row=await get(contract?`/v1/operations/contracts/${id}/original`:`/v1/operations/documents/${id}`);
  if(row.previewUnavailableReason)throw new Error(row.previewUnavailableReason+' / Verified original unavailable. Preview, printing and download are unavailable.');
- const reference={id:contract?row.documentId:row.id,hash:row.contentHash,number:row.documentNumber,...(contract?{deliveryAvailable:row.deliveryAvailable===true}:{})};
+ const reference={id:contract?row.documentId:row.id,hash:row.contentHash,number:row.documentNumber,...(contract?{deliveryAvailable:row.deliveryAvailable===true,deliveryEnabled:row.deliveryEnabled===true}:{})};
  if(typeof reference.number!=='string'||!reference.number.trim())throw new Error('Stored document number unavailable');
  if(!/^[0-9a-f-]{36}$/i.test(reference.id??'')||!/^[0-9a-f]{64}$/i.test(reference.hash??''))throw new Error('ไม่มีเอกสารต้นฉบับที่ตรวจสอบแล้ว / Invalid original document reference');
  return reference;

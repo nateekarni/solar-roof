@@ -102,8 +102,9 @@ export class FinancialApplicationService {
   const config=(await client.query('SELECT * FROM site_billing_settings WHERE site_id=$1',[cycle.site_id])).rows[0];if(!config?.tax_confirmed)throw new ConflictException('Confirmed site tax required');
   const policy=financialPolicySnapshot(config,evidence.scope),hash=evidence.scope==='TEST'?TEST_FINANCIAL_POLICY_HASH:financialPolicyHash(policy);
   if(scaledDecimal(cycle.rate,4)===scaledDecimal(rate,4)&&cycle.policy_hash===hash&&cycle.billing_settings_version===config.version)return old;
-  const energy=scaledDecimal(cycle.consumed_kwh,3),price=scaledDecimal(rate,4);const gross=decimal((energy*price+50000n)/100000n,2);const totals=configuredTotals(gross,config.tax_rate,config.prices_include_tax);
-  const snapshots=(cycle.meter_snapshot??[]).map((line:any)=>{const quantity=scaledDecimal(line.consumedKwh,3);return {...line,rate,subtotal:decimal((quantity*price+50000n)/100000n,2)};});
+  const snapshots=(cycle.meter_snapshot??[]).map((line:any)=>({...line,...energyCharge(line.consumedKwh,rate)}));
+  const gross=decimal(snapshots.reduce((sum:bigint,line:any)=>sum+scaledDecimal(line.subtotal,2),0n),2);
+  const totals=policy.scope==='PRODUCTION'?financialTotals(gross,policy):configuredTotals(gross,config.tax_rate,config.prices_include_tax);
   await client.query("UPDATE documents SET status='superseded',is_current=false WHERE id=$1",[old.id]);
   const updated=(await client.query('UPDATE billing_cycles SET rate=$2,amount=$3,subtotal=$4,simulated_tax=$5,meter_snapshot=$6,billing_settings_version=$7,policy_snapshot=$8,policy_hash=$9,financial_scope=$10 WHERE id=$1 RETURNING *',[cycle.id,rate,totals.total,totals.subtotal,totals.tax,JSON.stringify(snapshots),config.version,JSON.stringify(policy),hash,policy.scope])).rows[0];
   const document=await this.issue(client,{...updated,due_date:old.snapshot.dueDate,document_revision:old.revision+1,supersedes_document_id:old.id},'invoice',actorId);
@@ -111,7 +112,7 @@ export class FinancialApplicationService {
  }
  async manualInvoice(input:{siteId:string;lines:ManualLine[];note?:string;dueDate?:string;idempotencyKey?:string},actorId?:string){
   if(input.dueDate&&!validDate(input.dueDate))throw new BadRequestException('Valid due date required');
-  if(input.idempotencyKey!==undefined&&(!input.idempotencyKey.trim()||input.idempotencyKey.length>160))throw new BadRequestException('Valid idempotency key required');
+  if(typeof input.idempotencyKey!=='string'||!input.idempotencyKey.trim()||input.idempotencyKey.length>160)throw new BadRequestException('Explicit stable idempotency key required');
   const result=await this.db.transaction(async client=>{
    await client.query("SELECT pg_advisory_xact_lock(hashtext('production-financial-configuration'))");
    await client.query('SELECT id FROM sites WHERE id=$1 FOR UPDATE',[input.siteId]);
@@ -121,7 +122,7 @@ export class FinancialApplicationService {
    const policy=financialPolicySnapshot(cfg,readiness.scope),hash=policy.scope==='TEST'?TEST_FINANCIAL_POLICY_HASH:financialPolicyHash(policy);
    const day=(await client.query("SELECT to_char(now() AT TIME ZONE 'Asia/Bangkok','YYYY-MM-DD') AS day")).rows[0].day;
    const payload={lines:totals.lines,note:input.note?.trim()??null,dueDate:input.dueDate??null};
-   const key=input.idempotencyKey?.trim()??financialPolicyHash({day,...payload});
+   const key=input.idempotencyKey!.trim();
    const digits=createHash('sha256').update(`manual-invoice:${input.siteId}:${key}`).digest('hex').slice(0,32);
    const id=digits.replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/,'$1-$2-$3-$4-$5');
    let cycle=(await client.query('SELECT *,to_char(due_date,\'YYYY-MM-DD\') AS due FROM billing_cycles WHERE id=$1 FOR UPDATE',[id])).rows[0];
@@ -140,8 +141,10 @@ export class FinancialApplicationService {
   if(!body.slipUrl&&!body.evidenceKey)throw new BadRequestException('Transfer evidence required');
   const paidAt=body.paidAt?new Date(body.paidAt):null;if(paidAt&&!Number.isFinite(paidAt.getTime()))throw new BadRequestException('Valid transfer date required');
   return this.db.transaction(async client=>{
+   await client.query("SELECT pg_advisory_xact_lock(hashtext('production-financial-configuration'))");
    const cycle=(await client.query('SELECT * FROM billing_cycles WHERE id=$1 FOR UPDATE',[id])).rows[0];if(!cycle)throw new NotFoundException('Billing cycle not found');
-   validateFinancialPolicy(cycle);if(!['approved','pending_verification'].includes(cycle.status))throw new ConflictException('Issued unpaid invoice required');
+   const policy=validateFinancialPolicy(cycle);if(policy.scope==='PRODUCTION')await this.readiness.assertEnabled('submit_payment',{billingCycleId:id,siteId:cycle.site_id},client);
+   if(!['approved','pending_verification'].includes(cycle.status))throw new ConflictException('Issued unpaid invoice required');
    const invoice=(await client.query("SELECT id FROM documents WHERE billing_cycle_id=$1 AND document_type='invoice' AND status='issued'",[id])).rows[0];if(!invoice)throw new ConflictException('Issued invoice required');
    const duplicate=await client.query(`SELECT 1 FROM payments WHERE submitted_by IS NOT NULL AND status IN('pending_verification','paid') AND (payment_evidence_sha256(evidence_key)=payment_evidence_sha256($1::text) OR payment_evidence_sha256(slip_url)=payment_evidence_sha256($2::text))`,[body.evidenceKey??null,body.slipUrl??null]);if(duplicate.rowCount)throw new ConflictException('Transfer evidence already submitted');
    const paymentId=randomUUID();await client.query(`INSERT INTO payments(id,billing_cycle_id,amount,status,paid_at,slip_url,evidence_key,note,submitted_by,payer_name,payment_method,origin_bank,origin_account,declared_amount,declared_transfer_at) VALUES($1,$2,$3,'pending_verification',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,[paymentId,id,null,null,body.slipUrl??null,body.evidenceKey??null,body.note??null,actorId,metadata.payerName??null,metadata.paymentMethod??null,metadata.originBank??null,metadata.originAccount??null,amount,paidAt]);
@@ -190,7 +193,7 @@ export class FinancialApplicationService {
   const lock=await this.db.pool.connect();try{
    if(!(await lock.query('SELECT pg_try_advisory_lock(hashtextextended($1,0)) AS locked',[`financial-mail:${id}`])).rows[0].locked)return {pending:true};
    const outboxes=(await lock.query(`SELECT o.*,d.document_number,d.document_type,d.site_id,d.contract_id,d.snapshot,d.content_hash,a.pdf_bytes,a.sha256 FROM financial_delivery_outbox o JOIN documents d ON d.id=o.document_id JOIN document_artifacts a ON a.document_id=d.id WHERE d.billing_cycle_id=$1 AND d.status='issued' ORDER BY d.created_at`,[id])).rows;
-   const pending=outboxes.some(job=>job.state!=='sent');await deliverSavedArtifacts(lock,outboxes);if(pending)await this.audit(lock,actorId,'finance.send',id,{documentIds:outboxes.map(job=>job.document_id)});return {success:true};
+   await deliverSavedArtifacts(lock,outboxes,actorId);return {success:true};
   }finally{await lock.query('SELECT pg_advisory_unlock(hashtextextended($1,0))',[`financial-mail:${id}`]);lock.release();}
  }
  async sendContract(id:string,actor:ScopePrincipal){
@@ -203,13 +206,12 @@ export class FinancialApplicationService {
    if(!(await lock.query('SELECT pg_try_advisory_lock(hashtextextended($1,0)) AS locked',[key])).rows[0].locked)return {pending:true};
    const original=(await lock.query(`SELECT d.id AS document_id,d.document_type,d.contract_id,d.site_id,d.billing_cycle_id,d.document_number,d.snapshot,d.content_hash,a.pdf_bytes,a.sha256 FROM documents d JOIN document_artifacts a ON a.document_id=d.id WHERE d.contract_id=$1 AND d.document_type='contract' AND d.status='issued'`,[id])).rows[0];
    if(!original)throw new ConflictException('กรุณาเปิดเอกสารต้นฉบับสัญญาก่อนส่ง / Open the saved contract original before sending');
-   const evidence=await this.readiness.assertEnabled('send',original.billing_cycle_id?{billingCycleId:original.billing_cycle_id}:{});
-   if(evidence?.scope==='PRODUCTION'&&!original.billing_cycle_id)throw new ConflictException('Saved document requires an authoritative billing cycle before production delivery');
+   const evidence=await this.readiness.assertEnabled('send_contract',{documentId:original.document_id,siteId:original.site_id});
    if(evidence?.scope==='TEST'&&!localFinancialBinding())throw new ConflictException('Local mail capture binding required');
    originalArtifactHash(original);frozenRecipients(original);
    await lock.query('INSERT INTO financial_delivery_outbox(id,document_id,artifact_sha256) VALUES($1,$2,$3) ON CONFLICT(document_id) DO NOTHING',[randomUUID(),original.document_id,original.sha256]);
    const jobs=(await lock.query(`SELECT o.*,d.document_number,d.document_type,d.site_id,d.contract_id,d.snapshot,d.content_hash,a.pdf_bytes,a.sha256 FROM financial_delivery_outbox o JOIN documents d ON d.id=o.document_id JOIN document_artifacts a ON a.document_id=d.id WHERE d.id=$1 AND d.status='issued'`,[original.document_id])).rows;
-   await deliverSavedArtifacts(lock,jobs);return {success:true,documentId:original.document_id,contentHash:original.sha256};
+   await deliverSavedArtifacts(lock,jobs,actor.id);return {success:true,documentId:original.document_id,contentHash:original.sha256};
   }finally{await lock.query('SELECT pg_advisory_unlock(hashtextextended($1,0))',[key]);lock.release();}
  }
  async monthly(now=new Date()) {
