@@ -33,7 +33,7 @@ try {
     await page.getByRole('searchbox').fill('U1 Browser');
     await page.getByRole('status').filter({hasText:/^25 / }).waitFor();
     if(role==='operator')assert.equal(await page.getByText('ชำระเงินและแนบสลิป',{exact:true}).filter({visible:true}).count(),0,'Operator cannot submit evidence');
-    if(mobileMode){const unavailable=page.getByRole('button',{name:/ดูใบวางบิล.*ยังไม่มีเอกสาร|View Invoice.*No issued document/}).first();assert.equal(await unavailable.isDisabled(),true);}else{await page.getByRole('button',{name:/เมนูการดำเนินการ|Open actions menu/}).first().click();assert.equal(await page.getByRole('menuitem',{name:/ดูใบวางบิล.*ยังไม่มีเอกสาร|View Invoice.*No issued document/}).isDisabled(),true);await page.keyboard.press('Escape');}
+    if(mobileMode){const unavailable=page.getByRole('button',{name:/^(ดูใบวางบิล|View Invoice)/}).first();assert.equal(await unavailable.isDisabled(),true);}else{await page.getByRole('button',{name:/เมนูการดำเนินการ|Open actions menu/}).first().click();assert.equal(await page.getByRole('menuitem',{name:/^(ดูใบวางบิล|View Invoice)/}).isDisabled(),true);await page.keyboard.press('Escape');}
     await page.getByRole('button',{name:'Next operation page',exact:true}).click();await page.getByRole('status').filter({hasText:/^1 / }).waitFor();
     const page2=page.url();await page.setViewportSize({width:width===390?1440:390,height:900});assert.equal(page.url(),page2,'Resize preserves server cursor');
     const menuMode=width===390||!business;

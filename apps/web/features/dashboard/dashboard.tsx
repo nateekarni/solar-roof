@@ -71,19 +71,20 @@ export async function Dashboard({
       }>
     | undefined;
 } = {}) {
-  const user = await requirePageAccess("/");
-  const cookieStore = await cookies();
+  const resolvedParams = searchParams ? await searchParams : undefined;
+  const [user,cookieStore,data] = await Promise.all([
+    requirePageAccess("/"),
+    cookies(),
+    getDashboardData(
+      resolvedParams?.start_date,
+      resolvedParams?.end_date,
+      resolvedParams?.month,
+      resolvedParams?.year,
+      resolvedParams?.site_id,
+    ),
+  ]);
   const locale = (cookieStore.get("locale")?.value as Locale) || "th";
   const t = createTranslator(locale);
-
-  const resolvedParams = searchParams ? await searchParams : undefined;
-  const data = await getDashboardData(
-    resolvedParams?.start_date,
-    resolvedParams?.end_date,
-    resolvedParams?.month,
-    resolvedParams?.year,
-    resolvedParams?.site_id,
-  );
 
   if (user.role === "customer_user") {
     const parts = new Intl.DateTimeFormat("en", {timeZone:"Asia/Bangkok",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date());
