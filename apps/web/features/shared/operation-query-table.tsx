@@ -14,14 +14,13 @@ import {ListPeriodPicker} from './list-period-picker';
 import { SearchInput } from '../../components/ui/search-input';
 import { OperationTable, type OperationTableProps } from './operation-table';
 import { useLocale } from '../../providers/locale-provider';
-
-const queryKeys=['search','sort','direction','from','to','limit','cursor','siteId','collectionStatus','status','severity','type','role','entityType','channel','category','format'];
+import { operationQueryKeys } from './operation-request-query';
 
 export function OperationQueryTable({ initial, ...props }: Omit<OperationTableProps,'rows'|'columns'> & {initial:OperationPage<OperationRow>}) {
   const th=useLocale()==='th';
   const searchParams=useSearchParams();
   const {setQuery}=useOperationQuery();
-  const query=React.useMemo(()=>{const q=new URLSearchParams();for(const key of queryKeys){const value=searchParams.get(key);if(value!==null)q.set(key,value);}return q.toString();},[searchParams]);
+  const query=React.useMemo(()=>{const q=new URLSearchParams();for(const key of operationQueryKeys){const value=searchParams.get(key);if(value!==null)q.set(key,value);}return q.toString();},[searchParams]);
   const [data,setData]=React.useState(initial),[summary,setSummary]=React.useState(props.summary);
   const [search,setSearch]=React.useState(searchParams.get('search')??'');
   const [loading,setLoading]=React.useState(false),[error,setError]=React.useState('');

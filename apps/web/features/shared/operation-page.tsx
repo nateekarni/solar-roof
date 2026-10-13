@@ -9,6 +9,10 @@ import { OperationQueryTable } from "./operation-query-table";
 import { OperationAutoRefresh } from "./operation-auto-refresh";
 import { getSessionUser } from "../../lib/session-user";
 import { FinancialDocumentIntro } from "./financial-document-intro";
+import {
+  operationRequestQueries,
+  type OperationSearchParams,
+} from "./operation-request-query";
 
 type OperationResponse = OperationPageData<OperationRow>;
 
@@ -23,14 +27,18 @@ type SummaryResponse = SummaryItem[];
 
 async function getOperationData(
   resource: string,
+  searchParams: OperationSearchParams,
 ): Promise<{ data: OperationResponse; summary: SummaryResponse }> {
   const baseUrl = getApiBaseUrl();
+  const query = operationRequestQueries(searchParams);
+  const rowsUrl = `${baseUrl}/v1/operations/${resource}${query.rows ? `?${query.rows}` : ""}`;
+  const summaryUrl = `${baseUrl}/v1/operations/${resource}/summary${query.summary ? `?${query.summary}` : ""}`;
 
   const fetchOptions: RequestInit = { cache: "no-store" };
 
   const [rowsRes, summaryRes] = await Promise.all([
-    serverFetch(`${baseUrl}/v1/operations/${resource}`, fetchOptions),
-    serverFetch(`${baseUrl}/v1/operations/${resource}/summary`, fetchOptions),
+    serverFetch(rowsUrl, fetchOptions),
+    serverFetch(summaryUrl, fetchOptions),
   ]);
 
   if (rowsRes.status === 401 || summaryRes.status === 401) {
@@ -57,6 +65,7 @@ export async function OperationPage({
   action,
   headerActions,
   beforeTable,
+  searchParams,
 }: {
   resource: string;
   eyebrow?: string;
@@ -65,6 +74,7 @@ export async function OperationPage({
   action?: string | undefined;
   headerActions?: ReactNode;
   beforeTable?: ReactNode;
+  searchParams?: Promise<OperationSearchParams>;
 }) {
   const user = await getSessionUser();
   const businessFinancial = ["owner","customer_user"].includes(user.role) && ["billing","contracts","receipts"].includes(resource);
@@ -82,7 +92,10 @@ export async function OperationPage({
   const displayAction =
     action !== undefined ? action : t(`operations.${resource}.action`);
 
-  const { data, summary } = await getOperationData(resource);
+  const { data, summary } = await getOperationData(
+    resource,
+    searchParams ? await searchParams : {},
+  );
   const isRealtime = resource === "alerts" || resource === "notifications" || resource === "sites";
 
   return (

@@ -1,10 +1,11 @@
 import { OrganizationDocuments } from '../../../features/organization/organization-documents';
 import { getSessionUser } from '../../../lib/session-user';
 import { OperationPage } from "../../../features/shared/operation-page";
+import type { OperationSearchParams } from '../../../features/shared/operation-request-query';
 
 export const dynamic = "force-dynamic";
 
-export default async function ReceiptsPage() {
+export default async function ReceiptsPage({searchParams}:{searchParams:Promise<OperationSearchParams>}) {
   const user=await getSessionUser(); if(user.role === "customer_user") return <OrganizationDocuments kind="receipt"/>;
   return (
     <OperationPage
@@ -13,6 +14,7 @@ export default async function ReceiptsPage() {
       title="ใบเสร็จรับเงิน"
       description="รายการใบเสร็จรับเงินและใบกำกับภาษีที่ออกอัตโนมัติเมื่อสถานะบิลเป็นชำระแล้ว"
       action=""
+      searchParams={searchParams}
     />
   );
 }
