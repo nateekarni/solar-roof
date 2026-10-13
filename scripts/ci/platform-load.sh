@@ -30,4 +30,5 @@ fi
 stack_created=true
 "${compose[@]}" up -d --wait --wait-timeout 240
 # Run from repo root so artifacts and Docker relative paths remain consistent.
-node node_modules/tsx/dist/cli.mjs --tsconfig apps/api/tsconfig.json apps/api/test/performance/mixed-load.ts
+# Only the fixture launcher is test-mode; Compose services retain their production environment.
+NODE_ENV=test node node_modules/tsx/dist/cli.mjs --tsconfig apps/api/tsconfig.json apps/api/test/performance/mixed-load.ts

@@ -18,8 +18,8 @@ try {
  assert.equal(raw.rows.length,1);assert.equal(Number(raw.rows[0].active_power_w),1200,'Durable telemetry survives restart');
  const gateways=await fetch(base+'/v1/gateways',{headers:{Authorization:`Bearer ${accessToken}`}});
  assert.equal(gateways.status,200);assert.deepEqual((await gateways.json()).map((row:{siteId:string})=>row.siteId),[fixture.siteId],'Live technical grant survives restart');
- for(const path of ['/v1/reports','/v1/jobs/'+fixture.device,'/v1/jobs/'+fixture.device+'/download','/v1/history/options']) {
-  const denied=await fetch(base+path,{headers:{Authorization:`Bearer ${accessToken}`}});assert.equal(denied.status,403,'Legacy endpoint remains disabled after restart');
+ for(const [method,path] of [['POST','/v1/reports'],['GET','/v1/jobs/'+fixture.device],['GET','/v1/jobs/'+fixture.device+'/download'],['GET','/v1/history/options']]) {
+  const denied=await fetch(base+path,{method,headers:{Authorization:`Bearer ${accessToken}`}});assert.equal(denied.status,403,`${method} ${path} remains disabled after restart`);
  }
 await broker.subscribeAsync(`energy/${fixture.siteName}/response`);
  const ack=new Promise<void>((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('No replay ACK after API restart')),10000);broker.on('message',(_topic,message)=>{const data=JSON.parse(message.toString());if(data.ingestionId!==fixture.ingestionId)return;clearTimeout(timer);try{assert.equal(data.duplicate,true);resolve();}catch(e){reject(e);}});});

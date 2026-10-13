@@ -68,7 +68,7 @@ try {
     await expectDeniedPage(rolePage,'/gateways');
    }
    await expectDeniedPage(rolePage,'/reports');
-   const reports=await rolePage.request.post(base+'/v1/reports',{data:{type:'energy',format:'csv'}});
+   const reports=await rolePage.request.post(base+'/v1/reports',{headers:{Origin:base},data:{type:'energy',format:'csv'}});
    assert.equal(reports.status(),403,`${role} legacy report creation stays disabled`);
    const jobs=await rolePage.request.get(base+'/v1/jobs/'+fixture.device);
    assert.equal(jobs.status(),403,`${role} legacy jobs stay disabled`);

@@ -7,7 +7,7 @@ import {randomUUID} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {Pool} from 'pg';
 import os from 'node:os';
-import {assertIsolatedDatabase,createFixture} from './fixtures.js';
+import {assertIsolatedDatabase,createBaselineFixture} from './fixtures.js';
 import {AuthService} from '../../src/modules/identity/auth.service.js';
 import {DatabaseService} from '../../src/database/database.service.js';
 import {metricsSnapshot} from '../../src/common/observability/metrics.js';
@@ -108,16 +108,23 @@ test('baseline revision upgrade preserves populated users, readings and financia
   try {
     await client.query(`CREATE SCHEMA ${schema}`);owned.push(schema);await client.query(`SET search_path TO ${schema},public`);
     await migrate(true);
-    const fixture=await createFixture(client);
+    const fixture=await createBaselineFixture(client);
     const passwordAuth=new AuthService('fixture-only-access','fixture-only-refresh');
     const legacyPassword=passwordAuth.hashPassword('Fixture-migration-original-123!');
     await client.query('UPDATE users SET password_hash=$1,refresh_token_hash=$2 WHERE id=$3',[legacyPassword,'legacy-refresh-hash',fixture.users[0]]);
-    const snapshot=async()=>({
-      users:(await client.query('SELECT id,email,role,customer_id,password_hash,refresh_token_hash FROM users ORDER BY id')).rows,
+    // Normalize only migration 039's intentional rename; compare every persisted
+    // identity and value, including organization/site relationships, unchanged.
+    const snapshot=async(baseline=false)=>({
+      users:(await client.query(baseline
+        ? "SELECT id,email,CASE WHEN role='school_user' THEN 'customer_user' ELSE role END AS role,school_id AS customer_id,password_hash,refresh_token_hash FROM users ORDER BY id"
+        : 'SELECT id,email,role,customer_id,password_hash,refresh_token_hash FROM users ORDER BY id')).rows,
+      customers:(await client.query(baseline?'SELECT id,name,code,region,status FROM schools ORDER BY id':'SELECT id,name,code,region,status FROM customers ORDER BY id')).rows,
+      sites:(await client.query(baseline?'SELECT id,school_id AS customer_id,name,capacity_mwp FROM sites ORDER BY id':'SELECT id,customer_id,name,capacity_mwp FROM sites ORDER BY id')).rows,
       readings:(await client.query('SELECT id,device_id,site_id,source_time,normalized_value,raw_payload FROM telemetry_raw ORDER BY id')).rows,
       documents:(await client.query('SELECT id,site_id,document_number,amount,status FROM documents ORDER BY id')).rows
     });
-    const original=await snapshot();
+    assert.equal((await client.query('SELECT role FROM users WHERE id=$1',[fixture.users[0]])).rows[0].role,'school_user');
+    const original=await snapshot(true);
     const before=(await client.query('SELECT (SELECT count(*) FROM users) users,(SELECT count(*) FROM telemetry_raw) readings,(SELECT count(*) FROM documents) documents')).rows;
     await migrate(false);
     assert.deepEqual(await snapshot(),original);
