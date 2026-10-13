@@ -7,7 +7,6 @@ if [[ "$suite" == recovery ]]; then exec bash scripts/ci/recovery-drill.sh --pro
 known='harness session invitation csrf financial-safety financial-core operations ingestion rollup reports ui-contracts ui-jobs accessibility archive history recovery readiness'
 implemented=(harness session invitation csrf financial-safety operations ingestion rollup reports ui-contracts ui-jobs accessibility archive history readiness)
 if [[ "$suite" == all-fast ]]; then
-  suites=("${implemented[@]}")
   echo "Implemented: ${implemented[*]}"
   not_ready=()
   for candidate in $known; do
@@ -16,6 +15,17 @@ if [[ "$suite" == all-fast ]]; then
   done
   echo "Not ready: ${not_ready[*]}"
   echo 'Separate implemented gate: recovery (isolated physical restore stack)'
+  forwarded=()
+  [[ $# -eq 1 ]] || forwarded=("$2")
+  failed=()
+  for item in "${implemented[@]}"; do
+    if ! bash "$0" "$item" "${forwarded[@]}"; then failed+=("$item"); fi
+  done
+  if (( ${#failed[@]} )); then
+    echo "Failed platform suites: ${failed[*]}" >&2
+    exit 1
+  fi
+  exit 0
 else
   [[ " $known " == *" $suite "* ]] || { echo "Unknown suite: $suite" >&2; exit 1; }
   suites=("$suite")

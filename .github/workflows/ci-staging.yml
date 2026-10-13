@@ -79,7 +79,7 @@ jobs:
         run: node scripts/ci/phase-timing.mjs integration bash scripts/ci/integration.sh
       - name: Isolated platform regression and latency baseline
         if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.browser.outcome == 'success' }}
-        timeout-minutes: 15
+        timeout-minutes: 20
         run: node scripts/ci/phase-timing.mjs platform-regression bash scripts/ci/platform-check.sh all-fast --prebuilt
       - name: Verify isolated recovery fixture
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}

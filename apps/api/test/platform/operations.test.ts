@@ -86,6 +86,7 @@ test('operations HTTP pages are bounded, stable, scoped, searchable beyond old a
     database.query=async (sql:string,params:unknown[]=[])=>{const result=await originalQuery(sql,params);statements.push({sql,params:[...params],returned:result.rows.length});return result;};
     try {
       const service=new OperationsService(database),principal={id:user,role:'accountant',customerId:customer,authorization:await new AuthorizationService(database).load(user,'accountant')};
+      statements.length=0;
       await service.summary('billing',principal);
       assert.equal(statements.length,1);assert.equal(statements[0]!.returned,1);assert.match(statements[0]!.sql,/SELECT count\(\*\)/);
       statements.length=0;
