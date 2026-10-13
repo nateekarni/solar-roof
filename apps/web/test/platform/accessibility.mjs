@@ -58,7 +58,7 @@ try {
   const details=page.getByRole('button',{name:'Show details',exact:true});
   let powerRequests=0;page.on('request',request=>{if(request.url().includes('/v1/dashboard/power-flow'))powerRequests++;});
   await details.focus();await page.keyboard.press('Enter');
-  const meterSite=page.getByRole('heading',{name:'U3 Site 100',exact:true});await meterSite.waitFor();
+  const meterSite=page.getByRole('heading',{name:'U3 Site 1',exact:true});await meterSite.waitFor();
   await meterSite.locator('xpath=ancestor::article').getByText('1.2 kW',{exact:true}).waitFor();
   const expandedAxe=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21a','wcag21aa','wcag22aa']).analyze();
   assert.deepEqual(expandedAxe.violations.filter(item=>['serious','critical'].includes(item.impact)).map(item=>({id:item.id,targets:item.nodes.map(node=>node.target)})),[],'Expanded power details accessibility');
