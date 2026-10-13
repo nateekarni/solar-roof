@@ -70,8 +70,8 @@ test('financial HTTP entry points fail closed without creating or mutating rows,
   }
   await db.query("UPDATE users SET role='customer_user' WHERE id=$1",[id]);
   await db.query('INSERT INTO site_account_assignments(id,user_id,site_id) VALUES($1,$2,$3)',[randomUUID(),id,site]);
-  assert.equal((await request(`/v1/billing-cycles/${cycle}/pay`,'POST',{})).status,400,'Payment evidence requires an explicit real amount');
-  assert.equal((await request(`/v1/billing-cycles/${cycle}/pay`,'POST',{amount:123.45,note:'Actual payment evidence'})).status,201);
+  assert.equal((await request(`/v1/billing-cycles/${cycle}/pay`,'POST',{})).status,400,'Payment submission requires transfer evidence');
+  assert.equal((await request(`/v1/billing-cycles/${cycle}/pay`,'POST',{amount:123.45,evidenceKey:`financial-safety-${id}`,note:'Actual payment evidence'})).status,201);
   assert.equal((await snapshot()).documents,1,'Evidence must not issue receipt');
   const records=await (await request('/v1/operations/documents')).json();assert.ok(records.rows.some((record:{id:string})=>record.id===doc),'Original document metadata remains readable in customer scope');
   await db.query('UPDATE users SET customer_id=NULL WHERE id=$1',[id]);
