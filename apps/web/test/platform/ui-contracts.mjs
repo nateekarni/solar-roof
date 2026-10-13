@@ -118,7 +118,7 @@ try {
   await page.waitForLoadState('networkidle');
   const row=page.getByRole('row').filter({has:page.getByText('2025-08',{exact:true})});await row.waitFor();
   await row.evaluate(element=>{window.__u1PersistedRow=element;});
-  await page.getByRole('button',{name:'Billing Period',exact:true}).click();
+  await page.getByRole('button',{name:'Billing period',exact:true}).click();
   await page.waitForURL(url=>url.searchParams.get('sort')==='period'&&url.searchParams.get('direction')==='asc');
   assert.equal(new URL(page.url()).searchParams.get('search'),'U1 Browser','Sorting preserves the fixture search in browser history');
   await page.getByRole('row').nth(1).getByText('2024-07',{exact:true}).waitFor();

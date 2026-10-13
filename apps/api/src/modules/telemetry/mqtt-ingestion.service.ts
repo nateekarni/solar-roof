@@ -75,7 +75,7 @@ export class MqttIngestionService implements OnModuleInit, OnModuleDestroy {
     this.remoteTimer.unref();
     if (!this.defaultBrokerEnabled) return;
     this.client = mqtt.connect(process.env.MQTT_URL || 'mqtt://localhost:1883', {
-      connectTimeout: 5000, reconnectPeriod: 5000,
+      connectTimeout: 5000, reconnectPeriod: 5000, resubscribe: false,
       ...(process.env.MQTT_USERNAME ? { username: process.env.MQTT_USERNAME } : {}),
       ...(process.env.MQTT_PASSWORD ? { password: process.env.MQTT_PASSWORD } : {}),
     });
@@ -167,7 +167,7 @@ export class MqttIngestionService implements OnModuleInit, OnModuleDestroy {
       const settings=JSON.stringify([broker.url,broker.username,broker.password_cipher]);
       if(session && session.settings!==settings){session.ready=false;session.client.end(true);this.remote.delete(broker.id);session=undefined;}
       if(!session){
-        const client=mqtt.connect(broker.url,{connectTimeout:5000,reconnectPeriod:5000,username:broker.username||undefined,...(broker.password_cipher?{password:decryptBrokerPassword(broker.password_cipher)}:{})});
+        const client=mqtt.connect(broker.url,{connectTimeout:5000,reconnectPeriod:5000,resubscribe:false,username:broker.username||undefined,...(broker.password_cipher?{password:decryptBrokerPassword(broker.password_cipher)}:{})});
         session={client,topics:new Set(),desired:broker.topics,ready:false,settings};this.remote.set(broker.id,session);
         const current=session;
         client.on('connect',()=>{void (async()=>{
@@ -217,7 +217,7 @@ export class MqttIngestionService implements OnModuleInit, OnModuleDestroy {
       const topics = new Set<string>(result.rows.flatMap(row => row.endpoint.startsWith('solar/v1/')?[row.endpoint,row.endpoint.replace(/\/devices\/[^/]+\/telemetry$/,'/configAck')]:[row.endpoint]));
       for (const topic of this.subscribedTopics) if (!topics.has(topic)) client.unsubscribe(topic);
       for (const topic of topics) if (!this.subscribedTopics.has(topic)) {
-        await new Promise<void>((resolve, reject) => client.subscribe(topic, { qos: 1 }, error => error ? reject(error) : resolve()));
+        await new Promise<void>((resolve, reject) => client.subscribe(topic, { qos: 1 }, (error,granted) => error||granted?.some(item=>item.qos===128) ? reject(error||Error('Subscription refused')) : resolve()));
         if (generation !== this.connectionGeneration || !client.connected) return;
       }
       this.subscribedTopics = topics;

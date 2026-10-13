@@ -81,6 +81,31 @@ test("subscription failure keeps readiness false and retries without reconnectin
   } finally { await service.onModuleDestroy(); }
 });
 
+test("broker reconnects restore subscriptions explicitly and reject a refused SUBACK", async context => {
+  context.mock.timers.enable({ apis: ["setTimeout"] });
+  let refused = true;
+  let options: Record<string, unknown> | undefined;
+  const db = { query: async (sql: string) => ({ rows: sql.includes("SELECT endpoint") ? [{ endpoint: "energy/test/#" }] : [] }) } as unknown as DatabaseService;
+  const client = Object.assign(new EventEmitter(), {
+    connected: true,
+    subscribe(topic: string, _options: object, callback: (error: null, grants: Array<{topic:string;qos:number}>) => void) {
+      callback(null, [{ topic, qos: refused ? 128 : 1 }]);
+    },
+    unsubscribe() {}, end() {},
+  });
+  context.mock.method(mqttRuntime, "connect", (_url: string, configured: Record<string, unknown>) => { options = configured; return client as unknown as mqtt.MqttClient; });
+  const service = new MqttIngestionService(db, db as import("./ingestion-database.service.js").IngestionDatabaseService);
+  try {
+    await service.onModuleInit();
+    assert.equal(options?.resubscribe, false, "the service must own subscription restoration after reconnect");
+    client.emit("connect"); await flush();
+    assert.equal(service.isReady(), false, "a refused SUBACK cannot report MQTT readiness");
+    refused = false;
+    context.mock.timers.tick(5000); await flush();
+    assert.equal(service.isReady(), true);
+  } finally { await service.onModuleDestroy(); }
+});
+
 test("late subscription completion cannot make a disconnected session ready", async context => {
   let complete: ((error?: Error) => void) | undefined;
   const db = { query: async (sql: string) => ({ rows: sql.includes("SELECT endpoint") ? [{ endpoint: "energy/test/#" }] : [] }) } as unknown as DatabaseService;
