@@ -27,7 +27,10 @@ test('PostgreSQL serializes confirmation with company and bank mutations and ret
       CREATE TABLE users(id uuid PRIMARY KEY,role text,status text);
       CREATE TABLE company_profile(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),company_name text,tax_id text,branch text,address text,phone text,email text,logo_url text,signatory_name text,signatory_title text,signature_data_uri text,updated_at timestamptz DEFAULT now());
       CREATE TABLE company_bank_accounts(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),bank_name text,bank_code text DEFAULT '',account_name text,account_number text,branch_name text DEFAULT '',promptpay_id text DEFAULT '',is_default boolean DEFAULT false,is_configured boolean DEFAULT true,created_at timestamptz DEFAULT now(),updated_at timestamptz DEFAULT now());
-      CREATE TABLE billing_cycles(id uuid PRIMARY KEY);
+      CREATE TABLE billing_cycles(id uuid PRIMARY KEY,site_id uuid,period_start date,period_end date,status text,quality text,meter_snapshot jsonb,policy_hash text,billing_settings_version integer,billing_kind text,manual_lines jsonb);
+      CREATE TABLE documents(id uuid PRIMARY KEY,billing_cycle_id uuid,is_current boolean,status text,created_at timestamptz,document_type text,snapshot jsonb,content_hash text);
+      CREATE TABLE document_artifacts(document_id uuid PRIMARY KEY,pdf_bytes bytea,sha256 text);
+      CREATE TABLE payments(billing_cycle_id uuid,status text);
       CREATE TABLE audit_events(id uuid PRIMARY KEY,actor_id uuid REFERENCES users(id),action text,entity_type text,entity_id uuid,correlation_id text);
       CREATE TABLE customers(id uuid PRIMARY KEY,status text,legal_name text,tax_id text,tax_address text,document_email text);
       CREATE TABLE sites(id uuid PRIMARY KEY,customer_id uuid,status text,timezone text);
@@ -66,6 +69,18 @@ test('PostgreSQL serializes confirmation with company and bank mutations and ret
       const status=await readiness.confirm(owner);
       await settings.saveBankAccount({id:bankId,accountNumber:'1234'},owner.id);
       assert.equal((await readiness.status(owner)).approval?.id,status.approval?.id);
+    });
+    await t.test('production gates require a persisted cycle and reject caller periods that differ from stored dates',async()=>{
+      const siteId=randomUUID(),cycleId=randomUUID();
+      await pool.query("INSERT INTO billing_cycles(id,site_id,period_start,period_end,status,quality,meter_snapshot,billing_kind) VALUES($1,$2,'2026-01-01','2026-01-31','pending_review','complete','[{\"meterId\":\"meter-a\"}]','energy')",[cycleId,siteId]);
+      for(const action of ['issue','approve_payment'] as const) {
+        await assert.rejects(readiness.assertEnabled(action,{siteId}),error=>(error as any).getStatus()===503&&(error as any).getResponse().missing.includes('context.cycle'));
+        await assert.rejects(readiness.assertEnabled(action,{billingCycleId:cycleId}),error=>(error as any).getResponse().missing.includes('cycle.snapshot'));
+        await assert.rejects(readiness.assertEnabled(action,{billingCycleId:cycleId,periodStart:'2026-03-01',periodEnd:'2026-03-31'}),error=>(error as any).getStatus()===400);
+      }
+      // PostgreSQL DATE formatting is authoritative, regardless of the client timezone.
+      await assert.rejects(readiness.assertEnabled('issue',{billingCycleId:cycleId,periodStart:'2026-01-01',periodEnd:'2026-01-31'}),error=>(error as any).getStatus()===503&&(error as any).getResponse().missing.includes('cycle.snapshot'));
+      assert.equal((await pool.query("SELECT to_char(period_start,'YYYY-MM-DD') AS starts,to_char(period_end,'YYYY-MM-DD') AS ends,policy_snapshot,financial_scope FROM billing_cycles WHERE id=$1",[cycleId])).rows[0].starts,'2026-01-01');
     });
     await t.test('confirmation racing a bank mutation cannot leave a stale active approval',async()=>{
       await Promise.all([readiness.confirm(owner),settings.saveBankAccount({id:bankId,accountNumber:'9999'},owner.id)]);

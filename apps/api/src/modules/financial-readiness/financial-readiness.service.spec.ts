@@ -16,7 +16,7 @@ const meter = {id:'meter-a',device_id:'device-a',semantic_field:'energy.active.i
 const cyclePolicyHash='02a3e86a9040eaf4840c3030c2b112e7929f6a039347d3d3824745e9caaa00f2';
 type Approval = {id:string;config_hash:string;approved_by:string;approved_at:string;revoked_at:string|null};
 function fixture() {
-  const state = {company:{...company},banks:[{...bank}],sites:[{...site}],meters:[{...meter}],rates:[{starts:'2026-01-01',ends:null as string|null,rate:'4.2500',currency:'THB',rate_type:'fixed_kwh'}],recipients:[{id:'recipient-a',email:'customer@example.com'}],approval:null as Approval|null,audits:[] as string[],cycle:null as any,documents:[] as any[],payments:[] as any[],boundaryMissing:false,local:false,auditFails:false};
+  const state = {company:{...company},banks:[{...bank}],sites:[{...site}],meters:[{...meter}],rates:[{starts:'2026-01-01',ends:null as string|null,rate:'4.2500',currency:'THB',rate_type:'fixed_kwh'}],recipients:[{id:'recipient-a',email:'customer@example.com'}],approval:null as Approval|null,audits:[] as string[],cycle:null as any,documents:[] as any[],payments:[] as any[],boundaryMissing:false,boundaryMissingDates:[] as string[],local:false,auditFails:false};
   const query = async (sql:string,values:unknown[] = []):Promise<any> => {
     if(sql.includes('pg_advisory_xact_lock')) return {rows:[]};
     if(sql.includes('FROM users WHERE id=$1')) return {rows:[{id:'owner-a',role:'owner',status:'active'}]};
@@ -32,7 +32,7 @@ function fixture() {
     if(sql.includes('FROM billing_meters')) return {rows:state.meters};
     if(sql.includes('FROM rate_versions')) return {rows:state.rates};
     if(sql.includes('FROM users u JOIN site_account_assignments')) return {rows:state.recipients};
-    if(sql.includes('WITH candidates')) return {rows:state.boundaryMissing?[]:[{id:'reading',value:'100.000',source_time:'2026-01-01',quality:'complete',unit:'kWh',payload_profile_revision_id:'profile-a',billing_source_binding_id:'binding-a',mapping_version_id:null,boundary_consistent:true}]};
+    if(sql.includes('WITH candidates')) return {rows:state.boundaryMissing||state.boundaryMissingDates.includes(String(values[2]))?[]:[{id:'reading',value:'100.000',source_time:'2026-01-01',quality:'complete',unit:'kWh',payload_profile_revision_id:'profile-a',billing_source_binding_id:'binding-a',mapping_version_id:null,boundary_consistent:true}]};
     if(sql.includes('FROM telemetry_raw tr')) return {rows:[{value:'100.000',quality:'complete',unit:'kWh',payload_profile_revision_id:'profile-a',billing_source_binding_id:'binding-a',mapping_version_id:null}]};
     if(sql.includes('FROM documents')) return {rows:state.documents};
     if(sql.includes('FROM payments')) return {rows:state.payments};
@@ -132,6 +132,7 @@ test('manual cycle issuance needs business readiness but does not fabricate ener
   f.state.cycle={id:'cycle-a',site_id:'site-a',starts:'2026-01-01',ends:'2026-01-01',status:'approved',quality:'complete',meter_snapshot:[],financial_scope:'PRODUCTION',policy_hash:cyclePolicyHash,policy_snapshot:{scope:'PRODUCTION'},billing_settings_version:1,billing_kind:'manual',manual_lines:[{description:'Work',quantity:'1.000',unitPrice:'100.0000'}]};
   const result=await f.service.status(owner,{billingCycleId:'cycle-a'});
   assert.equal(result.actions.issue.enabled,true);assert.equal(result.actions.calculate.enabled,false);
+  assert.equal((await f.service.assertEnabled('issue',{billingCycleId:'cycle-a'})).scope,'PRODUCTION');
 }));
 test('tampered cycle policy cannot pass issuance with an old stored hash',()=>environment(async()=>{
   const f=fixture();f.approve();f.state.cycle={id:'cycle-a',site_id:'site-a',starts:'2026-01-01',ends:'2026-01-31',status:'pending_review',quality:'complete',meter_snapshot:[{meterId:'meter-a'}],financial_scope:'PRODUCTION',policy_hash:cyclePolicyHash,policy_snapshot:{scope:'PRODUCTION',taxRate:'99.0000'},billing_settings_version:1,billing_kind:'energy'};
@@ -143,4 +144,34 @@ test('financial capabilities honor the employee assigned site scope',()=>environ
   const employee={role:'accountant',authorization:{revision:0,permissions:['business.billing.edit'],scopes:{business:{mode:'selected' as const,siteIds:['site-a']},technical:{mode:'selected' as const,siteIds:[]}}}};
   assert.ok((await f.service.capabilities('accountant',true,employee)).actions.includes('calculate'));
   employee.authorization.scopes.business.siteIds=['site-b'];assert.ok(!(await f.service.capabilities('accountant',true,employee)).actions.includes('calculate'));
+}));
+
+test('production issuance and payment approval require an authoritative persisted cycle',()=>environment(async()=>{
+  const f=fixture();f.approve();
+  for(const action of ['issue','approve_payment'] as const) {
+    await assert.rejects(f.service.assertEnabled(action,{siteId:'site-a'}),error=>(error as any).getStatus()===503&&(error as any).getResponse().missing.includes('context.cycle'));
+    await assert.rejects(f.service.assertEnabled(action,{siteId:'site-a',billingCycleId:'missing'}),error=>(error as any).getResponse().missing.includes('context.cycle'));
+  }
+  f.state.cycle={id:'cycle-a',site_id:'site-a',starts:'2026-01-01',ends:'2026-01-31',status:'pending_review',quality:'complete',meter_snapshot:[{meterId:'meter-a'}],financial_scope:'PRODUCTION',policy_hash:cyclePolicyHash,policy_snapshot:{scope:'PRODUCTION'},billing_settings_version:1,billing_kind:'energy'};
+  for(const action of ['issue','approve_payment'] as const) {
+    assert.equal((await f.service.assertEnabled(action,{billingCycleId:'cycle-a'})).scope,'PRODUCTION');
+    for(const field of ['policy_snapshot','financial_scope']) {
+      const previous=f.state.cycle[field];f.state.cycle[field]=null;
+      await assert.rejects(f.service.assertEnabled(action,{billingCycleId:'cycle-a'}),error=>(error as any).getResponse().missing.includes('cycle.snapshot'));
+      f.state.cycle[field]=previous;
+    }
+  }
+}));
+
+test('caller periods cannot substitute complete alternate boundaries for an incomplete cycle period',()=>environment(async()=>{
+  const f=fixture();f.approve();f.state.boundaryMissingDates=['2026-01-01'];
+  f.state.cycle={id:'cycle-a',site_id:'site-a',starts:'2026-01-01',ends:'2026-01-31',status:'pending_review',quality:'complete',meter_snapshot:[{meterId:'meter-a'}],financial_scope:'PRODUCTION',policy_hash:cyclePolicyHash,policy_snapshot:{scope:'PRODUCTION'},billing_settings_version:1,billing_kind:'energy'};
+  for(const action of ['calculate','issue','approve_payment','adjust','send'] as const) {
+    for(const period of [{periodStart:'2026-03-01',periodEnd:'2026-03-31'},{periodStart:'2026-03-01'},{periodEnd:'2026-03-31'}]) {
+      await assert.rejects(f.service.assertEnabled(action,{billingCycleId:'cycle-a',...period}),error=>(error as any).getStatus()===400);
+    }
+  }
+  for(const period of [{},{periodStart:'2026-01-01',periodEnd:'2026-01-31'}]) {
+    await assert.rejects(f.service.assertEnabled('issue',{billingCycleId:'cycle-a',...period}),error=>(error as any).getResponse().missing.includes('site.boundary_readings'));
+  }
 }));

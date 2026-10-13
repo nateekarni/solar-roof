@@ -102,8 +102,9 @@ export class FinancialReadinessService {
     let cycle:any;
     if(context.billingCycleId)cycle=(await client.query(`SELECT *,to_char(period_start,'YYYY-MM-DD') AS starts,to_char(period_end,'YYYY-MM-DD') AS ends FROM billing_cycles WHERE id=$1`,[context.billingCycleId])).rows[0];
     if(cycle&&context.siteId&&cycle.site_id!==context.siteId)throw new BadRequestException('Cycle and site context disagree');
+    if(cycle&&(context.periodStart!==undefined&&context.periodStart!==cycle.starts||context.periodEnd!==undefined&&context.periodEnd!==cycle.ends))throw new BadRequestException('Cycle and period context disagree');
     const siteId=context.siteId??cycle?.site_id;
-    const start=context.periodStart??cycle?.starts,end=context.periodEnd??cycle?.ends;
+    const start=cycle?cycle.starts:context.periodStart,end=cycle?cycle.ends:context.periodEnd;
     if((start||end)&&(!start||!end||!validFinancialDate(start)||!validFinancialDate(end)||start>end))throw new BadRequestException('Valid ordered period dates required');
     const scopeIds=siteScope(actor,'business');
     if(siteId&&scopeIds!==null&&!scopeIds.includes(siteId))throw new ForbiddenException('Site outside financial scope');
@@ -199,6 +200,7 @@ export class FinancialReadinessService {
       const status=await this.evaluate(client,{role:'owner'},context);
       const missing=[...status.actions[action].missing];
       if(!context.siteId&&!context.billingCycleId)missing.push('context.site');
+      if(action!=='calculate'&&!context.billingCycleId)missing.push('context.cycle');
       if(action==='calculate'&&!context.billingCycleId&&(!context.periodStart||!context.periodEnd))missing.push('context.period');
       if(missing.length||status.scope!=='PRODUCTION'||!status.approval)throw unavailable([...new Set(missing)]);
       const config=await this.configuration(client);
