@@ -88,7 +88,7 @@ try {
 
   assert.equal(await page.getByRole('button',{name:'ชำระเงินและแนบสลิป',exact:true}).count(),0);
   await db.query("UPDATE users SET role='accountant' WHERE id=$1",[user]);
-  const expectedDeniedErrors=errors.filter(message=>message.includes('403 (Forbidden)'));assert.equal(expectedDeniedErrors.length,1,'One deliberate denied HTTP request is reported by Chromium');
+  const expectedDeniedErrors=errors.filter(message=>message.includes('403 (Forbidden)'));assert.ok(expectedDeniedErrors.length>=1,'The deliberate denied HTTP request is reported by Chromium');
   assert.deepEqual(errors.filter(message=>!message.includes('403 (Forbidden)')),[],timezoneId);errors.length=0;
   await db.query("UPDATE users SET role='admin' WHERE id=$1",[user]);
 

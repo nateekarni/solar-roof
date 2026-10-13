@@ -120,6 +120,8 @@ try {
   await db.query('DELETE FROM telemetry_archive_scan WHERE site_id=ANY($1::uuid[])',[sites]);
   await db.query('DELETE FROM billing_meters WHERE device_id=$1',[device]);
   await db.query('DELETE FROM devices WHERE id=$1',[device]);
+  await db.query('DELETE FROM gateway_configuration_revisions WHERE gateway_id=ANY($1::uuid[])',[gateways]);
+  await db.query('DELETE FROM gateway_installation_history WHERE gateway_id=ANY($1::uuid[]) OR replaced_by_gateway_id=ANY($1::uuid[])',[gateways]);
   await db.query('DELETE FROM gateways WHERE id=ANY($1::uuid[])',[gateways]);
   await db.query('DELETE FROM sites WHERE id=ANY($1::uuid[])',[sites]);
   await db.query('DELETE FROM customers WHERE id=ANY($1::uuid[])',[customers]);await db.end();

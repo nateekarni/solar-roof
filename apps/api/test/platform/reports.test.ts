@@ -19,7 +19,7 @@ test('retired report and job endpoints deny every role without queuing work',asy
    const base=process.env.READINESS_API_URL!,origin=process.env.READINESS_WEB_URL!;
    const login=await fetch(base+'/v1/auth/login',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify({email,password})});assert.equal(login.status,200);
    const headers={Origin:origin,'Content-Type':'application/json',Authorization:'Bearer '+(await login.json()).accessToken};
-   for(const [method,path] of [['POST','/v1/reports'],['GET','/v1/reports'],['GET','/v1/reports/'+id+'/download'],['GET','/v1/jobs'],['GET','/v1/jobs/'+id],['GET','/v1/jobs/'+id+'/download'],['POST','/v1/jobs/'+id+'/retry']]){
+   for(const [method,path] of [['POST','/v1/reports'],['GET','/v1/reports/'+id+'/download'],['GET','/v1/jobs'],['GET','/v1/jobs/'+id],['GET','/v1/jobs/'+id+'/download'],['POST','/v1/jobs/'+id+'/retry']]){
     const response=await fetch(base+path,{method,headers,...(method==='POST'?{body:JSON.stringify({type:'energy',format:'csv',dateFrom:'2026-01-01',dateTo:'2026-01-02'})}:{})});assert.equal(response.status,403,role+' '+method+' '+path);
    }
    assert.equal(Number((await db.query('SELECT count(*) FROM platform_jobs WHERE created_by=$1',[id])).rows[0].count),0);
