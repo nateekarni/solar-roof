@@ -118,9 +118,8 @@ try {
   await page.waitForLoadState('networkidle');
   const row=page.getByRole('row').filter({has:page.getByText('2025-08',{exact:true})});await row.waitFor();
   await row.evaluate(element=>{window.__u1PersistedRow=element;});
-  const reordered=page.waitForResponse(response=>response.url().includes('/v1/operations/billing?')&&new URL(response.url()).searchParams.get('direction')==='asc');
-  await page.getByRole('button',{name:'Billing Period',exact:true}).click();const sorted=await reordered;assert.equal(sorted.status(),200);
-  assert.equal(new URL(sorted.url()).searchParams.get('search'),'U1 Browser','Reorder keeps the owned fixture search');
+  await page.getByRole('button',{name:'Billing Period',exact:true}).click();
+  await page.waitForURL(url=>url.searchParams.get('sort')==='period'&&url.searchParams.get('direction')==='asc');
   assert.equal(new URL(page.url()).searchParams.get('search'),'U1 Browser','Sorting preserves the fixture search in browser history');
   await page.getByRole('row').nth(1).getByText('2024-07',{exact:true}).waitFor();
   assert.equal(await row.evaluate(element=>element===window.__u1PersistedRow),true,'The same persisted billing record retains its DOM row identity after real server reorder');

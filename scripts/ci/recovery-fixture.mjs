@@ -16,7 +16,7 @@ const args=['compose','-p',process.env.RECOVERY_COMPOSE_PROJECT,'-f','infra/ci/c
 function compose(command,{input,allowFailure=false,timeout=240000}={}){const r=withRecoveryProgress(command,()=>spawnSync('docker',[...args,...command],{encoding:'utf8',env:process.env,input,timeout,maxBuffer:8*1024*1024}));if(!allowFailure&&r.status!==0)throw Error(`Compose ${command[0]} failed (${r.status}): ${r.stderr}\n${r.stdout}`);return r;}
 function sql(service,query){return compose(['exec','-T',service,'psql','-U','solar','-d','solar_readiness','-At','-v','ON_ERROR_STOP=1','-c',query]).stdout.trim();}
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
-async function until(check){for(let i=0;i<150;i++){if(await check())return;await delay(100);}throw Error('Timed out waiting for recovery boundary');}
+async function until(check,{attempts=150,delayMs=100,label='recovery boundary'}={}){for(let i=0;i<attempts;i++){if(await check())return;await delay(delayMs);}throw Error(`Timed out waiting for ${label}`);}
 // Fixture-only fault: stop the scheduler's real backup, never the sampler or database.
 async function proveSamplerDuringLongBackup(){
  console.log('[recovery] phase=sampler-during-paused-backup; intentional pause=190s');
@@ -103,7 +103,9 @@ finally:
   await until(()=>compose(['exec','-T','postgres','test','-f',state+'.done'],{allowFailure:true}).status===0);
  }
 }
-async function mqttSession(gateway){const client=mqtt.connect('mqtt://127.0.0.1:18883',{reconnectPeriod:100}),acks=[];client.on('message',(_,bytes)=>acks.push(JSON.parse(bytes)));await until(()=>client.connected);await new Promise((resolve,reject)=>client.subscribe(`energy/${gateway}/response`,{qos:1},e=>e?reject(e):resolve()));return {client,acks,publish:body=>new Promise((resolve,reject)=>client.publish(`energy/${gateway}/telemetry`,body,{qos:1},e=>e?reject(e):resolve()))};}
+function subscribeToResponses(client,gateway){const topic=`energy/${gateway}/response`;return new Promise((resolve,reject)=>client.subscribe(topic,{qos:1},(error,grants)=>{if(error)return reject(error);if(!grants?.some(grant=>grant.topic===topic&&grant.qos<128))return reject(Error('MQTT response subscription denied'));resolve();}));}
+async function waitForResponseSubscription(client,gateway){await until(async()=>{if(!client.connected)return false;try{await subscribeToResponses(client,gateway);return true;}catch{return false;}},{attempts:240,delayMs:500,label:'MQTT gateway authorization restoration'});}
+async function mqttSession(gateway){const client=mqtt.connect('mqtt://127.0.0.1:18883',{reconnectPeriod:100}),acks=[];client.on('message',(_,bytes)=>acks.push(JSON.parse(bytes)));await until(()=>client.connected,{label:'MQTT connection'});await waitForResponseSubscription(client,gateway);return {client,acks,publish:body=>new Promise((resolve,reject)=>client.publish(`energy/${gateway}/telemetry`,body,{qos:1},e=>e?reject(e):resolve()))};}
 const base='http://127.0.0.1:13001',origin='http://localhost:13000';
 const s3=new S3Client({endpoint:`http://127.0.0.1:${process.env.PLATFORM_CI_STORAGE_PORT}`,region:'us-east-1',forcePathStyle:true,credentials:{accessKeyId:'solar-ci',secretAccessKey:'ci-storage-only-password'}});
 let db;
@@ -213,7 +215,7 @@ try {
   // Count persisted telemetry before replay: replay cannot mask loss in RPO.
  assert.equal(sql('restore-db',`SELECT count(*) FROM telemetry_raw WHERE device_id='${device}'`),'1');
  const replay=await mqttSession(gateway);
- try {await replay.publish(payload);await until(()=>replay.acks.length===1);assert.equal(replay.acks[0].duplicate,true);compose(['restart','mqtt']);await delay(100);compose(['up','-d','--no-deps','--wait','--wait-timeout','60','mqtt']);await until(()=>replay.client.connected);await new Promise((resolve,reject)=>replay.client.subscribe(`energy/${gateway}/response`,{qos:1},e=>e?reject(e):resolve()));await until(async()=>{try{return(await fetch(base+'/ready')).ok;}catch{return false;}});await replay.publish(payload);await until(()=>replay.acks.length===2);assert.equal(replay.acks[1].duplicate,true);assert.equal(sql('restore-db',`SELECT count(*) FROM telemetry_raw WHERE device_id='${device}'`),'1');}finally{replay.client.end(true);}
+ try {await replay.publish(payload);await until(()=>replay.acks.length===1,{label:'initial duplicate acknowledgement'});assert.equal(replay.acks[0].duplicate,true);compose(['restart','mqtt']);await delay(100);compose(['up','-d','--no-deps','--wait','--wait-timeout','60','mqtt']);await until(()=>replay.client.connected,{attempts:300,delayMs:100,label:'MQTT client reconnection'});await until(async()=>{try{return(await fetch(base+'/ready')).ok;}catch{return false;}},{attempts:300,delayMs:100,label:'restored API readiness'});await waitForResponseSubscription(replay.client,gateway);await replay.publish(payload);await until(()=>replay.acks.length===2,{attempts:300,delayMs:100,label:'duplicate acknowledgement after MQTT restart'});assert.equal(replay.acks[1].duplicate,true);assert.equal(sql('restore-db',`SELECT count(*) FROM telemetry_raw WHERE device_id='${device}'`),'1');}finally{replay.client.end(true);}
  const usableAt=new Date();
  console.log('[recovery] phase=negative-recovery-boundaries');
  const nonempty=compose(['exec','-T','restore-db','/opt/solar-backup/restore.sh'],{allowFailure:true});assert.notEqual(nonempty.status,0);assert.match(nonempty.stderr,/nonempty/);
