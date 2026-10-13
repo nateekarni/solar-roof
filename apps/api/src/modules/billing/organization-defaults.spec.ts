@@ -4,7 +4,7 @@ import { BillingController } from './billing.controller.js';
 import { routeAllowed } from '../../common/auth/route-policy.js';
 import type { DatabaseService } from '../../database/database.service.js';
 import type { FinancialReadinessService } from '../financial-readiness/financial-readiness.service.js';
-import type { LocalFinancialApplicationService } from './local-financial-application.service.js';
+import type { FinancialApplicationService } from './financial-application.service.js';
 function fixture(){
  let current={legalName:'Current legal',taxId:'1234567890123',taxBranch:'00000',taxAddress:'Bangkok',documentEmail:'bill@example.com',phone:'02'};
  const saved:unknown[][]=[]; const oldSnapshot={companyName:'Historical legal',taxId:'9999999999999',taxAddress:'Historical address'};
@@ -14,7 +14,7 @@ function fixture(){
   return {rows:[]};
  };
  const db={query,pool:{connect:async()=>({query,release(){}})}};
- const c=new BillingController(db as unknown as DatabaseService,{isLocalTestReady:async()=>false} as unknown as FinancialReadinessService,{} as LocalFinancialApplicationService,{ensureInTransaction:async()=>({documentId:'original',sha256:'hash'})} as any);
+ const c=new BillingController(db as unknown as DatabaseService,{isLocalTestReady:async()=>false} as unknown as FinancialReadinessService,{} as FinancialApplicationService,{ensureInTransaction:async()=>({documentId:'original',sha256:'hash'})} as any);
  return {c,saved,oldSnapshot,setCurrent:(v:typeof current)=>{current=v;},current};
 }
 const input={siteId:'site-a',ratePerKwh:4,paymentTerms:'30 days',signerName:'Authorized signer'};

@@ -184,7 +184,7 @@ test("PPA freezes exact converted capacity and ten dynamic draft clauses only un
 });
 
 import { capacityKwp, freezeLocalPpaDraft } from "./local-ppa-draft.js";
-import { localTestDocumentSnapshot } from "./local-test-pdf.js";
+import { financialDocumentSnapshot } from "./financial-document-pdf.js";
 import {
   TEST_FINANCIAL_POLICY,
   TEST_FINANCIAL_POLICY_HASH,
@@ -259,7 +259,7 @@ test("financial adapter preserves frozen palette, invoice reference, approved re
     ],
   };
   const before = JSON.stringify(snapshot);
-  const s = localTestDocumentSnapshot({
+  const s = financialDocumentSnapshot({
     document_type: "receipt",
     document_number: "RCP261000001",
     snapshot,

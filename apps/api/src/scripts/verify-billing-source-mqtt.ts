@@ -7,7 +7,7 @@ import { DatabaseService } from '../database/database.service.js';
 import { IngestionDatabaseService } from '../modules/telemetry/ingestion-database.service.js';
 import { MqttIngestionService } from '../modules/telemetry/mqtt-ingestion.service.js';
 import { BillingSourceBindingService } from '../modules/billing/billing-source-binding.service.js';
-import { LocalFinancialApplicationService } from '../modules/billing/local-financial-application.service.js';
+import { FinancialApplicationService } from '../modules/billing/financial-application.service.js';
 import { FinancialReadinessService } from '../modules/financial-readiness/financial-readiness.service.js';
 import { localFinancialBinding } from '../modules/billing/local-financial-policy.js';
 import { validatePayloadProfile } from '../modules/telemetry/payload-profile.js';
@@ -15,7 +15,7 @@ if(process.env.BILLING_SOURCE_TEST_ISOLATED!=='true'||!localFinancialBinding())t
 const broker=process.env.LOCAL_BILLING_MQTT_URL;
 if(!broker||!['localhost','127.0.0.1','[::1]'].includes(new URL(broker).hostname))throw Error('Explicit loopback LOCAL_BILLING_MQTT_URL required');
 const db=new DatabaseService({statementTimeout:1500});
-const readiness=new FinancialReadinessService(db),sources=new BillingSourceBindingService(db),financial=new LocalFinancialApplicationService(db,readiness);
+const readiness=new FinancialReadinessService(db),sources=new BillingSourceBindingService(db),financial=new FinancialApplicationService(db,readiness);
 await readiness.assertEnabled('calculate'); // Never bypass the normal policy gate.
 const run=randomUUID().replaceAll('-',''),siteId=randomUUID(),customerId=randomUUID(),gatewayId=randomUUID(),deviceId=randomUUID(),extraDeviceId=randomUUID(),revisionId=randomUUID(),meterId=randomUUID(),contractId=randomUUID(),recipientId=randomUUID();
 const externalSite=`BILL-${run}`,externalGateway=`GW-${run}`,externalDevice='MAIN';

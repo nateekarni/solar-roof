@@ -1,12 +1,19 @@
 import assert from 'node:assert/strict';import test from 'node:test';
-import {formatTestMoney} from './local-test-pdf.js';
-test('PDF monetary formatting preserves exact large satang and PostgreSQL zero padding',()=>{assert.equal(formatTestMoney('90071992547409.91'),'90,071,992,547,409.91');assert.equal(formatTestMoney('4623.45000000'),'4,623.45');assert.equal(formatTestMoney('2000'),'2,000.00');assert.throws(()=>formatTestMoney('4623.450001'));});
+import {formatFinancialMoney} from './financial-document-pdf.js';
+test('PDF monetary formatting preserves exact large satang and PostgreSQL zero padding',()=>{assert.equal(formatFinancialMoney('90071992547409.91'),'90,071,992,547,409.91');assert.equal(formatFinancialMoney('4623.45000000'),'4,623.45');assert.equal(formatFinancialMoney('2000'),'2,000.00');assert.throws(()=>formatFinancialMoney('4623.450001'));});
 
-import { localTestDocumentSnapshot } from './local-test-pdf.js';
+import { financialDocumentSnapshot } from './financial-document-pdf.js';
+
+test('new financial rendering keeps frozen TEST marking and production configured tax labels',()=>{
+ const snapshot={company:{company_name:'Issuer',tax_id:'123',address:'Address'},customer:{company_name:'Customer',tax_id:'456'},issueDate:'2026-10-14',logo:'logo',cycle:{period_start:'2026-09-01',period_end:'2026-09-30',subtotal:'100.00',simulated_tax:'10.00',amount:'110.00',meter_snapshot:[]},banks:[],payments:[]};
+ assert.equal(financialDocumentSnapshot({document_type:'invoice',document_number:'INV261000001',snapshot:{...snapshot,policy:{scope:'TEST',taxPercent:7}}}).syntheticTest,true);
+ const production=financialDocumentSnapshot({document_type:'invoice',document_number:'INV261000002',snapshot:{...snapshot,policy:{scope:'PRODUCTION',taxRate:'10.0000'}}});
+ assert.equal(production.syntheticTest,false);assert.equal(production.totals?.taxLabel,'ภาษี 10.0000%');
+});
 
 test('financial PDF adapter uses frozen embedded logo before legacy logo and retains old template evidence',()=>{
  const saved={document_type:'invoice',document_number:'INV-OLD',snapshot:{company:{company_name:'Saved issuer',tax_id:'123',address:'Saved address'},customer:{company_name:'Customer',tax_id:'456'},issueDate:'2026-10-08',logo:'legacy-logo',logoDataUri:'data:image/png;base64,UPLOADED',templateVersion:'historical-template',cycle:{period_start:'2026-09-01',period_end:'2026-09-30',subtotal:'0.00',simulated_tax:'0.00',amount:'0.00',meter_snapshot:[]},banks:[],payments:[]}};
- const before=JSON.stringify(saved);const snapshot=localTestDocumentSnapshot(saved);
+ const before=JSON.stringify(saved);const snapshot=financialDocumentSnapshot(saved);
  assert.equal(snapshot.logoDataUri,'data:image/png;base64,UPLOADED');assert.equal(snapshot.templateVersion,'historical-template');assert.equal(JSON.stringify(saved),before);
 });
 test('financial snapshot adapter retains every saved meter/rate and approved transfer while freezing identity', () => {
@@ -27,7 +34,7 @@ test('financial snapshot adapter retains every saved meter/rate and approved tra
     },
   };
   const original = JSON.stringify(document);
-  const snapshot = localTestDocumentSnapshot(document);
+  const snapshot = financialDocumentSnapshot(document);
   assert.equal(snapshot.issuer.name, 'บริษัทจริง');
   assert.equal(snapshot.siteExternalId,'SITE-002');
   assert.equal(snapshot.templateVersion,'sarabun-a4-v6');
@@ -56,8 +63,8 @@ test('financial adapter preserves saved transfer date strings for presentation a
     },
   };
   const saved = JSON.stringify(document);
-  assert.doesNotThrow(() => localTestDocumentSnapshot(document));
-  const snapshot = localTestDocumentSnapshot(document);
+  assert.doesNotThrow(() => financialDocumentSnapshot(document));
+  const snapshot = financialDocumentSnapshot(document);
   assert.deepEqual(snapshot.approvedTransfers.map(p => p.paidAt), ['2026-10-08T18:30:00Z', '  transfer date pending  ', '2026-10-08T18:30:00.000Z']);
   assert.equal(snapshot.issueDate, '2026-10-08');
   assert.equal(snapshot.period, '2026-09-01 - 2026-09-30');
@@ -66,6 +73,6 @@ test('financial adapter preserves saved transfer date strings for presentation a
 
 test('approved snapshot retains optional payer metadata without mixing receiving accounts or pending history',()=>{
  const document={document_type:'receipt',document_number:'RCP261000001',snapshot:{company:{company_name:'Issuer',tax_id:'0',address:'Issuer address'},customer:{company_name:'Customer',tax_id:'1',tax_address:'Customer address'},issueDate:'2026-10-08',logo:'data:image/png;base64,AA==',cycle:{period_start:'2026-09-01',period_end:'2026-09-30',subtotal:'100.00',simulated_tax:'7.00',amount:'107.00',meter_snapshot:[]},banks:[{bank_name:'Receiving bank',account_name:'Issuer',account_number:'9999'}],payments:[{status:'paid',paid_at:'2026-10-08T09:00:00Z',amount:'57.00',payer_name:'Actual payer',payment_method:'bank_transfer',origin_bank:'Payer bank',origin_account:'00123'},{status:'paid',paid_at:'2026-10-08T09:01:00Z',amount:'50.00'},{status:'pending_verification',paid_at:'2026-10-08T09:02:00Z',amount:'9.00',payer_name:'Pending payer'},{status:'rejected',paid_at:'2026-10-08T09:03:00Z',amount:'9.00',payer_name:'Rejected payer'}]}};
- const before=JSON.stringify(document);const snapshot=localTestDocumentSnapshot(document as any);
+ const before=JSON.stringify(document);const snapshot=financialDocumentSnapshot(document as any);
  assert.deepEqual(snapshot.approvedTransfers,[{status:'paid',paidAt:'2026-10-08T09:00:00Z',amount:'57.00',payerName:'Actual payer',paymentMethod:'bank_transfer',originBank:'Payer bank',originAccount:'00123'},{status:'paid',paidAt:'2026-10-08T09:01:00Z',amount:'50.00'}]);assert.equal(snapshot.paymentAccounts[0]!.bankName,'Receiving bank');assert.equal(JSON.stringify(document),before);
 });

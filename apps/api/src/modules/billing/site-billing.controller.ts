@@ -16,5 +16,5 @@ export class SiteBillingController {
  @Post('site-rates/apply') apply(@Body() b:RateChangeInput,@Req() r:{user:ScopePrincipal}){return this.service.applyRates(b,r.user);}
  @Roles('owner') @Patch('billing-cycles/:id/rate') reprice(@Param('id') id:string,@Body() b:{rate:string|number;reason:string;replaceFuture?:boolean},@Req() r:{user:ScopePrincipal}){return this.service.reprice(id,b,r.user);}
  @Post('manual-bills/preview') manualPreview(@Body() b:{siteId:string;lines:ManualLine[]},@Req() r:{user:ScopePrincipal}){return this.service.manualPreview(b,r.user);}
- @Post('manual-bills') manual(@Body() b:{siteId:string;lines:ManualLine[];note?:string;dueDate?:string},@Req() r:{user:ScopePrincipal}){return this.service.manual(b,r.user);}
+ @Post('manual-bills') manual(@Body() b:{siteId:string;lines:ManualLine[];note?:string;dueDate?:string;idempotencyKey?:string},@Req() r:{user:ScopePrincipal}){return this.service.manual(b,r.user);}
 }

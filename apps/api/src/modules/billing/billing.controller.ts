@@ -28,11 +28,11 @@ import { DatabaseService } from "../../database/database.service.js";
 import { Roles } from "../../common/roles.decorator.js";
 
 import { FinancialReadinessService } from "../financial-readiness/financial-readiness.service.js";
-import { LocalFinancialApplicationService } from './local-financial-application.service.js';
+import { FinancialApplicationService } from './financial-application.service.js';
 
 @Controller("v1")
 export class BillingController {
-  constructor(@Inject(DatabaseService) private readonly db: DatabaseService, @Inject(FinancialReadinessService) private readonly readiness: FinancialReadinessService, @Inject(LocalFinancialApplicationService) private readonly financial: LocalFinancialApplicationService, @Inject(ContractPdfService) private readonly contractPdfs: ContractPdfService, @Inject(SiteBillingService) private readonly siteBilling?:SiteBillingService) {}
+  constructor(@Inject(DatabaseService) private readonly db: DatabaseService, @Inject(FinancialReadinessService) private readonly readiness: FinancialReadinessService, @Inject(FinancialApplicationService) private readonly financial: FinancialApplicationService, @Inject(ContractPdfService) private readonly contractPdfs: ContractPdfService, @Inject(SiteBillingService) private readonly siteBilling?:SiteBillingService) {}
 
   @Roles("owner", "admin", "accountant")
   @Post("billing-cycles")
@@ -40,66 +40,9 @@ export class BillingController {
     siteId?: string;
     periodStart?: string;
     periodEnd?: string;
-  }) {
-    await this.readiness.assertEnabled('calculate');
-    if(await this.readiness.isLocalTestReady()) {
-      if(!body.siteId||!body.periodStart||!body.periodEnd)throw new BadRequestException('siteId, periodStart, periodEnd required');
-      return (await this.financial.calculate(body.siteId,body.periodStart,body.periodEnd)).cycles[0];
-    }
-    const siteId = body.siteId;
-    const periodStart = body.periodStart;
-    const periodEnd = body.periodEnd;
-
-    if (!siteId || !periodStart || !periodEnd) {
-      throw new BadRequestException("siteId, periodStart, and periodEnd are required");
-    }
-
-    // 1. Fetch active rate for this site from contracts & rate_versions
-    const rateRes = await this.db.query(
-      `SELECT r.rate 
-       FROM rate_versions r
-       JOIN contracts c ON c.id = r.contract_id
-       WHERE c.site_id = $1 AND c.status = 'active'
-       ORDER BY r.effective_from DESC
-       LIMIT 1`,
-      [siteId]
-    );
-    const rate = Number(rateRes.rows[0]?.rate ?? 4.25);
-
-    // 2. Query aggregated energy consumption if available, else standard fallback
-    const aggRes = await this.db.query(
-      `SELECT coalesce(sum(value), 0)::numeric AS sum, count(*)::int AS count
-       FROM telemetry_aggregate
-       WHERE site_id = $1 
-         AND semantic_field = 'energy_export_kwh'
-         AND bucket_start >= $2::timestamptz 
-         AND bucket_start <= $3::timestamptz`,
-      [siteId, `${periodStart}T00:00:00Z`, `${periodEnd}T23:59:59Z`]
-    );
-
-    const aggSum = Number(aggRes.rows[0]?.sum ?? 0);
-    const consumedKwh = aggSum > 0 ? Number(aggSum.toFixed(2)) : 2450.5;
-    const amount = Number((consumedKwh * rate).toFixed(2));
-    const openingEnergy = 10000;
-    const closingEnergy = openingEnergy + consumedKwh;
-    const cutoffTime = new Date(`${periodEnd}T23:59:59Z`);
-    const id = randomUUID();
-
-    const sql = `
-      INSERT INTO billing_cycles (
-        id, site_id, period_start, period_end, cutoff_time,
-        status, quality, opening_energy, closing_energy,
-        consumed_kwh, rate, amount
-      )
-      VALUES ($1, $2, $3, $4, $5, 'pending_review', 'complete', $6, $7, $8, $9, $10)
-      RETURNING id, site_id AS "siteId", period_start AS "periodStart", period_end AS "periodEnd", status, consumed_kwh AS "consumedKwh", rate, amount
-    `;
-    const res = await this.db.query(sql, [
-      id, siteId, periodStart, periodEnd, cutoffTime,
-      openingEnergy, closingEnergy, consumedKwh, rate, amount
-    ]);
-
-    return res.rows[0];
+  }, @Req() req?: {user?:ScopedActor}) {
+    if(!body.siteId||!body.periodStart||!body.periodEnd)throw new BadRequestException('siteId, periodStart, periodEnd required');
+    return (await this.financial.calculate(body.siteId,body.periodStart,body.periodEnd,req?.user?.id)).cycles[0];
   }
 
   @Get("contracts")
@@ -289,22 +232,8 @@ export class BillingController {
 
   @Roles("owner", "accountant")
   @Post("billing-cycles/:id/generate-invoice")
-  async generateInvoiceForBillingCycle(@Param("id") id: string) {
-    await this.readiness.assertEnabled('issue');
-    if(await this.readiness.isLocalTestReady())return this.financial.issueInvoice(id);
-    return this.db.transaction(async client=>{
-      const cycle=(await client.query('SELECT * FROM billing_cycles WHERE id=$1 FOR UPDATE',[id])).rows[0];
-      if(!cycle)throw new NotFoundException('Billing cycle not found');
-      const existing=(await client.query(`SELECT id,document_number AS "documentNumber",status,amount,issue_date AS "issueDate" FROM documents WHERE billing_cycle_id=$1 AND document_type='invoice'`,[id])).rows[0];
-      if(existing)return {created:false,message:'ใบวางบิลสำหรับรอบบิลนี้ถูกสร้างไว้แล้ว',document:existing};
-      const {number,issueDate}=await allocateDocumentNumber(client,'invoice');
-      const document=(await client.query(
-        `INSERT INTO documents(id,site_id,billing_cycle_id,document_type,document_number,status,issue_date,amount,file_key)
-         VALUES($1,$2,$3,'invoice',$4,'draft',$5,$6,$7)
-         RETURNING id,site_id AS "siteId",billing_cycle_id AS "billingCycleId",document_type AS "documentType",document_number AS "documentNumber",status,issue_date AS "issueDate",amount`,
-        [randomUUID(),cycle.site_id,id,number,issueDate,cycle.amount,`invoices/${issueDate.slice(0,4)}/${number}.pdf`])).rows[0];
-      return {created:true,message:'สร้างใบวางบิลเรียบร้อยแล้ว',document};
-    });
+  async generateInvoiceForBillingCycle(@Param("id") id: string, @Req() req?: {user?:ScopedActor}) {
+    return this.financial.issueInvoice(id,req?.user?.id);
   }
 
   @Get("billing-cycles/:id")
@@ -361,49 +290,7 @@ export class BillingController {
     @Body() body: PaymentSubmission,
     @Req() req: Request & { user?: { id: string; role: string } }
   ) {
-    if(await this.readiness.isLocalTestReady())return this.financial.submitPayment(id,body,req.user?.id);
-    const metadata=reviewedPaymentMetadata(body);
-    return this.db.transaction(async client=>{
-    const cycleRes = await client.query("SELECT * FROM billing_cycles WHERE id = $1 FOR UPDATE", [id]);
-    const cycle = cycleRes.rows[0];
-    if (!cycle) {
-      throw new NotFoundException("Billing cycle not found");
-    }
-
-    if(!['approved','pending_verification'].includes(cycle.status))throw new ConflictException('Issued unpaid invoice required');
-    if(!body.slipUrl&&!body.evidenceKey)throw new BadRequestException('Transfer evidence required');
-    const slipUrl=body.slipUrl||null,evidenceKey=body.evidenceKey||null,note=body.note?.trim()||null;
-    const actorId=req.user?.id;if(!actorId)throw new BadRequestException('Actor required');
-    if((await client.query("SELECT id FROM payments WHERE submitted_by IS NOT NULL AND status IN('pending_verification','paid') AND (payment_evidence_sha256(evidence_key)=payment_evidence_sha256($1::text) OR payment_evidence_sha256(slip_url)=payment_evidence_sha256($2::text))",[evidenceKey,slipUrl])).rows.length)throw new ConflictException('Transfer evidence already submitted');
-    const paymentId=randomUUID();
-    await client.query("INSERT INTO payments(id,billing_cycle_id,amount,status,paid_at,slip_url,evidence_key,note,submitted_by,declared_amount,declared_transfer_at,payer_name,payment_method,origin_bank,origin_account) VALUES($1,$2,NULL,'pending_verification',NULL,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)",[paymentId,id,slipUrl,evidenceKey,note,actorId,body.amount??null,body.paidAt??null,metadata.payerName??null,metadata.paymentMethod??null,metadata.originBank??null,metadata.originAccount??null]);
-    // Update billing cycle status to 'pending_verification'
-    await client.query(
-      "UPDATE billing_cycles SET status = 'pending_verification' WHERE id = $1",
-      [id]
-    );
-
-    // Audit event
-    await client.query(
-        `INSERT INTO audit_events (
-           id, actor_id, action, entity_type, entity_id, before_json, after_json, reason, correlation_id, occurred_at
-         )
-         VALUES (gen_random_uuid(), $1, 'billing_cycle.pay', 'billing_cycle', $2, $3, $4, 'Payment slip submitted for verification', gen_random_uuid()::text, NOW())`,
-        [
-          actorId,
-          id,
-          JSON.stringify({ status: cycle.status }),
-          JSON.stringify({ status: "pending_verification", paymentId }),
-        ]
-      );
-
-    return {
-      success: true,
-      message: "ส่งหลักฐานการชำระเงินเรียบร้อยแล้ว อยู่ระหว่างการตรวจสอบโดยเจ้าหน้าที่",
-      paymentId,
-      status: "pending_verification",
-    };
-    });
+    return this.financial.submitPayment(id,body,req.user?.id);
   }
 
   @Roles("owner", "accountant")
@@ -425,204 +312,34 @@ export class BillingController {
     },
     @Req() req: Request & { user?: { id: string } }
   ) {
-    await this.readiness.assertEnabled('approve_payment');
-    if(await this.readiness.isLocalTestReady()) {
-      const result=await this.financial.verifyPayment(id,body.status,body.rejectionReason,req.user?.id,{...body,paymentId:body.paymentId??''});
-      if(result.billingCycleStatus==='paid')await this.financial.send(id);
-      return result;
-    }
-    const { status, rejectionReason, note } = body;
-    const metadata=reviewedPaymentMetadata(body);
-    if (!status || !["approved", "rejected"].includes(status)) {
-      throw new BadRequestException("status must be either 'approved' or 'rejected'");
-    }
-
-    return this.db.transaction(async client=>{
-    const cycleRes = await client.query(
-      `SELECT b.*, si.customer_id AS "customerId"
-       FROM billing_cycles b 
-       JOIN sites si ON si.id = b.site_id 
-       WHERE b.id = $1 FOR UPDATE OF b`,
-      [id]
-    );
-    const cycle = cycleRes.rows[0];
-    if (!cycle) {
-      throw new NotFoundException("Billing cycle not found");
-    }
-
-    if(status==='approved'){
-      const existing=(await client.query(`SELECT id,document_number AS "documentNumber" FROM documents WHERE billing_cycle_id=$1 AND document_type='receipt'`,[id])).rows[0];
-      if(existing)return {success:true,message:'อนุมัติการชำระเงินและออกใบเสร็จรับเงินเรียบร้อยแล้ว',billingCycleStatus:'paid',receipt:existing};
-    }
-
-    if(!body.paymentId)throw new BadRequestException('Select one transfer to review');
-    const allPayments=(await client.query('SELECT * FROM payments WHERE billing_cycle_id=$1 ORDER BY submitted_at,id FOR UPDATE',[id])).rows;
-    const payment=allPayments.find(p=>p.id===body.paymentId);
-    if(!payment)throw new NotFoundException('Transfer not found');
-    if(payment.status!=='pending_verification')throw new ConflictException('Transfer already reviewed');
-    const minor=(value:string)=>{const [whole,fraction='']=value.split('.');return BigInt(whole!)*100n+BigInt(fraction.padEnd(2,'0').slice(0,2));};
-    const confirmed=allPayments.filter(p=>p.status==='paid').reduce((sum,p)=>sum+minor(p.verified_amount),0n);
-    let verifiedAmount:string|undefined;
-    let verifiedTransferAt:Date|undefined;
-    if(status==='approved'){
-     const value=String(body.verifiedAmount??'');if(!/^\d+(\.\d{1,2})?$/.test(value)||value.split('.')[0]!.replace(/^0+/,'').length>16||minor(value)<=0n)throw new BadRequestException('Positive confirmed transfer amount required');verifiedAmount=value;
-     if(!body.verifiedTransferAt)throw new BadRequestException('Confirmed transfer date and time required');verifiedTransferAt=new Date(body.verifiedTransferAt);if(!Number.isFinite(verifiedTransferAt.getTime()))throw new BadRequestException('Valid confirmed transfer date and time required');
-     if(confirmed+minor(value)>minor(cycle.amount))throw new ConflictException('Confirmed transfers exceed bill; resolve difference before approval');
-     if(body.transferReference?.trim()){
-      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[body.transferReference.trim()]);
-      if((await client.query("SELECT id FROM payments WHERE transfer_reference=$1 AND status='paid'",[body.transferReference.trim()])).rows.length)throw new ConflictException('Reference already approved');
-     }
-    }
-    const pending=allPayments.some(p=>p.id!==payment.id&&p.status==='pending_verification');
-    const actorId = req.user?.id || null;
-
-    if (status === "approved") {
-      await client.query("UPDATE payments SET status='paid',verified_at=now(),verified_by=$1,verified_amount=$2,verified_transfer_at=$3,amount=$2,paid_at=$3,transfer_reference=$4,rejection_reason=NULL,payer_name=coalesce($6,payer_name),payment_method=coalesce($7,payment_method),origin_bank=coalesce($8,origin_bank),origin_account=coalesce($9,origin_account) WHERE id=$5",[actorId,verifiedAmount,verifiedTransferAt,body.transferReference?.trim()||null,payment.id,metadata.payerName??null,metadata.paymentMethod??null,metadata.originBank??null,metadata.originAccount??null]);
-      if(confirmed+minor(verifiedAmount!)!==minor(cycle.amount)){
-       const cycleStatus=pending?'pending_verification':'approved';
-       await client.query('UPDATE billing_cycles SET status=$2 WHERE id=$1',[id,cycleStatus]);
-       await client.query("INSERT INTO audit_events(id,actor_id,action,entity_type,entity_id,after_json,reason,correlation_id) VALUES(gen_random_uuid(),$1,'payment.verify_approved','payment',$2,$3,'Partial transfer approved',gen_random_uuid()::text)",[actorId,payment.id,JSON.stringify({verifiedAmount,verifiedTransferAt})]);
-       return {success:true,billingCycleStatus:cycleStatus,receipt:null};
-      }
-      // 2. Mark billing cycle as paid
-      await client.query(
-        "UPDATE billing_cycles SET status = 'paid' WHERE id = $1",
-        [id]
-      );
-
-      // 3. Issue receipt document if not exists
-      const docCheck = await client.query(
-        "SELECT id, document_number AS \"documentNumber\" FROM documents WHERE billing_cycle_id = $1 AND document_type = 'receipt'",
-        [id]
-      );
-
-      let receiptDoc = docCheck.rows[0];
-      if (!receiptDoc) {
-        const {number:documentNumber,issueDate}=await allocateDocumentNumber(client,'receipt');
-        const docId=randomUUID();
-        const fileKey=`receipts/${issueDate.slice(0,4)}/${documentNumber}.pdf`;
-
-        const insertReceipt = await client.query(
-          `INSERT INTO documents (
-             id, site_id, billing_cycle_id, document_type, document_number, status, issue_date, amount, file_key
-           )
-           VALUES ($1, $2, $3, 'receipt', $4, 'issued', $5, $6, $7)
-           RETURNING id, document_number AS "documentNumber", status, issue_date AS "issueDate", amount`,
-          [docId, cycle.site_id, id, documentNumber, issueDate, cycle.amount, fileKey]
-        );
-        receiptDoc = insertReceipt.rows[0];
-      }
-
-      // 4. Audit event
-      {
-        await client.query(
-          `INSERT INTO audit_events (
-             id, actor_id, action, entity_type, entity_id, before_json, after_json, reason, correlation_id, occurred_at
-           )
-           VALUES (gen_random_uuid(), $1, 'payment.verify_approved', 'billing_cycle', $2, $3, $4, 'Payment verified and approved by admin', gen_random_uuid()::text, NOW())`,
-          [actorId, id, JSON.stringify({ cycleStatus: cycle.status, paymentStatus: payment.status }), JSON.stringify({ cycleStatus: "paid", paymentStatus: "paid" })]
-        );
-      }
-
-      return {
-        success: true,
-        message: "อนุมัติการชำระเงินและออกใบเสร็จรับเงินเรียบร้อยแล้ว",
-        billingCycleStatus: "paid",
-        receipt: receiptDoc,
-      };
-    } else {
-      if (!rejectionReason?.trim()) {
-        throw new BadRequestException("rejectionReason is required when rejecting payment");
-      }
-
-      // Update payment
-      await client.query(
-        `UPDATE payments 
-         SET status = 'rejected', rejection_reason = $1, verified_at = NOW(), verified_by = $2, note = coalesce($3, note)
-         WHERE id = $4`,
-        [rejectionReason, actorId, note || null, payment.id]
-      );
-
-      // Return cycle status to 'approved'
-      await client.query(
-        "UPDATE billing_cycles SET status = $2 WHERE id = $1",
-        [id,pending?'pending_verification':'approved']
-      );
-
-      // Audit event
-      {
-        await client.query(
-          `INSERT INTO audit_events (
-             id, actor_id, action, entity_type, entity_id, before_json, after_json, reason, correlation_id, occurred_at
-           )
-           VALUES (gen_random_uuid(), $1, 'payment.verify_rejected', 'billing_cycle', $2, $3, $4, $5, gen_random_uuid()::text, NOW())`,
-          [actorId, id, JSON.stringify({ cycleStatus: cycle.status, paymentStatus: payment.status }), JSON.stringify({ cycleStatus: "approved", paymentStatus: "rejected" }), rejectionReason]
-        );
-      }
-
-      return {
-        success: true,
-        message: "ปฏิเสธหลักฐานการชำระเงินแล้ว และแจ้งให้ผู้ใช้ส่งหลักฐานใหม่",
-        billingCycleStatus: pending ? "pending_verification" : "approved",
-      };
-    }
-    });
+    const result=await this.financial.verifyPayment(id,body.status,body.rejectionReason,req.user?.id,{...body,paymentId:body.paymentId??''});
+    if(result.billingCycleStatus==='paid')await this.financial.send(id,req.user?.id);
+    return result;
   }
 
   @Roles("owner", "accountant")
   @Patch("billing-cycles/:id/status")
   async updateBillingCycleStatus(
     @Param("id") id: string,
-    @Body() body: { status: string; reason?: string }
+    @Body() body: { status: string; reason?: string },
+    @Req() req?: {user?:ScopedActor}
   ) {
-    await this.readiness.assertEnabled('issue');
-    const { status, reason } = body;
-    if (!status || !["pending_review", "approved", "rejected"].includes(status)) {
-      throw new BadRequestException("Invalid status. Must be pending_review, approved, or rejected");
-    }
-
-    const cycleRes = await this.db.query("SELECT * FROM billing_cycles WHERE id = $1", [id]);
-    const before = cycleRes.rows[0];
-    if (!before) throw new NotFoundException("Billing cycle not found");
-
-    const updateRes = await this.db.query(
-      `UPDATE billing_cycles 
-       SET status = $1 
-       WHERE id = $2 
-       RETURNING id, status`,
-      [status, id]
-    );
-
-    // If approved, automatically generate invoice if none exists
-    let invoice = null;
-    if (status === "approved") {
-      try {
-        invoice = await this.generateInvoiceForBillingCycle(id);
-      } catch {}
-    }
-
-    // Insert into audit_events
-    try {
-      await this.db.query(
-        `INSERT INTO audit_events (
-           id, action, entity_type, entity_id, before_json, after_json, reason, correlation_id
-         )
-         VALUES (gen_random_uuid(), 'update_status', 'billing_cycle', $1, $2, $3, $4, gen_random_uuid()::text)`,
-        [id, JSON.stringify(before), JSON.stringify({ ...before, status }), reason || `Status updated to ${status}`]
-      );
-    } catch {}
-
-    return {
-      success: true,
-      billingCycle: updateRes.rows[0],
-      invoice,
-    };
+    if(!['pending_review','approved','rejected'].includes(body.status))throw new BadRequestException('Invalid billing cycle status');
+    if(body.status==='approved')return {success:true,invoice:await this.financial.issueInvoice(id,req?.user?.id)};
+    return this.db.transaction(async client=>{
+      await this.readiness.assertEnabled('issue',{billingCycleId:id},client);
+      const before=(await client.query('SELECT * FROM billing_cycles WHERE id=$1 FOR UPDATE',[id])).rows[0];if(!before)throw new NotFoundException('Billing cycle not found');
+      if(['paid','pending_verification'].includes(before.status))throw new ConflictException('Settled or transfer review cycle cannot change status');
+      const billingCycle=(await client.query('UPDATE billing_cycles SET status=$2 WHERE id=$1 RETURNING id,status',[id,body.status])).rows[0];
+      await client.query(`INSERT INTO audit_events(id,actor_id,action,entity_type,entity_id,before_json,after_json,reason,correlation_id) VALUES($1,$2,'finance.status','billing_cycle',$3,$4,$5,$6,$7)`,[randomUUID(),req?.user?.id??null,id,JSON.stringify(before),JSON.stringify(billingCycle),body.reason?.trim()||'Status updated',randomUUID()]);
+      return {success:true,billingCycle};
+    });
   }
 
   @Roles('owner')
   @Patch('billing-cycles/:id/adjust')
   async adjustBillingCycle(@Param('id') id:string,@Body() body:{rate?:number;consumedKwh?:number;amount?:number;note?:string;replaceFuture?:boolean},@Req() req:{user?:ScopedActor}) {
-    await this.readiness.assertEnabled('adjust');if(body.rate===undefined)throw new BadRequestException('Explicit replacement rate required');
+    await this.readiness.assertEnabled('adjust',{billingCycleId:id});if(body.rate===undefined)throw new BadRequestException('Explicit replacement rate required');
     if(!this.siteBilling)throw new ConflictException('Site billing service unavailable');
     return this.siteBilling.reprice(id,{rate:body.rate,reason:body.note?.trim()||'Owner bill rate correction',...(body.replaceFuture===undefined?{}:{replaceFuture:body.replaceFuture})},req.user??{});
   }
@@ -631,93 +348,10 @@ export class BillingController {
   @Post("billing-cycles/:id/send-email")
   async sendBillingEmail(
     @Param("id") id: string,
-    @Body() body: { recipientEmail?: string; note?: string }
+    @Body() body: { recipientEmail?: string; note?: string },
+    @Req() req?: {user?:ScopedActor}
   ) {
-    await this.readiness.assertEnabled('send');
-    if(await this.readiness.isLocalTestReady()) {
-      if(body.recipientEmail)throw new BadRequestException('Local TEST delivery uses persisted contract recipient');
-      return this.financial.send(id);
-    }
-    const cycleRes = await this.db.query(
-      `SELECT b.*, si.name AS "siteName", s.name AS "customerName",
-              c.billing_email AS "contractEmail", c.company_name AS "clientCompanyName",
-              d.document_number AS "invoiceNumber", d.id AS "invoiceId"
-       FROM billing_cycles b
-       JOIN sites si ON si.id = b.site_id
-       JOIN customers s ON s.id = si.customer_id
-       LEFT JOIN contracts c ON c.site_id = si.id AND c.status = 'active'
-       LEFT JOIN documents d ON d.billing_cycle_id = b.id AND d.document_type = 'invoice'
-       WHERE b.id = $1`,
-      [id]
-    );
-    const cycle = cycleRes.rows[0];
-    if (!cycle) {
-      throw new NotFoundException("Billing cycle not found");
-    }
-    if(!cycle.invoiceNumber)throw new BadRequestException('Issued invoice number required before sending');
-    const recipient = body.recipientEmail?.trim() || cycle.contractEmail || "customer@solar-platform.org";
-
-    const compRes = await this.db.query(
-      "SELECT company_name, email, phone FROM company_profile ORDER BY updated_at DESC LIMIT 1"
-    );
-    const company = compRes.rows[0] || {
-      company_name: "บริษัท โซลาร์ เอ็นเนอร์ยี โซลูชั่นส์ จำกัด",
-      email: "billing@solarenergy.co.th",
-    };
-
-    try {
-      const transporter = nodemailer.createTransport({
-        host: process.env.SMTP_HOST || "localhost",
-        port: Number(process.env.SMTP_PORT || 1025),
-        secure: false,
-        auth: process.env.SMTP_USER ? {
-          user: process.env.SMTP_USER,
-          pass: process.env.SMTP_PASS || "",
-        } : undefined,
-      });
-
-      await transporter.sendMail({
-        from: `"${company.company_name}" <${company.email || "billing@solarenergy.co.th"}>`,
-        to: recipient,
-        subject: `[Solar Roof] ใบวางบิล #${cycle.invoiceNumber} - ${cycle.siteName}`,
-        html: `
-          <div style="font-family: sans-serif; color: #1e293b; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px;">
-            <h2 style="color: #0f172a; margin-top: 0;">ใบวางบิลค่าไฟฟ้าโซลาร์เซลล์</h2>
-            <p>เรียน <strong>${cycle.clientCompanyName || cycle.customerName}</strong>,</p>
-            <p>ระบบขอนำส่งใบวางบิลประจำรอบบิล <strong>${cycle.period_start} ถึง ${cycle.period_end}</strong> สำหรับไซต์ <strong>${cycle.siteName}</strong></p>
-            <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
-              <tr style="background: #f8fafc;">
-                <td style="padding: 10px; border: 1px solid #e2e8f0;">เลขที่ใบวางบิล</td>
-                <td style="padding: 10px; border: 1px solid #e2e8f0; font-weight: bold;">${cycle.invoiceNumber}</td>
-              </tr>
-              <tr>
-                <td style="padding: 10px; border: 1px solid #e2e8f0;">พลังงานที่ใช้จริง</td>
-                <td style="padding: 10px; border: 1px solid #e2e8f0;">${Number(cycle.consumed_kwh).toLocaleString()} kWh</td>
-              </tr>
-              <tr style="background: #f8fafc;">
-                <td style="padding: 10px; border: 1px solid #e2e8f0;">อัตราค่าไฟเฉลี่ย</td>
-                <td style="padding: 10px; border: 1px solid #e2e8f0;">฿${Number(cycle.rate).toFixed(2)} / kWh</td>
-              </tr>
-              <tr style="background: #f1f5f9; font-weight: bold;">
-                <td style="padding: 10px; border: 1px solid #e2e8f0; color: #0284c7;">ยอดเงินสุทธิที่ต้องชำระ</td>
-                <td style="padding: 10px; border: 1px solid #e2e8f0; color: #0284c7; font-size: 16px;">฿${Number(cycle.amount).toLocaleString("th-TH", { minimumFractionDigits: 2 })} บาท</td>
-              </tr>
-            </table>
-            <p>สามารถดูเอกสารฉบับเต็มและชำระเงินผ่านระบบ Solar Roof หรือติดต่อฝ่ายบัญชีได้ที่ ${company.phone || "02-999-8888"}</p>
-            <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
-            <small style="color: #64748b;">อีเมลนี้สร้างโดยระบบอัตโนมัติ Solar Roof</small>
-          </div>
-        `,
-      });
-    } catch (mailErr) {
-      console.warn("Mail dispatch attempt completed (fallback log mode):", mailErr);
-    }
-
-    return {
-      success: true,
-      message: `ส่งอีเมลใบวางบิลไปยัง "${recipient}" เรียบร้อยแล้ว`,
-      recipient,
-      sentAt: new Date().toISOString(),
-    };
+    if(body.recipientEmail)throw new BadRequestException('Delivery uses frozen verified recipients; address overrides are unavailable');
+    return this.financial.send(id,req?.user?.id);
   }
 }

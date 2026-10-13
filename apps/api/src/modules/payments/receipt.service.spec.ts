@@ -20,10 +20,9 @@ function fixture(status='paid',withSite=true) {
  const documents=new DocumentService(new NumberSeriesService(db),db);
  return {service:new ReceiptService(new PaymentService(db),documents),inserts,allocations:()=>allocations};
 }
-test('paid-payment receipt caller resolves actual billing-cycle site and persists both identities',async()=>{
- const f=fixture();const receipt=await f.service.issueForPayment('payment');
- assert.equal(receipt.number,'RCP261000001');assert.equal(receipt.snapshot.siteId,'actual-site');assert.equal(receipt.snapshot.billingCycleId,'actual-cycle');
- assert.equal(f.inserts.length,1);assert.equal(f.inserts[0]?.[1],'actual-site');assert.equal(f.inserts[0]?.[8],'actual-cycle');assert.equal(f.allocations(),1);
+test('legacy paid-payment receipt caller requires the audited billing workflow before allocating or persisting',async()=>{
+ const f=fixture();await assert.rejects(f.service.issueForPayment('payment'),/audited billing cycle workflow/);
+ assert.equal(f.inserts.length,0);assert.equal(f.allocations(),0);
 });
 test('unpaid receipt caller rejects before number allocation or document persistence',async()=>{
  const f=fixture('pending');await assert.rejects(f.service.issueForPayment('payment'),/Payment must be paid/);

@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import nodemailer from 'nodemailer';
-import { LocalFinancialApplicationService } from './local-financial-application.service.js';
+import { FinancialApplicationService } from './financial-application.service.js';
 import { routeAllowed } from '../../common/auth/route-policy.js';
 const bytes=Buffer.from('%PDF-1.7\nsaved original');
 const hash=createHash('sha256').update(bytes).digest('hex');
@@ -21,7 +21,7 @@ function fixture(type='invoice', overrides:Record<string,unknown>={}) {
  },release:()=>{}};
  const db={pool:{connect:async()=>client}};
  const readiness={assertEnabled:async()=>{}};
- const service=new LocalFinancialApplicationService(db as any,readiness as any);
+ const service=new FinancialApplicationService(db as any,readiness as any);
  const transport=nodemailer.createTransport;
  nodemailer.createTransport=(()=>({sendMail:async(message:any)=>{messages.push(message);return {accepted:[recipient.email]};},close:()=>{}})) as any;
  const saved={...process.env};Object.assign(process.env,{NODE_ENV:'test',LOCAL_FINANCIAL_FIXTURE_MARKER:'solar-financial-flow-review-v1',DATABASE_URL:'postgresql://test@127.0.0.1:15449/solar_financial_flow_review',SMTP_HOST:'127.0.0.1',SMTP_PORT:'11049'});
@@ -66,4 +66,19 @@ test('contract corruption cannot enqueue or send its saved original',async()=>{
 test('contract address overrides fail at controller even before delivery',async()=>{
  const {BillingController}=await import('./billing.controller.js');const controller=new BillingController({} as any,{} as any,{sendContract:async()=>{throw new Error('Must not reach sender');}} as any,{} as any);
  await assert.rejects(controller.sendContractEmail('contract',{recipientEmail:'ad-hoc@example.invalid'},{user:{role:'owner'}}),/override/);
+});
+
+// Catches environment-derived marking and accidental routing of production SMTP to Mailpit.
+test('delivery uses frozen TEST policy marking and configured production SMTP without environment scope inference',async()=>{
+ for(const scope of ['TEST','PRODUCTION']){
+  const f=fixture('invoice',{document_number:'INV261000001',snapshot:{policy:{scope},recipients:[recipient]}});
+  try{process.env.SMTP_HOST=scope==='TEST'?'127.0.0.1':'smtp.example.invalid';process.env.SMTP_PORT=scope==='TEST'?'11049':'587';
+   await f.service.send('cycle');assert.equal(f.messages[0].subject,scope==='TEST'?'TEST INV261000001':'INV261000001');
+   assert.equal(f.messages[0].text.includes('Synthetic'),scope==='TEST');
+  }finally{f.restore();}
+ }
+});
+test('frozen TEST originals cannot leave the exact local Mailpit binding',async()=>{
+ const f=fixture('invoice',{snapshot:{policy:{scope:'TEST'},recipients:[recipient]}});
+ try{process.env.SMTP_HOST='smtp.example.invalid';await assert.rejects(f.service.send('cycle'),/Local mail capture binding/);assert.equal(f.messages.length,0);assert.equal(f.updates.length,0);}finally{f.restore();}
 });

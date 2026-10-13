@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {Pool} from 'pg';
 import {randomBytes} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
-import {LocalFinancialApplicationService} from './local-financial-application.service.js';
+import {FinancialApplicationService} from './financial-application.service.js';
 
 test('large image evidence persists, rejects duplicates and settles one receipt',{skip:process.env.PAYMENT_SQL_TEST!=='true'},async()=>{
  const url=process.env.PAYMENT_TEST_DATABASE_URL;assert.ok(url);
@@ -21,7 +21,7 @@ test('large image evidence persists, rejects duplicates and settles one receipt'
   const submitter=(await client.query(`SELECT u.id FROM users u JOIN site_account_assignments a ON a.user_id=u.id
    WHERE u.role='customer_user' AND u.status='active' AND a.site_id=$1 AND a.revoked_at IS NULL LIMIT 1`,[cycle.site_id])).rows[0];assert.ok(submitter);
   const db={transaction:async(fn:any)=>{await client.query('SAVEPOINT evidence_operation');try{const result=await fn(client);await client.query('RELEASE SAVEPOINT evidence_operation');return result;}catch(error){await client.query('ROLLBACK TO SAVEPOINT evidence_operation');throw error;}}};
-  const service=new LocalFinancialApplicationService(db as any,{assertEnabled:async()=>{}} as any);
+  const service=new FinancialApplicationService(db as any,{assertEnabled:async()=>{}} as any);
   const image='data:image/png;base64,'+randomBytes(150_000).toString('base64');
   const first=await service.submitPayment(cycle.id,{slipUrl:image},submitter.id);
   const saved=(await client.query('SELECT amount,paid_at,length(slip_url) AS size FROM payments WHERE id=$1',[first.paymentId])).rows[0];
@@ -45,8 +45,8 @@ test('large image evidence persists, rejects duplicates and settles one receipt'
   const settled=await service.verifyPayment(cycle.id,'approved',undefined,actor.id,{paymentId:second.paymentId,verifiedAmount:amount,verifiedTransferAt:'2026-10-09T02:00:00Z'});
   assert.equal(settled.billingCycleStatus,'paid');assert.ok(settled.receipt);
   const savedReceipt=(await client.query('SELECT snapshot FROM documents WHERE id=$1',[settled.receipt.id])).rows[0];
-  const {localTestDocumentSnapshot}=await import('../documents/local-test-pdf.js');
-  const printable=localTestDocumentSnapshot({document_type:'receipt',document_number:settled.receipt.document_number,snapshot:savedReceipt.snapshot});
+  const {financialDocumentSnapshot}=await import('../documents/financial-document-pdf.js');
+  const printable=financialDocumentSnapshot({document_type:'receipt',document_number:settled.receipt.document_number,snapshot:savedReceipt.snapshot});
   assert.ok(printable.approvedTransfers.every(payment=>!payment.evidence),'Uploaded file bytes and long storage keys stay outside printable payment details');
   assert.equal((await client.query("SELECT count(*)::int AS count FROM documents WHERE billing_cycle_id=$1 AND document_type='receipt'",[cycle.id])).rows[0].count,1);
  }finally{await client.query('ROLLBACK');client.release();await pool.end();}

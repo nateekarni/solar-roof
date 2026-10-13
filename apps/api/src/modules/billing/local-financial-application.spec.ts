@@ -4,15 +4,15 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 const logoHash=(uri:string)=>createHash('sha256').update(Buffer.from(uri.split(',')[1]!, 'base64')).digest('hex');
-test('site billing calculation rejects missing configuration without contract lookup',async()=>{let contracts=false;const db={transaction:async(run:any)=>run({query:async(sql:string)=>{if(sql.includes('FROM sites'))return {rows:[{id:'s'}]};if(sql.includes('FROM contracts'))contracts=true;return {rows:[]};}})};const service=new LocalFinancialApplicationService(db as any,{assertEnabled:async()=>{}} as any);await assert.rejects(service.calculate('s','2026-09-01','2026-09-30'),/Site billing configuration/);assert.equal(contracts,false);});
-test('changed billing configuration blocks issuing a calculation with stale tax policy',async()=>{const cycle={id:'cycle',site_id:'site',quality:'complete',meter_snapshot:[],policy_hash:TEST_FINANCIAL_POLICY_HASH,billing_settings_version:1};const db={transaction:async(run:any)=>run({query:async(sql:string)=>{if(sql.includes('FROM billing_cycles'))return {rows:[cycle]};if(sql.includes('FROM site_billing_settings'))return {rows:[{version:2}]};return {rows:[]};}})};await assert.rejects(new LocalFinancialApplicationService(db as any,{assertEnabled:async()=>{}} as any).issueInvoice('cycle'),/configuration changed/);});
+test('site billing calculation rejects missing configuration without contract lookup',async()=>{let contracts=false;const db={transaction:async(run:any)=>run({query:async(sql:string)=>{if(sql.includes('FROM sites'))return {rows:[{id:'s'}]};if(sql.includes('FROM contracts'))contracts=true;return {rows:[]};}})};const service=new FinancialApplicationService(db as any,{assertEnabled:async()=>{}} as any);await assert.rejects(service.calculate('s','2026-09-01','2026-09-30'),/Site billing configuration/);assert.equal(contracts,false);});
+test('changed billing configuration blocks issuing a calculation with stale tax policy',async()=>{const cycle={id:'cycle',site_id:'site',quality:'complete',meter_snapshot:[],policy_hash:TEST_FINANCIAL_POLICY_HASH,billing_settings_version:1};const db={transaction:async(run:any)=>run({query:async(sql:string)=>{if(sql.includes('FROM billing_cycles'))return {rows:[cycle]};if(sql.includes('FROM site_billing_settings'))return {rows:[{version:2}]};return {rows:[]};}})};await assert.rejects(new FinancialApplicationService(db as any,{assertEnabled:async()=>{}} as any).issueInvoice('cycle'),/configuration changed/);});
 import { ConflictException } from '@nestjs/common';
-import { reviewedActualEnergyDifference } from './local-financial-application.service.js';
+import { reviewedActualEnergyDifference } from './financial-application.service.js';
 test('exact cumulative counter reset requires typed conflict and review',()=>{
  assert.throws(()=>reviewedActualEnergyDifference('10000.0006','10000.0004'),error=>error instanceof ConflictException&&error.getStatus()===409&&/Meter reset requires review/.test(error.message));
  assert.equal(reviewedActualEnergyDifference('10000.0004','10000.0006'),'0.000');
 });
-import {LocalFinancialApplicationService} from './local-financial-application.service.js';
+import {FinancialApplicationService} from './financial-application.service.js';
 import {TEST_FINANCIAL_POLICY_HASH} from './local-financial-policy.js';
 import type {DatabaseService} from '../../database/database.service.js';
 import type {FinancialReadinessService} from '../financial-readiness/financial-readiness.service.js';
@@ -25,7 +25,7 @@ test('TEST payment persistence keeps an exact large string amount',async()=>{
  if(sql.includes('INSERT INTO payments')){assert.equal(params[2],null);assert.equal(params[12],'90071992547409.91');inserted=true;}
  return {rows:[]};
  }})};
- const service=new LocalFinancialApplicationService(db as unknown as DatabaseService,{} as FinancialReadinessService);
+ const service=new FinancialApplicationService(db as unknown as DatabaseService,{} as FinancialReadinessService);
  await service.submitPayment('cycle',{amount:'90071992547409.91',evidenceKey:'exact-large-synthetic'},'actor');assert.ok(inserted);
 });
 test('future financial originals freeze protocol site identity and persist the renderer template version',async()=>{
@@ -41,7 +41,7 @@ test('future financial originals freeze protocol site identity and persist the r
  if(sql.includes("AS day"))return {rows:[{day:'2026-10-08'}]};if(sql.includes('document_number_series'))return {rows:[{last_value:1}]};
  if(sql.includes('AS starts'))return {rows:[{starts:'2026-09-01',ends:'2026-09-30'}]};
  if(sql.includes('INSERT INTO documents')){persisted=JSON.parse(params[7]);insertedVersion=params[10];return {rows:[{id:params[0],snapshot:persisted}]};}return {rows:[]};}})};
- const service=new LocalFinancialApplicationService(db as unknown as DatabaseService,{assertEnabled:async()=>{}} as unknown as FinancialReadinessService);
+ const service=new FinancialApplicationService(db as unknown as DatabaseService,{assertEnabled:async()=>{}} as unknown as FinancialReadinessService);
  const result=await service.issueInvoice('cycle');assert.equal(result.document.snapshot.customer.external_site_id,'PROTOCOL-002');assert.equal(persisted.templateVersion,'sarabun-a4-v7');assert.equal(insertedVersion,'sarabun-a4-v7');assert.equal(persisted.logoDataUri,persisted.logo);assert.equal(persisted.brandPrimary,'#f29700');assert.equal(persisted.policyHash,TEST_FINANCIAL_POLICY_HASH);assert.equal(persisted.policy.logo,'/brand/solar-roof-document.png');assert.equal(logoHash(persisted.logo),createHash('sha256').update(readFileSync(new URL('../../../../web/public/brand/solar-roof-document-stacked.png',import.meta.url))).digest('hex'));
 });
 
@@ -59,7 +59,7 @@ function paymentSubmissionHarness() {
   }
   return {rows:[]};
  }})};
- return {saved,service:new LocalFinancialApplicationService(db as unknown as DatabaseService,{} as FinancialReadinessService)};
+ return {saved,service:new FinancialApplicationService(db as unknown as DatabaseService,{} as FinancialReadinessService)};
 }
 test('transfer submissions persist trimmed optional payer metadata with exact amounts',async()=>{
  const {saved,service}=paymentSubmissionHarness();
@@ -108,7 +108,7 @@ test('approval freezes all approved transfer metadata, excludes rejected history
  if(sql.includes('INSERT INTO document_artifacts'))artifactCount++;
  if(sql.startsWith('UPDATE billing_cycles'))cycle.status=params[1];
  return {rows:[]};}})};
- const service=new LocalFinancialApplicationService(db as unknown as DatabaseService,{assertEnabled:async()=>{}} as unknown as FinancialReadinessService);
+ const service=new FinancialApplicationService(db as unknown as DatabaseService,{assertEnabled:async()=>{}} as unknown as FinancialReadinessService);
  await service.verifyPayment('cycle','approved',undefined,'accountant',{paymentId:'a',verifiedAmount:'57.00',verifiedTransferAt:'2026-10-08T01:00:00Z'});
  const result=await service.verifyPayment('cycle','approved',undefined,'accountant',{paymentId:'b',verifiedAmount:'50.00',verifiedTransferAt:'2026-10-08T02:00:00Z'});
  assert.deepEqual(result.receipt.snapshot.payments.map((p:any)=>p.id),['a','b']);assert.equal(result.receipt.snapshot.payments[0].payer_name,'Payer');assert.equal(result.receipt.snapshot.payments[0].origin_account,'00123');assert.equal(result.receipt.snapshot.payments[1].payer_name,undefined);assert.equal(artifactCount,1);
@@ -148,7 +148,7 @@ test('uploaded invoice and receipt logos stay frozen with saved PDF hashes after
   if(sql==='UPDATE billing_cycles SET status=$2 WHERE id=$1')cycle.status=params[1];
   return {rows:[]};
  }};
- const service=new LocalFinancialApplicationService({transaction:async(run:any)=>run(client)} as unknown as DatabaseService,{assertEnabled:async()=>{}} as unknown as FinancialReadinessService);
+ const service=new FinancialApplicationService({transaction:async(run:any)=>run(client)} as unknown as DatabaseService,{assertEnabled:async()=>{}} as unknown as FinancialReadinessService);
  const invoice=(await service.issueInvoice('cycle')).document;
  assert.equal(invoice.snapshot.logoDataUri,uploaded);assert.equal(invoice.snapshot.logo,uploaded);
  const invoiceSnapshot=JSON.stringify(invoice.snapshot),invoiceBytes=Buffer.from(artifacts.get(invoice.id)!.bytes),invoiceHash=invoice.content_hash;

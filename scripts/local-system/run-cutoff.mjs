@@ -6,13 +6,13 @@ import {cutoffInstant} from './fixture.mjs';
 import {sites,reading} from './telemetry-fixture.mjs';
 import {DatabaseService} from '../../apps/api/src/database/database.service.ts';
 import {FinancialReadinessService} from '../../apps/api/src/modules/financial-readiness/financial-readiness.service.ts';
-import {LocalFinancialApplicationService} from '../../apps/api/src/modules/billing/local-financial-application.service.ts';
+import {FinancialApplicationService} from '../../apps/api/src/modules/billing/financial-application.service.ts';
 assertLocalDockerTarget('financial');
 const month=process.argv.find(a=>a.startsWith('--month='))?.slice(8)??'2026-08';
 const cutoff=new Date(cutoffInstant(month));
 if(cutoff.getTime()>Date.now())throw Error('Use a completed month with seeded actual boundaries');
 const db=new DatabaseService({statementTimeout:120000,applicationName:'local-cutoff-test'});
-const service=new LocalFinancialApplicationService(db,new FinancialReadinessService(db));
+const service=new FinancialApplicationService(db,new FinancialReadinessService(db));
 try{
  const initial=(await db.query("SELECT count(*)::int n FROM documents d JOIN billing_cycles b ON b.id=d.billing_cycle_id WHERE b.period_start=$1 AND d.document_type='invoice'",[month+'-01'])).rows[0].n;
  const before=await db.query('SELECT count(*)::int AS n FROM documents');

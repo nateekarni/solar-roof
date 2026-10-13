@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {randomUUID,createHash} from 'node:crypto';
 import {DatabaseService} from '../src/database/database.service.js';
 import {FinancialReadinessService} from '../src/modules/billing/financial-readiness.service.js';
-import {LocalFinancialApplicationService} from '../src/modules/billing/local-financial-application.service.js';
+import {FinancialApplicationService} from '../src/modules/billing/financial-application.service.js';
 import {SiteBillingService} from '../src/modules/billing/site-billing.service.js';
 import {localFinancialBinding,TEST_FINANCIAL_POLICY_HASH} from '../src/modules/billing/local-financial-policy.js';
 if(!localFinancialBinding())throw new Error('Exact local TEST binding required');
@@ -15,7 +15,7 @@ try{
  await client.query("UPDATE customers SET legal_name='Synthetic integration customer',tax_id='0999999999999',tax_address='Synthetic TEST address' WHERE id=$1",[base.customer_id]);
  // All writes use the outer transaction and roll back, including generated original PDFs.
  const transactional={query:client.query.bind(client),transaction:async(run:any)=>run(client),pool:db.pool} as unknown as DatabaseService;
- const readiness=new FinancialReadinessService(db),financial=new LocalFinancialApplicationService(transactional,readiness);financial.send=async()=>({success:true});
+ const readiness=new FinancialReadinessService(db),financial=new FinancialApplicationService(transactional,readiness);financial.send=async()=>({success:true});
  const service=new SiteBillingService(transactional,financial);
  await service.saveSettings(base.id,{serviceStartDate:'2026-01-01',paymentTermDays:30,recipientUserIds:[base.user_id],taxRate:'7',taxConfirmed:true,pricesIncludeTax:false},owner);
  const settings=await service.settings(base.id,owner);assert.equal(settings.taxRate,'7.0000');

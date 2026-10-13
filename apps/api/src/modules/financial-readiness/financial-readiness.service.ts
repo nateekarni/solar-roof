@@ -83,12 +83,12 @@ export class FinancialReadinessService {
     await client.query(`INSERT INTO audit_events(id,actor_id,action,entity_type,entity_id,correlation_id) VALUES($1,$2,$3,'financial_readiness_approval',$4,$5)`,[randomUUID(),actorId,action,id,randomUUID()]);
   }
 
-  async status(actor:ScopePrincipal,context:FinancialReadinessContext={}):Promise<FinancialReadinessStatus> {
+  async status(actor:ScopePrincipal,context:FinancialReadinessContext={},client?:PoolClient):Promise<FinancialReadinessStatus> {
     if(!this.db) {
       const missing=['approval.confirmation',...(process.env.FINANCIAL_WRITES_ENABLED==='true'?[]:['environment.financial_writes'])];
       return {scope:null,fingerprint:financialConfigurationHash(missing),approval:null,items:[item('approval.confirmation',false,'owner')],actions:Object.fromEntries(ACTIONS.map(action=>[action,{enabled:false,missing}])) as FinancialReadinessStatus['actions']};
     }
-    return this.db.transaction(client=>this.evaluate(client,actor,context));
+    return client?this.evaluate(client,actor,context):this.db.transaction(client=>this.evaluate(client,actor,context));
   }
 
   private async evaluate(client:QueryBoundary,actor:ScopePrincipal,context:FinancialReadinessContext):Promise<FinancialReadinessStatus> {
@@ -191,11 +191,11 @@ export class FinancialReadinessService {
     return items;
   }
 
-  async assertEnabled(action:FinancialAction,context:FinancialReadinessContext={}):Promise<{scope:FinancialScope;approvalId:string;policyHash:string}> {
-    const local=await localTestReadiness(this.db);
+  async assertEnabled(action:FinancialAction,context:FinancialReadinessContext={},transactionClient?:PoolClient):Promise<{scope:FinancialScope;approvalId:string;policyHash:string}> {
+    const local=await localTestReadiness(transactionClient??this.db);
     if(local&&process.env.FINANCIAL_WRITES_ENABLED==='true'&&local.actions.includes(action))return {scope:'TEST',approvalId:local.accountingApprovalId,policyHash:TEST_FINANCIAL_POLICY_HASH};
     if(!this.db)throw unavailable(['approval.confirmation']);
-    return this.db.transaction(async client=>{
+    const gate=async (client:PoolClient)=>{
       await client.query("SELECT pg_advisory_xact_lock(hashtext('production-financial-configuration'))");
       const status=await this.evaluate(client,{role:'owner'},context);
       const missing=[...status.actions[action].missing];
@@ -204,8 +204,9 @@ export class FinancialReadinessService {
       if(action==='calculate'&&!context.billingCycleId&&(!context.periodStart||!context.periodEnd))missing.push('context.period');
       if(missing.length||status.scope!=='PRODUCTION'||!status.approval)throw unavailable([...new Set(missing)]);
       const config=await this.configuration(client);
-      return {scope:'PRODUCTION',approvalId:status.approval.id,policyHash:config.hash};
-    });
+      return {scope:'PRODUCTION' as const,approvalId:status.approval.id,policyHash:config.hash};
+    };
+    return transactionClient?gate(transactionClient):this.db.transaction(gate);
   }
 
   async isLocalTestReady():Promise<boolean> {return !!await localTestReadiness(this.db);}

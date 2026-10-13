@@ -1,6 +1,5 @@
-import {allocateDocumentNumber,type HumanDocumentType} from './document-number.js';
-import { BadRequestException, Body, Controller, Inject, Post } from "@nestjs/common";
-import { randomUUID } from "node:crypto";
+import { BadRequestException, ConflictException, Body, Controller, Inject, Post } from "@nestjs/common";
+
 import { DatabaseService } from "../../database/database.service.js";
 
 import { FinancialReadinessService } from "../financial-readiness/financial-readiness.service.js";
@@ -18,29 +17,14 @@ export class DocumentsController {
     issueDate?: string;
     fileKey?: string;
   }) {
-    await this.readiness.assertEnabled('issue');
+    await this.readiness.assertEnabled('issue',body.siteId?{siteId:body.siteId}:{});
     const siteId = body.siteId;
     const type = (body.type || "invoice").toLowerCase();
-    const amount = Number(body.amount ?? 15000);
-    const fileKey = body.fileKey || `docs/${type}-${Date.now()}.pdf`;
-
     if (!siteId) {
       throw new BadRequestException("siteId is required");
     }
 
     if(!['invoice','receipt'].includes(type))throw new BadRequestException('Unsupported human document family');
-    return this.db.transaction(async client=>{
-    const {number:documentNumber,issueDate}=await allocateDocumentNumber(client,type as HumanDocumentType);
-    const id=randomUUID();
-    const sql = `
-      INSERT INTO documents (
-        id, site_id, document_type, document_number, status, issue_date, amount, file_key
-      )
-      VALUES ($1, $2, $3, $4, 'draft', $5, $6, $7)
-      RETURNING id, site_id AS "siteId", document_type AS "documentType", document_number AS "documentNumber", status, issue_date AS "issueDate", amount
-    `;
-    const res = await client.query(sql, [id, siteId, type, documentNumber, issueDate, amount, fileKey]);
-    return res.rows[0];
-    });
+    throw new ConflictException('Issue financial documents through the audited billing cycle workflow');
   }
 }

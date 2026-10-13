@@ -6,7 +6,7 @@ import {AuthService} from '../../src/modules/identity/auth.service.js';
 import {assertIsolatedDatabase} from './fixtures.js';
 import {BillingController} from '../../src/modules/billing/billing.controller.js';
 import {FinancialReadinessService} from '../../src/modules/billing/financial-readiness.service.js';
-import {LocalFinancialApplicationService} from '../../src/modules/billing/local-financial-application.service.js';
+import {FinancialApplicationService} from '../../src/modules/billing/financial-application.service.js';
 import {routeAllowed} from '../../src/common/auth/route-policy.js';
 const base=process.env.READINESS_API_URL!, web=process.env.READINESS_WEB_URL!;
 assert.equal(base,'http://127.0.0.1:13001'); assert.equal(web,'http://localhost:13000');
@@ -86,7 +86,7 @@ test('contract email production gate blocks flag bypass before database or SMTP 
  const db={query:async()=>{accesses.push('query');throw new Error('Unexpected database query');},pool:{connect:async()=>{accesses.push('connect');throw new Error('Unexpected database connection');}}};
  process.env.NODE_ENV='production';process.env.FINANCIAL_WRITES_ENABLED='true';
  const readiness=new FinancialReadinessService(db as any);
- const financial=new LocalFinancialApplicationService(db as any,readiness);
+ const financial=new FinancialApplicationService(db as any,readiness);
  const controller=new BillingController(db as any,readiness,financial,{} as any);
  const nodemailer=(await import('nodemailer')).default;
  const originalTransport=nodemailer.createTransport;

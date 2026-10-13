@@ -3,6 +3,7 @@ import { ConflictException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import nodemailer from 'nodemailer';
 import type { PoolClient } from 'pg';
+import {localFinancialBinding} from './local-financial-policy.js';
 export interface FrozenRecipient { id:string; email:string; name?:string; }
 export function originalArtifactHash(job:{pdf_bytes:Buffer;sha256:string;content_hash:string;artifact_sha256?:string}):string {
  const hash=createHash('sha256').update(job.pdf_bytes).digest('hex');
@@ -20,6 +21,8 @@ export async function deliverSavedArtifacts(client:PoolClient,jobs:any[]):Promis
   if(job.state==='sent')continue;
   if(['sending','uncertain'].includes(job.state))throw new ConflictException('SMTP outcome uncertain; reconcile capture before retry');
   if(job.attempts>=5)throw new ConflictException('Local capture retry budget exhausted; staff reconciliation required');
+  const test=job.snapshot?.policy?.scope==='TEST'||job.snapshot?.syntheticTest===true;
+  if(test&&!localFinancialBinding())throw new ConflictException('Local mail capture binding required');
   originalArtifactHash(job);
   const recipients=frozenRecipients(job);
   // Check the whole frozen set before sending the first message.
@@ -33,9 +36,10 @@ export async function deliverSavedArtifacts(client:PoolClient,jobs:any[]):Promis
    if(job.delivered_user_ids?.includes(recipient.id))continue;
    const messageId=`<financial-${job.id}-${recipient.id}@solar-platform.invalid>`;
    await client.query('UPDATE financial_delivery_outbox SET message_id=$2 WHERE id=$1',[job.id,messageId]);
-   const transport=nodemailer.createTransport({host:'127.0.0.1',port:11049,secure:false,connectionTimeout:5000,socketTimeout:10000});
+   const password=process.env.SMTP_PASSWORD??process.env.SMTP_PASS;
+   const transport=nodemailer.createTransport({host:process.env.SMTP_HOST,port:Number(process.env.SMTP_PORT),secure:process.env.SMTP_SECURE==='true',...(process.env.SMTP_USER?{auth:{user:process.env.SMTP_USER,pass:password}}:{}),connectionTimeout:5000,socketTimeout:10000});
    try{
-    const result=await transport.sendMail({from:process.env.SMTP_FROM??'local-financial@solar-platform.invalid',to:recipient.email,messageId,subject:`TEST ${job.document_number}`,text:'Synthetic local document workflow test. Saved original attached.',attachments:[{filename:documentPdfFilename(job.document_number),content:job.pdf_bytes,contentType:'application/pdf'}]});
+    const result=await transport.sendMail({from:process.env.SMTP_FROM??'local-financial@solar-platform.invalid',to:recipient.email,messageId,subject:`${test?'TEST ':''}${job.document_number}`,text:test?'Synthetic local document workflow test. Saved original attached.':'Your issued document is attached.',attachments:[{filename:documentPdfFilename(job.document_number),content:job.pdf_bytes,contentType:'application/pdf'}]});
     if(!result.accepted?.map((email:string)=>email.toLowerCase()).includes(recipient.email.toLowerCase()))throw Object.assign(new Error('SMTP recipient rejected'),{code:'ERECIPIENT'});
    }catch(error){
     const e=error as Error&{code?:string;responseCode?:number};const safe=['ECONNREFUSED','ERECIPIENT','EAUTH','EDNS'].includes(e.code??'')||Boolean(e.responseCode&&e.responseCode>=400);

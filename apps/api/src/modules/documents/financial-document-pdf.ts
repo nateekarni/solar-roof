@@ -24,7 +24,7 @@ interface SavedFinancialDocument {
   document_type: string;
   document_number: string;
   snapshot: {
-    policy?: {taxPercent?: string | number;taxMode?: string};
+    policy?: {scope?:string;taxPercent?: string | number;taxMode?: string;taxRate?:string;pricesIncludeTax?:boolean};
     company: SavedFinancialParty;
     customer: SavedFinancialParty;
     cycle: {
@@ -56,8 +56,8 @@ function partySnapshot(party: SavedFinancialParty, customer: boolean): DocumentP
     ...((customer ? party.tax_email : party.email) ? { email: customer ? party.tax_email : party.email } : {}),
   };
 }
-/** Convert existing frozen TEST snapshots; never update their original data or artifacts. */
-export function localTestDocumentSnapshot(document: SavedFinancialDocument): DocumentSnapshot {
+/** Render only frozen financial data; never update original snapshots or artifacts. */
+export function financialDocumentSnapshot(document: SavedFinancialDocument): DocumentSnapshot {
   if (document.document_type !== 'invoice' && document.document_type !== 'receipt') throw new Error('Financial document type required');
   const s = document.snapshot;
   return {
@@ -75,7 +75,7 @@ export function localTestDocumentSnapshot(document: SavedFinancialDocument): Doc
       period: `${line.from} - ${new Date(Date.parse(line.to) - 86400000).toISOString().slice(0, 10)}`,
       quantity: line.consumedKwh, rate: line.rate, amount: line.subtotal,
     })),
-    totals: { subtotal: s.cycle.subtotal, tax: s.cycle.simulated_tax, taxLabel: s.policy?.taxPercent !== undefined ? `ภาษี ${s.policy.taxPercent}%` : 'ภาษี', total: s.cycle.amount },
+    totals: { subtotal: s.cycle.subtotal, tax: s.cycle.simulated_tax, taxLabel: s.policy?.taxRate !== undefined ? `ภาษี ${s.policy.taxRate}%` : s.policy?.taxPercent !== undefined ? `ภาษี ${s.policy.taxPercent}%` : 'ภาษี', total: s.cycle.amount },
     approvedTransfers: s.payments.filter(p => p.status === 'paid' || p.status === 'approved').map(p => ({
       status: p.status as 'paid' | 'approved', paidAt: typeof p.paid_at === 'string' ? p.paid_at : p.paid_at.toISOString(), amount: p.amount,
       ...(p.evidence_key && !p.evidence_key.startsWith('data:') && p.evidence_key.length<=160 ? {evidence:p.evidence_key}:{}),
@@ -85,12 +85,12 @@ export function localTestDocumentSnapshot(document: SavedFinancialDocument): Doc
       ...(p.origin_account ? { originAccount: p.origin_account } : {}),
     })),
     paymentAccounts: s.banks.map(bank => ({ bankName: bank.bank_name, accountName: bank.account_name, accountNumber: bank.account_number })),
-    ...(s.dueDate ? { dueDate: s.dueDate } : {}), logoDataUri: s.logoDataUri ?? s.logo, templateVersion: s.templateVersion ?? 'sarabun-a4-v6', syntheticTest: false,
+    ...(s.dueDate ? { dueDate: s.dueDate } : {}), logoDataUri: s.logoDataUri ?? s.logo, templateVersion: s.templateVersion ?? 'sarabun-a4-v6', syntheticTest: s.policy?.scope==='TEST',
   };
 }
-export async function renderLocalTestPdf(document: SavedFinancialDocument): Promise<Buffer> {
-  return renderDocumentPdf(localTestDocumentSnapshot(document));
+export async function renderFinancialDocumentPdf(document: SavedFinancialDocument): Promise<Buffer> {
+  return renderDocumentPdf(financialDocumentSnapshot(document));
 }
-export function formatTestMoney(value: unknown): string {
+export function formatFinancialMoney(value: unknown): string {
   return formatDocumentMoney(String(value));
 }

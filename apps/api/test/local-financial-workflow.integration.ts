@@ -3,12 +3,12 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { DatabaseService } from '../src/database/database.service.js';
 import { FinancialReadinessService } from '../src/modules/billing/financial-readiness.service.js';
-import { LocalFinancialApplicationService } from '../src/modules/billing/local-financial-application.service.js';
+import { FinancialApplicationService } from '../src/modules/billing/financial-application.service.js';
 import { localFinancialBinding } from '../src/modules/billing/local-financial-policy.js';
 if(!localFinancialBinding())throw new Error('Exact local TEST binding required');
 const api='http://127.0.0.1:13059',mail='http://127.0.0.1:18049';
 const id=(key:string)=>createHash('sha256').update(`solar-financial-flow-review-v1:${key}`).digest('hex').slice(0,32).replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/,'$1-$2-$3-$4-$5');
-const db=new DatabaseService();const readiness=new FinancialReadinessService(db),application=new LocalFinancialApplicationService(db,readiness);
+const db=new DatabaseService();const readiness=new FinancialReadinessService(db),application=new FinancialApplicationService(db,readiness);
 async function login(email:string){const response=await fetch(`${api}/v1/auth/login`,{method:'POST',headers:{'Content-Type':'application/json',Origin:'http://localhost:13049'},body:JSON.stringify({email,password:process.env.LOCAL_FINANCIAL_TEST_PASSWORD??'LocalFinancial2026!'})});if(response.status!==200)throw new Error(await response.text());return (await response.json()).accessToken as string;}
 async function request(token:string,path:string,method='GET',body?:unknown,expected=200){const response=await fetch(`${api}${path}`,{method,headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json',Origin:'http://localhost:13049'},...(body===undefined?{}:{body:JSON.stringify(body)})});const value=await response.text();assert.equal(response.status,expected,`${method} ${path}: ${value}`);return value?JSON.parse(value):null;}
 async function attachment(document:any,token:string){const response=await fetch(`${api}/v1/operations/documents/${document.id}/pdf`,{headers:{Authorization:`Bearer ${token}`}});assert.equal(response.status,200);const bytes=Buffer.from(await response.arrayBuffer());assert.equal(bytes.subarray(0,5).toString(),'%PDF-');const hash=createHash('sha256').update(bytes).digest('hex');assert.equal(hash,document.content_hash);
