@@ -27,7 +27,7 @@ import nodemailer from "nodemailer";
 import { DatabaseService } from "../../database/database.service.js";
 import { Roles } from "../../common/roles.decorator.js";
 
-import { FinancialReadinessService } from "./financial-readiness.service.js";
+import { FinancialReadinessService } from "../financial-readiness/financial-readiness.service.js";
 import { LocalFinancialApplicationService } from './local-financial-application.service.js';
 
 @Controller("v1")

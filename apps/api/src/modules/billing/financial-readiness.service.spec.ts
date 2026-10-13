@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { FinancialReadinessService } from './financial-readiness.service.js';
+import { FinancialReadinessService } from '../financial-readiness/financial-readiness.service.js';
 test('Admin exposes no financial capabilities and workflow readiness remains required',async()=>{
  const service=new FinancialReadinessService();
  const result=await service.capabilities('admin',true);

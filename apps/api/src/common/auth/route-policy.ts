@@ -25,6 +25,7 @@ export function isOwnerCompanyMutation(method: string, rawPath: string): boolean
 export function routeAllowed(role: string, method: string, rawPath: string): boolean {
   if (!["owner", "admin", "operator", "accountant", "customer_user"].includes(role)) return false;
   const path = rawPath.split("?")[0]!.replace(/\/$/, "");
+  if (/^\/v1\/settings\/finance-readiness(?:\/|$)/.test(path)) return role==='owner' && (path==='/v1/settings/finance-readiness'&&['GET','HEAD'].includes(method) || path==='/v1/settings/finance-readiness/confirm'&&method==='POST');
   if (isOwnerCompanyMutation(method,path)) return role === 'owner';
   if(/^\/v1\/contracts(?:\/|$)/.test(path)&&!['GET','HEAD'].includes(method))return false;
   if(role==='owner'&&/^\/v1\/operations\/sites(?:\/|$)/.test(path))return ['GET','HEAD'].includes(method);

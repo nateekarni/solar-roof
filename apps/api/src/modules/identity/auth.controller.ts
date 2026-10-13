@@ -1,4 +1,4 @@
-import { FinancialReadinessService } from "../billing/financial-readiness.service.js";
+import { FinancialReadinessService } from "../financial-readiness/financial-readiness.service.js";
 import { customerScope } from "../../common/auth/route-policy.js";
 import type { Authorization } from '../../common/auth/authorization.js';
 import {
@@ -59,6 +59,7 @@ export class AuthController {
     return {...await this.readiness.capabilities(
       req.user?.role ?? "",
       scope === null || scope.length > 0,
+      req.user,
     ),authorization:req.user?.authorization};
   }
 

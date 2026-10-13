@@ -8,7 +8,7 @@ import { IngestionDatabaseService } from '../modules/telemetry/ingestion-databas
 import { MqttIngestionService } from '../modules/telemetry/mqtt-ingestion.service.js';
 import { BillingSourceBindingService } from '../modules/billing/billing-source-binding.service.js';
 import { LocalFinancialApplicationService } from '../modules/billing/local-financial-application.service.js';
-import { FinancialReadinessService } from '../modules/billing/financial-readiness.service.js';
+import { FinancialReadinessService } from '../modules/financial-readiness/financial-readiness.service.js';
 import { localFinancialBinding } from '../modules/billing/local-financial-policy.js';
 import { validatePayloadProfile } from '../modules/telemetry/payload-profile.js';
 if(process.env.BILLING_SOURCE_TEST_ISOLATED!=='true'||!localFinancialBinding())throw Error('Explicit isolated local financial TEST environment required');

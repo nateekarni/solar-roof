@@ -15,7 +15,7 @@ test('exact cumulative counter reset requires typed conflict and review',()=>{
 import {LocalFinancialApplicationService} from './local-financial-application.service.js';
 import {TEST_FINANCIAL_POLICY_HASH} from './local-financial-policy.js';
 import type {DatabaseService} from '../../database/database.service.js';
-import type {FinancialReadinessService} from './financial-readiness.service.js';
+import type {FinancialReadinessService} from '../financial-readiness/financial-readiness.service.js';
 test('TEST payment persistence keeps an exact large string amount',async()=>{
  let inserted=false;
  const db={transaction:async(run:any)=>run({query:async(sql:string,params:unknown[])=>{

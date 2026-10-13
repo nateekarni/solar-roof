@@ -9,7 +9,7 @@ import { deliverSavedArtifacts, frozenRecipients, originalArtifactHash } from '.
 import { customerScope, type ScopePrincipal } from '../../common/auth/route-policy.js';
 import {hasPermission,siteScope} from '../../common/auth/authorization.js';
 import { DatabaseService } from '../../database/database.service.js';
-import { FinancialReadinessService } from './financial-readiness.service.js';
+import { FinancialReadinessService } from '../financial-readiness/financial-readiness.service.js';
 import { calculateTestTotals, requireTestTransferAmount, validFinancialDate, decimal, sqlCalendarPeriod, actualEnergyDifference, requireTestSettlement, TEST_FINANCIAL_POLICY, TEST_FINANCIAL_POLICY_HASH, localFinancialBinding } from './local-financial-policy.js';
 import { BRAND_PRIMARY } from '@solar/domain';
 import type { PaymentSubmission } from '@solar/api-contracts';

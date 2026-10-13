@@ -5,7 +5,7 @@ import {assertLocalDockerTarget} from './guard.mjs';
 import {cutoffInstant} from './fixture.mjs';
 import {sites,reading} from './telemetry-fixture.mjs';
 import {DatabaseService} from '../../apps/api/src/database/database.service.ts';
-import {FinancialReadinessService} from '../../apps/api/src/modules/billing/financial-readiness.service.ts';
+import {FinancialReadinessService} from '../../apps/api/src/modules/financial-readiness/financial-readiness.service.ts';
 import {LocalFinancialApplicationService} from '../../apps/api/src/modules/billing/local-financial-application.service.ts';
 assertLocalDockerTarget('financial');
 const month=process.argv.find(a=>a.startsWith('--month='))?.slice(8)??'2026-08';

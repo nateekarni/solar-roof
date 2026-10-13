@@ -1,4 +1,4 @@
-import { FinancialReadinessService } from "../billing/financial-readiness.service.js";
+import { FinancialReadinessModule } from "../financial-readiness/financial-readiness.module.js";
 import { Module } from "@nestjs/common";
 import { loadEnv } from "@solar/domain";
 import { DatabaseModule } from "../../database/database.module.js";
@@ -21,10 +21,9 @@ import {AvatarController} from './avatar.controller.js';
 import {DatabaseService} from '../../database/database.service.js';
 
 @Module({
-  imports: [DatabaseModule],
+  imports: [DatabaseModule, FinancialReadinessModule],
   controllers: [AuthController, MeController, UsersController, InvitationController, TeamController, TwoFactorController, AvatarController, PasswordResetController],
   providers: [
-    FinancialReadinessService,
     {
       provide: AuthService,
       useFactory: () => {

@@ -2,6 +2,16 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { permissionForRoute, authorizedRoute } from './domain-route-policy.js';
 import { effectiveAuthorization } from './authorization.js';
+import { routeAllowed } from './route-policy.js';
+
+test('only Owner can inspect and confirm production finance readiness through both route policies',()=>{
+ for(const role of ['owner','admin','operator','accountant','customer_user'])for(const [method,path] of [['GET','/v1/settings/finance-readiness'],['POST','/v1/settings/finance-readiness/confirm']]){
+  const actor={role,authorization:effectiveAuthorization('owner',0,[])};
+  assert.equal(routeAllowed(role,method!,path!),role==='owner',`${role} ${method} legacy policy`);
+  assert.equal(authorizedRoute(actor,method!,path!),role==='owner',`${role} ${method} domain policy`);
+ }
+ assert.equal(authorizedRoute({role:'owner'},'DELETE','/v1/settings/finance-readiness/confirm'),false);
+});
 
 test('operation customer and alert routes enforce the same permissions as their direct endpoints',()=>{
  for(const [resource,permission,manager] of [['customers','business.customers.view','owner'],['alerts','technical.alerts.view','admin']]){

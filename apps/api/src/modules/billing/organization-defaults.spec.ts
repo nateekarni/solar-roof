@@ -3,7 +3,7 @@ import test from 'node:test';
 import { BillingController } from './billing.controller.js';
 import { routeAllowed } from '../../common/auth/route-policy.js';
 import type { DatabaseService } from '../../database/database.service.js';
-import type { FinancialReadinessService } from './financial-readiness.service.js';
+import type { FinancialReadinessService } from '../financial-readiness/financial-readiness.service.js';
 import type { LocalFinancialApplicationService } from './local-financial-application.service.js';
 function fixture(){
  let current={legalName:'Current legal',taxId:'1234567890123',taxBranch:'00000',taxAddress:'Bangkok',documentEmail:'bill@example.com',phone:'02'};

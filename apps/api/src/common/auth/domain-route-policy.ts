@@ -30,6 +30,7 @@ export function permissionForRoute(method:string,rawPath:string):string|undefine
 }
 export function authorizedRoute(user:AuthorizationPrincipal|undefined,method:string,path:string):boolean {
  if(!user?.role)return false;
+ if(/^\/v1\/settings\/finance-readiness(?:\/|$)/.test(path))return routeAllowed(user.role,method,path);
  if(isOwnerCompanyMutation(method,path))return user.role==='owner';
  if(/^\/v1\/contracts(?:\/|$)/.test(path)&&!['GET','HEAD'].includes(method))return false;
  if(/^\/v1\/(?:reports|jobs|history)(?:\/|$)/.test(path)||/^\/v1\/operations\/(?:reports|notifications)(?:\/|$)/.test(path))return false;

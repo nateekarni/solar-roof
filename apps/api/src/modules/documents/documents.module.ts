@@ -1,4 +1,4 @@
-import { FinancialReadinessService } from "../billing/financial-readiness.service.js";
+import { FinancialReadinessModule } from "../financial-readiness/financial-readiness.module.js";
 import { Module } from "@nestjs/common";
 import { DatabaseModule } from "../../database/database.module.js";
 import { DocumentService, NumberSeriesService } from "./document.service.js";
@@ -7,9 +7,9 @@ import { FileStorageService } from "./file-storage.service.js";
 import { VerificationService } from "./verification.service.js";
 
 @Module({
-  imports: [DatabaseModule],
+  imports: [DatabaseModule, FinancialReadinessModule],
   controllers: [DocumentsController],
-  providers: [FinancialReadinessService, NumberSeriesService, DocumentService, FileStorageService, VerificationService],
+  providers: [NumberSeriesService, DocumentService, FileStorageService, VerificationService],
   exports: [NumberSeriesService, DocumentService, FileStorageService, VerificationService],
 })
 export class DocumentsModule {}

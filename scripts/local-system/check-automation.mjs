@@ -4,7 +4,7 @@ import {writeFile,readFile} from 'node:fs/promises';
 import {assertLocalDockerTarget} from './guard.mjs';
 import {DatabaseService} from '../../apps/api/src/database/database.service.ts';
 import {OperationalAutomationService} from '../../apps/api/src/modules/notifications/operational-automation.service.ts';
-import {FinancialReadinessService} from '../../apps/api/src/modules/billing/financial-readiness.service.ts';
+import {FinancialReadinessService} from '../../apps/api/src/modules/financial-readiness/financial-readiness.service.ts';
 import {LocalFinancialApplicationService} from '../../apps/api/src/modules/billing/local-financial-application.service.ts';
 assertLocalDockerTarget('financial');
 const db=new DatabaseService({statementTimeout:120000,applicationName:'local-automation-test'});

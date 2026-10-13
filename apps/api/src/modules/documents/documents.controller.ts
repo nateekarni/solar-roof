@@ -3,7 +3,7 @@ import { BadRequestException, Body, Controller, Inject, Post } from "@nestjs/com
 import { randomUUID } from "node:crypto";
 import { DatabaseService } from "../../database/database.service.js";
 
-import { FinancialReadinessService } from "../billing/financial-readiness.service.js";
+import { FinancialReadinessService } from "../financial-readiness/financial-readiness.service.js";
 import { Roles } from "../../common/roles.decorator.js";
 @Controller("v1/documents")
 export class DocumentsController {

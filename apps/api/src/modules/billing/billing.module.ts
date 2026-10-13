@@ -5,7 +5,7 @@ import { BillingSourceBindingService } from './billing-source-binding.service.js
 import { ContractPdfService } from '../documents/contract-pdf.service.js';
 import { LocalFinancialApplicationService } from './local-financial-application.service.js';
 import { LocalFinancialScheduler } from './local-financial-scheduler.js';
-import { FinancialReadinessService } from "./financial-readiness.service.js";
+import { FinancialReadinessModule } from "../financial-readiness/financial-readiness.module.js";
 import { Module } from "@nestjs/common";
 import { DatabaseModule } from "../../database/database.module.js";
 import { BillingCalculationService } from "./billing-calculation.service.js";
@@ -15,9 +15,9 @@ import { ContractService } from "./contract.service.js";
 import { RateService } from "./rate.service.js";
 
 @Module({
-  imports: [DatabaseModule],
+  imports: [DatabaseModule, FinancialReadinessModule],
   controllers: [SiteBillingController, BillingController, BillingSourceBindingController],
-  providers: [SiteBillingService, ContractPdfService, BillingSourceBindingService, LocalFinancialApplicationService, LocalFinancialScheduler, FinancialReadinessService, ContractService, RateService, BillingCalculationService, BillingCycleService],
+  providers: [SiteBillingService, ContractPdfService, BillingSourceBindingService, LocalFinancialApplicationService, LocalFinancialScheduler, ContractService, RateService, BillingCalculationService, BillingCycleService],
   exports: [ContractService, RateService, BillingCalculationService, BillingCycleService],
 })
 export class BillingModule {}
