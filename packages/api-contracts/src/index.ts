@@ -129,5 +129,6 @@ export interface DashboardDayResponse {
 }
 
 export type { FinancialAction, Capabilities } from './capabilities.js';
+export type { FinancialScope, ReadinessResponsibility, FinancialReadinessItem, FinancialReadinessStatus, FinancialReadinessContext } from './financial-readiness.js';
 export type { JobRecord, JobStatus } from './jobs.js';
 export type {ArchiveManifest,HistoryRestoreRequest,HistoryRestoreAccepted} from './history.js';

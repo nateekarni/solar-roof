@@ -62,6 +62,7 @@ try {
     "infra/migrations/053_user_authenticators.sql",
     "infra/migrations/054_user_avatar.sql",
     "infra/migrations/055_email_factor_password_reset.sql",
+    "infra/migrations/056_production_financial_readiness.sql",
   ];
   for (const file of migrationFiles) {
     const sql = await readFile(new URL(`../../../../${file}`, import.meta.url), "utf8");
