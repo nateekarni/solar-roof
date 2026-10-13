@@ -1,11 +1,12 @@
 import { Module } from "@nestjs/common";
 import { SettingsController } from "./settings.controller.js";
+import { BrandingController } from './branding.controller.js';
 import { MeterPresetsController } from "./meter-presets.controller.js";
 import { PayloadPresetsController } from "./payload-presets.controller.js";
 import { SettingsService } from "./settings.service.js";
 
 @Module({
-  controllers: [SettingsController, MeterPresetsController, PayloadPresetsController],
+  controllers: [SettingsController, BrandingController, MeterPresetsController, PayloadPresetsController],
   providers: [SettingsService],
   exports: [SettingsService],
 })

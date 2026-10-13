@@ -49,10 +49,10 @@ export class SettingsController {
     return this.settingsService.getCompanyProfile();
   }
 
-  @Roles("admin", "owner")
+  @Roles("owner")
   @Put("company")
-  async updateCompanyProfile(@Body() body: any) {
-    const updated = await this.settingsService.updateCompanyProfile(body);
+  async updateCompanyProfile(@Body() body: any, @Req() req: {user:{id:string}}) {
+    const updated = await this.settingsService.updateCompanyProfile(body, req.user.id);
     return {
       success: true,
       message: "บันทึกข้อมูลบริษัทเรียบร้อยแล้ว",
@@ -65,10 +65,10 @@ export class SettingsController {
     return this.settingsService.listBankAccounts();
   }
 
-  @Roles("admin", "owner")
+  @Roles("owner")
   @Put("bank-accounts")
-  async saveBankAccount(@Body() body: any) {
-    const account = await this.settingsService.saveBankAccount(body);
+  async saveBankAccount(@Body() body: any, @Req() req: {user:{id:string}}) {
+    const account = await this.settingsService.saveBankAccount(body, req.user.id);
     return {
       success: true,
       message: "บันทึกข้อมูลบัญชีธนาคารเรียบร้อยแล้ว",
@@ -76,10 +76,10 @@ export class SettingsController {
     };
   }
 
-  @Roles("admin", "owner")
+  @Roles("owner")
   @Put("bank-accounts/:id")
-  async updateBankAccount(@Param("id") id: string, @Body() body: any) {
-    const account = await this.settingsService.saveBankAccount({ ...body, id });
+  async updateBankAccount(@Param("id") id: string, @Body() body: any, @Req() req: {user:{id:string}}) {
+    const account = await this.settingsService.saveBankAccount({ ...body, id }, req.user.id);
     return {
       success: true,
       message: "บันทึกข้อมูลบัญชีธนาคารเรียบร้อยแล้ว",
@@ -87,10 +87,10 @@ export class SettingsController {
     };
   }
 
-  @Roles("admin", "owner")
+  @Roles("owner")
   @Delete("bank-accounts/:id")
-  async deleteBankAccount(@Param("id") id: string) {
-    await this.settingsService.deleteBankAccount(id);
+  async deleteBankAccount(@Param("id") id: string, @Req() req: {user:{id:string}}) {
+    await this.settingsService.deleteBankAccount(id, req.user.id);
     return {
       success: true,
       message: "ลบบัญชีธนาคารเรียบร้อยแล้ว",

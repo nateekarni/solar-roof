@@ -17,9 +17,15 @@ export function customerScope(user: ScopePrincipal | undefined): string[] | null
 }
 
 /** Action policy is server-owned; request headers cannot select privileges. */
+export function isOwnerCompanyMutation(method: string, rawPath: string): boolean {
+  const path = rawPath.split('?')[0]!.replace(/\/$/, '');
+  return /^\/v1\/settings\/(?:company|bank-accounts)(?:\/|$)/i.test(path) && !['GET','HEAD','OPTIONS'].includes(method.toUpperCase());
+}
+
 export function routeAllowed(role: string, method: string, rawPath: string): boolean {
   if (!["owner", "admin", "operator", "accountant", "customer_user"].includes(role)) return false;
   const path = rawPath.split("?")[0]!.replace(/\/$/, "");
+  if (isOwnerCompanyMutation(method,path)) return role === 'owner';
   if(/^\/v1\/contracts(?:\/|$)/.test(path)&&!['GET','HEAD'].includes(method))return false;
   if(role==='owner'&&/^\/v1\/operations\/sites(?:\/|$)/.test(path))return ['GET','HEAD'].includes(method);
   if(/^\/v1\/sites\/[^/]+\/billing-settings$/.test(path))return ['owner','accountant'].includes(role)&&['GET','HEAD','PUT'].includes(method);

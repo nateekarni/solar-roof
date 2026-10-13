@@ -1,6 +1,39 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { routeAllowed, customerScope } from "./route-policy.js";
+import { authorizedRoute } from './domain-route-policy.js';
+import { effectiveAuthorization } from './authorization.js';
+import { Reflector } from '@nestjs/core';
+import { RolesGuard as LegacyRolesGuard } from '../roles.guard.js';
+import { RolesGuard, RequireRoles } from './roles.guard.js';
+import { SettingsController } from '../../modules/settings/settings.controller.js';
+import type { ExecutionContext } from '@nestjs/common';
+import type { Request } from 'express';
+import { isAllowedRequestOrigin } from './request-origin.guard.js';
+
+test('public branding GET and HEAD work without Origin while cross-origin mutations remain blocked',()=>{
+ for(const method of ['GET','HEAD'])for(const origin of [undefined,'https://external.example'])assert.equal(isAllowedRequestOrigin({method,path:'/v1/public/branding/logo',headers:{origin}} as Request,'https://web.example'),true);
+ assert.equal(isAllowedRequestOrigin({method:'PUT',path:'/v1/settings/company',headers:{origin:'https://external.example'}} as Request,'https://web.example'),false);
+});
+
+test('only Owner can mutate global company and bank settings even with staff permission grants',()=>{
+ for(const path of ['/v1/settings/company','/v1/settings/bank-accounts','/v1/settings/bank-accounts/account-a'])for(const method of ['PUT','PATCH','POST','DELETE']){
+  for(const role of ['admin','operator','accountant','customer_user']){
+   const authorization=effectiveAuthorization(role,1,[{domain:'business',preset:{'business.settings.edit':true},overrides:{},scope:{mode:'all',siteIds:[]}}]);
+   assert.equal(routeAllowed(role,method,path),false);assert.equal(authorizedRoute({role,authorization},method,path),false);
+  }
+ }
+ for(const [method,path]of [['PUT','/v1/settings/company'],['PUT','/v1/settings/bank-accounts'],['DELETE','/v1/settings/bank-accounts/account-a']])assert.equal(authorizedRoute({role:'owner'},method!,path!),true);
+});
+test('both role guard layers enforce company Owner restriction against employee grants',()=>{
+ const handler=SettingsController.prototype.updateCompanyProfile;
+ RequireRoles('owner')({},'handler',{value:handler});
+ for(const role of ['admin','operator','accountant','customer_user']){
+  const authorization=effectiveAuthorization(role,1,[{domain:'business',preset:{'business.settings.edit':true},overrides:{},scope:{mode:'all',siteIds:[]}}]);
+  const context={getHandler:()=>handler,getClass:()=>SettingsController,switchToHttp:()=>({getRequest:()=>({method:'PUT',path:'/v1/settings/company',user:{role,authorization}})})} as unknown as ExecutionContext;
+  assert.throws(()=>new LegacyRolesGuard(new Reflector()).canActivate(context));assert.throws(()=>new RolesGuard().canActivate(context));
+ }
+});
 test('customer detailed comparison permits only read-only exact endpoint and retains legacy denial',()=>{
  for(const method of ['GET','HEAD'])assert.equal(routeAllowed('customer_user',method,'/v1/dashboard/comparison?site_ids=assigned'),true);
  for(const method of ['POST','PUT','PATCH','DELETE'])assert.equal(routeAllowed('customer_user',method,'/v1/dashboard/comparison'),false);

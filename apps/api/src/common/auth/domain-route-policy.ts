@@ -1,5 +1,5 @@
 import { hasPermission, type AuthorizationPrincipal } from './authorization.js';
-import { routeAllowed } from './route-policy.js';
+import { routeAllowed, isOwnerCompanyMutation } from './route-policy.js';
 export function permissionForRoute(method:string,rawPath:string):string|undefined {
  const path=rawPath.split('?')[0]!.replace(/\/$/,'');
  let resource:string|undefined;
@@ -30,6 +30,7 @@ export function permissionForRoute(method:string,rawPath:string):string|undefine
 }
 export function authorizedRoute(user:AuthorizationPrincipal|undefined,method:string,path:string):boolean {
  if(!user?.role)return false;
+ if(isOwnerCompanyMutation(method,path))return user.role==='owner';
  if(/^\/v1\/contracts(?:\/|$)/.test(path)&&!['GET','HEAD'].includes(method))return false;
  if(/^\/v1\/(?:reports|jobs|history)(?:\/|$)/.test(path)||/^\/v1\/operations\/(?:reports|notifications)(?:\/|$)/.test(path))return false;
  if(/^\/v1\/team(?:\/|$)/.test(path))return user.role==='owner'||user.role==='admin';

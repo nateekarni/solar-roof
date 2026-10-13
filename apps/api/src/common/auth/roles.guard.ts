@@ -2,6 +2,7 @@ import { ForbiddenException, Injectable, SetMetadata } from "@nestjs/common";
 import type { CanActivate, ExecutionContext } from "@nestjs/common";
 import { permissionForRoute } from './domain-route-policy.js';
 import { hasPermission, type AuthorizationPrincipal } from './authorization.js';
+import { isOwnerCompanyMutation } from './route-policy.js';
 
 export const REQUIRED_ROLES = "required_roles";
 export const RequireRoles = (...roles: string[]) => SetMetadata(REQUIRED_ROLES, roles);
@@ -12,6 +13,7 @@ export class RolesGuard implements CanActivate {
     const roles = Reflect.getMetadata(REQUIRED_ROLES, context.getHandler()) as string[] | undefined;
     if (!roles || roles.length === 0) return true;
     const request = context.switchToHttp().getRequest<{ user?: AuthorizationPrincipal;method?:string;path?:string;url?:string }>();
+    if(isOwnerCompanyMutation(request.method??'',request.path??request.url??'') && request.user?.role!=='owner')throw new ForbiddenException('Only Owner can change company financial settings');
     const permission=permissionForRoute(request.method??'',request.path??request.url??'');
     if(request.user?.authorization&&permission&&hasPermission(request.user,permission))return true;
     if (!request.user?.role || !roles.includes(request.user.role)) {

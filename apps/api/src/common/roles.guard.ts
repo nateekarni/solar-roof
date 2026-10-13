@@ -4,6 +4,7 @@ import type { PlatformRole } from "@solar/domain";
 import { ROLES_KEY } from "./roles.decorator.js";
 import { permissionForRoute } from './auth/domain-route-policy.js';
 import { hasPermission } from './auth/authorization.js';
+import { isOwnerCompanyMutation } from './auth/route-policy.js';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
@@ -21,6 +22,7 @@ export class RolesGuard implements CanActivate {
 
     const request = context.switchToHttp().getRequest();
     const user = request.user;
+    if(isOwnerCompanyMutation(request.method??'',request.path??request.url??'') && user?.role!=='owner')throw new ForbiddenException('Only Owner can change company financial settings');
     const permission=permissionForRoute(request.method??'',request.path??request.url??'');
     if(user?.authorization&&permission&&hasPermission(user,permission))return true;
 
