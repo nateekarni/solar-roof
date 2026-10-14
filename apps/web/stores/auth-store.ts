@@ -7,6 +7,8 @@ export interface AuthUser {
   id: string;
   email: string;
   displayName: string;
+  companyPosition?: string | null;
+  hasSignature?: boolean;
   avatarData?: string | null;
   role: "owner" | "admin" | "operator" | "accountant" | "customer_user";
   customerId?: string | null;
@@ -31,6 +33,21 @@ let currentState: AuthState = {
 
 const listeners = new Set<() => void>();
 
+// Auth responses and profile responses have different privacy boundaries.
+// Keep only session-safe fields, even if a caller passes a full profile object.
+function sessionUser(user: AuthUser): AuthUser {
+  return {
+    id: user.id, email: user.email, displayName: user.displayName, role: user.role,
+    ...(user.avatarData !== undefined ? {avatarData: user.avatarData} : {}),
+    ...(user.customerId !== undefined ? {customerId: user.customerId} : {}),
+    ...(user.authorization !== undefined ? {authorization: user.authorization} : {}),
+    ...(user.preferredLanguage !== undefined ? {preferredLanguage: user.preferredLanguage} : {}),
+    ...(user.preferredTheme !== undefined ? {preferredTheme: user.preferredTheme} : {}),
+    ...(user.companyPosition !== undefined ? {companyPosition: user.companyPosition} : {}),
+    ...(user.hasSignature !== undefined ? {hasSignature: user.hasSignature} : {}),
+  };
+}
+
 function notify() {
   listeners.forEach((listener) => listener());
 }
@@ -40,11 +57,15 @@ function initFromStorage() {
   try {
     const storedUser = localStorage.getItem(AUTH_STORAGE_KEY);
     const storedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
+    const user = storedUser ? sessionUser(JSON.parse(storedUser)) : null;
     currentState = {
-      user: storedUser ? JSON.parse(storedUser) : null,
+      user,
       accessToken: storedToken || null,
       isInitialized: true,
     };
+    if (user) {
+      try { localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user)); } catch {}
+    }
   } catch {
     currentState = { user: null, accessToken: null, isInitialized: true };
   }
@@ -64,6 +85,7 @@ export const authStore = {
   },
 
   setAuth(user: AuthUser, accessToken?: string) {
+    user = sessionUser(user);
     currentState = { user, accessToken: accessToken || null, isInitialized: true };
     if (typeof window !== "undefined") {
       try {
@@ -77,6 +99,16 @@ export const authStore = {
           document.cookie = `locale=${user.preferredLanguage}; path=/; max-age=31536000; SameSite=Lax`;
         }
       } catch {}
+    }
+    notify();
+  },
+
+  updateDocumentIdentity(userId: string, identity: {companyPosition: string | null; hasSignature: boolean}) {
+    if (currentState.user?.id !== userId) return;
+    const user = sessionUser({...currentState.user, companyPosition: identity.companyPosition, hasSignature: identity.hasSignature});
+    currentState = {...currentState, user};
+    if (typeof window !== "undefined") {
+      try { localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user)); } catch {}
     }
     notify();
   },
