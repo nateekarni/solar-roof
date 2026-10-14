@@ -9,6 +9,7 @@ try{
  await db.query(`CREATE INDEX IF NOT EXISTS local_system_payload_latest_measured ON payload_samples(site_id,device_id,profile_revision_id,tag,(coalesce(measured_at,polled_at)) DESC,received_at DESC,id DESC)`);
  await db.query(`CREATE INDEX IF NOT EXISTS local_system_payload_device_latest ON payload_samples(device_id,polled_at DESC,received_at DESC)`);
  await db.query(`CREATE INDEX IF NOT EXISTS local_system_payload_device_measured ON payload_samples(device_id,profile_revision_id,tag,(coalesce(measured_at,polled_at)) DESC,received_at DESC,id DESC)`);
+ await db.query(`CREATE INDEX IF NOT EXISTS payload_samples_device_last_seen ON payload_samples(device_id,(coalesce(measured_at,polled_at)) DESC,received_at DESC,id DESC)`);
  await db.query('ANALYZE payload_samples');await db.query('ANALYZE devices');
  console.log('Prepared local history query index and planner statistics');
 }finally{await db.end();}

@@ -6,17 +6,21 @@
 
 ## บัญชี
 
-ทุกบัญชี active ใช้รหัส `SolarLocal2026!`:
+ทุกบัญชี active ใช้รหัส `SolarLocal2026!` ข้อมูลทั้งหมดเป็นข้อมูลสมมติและใช้อีเมลโดเมน `.test` ซึ่งส่งอีเมลจริงไม่ได้:
 
-| Role | อีเมล |
-| --- | --- |
-| owner | owner@example.test, owner2@example.test |
-| admin | admin@example.test, admin2@example.test |
-| operator | operator@example.test, operator2@example.test |
-| accountant | accountant@example.test, accountant2@example.test |
-| customer_user | customer01@example.test ถึง customer10@example.test |
+| Role | ชื่อ | อีเมล |
+| --- | --- | --- |
+| owner | ธนกฤต วัฒนาภิรมย์ | owner@demo.solar.test |
+| owner | พิมพ์ชนก ศรีวัฒน์ | owner.backup@demo.solar.test |
+| admin | กิตติศักดิ์ จันทร์ประเสริฐ | admin@demo.solar.test |
+| admin | อรทัย สุขเกษม | admin.backup@demo.solar.test |
+| operator | ภาคภูมิ อินทร์แก้ว | operator@demo.solar.test |
+| operator | ณัฐชา พงศ์ไพบูลย์ | operator.backup@demo.solar.test |
+| accountant | ชนาภา รัตนวาณิช | accountant@demo.solar.test |
+| accountant | วรพล ตั้งสุวรรณ | accountant.backup@demo.solar.test |
+| customer_user | ผู้ติดต่อฝ่ายการเงินของแต่ละลูกค้า | `billing.<รหัสไซต์>@customer.solar.test` |
 
-ดูบัญชีกับชื่อไซต์แบบครบใน `output/local-system/accounts.json` และ `output/local-system/ACCOUNTS.md` ลูกค้าแต่ละบัญชีเห็นเพียงไซต์ที่ผูกไว้ Owner ดูส่วนธุรกิจ ส่วน admin ดูระบบเทคนิค Operator และ accountant ได้สิทธิ์ทดสอบใน domain ของตน
+ดูบัญชี UUID ชื่อบริษัท รหัสไซต์ และชื่อไซต์แบบครบใน `output/local-system/accounts.json` และ `output/local-system/ACCOUNTS.md` ลูกค้าแต่ละบัญชีเห็นเพียงไซต์ที่ผูกไว้ Owner ดูส่วนธุรกิจ ส่วน admin ดูระบบเทคนิค Operator และ accountant ได้สิทธิ์ทดสอบใน domain ของตน ตัวอย่างบัญชีลูกค้าของไซต์ลาดกระบังคือ `billing.bkk-lkb-001@customer.solar.test`
 
 บัญชีเดิม 5 รายใน solar_platform ถูกลบแล้ว ฐานข้อมูลทดสอบสร้างบัญชีใช้งานใหม่ครบ 18 ราย มี principal ประวัติบางรายคงอยู่เป็น inactive ไม่มี password/session เพราะข้อมูลมิเตอร์ที่ immutable ยังอ้างอิงผู้สร้างเดิม ห้ามใช้บัญชี retired สำหรับล็อกอิน
 
@@ -26,8 +30,8 @@
 - ประวัติพลังงานทุก 5 นาทีและข้อมูลสด: meter ทุก 5 วินาที, logger ทุก 15 วินาที
 - 9 เกตเวย์ส่งข้อมูลต่อเนื่อง; SKA-HDY-010 หาดใหญ่จงใจ offline เพื่อทดสอบ alert
 - เลือกเดือนกันยายน 2026 บน Dashboard เพื่อดูประวัติครบเดือน; เดือนปัจจุบันแสดงความไม่ครบของข้อมูลตามจริงสำหรับไซต์ offline
-- รอบบิลสิงหาคมและกันยายนรวม 20 รอบ; invoice 20 ฉบับ และ receipt 1 ฉบับหลังทดสอบการชำระเงิน
-- customer01 มีบิลสิงหาคมชำระแล้วและบิลกันยายนรอชำระ ใช้ทดสอบหน้าบิล/ใบเสร็จได้
+- รอบบิลกรกฎาคม สิงหาคม และกันยายนรวม 30 รอบ; invoice 30 ฉบับ และ receipt อย่างน้อย 1 ฉบับหลังทดสอบการชำระเงิน
+- ลูกค้าไซต์ `AYA-BPI-004` มีบิลกรกฎาคมชำระแล้ว ส่วนบิลสิงหาคมและกันยายนใช้ทดสอบยอดค้าง/ประวัติเอกสารได้
 - กฎ offline พร้อมเหตุการณ์ alarm/recovery, notification ในแอป และอีเมลที่ Mailpit
 - `check-automation.mjs` ทดสอบข้อมูลมิเตอร์ขาดที่ boundary ภายใน transaction แล้ว rollback จึงไม่ทำให้ประวัติทดสอบเสีย
 
@@ -41,7 +45,7 @@ Docker รวมอยู่ใน Compose กลุ่มเดียว `solar
 pwsh -NoProfile -File scripts/local-system/start.ps1
 ```
 
-ตัว launcher ใช้ Docker และ seed เดิมที่เตรียมไว้ ไม่ใช่ installer สำหรับฐานข้อมูลว่าง Log อยู่ที่ `.tmp/local-system-app.log`, `.tmp/local-system-app-errors.log` และ `.tmp/local-system-publisher.log`
+ตัว launcher ใช้ Docker และ seed เดิมที่เตรียมไว้ จากนั้นปรับชื่อและอีเมลของบัญชี fixture ให้ตรงกับ catalog ล่าสุดแบบ idempotent โดยคง UUID เดิมไว้ และเติมสำเนาเอกสาร TEST ที่หายไปจาก Mailpit ด้วย PDF ต้นฉบับที่ผ่านการตรวจ hash การเติม Mailpit ไม่แก้สถานะ delivery หรือข้อมูลการเงิน ไม่ใช่ installer สำหรับฐานข้อมูลว่าง Log อยู่ที่ `.tmp/local-system-app.log`, `.tmp/local-system-app-errors.log` และ `.tmp/local-system-publisher.log`
 
 ## จำลองการตัดรอบบิล
 

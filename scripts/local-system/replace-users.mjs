@@ -3,6 +3,7 @@ import {stat,writeFile,mkdir} from 'node:fs/promises';
 import {randomBytes,scryptSync,randomUUID} from 'node:crypto';
 import {assertLocalDockerTarget} from './guard.mjs';
 import {validateReplacement,password,marker} from './fixture.mjs';
+import {buildDemoAccounts} from './demo-accounts.mjs';
 const require=createRequire(new URL('../../apps/api/package.json',import.meta.url));
 assertLocalDockerTarget('financial');
 const pool=new (require('pg').Pool)({connectionString:process.env.DATABASE_URL});
@@ -13,13 +14,9 @@ try{
  await c.query('LOCK TABLE users IN ACCESS EXCLUSIVE MODE');
  const oldUsers=(await c.query('SELECT * FROM users ORDER BY role,email')).rows;
  validateReplacement({databaseUrl:process.env.DATABASE_URL,backupBytes:(await stat('.tmp/local-system-backups/financial-before-users.dump')).size,oldUsers});
- const sites=(await c.query('SELECT id,customer_id,name,external_site_id FROM sites ORDER BY external_site_id')).rows;
+ const sites=(await c.query('SELECT s.id,s.customer_id,s.name,s.external_site_id,c.name AS customer_name FROM sites s JOIN customers c ON c.id=s.customer_id ORDER BY s.external_site_id')).rows;
  if(sites.length!==10)throw Error('Expected ten-site fixture');
- const roleCounts={};const accounts=oldUsers.map(u=>{const index=(roleCounts[u.role]??0)+1;roleCounts[u.role]=index;
- const site=u.role==='customer_user'?sites.find(s=>s.customer_id===u.customer_id):null;
- if(u.role==='customer_user'&&!site)throw Error('Missing customer site');
- const email=site?`customer${String(sites.indexOf(site)+1).padStart(2,'0')}@example.test`:`${u.role}${index===1?'':index}@example.test`;
- return {id:u.id,email,role:u.role,name:site?`ลูกค้าทดสอบ ${site.name}`:`ทดสอบ ${u.role} ${index}`,siteId:site?.id,siteName:site?.name,customerId:site?.customer_id};});
+ const accounts=buildDemoAccounts(oldUsers,sites);
  if(!process.argv.includes('--apply')){console.log(JSON.stringify({dryRun:true,accounts},null,2));await c.query('ROLLBACK');}
  else{
  if((await c.query('SELECT 1 FROM audit_events WHERE action=$1',[marker])).rowCount)throw Error('Already replaced; use existing credentials');

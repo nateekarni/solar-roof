@@ -1,14 +1,19 @@
 // Browser plugin not available in this session; use installed Playwright.
 import {createRequire} from 'node:module';
-import {writeFile} from 'node:fs/promises';
+import {readFile,writeFile} from 'node:fs/promises';
 import assert from 'node:assert/strict';
-import {password} from './fixture.mjs';
 const require=createRequire(new URL('../../apps/web/package.json',import.meta.url));
 const {chromium}=require('@playwright/test');
+const {accounts,password}=JSON.parse(await readFile('output/local-system/accounts.json','utf8'));
 const browser=await chromium.launch({channel:'msedge',headless:true});
 const evidence=[];
 try{
- for(const [email,path,name] of [['owner@example.test','/?start_date=2026-09-01&end_date=2026-09-30','owner-dashboard'],['admin@example.test','/gateways','admin-gateways'],['customer01@example.test','/billing','customer-billing']]){
+ const journeys=[
+  [accounts.find(account=>account.role==='owner').email,'/?start_date=2026-09-01&end_date=2026-09-30','owner-dashboard'],
+  [accounts.find(account=>account.role==='admin').email,'/gateways','admin-gateways'],
+  [accounts.find(account=>account.siteCode==='AYA-BPI-004').email,'/billing','customer-billing'],
+ ];
+ for(const [email,path,name] of journeys){
  const context=await browser.newContext({viewport:{width:1440,height:1000}});const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('response',r=>{if(r.status()>=500)errors.push(`${r.status()} ${r.url()}`);});
  await page.goto('http://localhost:3000/login');await page.locator('input[type=email]').fill(email);await page.locator('input[type=password]').fill(password);await page.locator('button[type=submit]').click();await page.waitForURL(u=>!u.pathname.includes('login'),{timeout:30000});
  await page.goto('http://localhost:3000'+path);await page.locator('main').first().waitFor();await page.waitForTimeout(2500);

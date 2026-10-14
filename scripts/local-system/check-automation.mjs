@@ -53,13 +53,13 @@ try{
  const client=await db.pool.connect();
  try{
  await client.query('BEGIN');
- const deleted=await client.query(`DELETE FROM telemetry_raw WHERE device_id=$1 AND semantic_field='total_energy' AND source_time BETWEEN '2026-07-14T16:55:00Z' AND '2026-07-14T17:05:00Z'`,[first.device_id]);
- assert.ok(deleted.rowCount>0,'Seed must contain the July boundary');
+ const deleted=await client.query(`DELETE FROM telemetry_raw WHERE device_id=$1 AND semantic_field='total_energy' AND source_time BETWEEN '2026-10-10T16:55:00Z' AND '2026-10-10T17:05:00Z'`,[first.device_id]);
+ assert.ok(deleted.rowCount>0,'Seed must contain the October boundary');
  const transactional={query:client.query.bind(client),transaction:async run=>run(client)};
  const financial=new FinancialApplicationService(transactional,new FinancialReadinessService(db));
- await assert.rejects(financial.calculate(first.site_id,'2026-07-15','2026-07-31'),/Missing actual cumulative reading/);
+ await assert.rejects(financial.calculate(first.site_id,'2026-10-01','2026-10-10'),/Missing actual cumulative reading/);
  }finally{await client.query('ROLLBACK');client.release();}
- const client2=await db.pool.connect();try{await client2.query('BEGIN');const transactional={query:client2.query.bind(client2),transaction:async run=>run(client2)};const financial=new FinancialApplicationService(transactional,new FinancialReadinessService(db));const restored=await financial.calculate(first.site_id,'2026-07-15','2026-07-31');assert.ok(Number(restored.cycles[0].consumed_kwh)>0);}finally{await client2.query('ROLLBACK');client2.release();}
+ const client2=await db.pool.connect();try{await client2.query('BEGIN');const transactional={query:client2.query.bind(client2),transaction:async run=>run(client2)};const financial=new FinancialApplicationService(transactional,new FinancialReadinessService(db));const restored=await financial.calculate(first.site_id,'2026-10-01','2026-10-10');assert.ok(Number(restored.cycles[0].consumed_kwh)>0);}finally{await client2.query('ROLLBACK');client2.release();}
  results.push({check:'Missing meter boundary blocks billing; restored data permits calculation (rolled back)',passed:true});
  await writeFile('output/local-system/automation-results.json',JSON.stringify({checkedAt:new Date().toISOString(),results},null,2));console.log(JSON.stringify(results,null,2));
 }catch(e){await writeFile('output/local-system/automation-results.json',JSON.stringify({results,failure:e.message},null,2));throw e;}finally{await db.pool.end();}

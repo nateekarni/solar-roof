@@ -6,6 +6,10 @@ if($LASTEXITCODE -ne 0){throw 'Local financial dependencies failed'}
 . (Join-Path $PSScriptRoot 'environment.ps1')
 node scripts/local-system/prepare-history.mjs
 if($LASTEXITCODE -ne 0){throw 'Local history preparation failed'}
+node scripts/local-system/reconcile-demo-identities.mjs
+if($LASTEXITCODE -ne 0){throw 'Local demo identity reconciliation failed'}
+node scripts/local-system/restore-mailpit.mjs
+if($LASTEXITCODE -ne 0){throw 'Local Mailpit restoration failed'}
 if(Get-NetTCPConnection -State Listen -LocalPort 3000,3001,3002 -ErrorAction SilentlyContinue){throw 'A local app already owns ports 3000–3002; inspect it before starting another instance'}
 $launcher=Join-Path $PSScriptRoot 'service.ps1'
 foreach($service in @('app','publisher')){

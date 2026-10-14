@@ -9,10 +9,11 @@ const pool=new (require('pg').Pool)({connectionString:process.env.DATABASE_URL})
 const {accounts,password}=JSON.parse(await readFile('output/local-system/accounts.json','utf8'));
 async function request(path,token,method='GET',body,expected=200){const r=await fetch('http://127.0.0.1:3001'+path,{method,headers:{Origin:'http://localhost:3000','Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:JSON.stringify(body)}:{})});const value=await r.json();assert.ok(expected===200?r.ok:r.status===expected,`${path}: ${r.status} ${JSON.stringify(value).slice(0,400)}`);return value;}
 try{
- const customer=accounts.find(a=>a.email==='customer01@example.test'),accountant=accounts.find(a=>a.email==='accountant@example.test');
+ const customer=accounts.find(a=>a.siteCode==='AYA-BPI-004'),accountant=accounts.find(a=>a.role==='accountant');
+ assert.ok(customer&&accountant,'Payment scenario accounts are required');
  const customerToken=(await request('/v1/auth/login',null,'POST',{email:customer.email,password})).accessToken;
  const accountantToken=(await request('/v1/auth/login',null,'POST',{email:accountant.email,password})).accessToken;
- const cycle=(await pool.query("SELECT * FROM billing_cycles WHERE site_id=$1 AND period_start='2026-08-01'",[customer.siteId])).rows[0];assert.ok(cycle);
+ const cycle=(await pool.query("SELECT * FROM billing_cycles WHERE site_id=$1 AND period_start>='2026-07-01' AND period_start<'2026-08-01' ORDER BY period_start LIMIT 1",[customer.siteId])).rows[0];assert.ok(cycle);
  const replay=cycle.status==='paid';
  if(!replay){
  assert.equal((await pool.query('SELECT count(*)::int n FROM payments WHERE billing_cycle_id=$1',[cycle.id])).rows[0].n,0,'Unexpected existing payment: inspect before replay');
