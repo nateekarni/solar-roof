@@ -22,15 +22,18 @@ export class MeController {
     if (!userId) throw new UnauthorizedException("Not authenticated");
 
     const query = `
-      SELECT id, email, display_name AS "displayName", role, status, customer_id AS "customerId",
-             preferred_language AS "preferredLanguage", preferred_theme AS "preferredTheme", avatar_data AS "avatarData"
-      FROM users
-      WHERE id = $1
+      SELECT u.id, u.email, u.display_name AS "displayName", u.role, u.status, u.customer_id AS "customerId",
+             u.preferred_language AS "preferredLanguage", u.preferred_theme AS "preferredTheme", u.avatar_data AS "avatarData",
+             p.name AS "companyPosition", (u.signature_data IS NOT NULL) AS "hasSignature"
+      FROM users u LEFT JOIN employee_positions p ON p.id = u.company_position_id
+      WHERE u.id = $1
     `;
     const result = await this.db.query(query, [userId]);
     if (result.rows.length === 0)
       throw new UnauthorizedException("User not found");
-    return {...result.rows[0]!,displayName:result.rows[0]!.displayName,authorization:req.user?.authorization};
+    const user = result.rows[0]!;
+    return {...user, displayName: user.displayName, companyPosition: user.companyPosition,
+      hasSignature: user.hasSignature, authorization: req.user?.authorization};
   }
 
   @Put("profile")
@@ -60,8 +63,16 @@ export class MeController {
 
   @Get("profile")
   async getProfile(@Req() req: Request & { user?: { id: string } }) {
-    const user = await this.getMe(req);
-    return { displayName: user.displayName };
+    const userId = req.user?.id;
+    if (!userId) throw new UnauthorizedException("Not authenticated");
+    const result = await this.db.query(`
+      SELECT u.display_name AS "displayName", p.name AS "companyPosition",
+             (u.signature_data IS NOT NULL) AS "hasSignature", u.signature_data AS "signatureDataUri"
+      FROM users u LEFT JOIN employee_positions p ON p.id = u.company_position_id
+      WHERE u.id = $1
+    `, [userId]);
+    if (!result.rows.length) throw new UnauthorizedException("User not found");
+    return result.rows[0];
   }
 
   @Put("preferences")

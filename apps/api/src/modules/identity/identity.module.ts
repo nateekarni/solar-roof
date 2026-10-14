@@ -18,11 +18,12 @@ import {TwoFactorController} from './two-factor.controller.js';
 import {TwoFactorService} from './two-factor.service.js';
 import {PasswordResetController} from './password-reset.controller.js';
 import {AvatarController} from './avatar.controller.js';
+import {PersonalSignatureController} from './personal-signature.controller.js';
 import {DatabaseService} from '../../database/database.service.js';
 
 @Module({
   imports: [DatabaseModule, FinancialReadinessModule],
-  controllers: [AuthController, MeController, UsersController, InvitationController, TeamController, TwoFactorController, AvatarController, PasswordResetController],
+  controllers: [AuthController, MeController, UsersController, InvitationController, TeamController, TwoFactorController, AvatarController, PersonalSignatureController, PasswordResetController],
   providers: [
     {
       provide: AuthService,
