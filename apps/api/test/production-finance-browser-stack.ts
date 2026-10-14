@@ -16,7 +16,7 @@ export async function startAcceptanceApps(databaseUrl:string,password:string,sch
  }
  await mkdir(artifacts,{recursive:true});
  const scoped=new URL(databaseUrl);scoped.searchParams.set('options',`-c search_path=${schema},public`);
- const env={...process.env,DATABASE_URL:scoped.toString(),NODE_ENV:'production',API_HOST:'127.0.0.1',API_PORT:String(apiPort),WEB_URL:`http://localhost:${webPort}`,API_INTERNAL_URL:`http://127.0.0.1:${apiPort}`,JWT_ACCESS_SECRET:'acceptance-access-secret-local-only-2026',JWT_REFRESH_SECRET:'acceptance-refresh-secret-local-only-2026',MQTT_ENABLED:'false',MQTT_DEFAULT_BROKER_ENABLED:'false',REPORT_WORKER_ENABLED:'false',HISTORY_API_ENABLED:'false',FINANCIAL_SCHEDULER_ENABLED:'false',TSX_TSCONFIG_PATH:fileURLToPath(new URL('../tsconfig.json',import.meta.url))};
+ const env:NodeJS.ProcessEnv={...process.env,DATABASE_URL:scoped.toString(),NODE_ENV:'production',API_HOST:'127.0.0.1',API_PORT:String(apiPort),WEB_URL:`http://localhost:${webPort}`,API_INTERNAL_URL:`http://127.0.0.1:${apiPort}`,JWT_ACCESS_SECRET:'acceptance-access-secret-local-only-2026',JWT_REFRESH_SECRET:'acceptance-refresh-secret-local-only-2026',MQTT_ENABLED:'false',MQTT_DEFAULT_BROKER_ENABLED:'false',REPORT_WORKER_ENABLED:'false',HISTORY_API_ENABLED:'false',FINANCIAL_SCHEDULER_ENABLED:'false',TSX_TSCONFIG_PATH:fileURLToPath(new URL('../tsconfig.json',import.meta.url))};
  delete env.LOCAL_FINANCIAL_FIXTURE_MARKER;
  const children:ChildProcess[]=[];
  const launch=(name:string,args:string[],cwd:string)=>{

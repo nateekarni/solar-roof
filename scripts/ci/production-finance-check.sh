@@ -10,6 +10,7 @@ export STORAGE_ENDPOINT="http://127.0.0.1:${PLATFORM_CI_STORAGE_PORT:-19000}" ST
 export STORAGE_ACCESS_KEY=solar-ci STORAGE_SECRET_KEY=ci-storage-only-password REDIS_URL=redis://127.0.0.1:16432
 export PRODUCTION_FINANCE_BROWSER=true
 trap 'rm -f test/artifacts/production-browser-fixture.json test/artifacts/production-finance-runtime.json' EXIT
+pnpm --filter @solar/api exec tsc --noEmit -p tsconfig.finance-acceptance.json
 pnpm --filter @solar/api exec tsx --tsconfig tsconfig.json test/production-financial-workflow.integration.ts
 # Credentials/auth state are local only and must never be uploaded as evidence.
 rm -f test/artifacts/production-browser-fixture.json test/artifacts/production-finance-runtime.json

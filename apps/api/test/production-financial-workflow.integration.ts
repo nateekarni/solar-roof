@@ -33,7 +33,7 @@ const admin=new Pool({connectionString:target.toString()});
 const pool=new Pool({connectionString:target.toString(),options:`-c search_path=${schema},public`,max:8});
 const db={pool,query:pool.query.bind(pool),transaction:DatabaseService.prototype.transaction} as unknown as DatabaseService;
 const readiness=new FinancialReadinessService(db),financial=new FinancialApplicationService(db,readiness),settings=new SettingsService(db);
-const ids={owner:randomUUID(),admin:randomUUID(),recipient:randomUUID(),customer:randomUUID(),site:randomUUID(),blockedSite:randomUUID(),gateway:randomUUID(),meter:randomUUID(),device:randomUUID(),profile:randomUUID(),binding:randomUUID(),contract:randomUUID()};
+const ids={owner:randomUUID(),position:randomUUID(),admin:randomUUID(),recipient:randomUUID(),customer:randomUUID(),site:randomUUID(),blockedSite:randomUUID(),gateway:randomUUID(),meter:randomUUID(),device:randomUUID(),profile:randomUUID(),binding:randomUUID(),contract:randomUUID()};
 const artifacts=new URL(`../../../test/artifacts/${process.env.PRODUCTION_FINANCE_ACCEPTANCE_ISOLATED==='true'?`final-fixes-${schema}/`:''}`,import.meta.url);
 const hash=(bytes:Buffer)=>createHash('sha256').update(bytes).digest('hex');
 const storage=new S3Client({endpoint:process.env.STORAGE_ENDPOINT,region:'us-east-1',forcePathStyle:true,credentials:{accessKeyId:process.env.STORAGE_ACCESS_KEY!,secretAccessKey:process.env.STORAGE_SECRET_KEY!}});
@@ -48,6 +48,13 @@ try {
  await admin.query(`CREATE SCHEMA ${schema}`);
  const tables=(await admin.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")).rows;
  for(const {tablename}of tables){assert.match(tablename,/^[a-z_0-9]+$/);await pool.query(`CREATE TABLE ${schema}.${tablename} (LIKE public.${tablename} INCLUDING ALL)`);}
+ // The dedicated Windows review stack may predate unreleased migrations. Apply
+ // those only to this owned schema; CI must arrive fully migrated by its runner.
+ const positioned=(await pool.query("SELECT 1 FROM information_schema.columns WHERE table_schema=$1 AND table_name='users' AND column_name='company_position_id'",[schema])).rows.length>0;
+ const replacements=(await pool.query("SELECT 1 FROM information_schema.tables WHERE table_schema=$1 AND table_name='billing_replacement_drafts'",[schema])).rows.length>0;
+ if(local&&!positioned)await pool.query(await readFile(new URL('../../../infra/migrations/058_user_document_identity.sql',import.meta.url),'utf8'));
+ if(local&&!replacements)await pool.query(await readFile(new URL('../../../infra/migrations/059_billing_issuance_approval.sql',import.meta.url),'utf8'));
+ assert.ok(local||positioned&&replacements,'CI finance acceptance requires the identity and issuance migrations');
  // Copy actual immutability/validation triggers, not just the table shapes.
  const triggers=(await admin.query("SELECT pg_get_triggerdef(t.oid) AS definition FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace JOIN pg_proc p ON p.oid=t.tgfoid JOIN pg_namespace pn ON pn.oid=p.pronamespace WHERE n.nspname='public' AND pn.nspname='public' AND NOT t.tgisinternal")).rows;
  for(const {definition}of triggers)await pool.query(definition.replace(/ ON public\./,` ON ${schema}.`));
@@ -55,6 +62,8 @@ try {
  const auth=new AuthService('acceptance-access-secret-local-only-2026','acceptance-refresh-secret-local-only-2026');
 const password=process.env.PRODUCTION_FINANCE_PASSWORD??('Acceptance-local-only-'+randomUUID());
  for(const [role,id]of [['owner',ids.owner],['admin',ids.admin],['customer_user',ids.recipient]])await pool.query("INSERT INTO users(id,email,display_name,role,status,password_hash,email_verified_at,verified_email) VALUES($1,$2,$3,$4,'active',$5,now(),$2)",[id,`${role}@acceptance.example.test`,`${role} acceptance`,role,auth.hashPassword(password)]);
+ await pool.query("INSERT INTO employee_positions(id,name) VALUES($1,'Finance Director')",[ids.position]);
+ await pool.query('UPDATE users SET company_position_id=$2 WHERE id=$1',[ids.owner,ids.position]);
  await pool.query("INSERT INTO customers(id,name,code,region,legal_name,tax_id,tax_address,document_email,status) VALUES($1::uuid,'Bangkok Energy Manufacturing',$1::text,'Bangkok','Bangkok Energy Manufacturing Co., Ltd.','0105559123456','99 Rama IX Road, Bangkok','customer_user@acceptance.example.test','active')",[ids.customer]);
  await pool.query('UPDATE users SET customer_id=$2 WHERE id=$1',[ids.recipient,ids.customer]);
  for(const [site,name]of [[ids.site,'Bangkok factory rooftop'],[ids.blockedSite,'Chonburi warehouse incomplete']]) {
@@ -97,7 +106,14 @@ const password=process.env.PRODUCTION_FINANCE_PASSWORD??('Acceptance-local-only-
  assert.equal((await readiness.status(owner,{siteId:ids.blockedSite})).actions.calculate.enabled,false);
  const cycle=(await financial.calculate(ids.site,'2026-09-01','2026-09-30',ids.owner)).cycles[0];
  assert.equal(cycle.financial_scope,'PRODUCTION');assert.equal(Number(cycle.subtotal),4321);assert.equal(Number(cycle.simulated_tax),302.47);assert.equal(Number(cycle.amount),4623.47);
- const invoice=(await financial.issueInvoice(cycle.id,ids.owner)).document;
+ const prepared=await financial.prepareInvoice(cycle.id,ids.owner);assert.equal(prepared.cycle.status,'pending_issue_approval');
+ const beforeApproval=(await pool.query('SELECT (SELECT count(*) FROM documents)::int AS documents,(SELECT count(*) FROM document_artifacts)::int AS artifacts,(SELECT count(*) FROM financial_delivery_outbox)::int AS outboxes,(SELECT count(*) FROM document_number_series)::int AS series')).rows[0];
+ assert.deepEqual(beforeApproval,{documents:0,artifacts:0,outboxes:0,series:0});
+ assert.deepEqual((await messages()).messages.map(message=>message.ID).sort(),[...existingMail].sort());
+ const invoice=(await financial.approveInvoice(cycle.id,ids.owner)).document;
+ const approved=(await pool.query('SELECT d.status,d.is_current,a.pdf_bytes,a.sha256,o.state FROM documents d JOIN document_artifacts a ON a.document_id=d.id JOIN financial_delivery_outbox o ON o.document_id=d.id WHERE d.id=$1',[invoice.id])).rows[0];
+ assert.equal(approved.status,'issued');assert.equal(approved.is_current,true);assert.equal(approved.state,'pending');assert.equal(approved.pdf_bytes.subarray(0,5).toString(),'%PDF-');assert.equal(hash(approved.pdf_bytes),invoice.content_hash);assert.equal(approved.sha256,invoice.content_hash);
+ assert.equal(invoice.snapshot.approver.userId,ids.owner);assert.equal(invoice.snapshot.approver.displayName,'owner acceptance');assert.equal(invoice.snapshot.approver.position,'Finance Director');
  assert.equal(invoice.snapshot.policy.scope,'PRODUCTION');assert.equal(invoice.snapshot.company.company_name,'Siam Solar Operations Co., Ltd.');assert.equal(invoice.snapshot.recipients[0].id,ids.recipient);
  await financial.send(cycle.id,ids.owner);
  const transfer=Buffer.from(JSON.stringify({amount:'4623.47',currency:'THB',transferAt:'2026-10-10T01:00:00Z',payer:'Bangkok Energy Manufacturing Co., Ltd.',account:'1234567890',acceptanceFixture:true}));
@@ -122,15 +138,15 @@ const password=process.env.PRODUCTION_FINANCE_PASSWORD??('Acceptance-local-only-
  for(const document of [invoice,receipt]){
   const bytes=(await pool.query('SELECT pdf_bytes FROM document_artifacts WHERE document_id=$1',[document.id])).rows[0].pdf_bytes as Buffer;
   assert.equal(bytes.subarray(0,5).toString(),'%PDF-');assert.equal(hash(bytes),document.content_hash);
-  const captured=(await messages()).messages.filter(message=>!existingMail.has(message.ID)&&message.Subject.includes(document.document_number));assert.equal(captured.length,1);assert.ok(!captured[0].Subject.includes('TEST'));
-  mailIds[document.document_type]=captured[0].ID;
-  const detail=await (await fetch(`${mailUrl}/api/v1/message/${captured[0].ID}`)).json() as any;assert.equal(detail.Attachments.length,1);
-  const attachment=Buffer.from(await (await fetch(`${mailUrl}/api/v1/message/${captured[0].ID}/part/${detail.Attachments[0].PartID}`)).arrayBuffer());assert.equal(hash(attachment),document.content_hash);
+  const captured=(await messages()).messages.filter(message=>!existingMail.has(message.ID)&&message.Subject.includes(document.document_number));assert.equal(captured.length,1);const message=captured[0];assert.ok(message);assert.ok(!message.Subject.includes('TEST'));
+  mailIds[document.document_type]=message.ID;
+  const detail=await (await fetch(`${mailUrl}/api/v1/message/${message.ID}`)).json() as any;assert.equal(detail.Attachments.length,1);
+  const attachment=Buffer.from(await (await fetch(`${mailUrl}/api/v1/message/${message.ID}/part/${detail.Attachments[0].PartID}`)).arrayBuffer());assert.equal(hash(attachment),document.content_hash);
   await writeFile(new URL(`production-${document.document_type}.pdf`,artifacts),bytes);
  }
  const mailBefore=(await messages()).messages.map(message=>message.ID).sort();
  assert.equal((await financial.calculate(ids.site,'2026-09-01','2026-09-30',ids.owner)).cycles[0].id,cycle.id);
- assert.equal((await financial.issueInvoice(cycle.id,ids.owner)).document.id,invoice.id);
+ assert.equal((await financial.approveInvoice(cycle.id,ids.owner)).document.id,invoice.id);
  assert.equal((await financial.verifyPayment(cycle.id,'approved',undefined,ids.owner,metadata)).receipt.id,receipt.id);
  await financial.send(cycle.id,ids.owner);
  assert.deepEqual(await financial.monthly(new Date('2026-09-30T17:59:00Z')),[]);
@@ -140,7 +156,7 @@ const password=process.env.PRODUCTION_FINANCE_PASSWORD??('Acceptance-local-only-
  const notices=(await pool.query('SELECT detail FROM financial_staff_notices WHERE site_id=$1',[ids.blockedSite])).rows;assert.equal(notices.length,1);assert.ok(notices[0].detail.missing.includes('site.tax'));
  const notifications=(await pool.query('SELECT id,user_id,title,status FROM notification_deliveries ORDER BY id')).rows;assert.equal(notifications.length,1);assert.equal(notifications[0].user_id,ids.owner);assert.equal(notifications[0].status,'delivered');assert.ok(!notifications[0].title.includes('TEST'));
  const cutover={siteId:ids.site,ownerId:ids.owner,periodStart:'2026-09-01',periodEnd:'2026-09-30',operationKey:`acceptance-${schema}`,apply:true};
- assert.equal((await runBillingCutover(cutover,db,readiness,financial)).documentId,invoice.id);await runBillingCutover(cutover,db,readiness,financial);
+ const applied=await runBillingCutover(cutover,db,readiness,financial);assert.equal(applied.mode,'applied');if(applied.mode!=='applied')throw Error('Cutover did not apply');assert.equal(applied.documentId,invoice.id);await runBillingCutover(cutover,db,readiness,financial);
  assert.deepEqual((await messages()).messages.map(message=>message.ID).sort(),mailBefore);
  await settings.updateCompanyProfile({logoUrl:''},ids.owner);
  assert.equal((await readiness.status(owner)).approval,null);
