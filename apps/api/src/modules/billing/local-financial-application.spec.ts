@@ -145,6 +145,8 @@ test('approval freezes all approved transfer metadata, excludes rejected history
  const transfers=[{id:'a',billing_cycle_id:'cycle',amount:'57.00',verified_amount:null as string|null,status:'pending_verification',paid_at:'2026-10-08T01:00:00Z',payer_name:'Payer',payment_method:'promptpay',origin_bank:'Payer bank',origin_account:'00123'},{id:'b',billing_cycle_id:'cycle',amount:'50.00',status:'pending_verification',paid_at:'2026-10-08T02:00:00Z'},{id:'old',billing_cycle_id:'cycle',amount:'107.00',status:'rejected',paid_at:'2026-10-07T01:00:00Z',payer_name:'Rejected payer'}];
  const db={transaction:async(run:any)=>run({query:async(sql:string,params:any[]=[])=>{
  if(sql.includes('SELECT employee_can_access'))return {rows:[{allowed:true}]}; if(sql.includes('SELECT role,status FROM users'))return {rows:[{role:'accountant',status:'active'}]};
+ if(sql.includes('p.name AS position'))return {rows:[{id:'accountant',display_name:'Reviewer',position:'Accountant',signature_data:null}]};
+ if(sql==='SELECT now() AS value')return {rows:[{value:new Date('2026-10-14T01:00:00.000Z')}]};
  if(sql.includes('SELECT * FROM billing_cycles'))return {rows:[cycle]};
  if(sql.includes('SELECT * FROM documents'))return {rows:persisted?[persisted]:[]};
  if(sql.includes('SELECT * FROM payments'))return {rows:sql.includes("status='paid'")?transfers.filter(p=>p.status==='paid'):transfers};
@@ -183,6 +185,8 @@ test('uploaded invoice and receipt logos stay frozen with saved PDF hashes after
  const documents:any[]=[];const artifacts=new Map<string,{bytes:Buffer;sha256:string}>();
  const client={query:async(sql:string,params:any[]=[])=>{
   if(sql.includes('SELECT role,status FROM users'))return {rows:[{role:'accountant',status:'active'}]};
+  if(sql.includes('p.name AS position'))return {rows:[{id:'accountant',display_name:'Reviewer',position:'Accountant',signature_data:null}]};
+  if(sql==='SELECT now() AS value')return {rows:[{value:new Date('2026-10-14T01:00:00.000Z')}]};
   if(sql.includes('SELECT employee_can_access'))return {rows:[{allowed:true}]};
   if(sql.includes('SELECT * FROM billing_cycles'))return {rows:[cycle]};
   if(sql.includes('SELECT * FROM documents'))return {rows:documents.filter(d=>d.document_type===(params[1]??'receipt'))};

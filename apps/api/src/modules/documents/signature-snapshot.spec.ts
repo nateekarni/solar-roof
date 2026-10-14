@@ -1,6 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {financialDocumentSnapshot} from './financial-document-pdf.js';
+test('receipt PDF adapter renders only its own frozen reviewer, including unsigned and historical receipts',()=>{
+ const saved:any={document_type:'receipt',document_number:'RCT261000001',snapshot:{company:{company_name:'Issuer',tax_id:'0',signatory_name:'Company signer',signatory_title:'Director',signature_data_uri:'data:image/png;base64,AA=='},customer:{company_name:'Customer',tax_id:'1'},issueDate:'2026-10-14',logo:'data:image/png;base64,AA==',cycle:{period_start:'2026-09-01',period_end:'2026-09-30',subtotal:'1.00',simulated_tax:'0.00',amount:'1.00',meter_snapshot:[]},banks:[],payments:[],approver:{userId:'reviewer',displayName:'ผู้ตรวจหลักฐาน',position:'ฝ่ายบัญชี',signatureDataUri:'data:image/png;base64,AQ==',approvedAt:'2026-10-14T01:00:00.000Z'}}};
+ const original=JSON.stringify(saved);
+ assert.deepEqual(financialDocumentSnapshot(saved).signatories.issuer,{name:'ผู้ตรวจหลักฐาน',title:'ฝ่ายบัญชี',signatureDataUri:'data:image/png;base64,AQ=='});
+ assert.equal(JSON.stringify(saved),original);
+ delete saved.snapshot.approver.signatureDataUri;
+ assert.deepEqual(financialDocumentSnapshot(saved).signatories.issuer,{name:'ผู้ตรวจหลักฐาน',title:'ฝ่ายบัญชี'});
+ delete saved.snapshot.approver;
+ assert.deepEqual(financialDocumentSnapshot(saved).signatories.issuer,{});
+});
 test('invoice PDF adapter uses the frozen approver rather than company signatory defaults',()=>{
  const saved:any={document_type:'invoice',document_number:'INV261000001',snapshot:{company:{company_name:'Issuer',tax_id:'0',signatory_name:'Somchai',signatory_title:'Director',signature_data_uri:'data:image/png;base64,AA=='},customer:{company_name:'Customer',tax_id:'1'},issueDate:'2026-10-09',logo:'data:image/png;base64,AA==',cycle:{period_start:'2026-09-01',period_end:'2026-09-30',subtotal:'1.00',simulated_tax:'0.00',amount:'1.00',meter_snapshot:[]},banks:[],payments:[]}};
  saved.snapshot.approver={userId:'actor',displayName:'สมชาย ใจดี',position:'กรรมการบริษัท',signatureDataUri:'data:image/png;base64,AA==',approvedAt:'2026-10-14T01:00:00.000Z'};

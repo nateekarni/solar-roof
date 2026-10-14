@@ -43,10 +43,18 @@ test('overpayment fails without approving evidence',async()=>{
  assert.equal(transfers[1]!.status,'pending_verification');
 });
 
+test('missing reviewer identity blocks settlement before changing evidence or allocating a receipt',async()=>{
+ const {service,transfers}=reviewHarness();
+ await assert.rejects(()=>service.verifyPayment('bill','approved',undefined,'accountant',{paymentId:'first',verifiedAmount:'60.00',verifiedTransferAt:'2026-10-08T04:00:00Z'}));
+ assert.equal(transfers[1]!.status,'pending_verification');
+});
+
 test('reviewer payer details persist before receipt issuance and enter audit snapshot',async()=>{
  let saved:any[],receiptPayer:any,audit:any;
  const payment={id:'transfer',status:'pending_verification',verified_amount:null,payer_name:null,origin_bank:null,origin_account:null};
  const client={query:async(sql:string,args:any[]=[])=>{
+  if(sql.includes('p.name AS position'))return {rows:[{id:'accountant',display_name:'ผู้ตรวจหลักฐาน',position:'ฝ่ายบัญชี',signature_data:null}]};
+  if(sql==='SELECT now() AS value')return {rows:[{value:new Date('2026-10-14T01:00:00.000Z')}]};
   if(sql.includes('SELECT employee_can_access'))return {rows:[{allowed:true}]}; if(sql.includes('SELECT role,status'))return {rows:[{role:'accountant',status:'active'}]};
   if(sql.includes('SELECT * FROM billing_cycles'))return {rows:[{id:'bill',amount:'100.00',status:'pending_verification'}]};
   if(sql.includes('SELECT * FROM payments'))return {rows:[payment]};

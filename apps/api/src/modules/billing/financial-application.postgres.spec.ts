@@ -86,7 +86,7 @@ test('production finance freezes configured policy and artifacts across calculat
   const siteBilling=new SiteBillingService(db,service);
   const manualController=new SiteBillingController(siteBilling);
   nodemailer.createTransport=(()=>({sendMail:async(message:any)=>{messages.push(message);return {accepted:[message.to]};},close:()=>{}})) as any;
-  let cycle:any,invoice:any;
+  let cycle:any,invoice:any,approvedInvoice:any;
   await t.test('ordinary frozen production contracts deliver by persisted site without creating a billing cycle',async()=>{
    const contract={id:randomUUID()};
    await pool.query("INSERT INTO contracts(id,site_id,version,start_date,status,company_name,tax_id,tax_address,signer_name,signer_title,payment_terms,recipient_user_ids) VALUES($1,$2,1,'2026-09-01','active','Production customer','1234567890123','Customer address','Authorized signer','Director','30 days',(SELECT recipient_user_ids FROM site_billing_settings WHERE site_id=$2))",[contract.id,siteId]);
@@ -197,6 +197,7 @@ test('production finance freezes configured policy and artifacts across calculat
    const before=await approvalState();
    const results=await Promise.all([service.approveInvoice(cycle.id,owner.id),service.approveInvoice(cycle.id,owner.id),service.approveInvoice(cycle.id,owner.id)]);
    assert.equal(results.filter(result=>result.created).length,1);invoice=results[0]!.document;assert.ok(results.every(result=>result.document.id===invoice.id));
+   approvedInvoice=invoice;
    assert.equal(invoice.snapshot.approver.userId,owner.id);assert.equal(invoice.snapshot.approver.displayName,'สมชาย ใจดี');assert.equal(invoice.snapshot.approver.position,'กรรมการบริษัท');assert.equal(invoice.snapshot.approver.signatureDataUri,signature);assert.ok(Number.isFinite(Date.parse(invoice.snapshot.approver.approvedAt)));
    const after=await approvalState();assert.equal(after.cycle.status,'approved');
    for(const key of ['documents','artifacts','outboxes','audits'])assert.equal(after.counts[key],before.counts[key]+1);
@@ -308,7 +309,7 @@ test('production finance freezes configured policy and artifacts across calculat
    await siteBilling.reprice(cycle.id,{rate:'5.0000',reason:'Reviewed correction'},{id:owner.id,role:'owner'});
    assert.equal((await pool.query('SELECT count(*)::int AS n FROM rate_versions WHERE site_id=$1',[siteId])).rows[0].n,before);
   });
-  await t.test('approved full transfer creates one receipt from frozen invoice identity and survives replay',async()=>{
+  await t.test('settlement snapshots its own reviewer atomically and preserves originals through concurrent replay',async t=>{
    const original=JSON.stringify(invoice.snapshot),originalHash=invoice.content_hash;
    await pool.query("UPDATE company_profile SET company_name='Replacement issuer',signatory_name='Replacement signer'");await readiness.confirm({id:owner.id,role:'owner'});
    const recipient=invoice.snapshot.recipients[0];
@@ -317,11 +318,61 @@ test('production finance freezes configured policy and artifacts across calculat
    await pool.query("UPDATE company_profile SET company_name='Unconfirmed issuer'");try{await assert.rejects(service.submitPayment(cycle.id,{amount:'5500.00',evidenceKey:'task7-stale-'+schema},recipient.id),error=>(error as any).getStatus()===503);}finally{await pool.query("UPDATE company_profile SET company_name='Replacement issuer'");}
    assert.equal((await pool.query('SELECT count(*)::int AS n FROM payments')).rows[0].n,0);
    const payment=await service.submitPayment(cycle.id,{amount:'5500.00',evidenceKey:'task7-full-'+schema},recipient.id);
-   const result=await service.verifyPayment(cycle.id,'approved',undefined,owner.id,{paymentId:payment.paymentId,verifiedAmount:'5500.00',verifiedTransferAt:'2026-10-10T01:00:00Z'});
+   const reviewer=(await pool.query("SELECT id FROM users WHERE role='accountant' AND status='active' ORDER BY id LIMIT 1")).rows[0];assert.ok(reviewer);
+   await pool.query("UPDATE users SET display_name='ผู้ตรวจหลักฐาน',company_position_id=$2,signature_data=$3 WHERE id=$1",[reviewer.id,positionId,signature]);
+   const review={paymentId:payment.paymentId,verifiedAmount:'5500.00',verifiedTransferAt:'2026-10-10T01:00:00Z'};
+   const settlementState=async()=>({...await approvalState(),payments:(await pool.query('SELECT * FROM payments ORDER BY id')).rows,documents:(await pool.query('SELECT * FROM documents ORDER BY id')).rows,artifacts:(await pool.query('SELECT * FROM document_artifacts ORDER BY document_id')).rows,outboxes:(await pool.query('SELECT * FROM financial_delivery_outbox ORDER BY id')).rows,audits:(await pool.query('SELECT * FROM audit_events ORDER BY id')).rows});
+   await t.test('absent, inactive and positionless reviewers block all settlement effects',async()=>{
+    const before=await settlementState();
+    await assert.rejects(service.verifyPayment(cycle.id,'approved',undefined,randomUUID(),review),(error:any)=>error.getStatus()===403);assert.deepEqual(await settlementState(),before);
+    await pool.query("UPDATE users SET status='disabled' WHERE id=$1",[reviewer.id]);
+    try{await assert.rejects(service.verifyPayment(cycle.id,'approved',undefined,reviewer.id,review),(error:any)=>error.getStatus()===403);assert.deepEqual(await settlementState(),before);}finally{await pool.query("UPDATE users SET status='active' WHERE id=$1",[reviewer.id]);}
+    const rollback=new Error('positionless reviewer fixture rollback');
+    await assert.rejects(db.transaction(async client=>{
+     await client.query('UPDATE users SET company_position_id=NULL WHERE id=$1',[reviewer.id]);
+     const application=new FinancialApplicationService({transaction:async(run:any)=>run(client)} as DatabaseService,readiness);
+     await assert.rejects(application.verifyPayment(cycle.id,'approved',undefined,reviewer.id,review),(error:any)=>error.getResponse().code==='DOCUMENT_APPROVER_POSITION_REQUIRED');
+     throw rollback;
+    }),error=>error===rollback);assert.deepEqual(await settlementState(),before);
+   });
+   await t.test('render, document, artifact, outbox and audit failures roll back payment and receipt together',async()=>{
+    const before=await settlementState();
+    const failedRender=new FinancialApplicationService(db,readiness,new DocumentIdentityService(),async()=>{throw new Error('receipt render unavailable');});
+    await assert.rejects(failedRender.verifyPayment(cycle.id,'approved',undefined,reviewer.id,review),/receipt render unavailable/);assert.deepEqual(await settlementState(),before);
+    for(const table of ['documents','document_artifacts','financial_delivery_outbox','audit_events']){
+     await pool.query(`CREATE FUNCTION reject_receipt_${table}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'receipt ${table} unavailable'; END $$; CREATE TRIGGER reject_receipt_${table} BEFORE INSERT ON ${table} FOR EACH ROW EXECUTE FUNCTION reject_receipt_${table}();`);
+     try{await assert.rejects(service.verifyPayment(cycle.id,'approved',undefined,reviewer.id,review),new RegExp(`receipt ${table} unavailable`));assert.deepEqual(await settlementState(),before);}finally{await pool.query(`DROP TRIGGER reject_receipt_${table} ON ${table}`);}
+    }
+   });
+   await t.test('unsigned positioned reviewer uses transaction time and renders a receipt',async()=>{
+    const before=await settlementState(),rollback=new Error('unsigned receipt fixture rollback');
+    await assert.rejects(db.transaction(async client=>{
+     await client.query('UPDATE users SET signature_data=NULL WHERE id=$1',[reviewer.id]);
+     const approvedAt=(await client.query('SELECT now() AS value')).rows[0].value.toISOString();
+     const application=new FinancialApplicationService({transaction:async(run:any)=>run(client)} as DatabaseService,readiness);
+     const unsigned=await application.verifyPayment(cycle.id,'approved',undefined,reviewer.id,review);
+     assert.deepEqual(unsigned.receipt.snapshot.approver,{userId:reviewer.id,displayName:'ผู้ตรวจหลักฐาน',position:'กรรมการบริษัท',approvedAt});
+     assert.deepEqual(financialDocumentSnapshot(unsigned.receipt).signatories.issuer,{name:'ผู้ตรวจหลักฐาน',title:'กรรมการบริษัท'});
+     assert.equal((await client.query('SELECT pdf_bytes FROM document_artifacts WHERE document_id=$1',[unsigned.receipt.id])).rows[0].pdf_bytes.subarray(0,5).toString(),'%PDF-');
+     throw rollback;
+    }),error=>error===rollback);assert.deepEqual(await settlementState(),before);
+   });
+   const before=await settlementState();
+   const results=await Promise.all([service.verifyPayment(cycle.id,'approved',undefined,reviewer.id,review),service.verifyPayment(cycle.id,'approved',undefined,reviewer.id,review),service.verifyPayment(cycle.id,'approved',undefined,reviewer.id,review)]);
+   const result=results[0]!;assert.ok(results.every(value=>value.receipt.id===result.receipt.id));
+   // The settling payment reviewer owns the immutable receipt, independently from the invoice approver.
+   const winningPayment=(await pool.query('SELECT verified_by,verified_at FROM payments WHERE id=$1',[payment.paymentId])).rows[0];
+   assert.equal(result.receipt.snapshot.approver.userId,winningPayment.verified_by);assert.equal(result.receipt.snapshot.approver.approvedAt,winningPayment.verified_at.toISOString());
+   assert.equal(approvedInvoice.snapshot.approver.displayName,'สมชาย ใจดี');assert.equal(result.receipt.snapshot.approver.displayName,'ผู้ตรวจหลักฐาน');assert.notEqual(result.receipt.snapshot.approver.userId,approvedInvoice.snapshot.approver.userId);
+   assert.equal(result.receipt.snapshot.approver.signatureDataUri,signature);
+   assert.deepEqual(financialDocumentSnapshot(result.receipt).signatories.issuer,{name:result.receipt.snapshot.approver.displayName,title:'กรรมการบริษัท',signatureDataUri:signature});
+   const after=await settlementState();for(const key of ['documents','artifacts','outboxes'])assert.equal(after.counts[key],before.counts[key]+1);assert.equal(after.counts.audits,before.counts.audits+2);
    assert.equal(result.billingCycleStatus,'paid');assert.equal(result.receipt.snapshot.policy.scope,'PRODUCTION');assert.equal(result.receipt.snapshot.logoDataUri,logo);assert.equal(result.receipt.snapshot.invoiceNumber,invoice.document_number);
    assert.equal(result.receipt.snapshot.company.company_name,'Production issuer');assert.equal(result.receipt.snapshot.company.signatory_name,'Authorized signer');
    assert.equal(JSON.stringify((await pool.query('SELECT snapshot FROM documents WHERE id=$1',[invoice.id])).rows[0].snapshot),original);assert.equal((await pool.query('SELECT sha256 FROM document_artifacts WHERE document_id=$1',[invoice.id])).rows[0].sha256,originalHash);
-   const replay=await service.verifyPayment(cycle.id,'approved',undefined,owner.id,{paymentId:payment.paymentId,verifiedAmount:'5500.00',verifiedTransferAt:'2026-10-10T01:00:00Z'});assert.equal(replay.receipt.id,result.receipt.id);
+   const receiptSnapshot=JSON.stringify(result.receipt.snapshot),receiptBytes=after.artifacts.find(a=>a.document_id===result.receipt.id).pdf_bytes;
+   await pool.query("UPDATE users SET display_name='Changed reviewer',company_position_id=NULL,signature_data=NULL WHERE id=$1",[reviewer.id]);
+   try{const replay=await service.verifyPayment(cycle.id,'approved',undefined,reviewer.id,review);assert.equal(replay.receipt.id,result.receipt.id);assert.equal(JSON.stringify(replay.receipt.snapshot),receiptSnapshot);assert.deepEqual(await settlementState(),after);assert.deepEqual((await pool.query('SELECT pdf_bytes FROM document_artifacts WHERE document_id=$1',[replay.receipt.id])).rows[0].pdf_bytes,receiptBytes);}finally{await pool.query("UPDATE users SET display_name='ผู้ตรวจหลักฐาน',company_position_id=$2,signature_data=$3 WHERE id=$1",[reviewer.id,positionId,signature]);}
   });
   await t.test('manual production invoice validates its authoritative cycle atomically and idempotently',async()=>{
    await pool.query('UPDATE site_billing_settings SET tax_rate=5.5,prices_include_tax=true,version=version+1 WHERE site_id=$1',[siteId]);

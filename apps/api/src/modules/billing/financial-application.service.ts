@@ -230,11 +230,17 @@ export class FinancialApplicationService {
     await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[review.transferReference.trim()]);
     if((await client.query("SELECT id FROM payments WHERE transfer_reference=$1 AND status='paid'",[review.transferReference.trim()])).rows.length)throw new ConflictException('Transfer reference already approved');
    }
-   await client.query('UPDATE payments SET status=$2,verified_at=now(),verified_by=$3,rejection_reason=$4,verified_amount=$5,verified_transfer_at=$6,amount=$5,paid_at=$6,transfer_reference=$7,payer_name=coalesce($8,payer_name),payment_method=coalesce($9,payment_method),origin_bank=coalesce($10,origin_bank),origin_account=coalesce($11,origin_account) WHERE id=$1',[payment.id,status==='approved'?'paid':'rejected',actorId,reason?.trim()??null,verifiedAmount,verifiedTransferAt,review.transferReference?.trim()||null,metadata.payerName??null,metadata.paymentMethod??null,metadata.originBank??null,metadata.originAccount??null]);
    const settled=total===minor(cycle.amount);
+   let approver:FinancialApprover|undefined;
+   if(settled){
+    const identity=await this.documentIdentity.resolve(client,actorId);
+    const approvedAt=(await client.query('SELECT now() AS value')).rows[0].value.toISOString();
+    approver={...identity,approvedAt};
+   }
+   await client.query('UPDATE payments SET status=$2,verified_at=now(),verified_by=$3,rejection_reason=$4,verified_amount=$5,verified_transfer_at=$6,amount=$5,paid_at=$6,transfer_reference=$7,payer_name=coalesce($8,payer_name),payment_method=coalesce($9,payment_method),origin_bank=coalesce($10,origin_bank),origin_account=coalesce($11,origin_account) WHERE id=$1',[payment.id,status==='approved'?'paid':'rejected',actorId,reason?.trim()??null,verifiedAmount,verifiedTransferAt,review.transferReference?.trim()||null,metadata.payerName??null,metadata.paymentMethod??null,metadata.originBank??null,metadata.originAccount??null]);
    const pending=payments.some(p=>p.id!==payment.id&&p.status==='pending_verification');
    const cycleStatus=settled?'paid':pending?'pending_verification':'approved';
-   const receipt=settled?await this.issue(client,cycle,'receipt',actorId):null;
+   const receipt=settled?await this.issue(client,cycle,'receipt',actorId,approver):null;
    await client.query('UPDATE billing_cycles SET status=$2 WHERE id=$1',[id,cycleStatus]);
    await client.query("INSERT INTO audit_events(id,actor_id,action,entity_type,entity_id,before_json,after_json,reason,correlation_id) VALUES($1,$2,$3,'payment',$4,$5,$6,$7,$8)",[randomUUID(),actorId,'payment.verify_'+status,payment.id,JSON.stringify(payment),JSON.stringify({status,verifiedAmount,verifiedTransferAt,cycleStatus,...metadata}),reason?.trim()??'Transfer approved',randomUUID()]);
    return {success:true,billingCycleStatus:cycleStatus,receipt};
