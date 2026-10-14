@@ -11,8 +11,15 @@
 | เพิ่มบัญชี Admin / Owner / Customer User | [คำสั่งเพิ่ม user](coolify-manual-users-th.md) | รันใน Terminal ของ service api | ไม่ต้อง redeploy เพื่อเพิ่ม user |
 | Private Git repository / GHCR | [GitHub App และ registry](coolify-private-github-th.md) | ตั้งก่อน Deploy | Git กับ registry ใช้สิทธิ์คนละชุด |
 | Preset และตัวอย่าง payload | [Unified Presets](unified-presets-th.md) | จัดการผ่าน Admin หลังสร้างบัญชี | Pilot SPM91 มากับ migration 028 |
+| Production finance / SMTP / billing cutover | [คำสั่ง cutover และตรวจ replay](coolify-billing-test-th.md) | Terminal ของ service api ใน resource เดิม | API image มี one-shot CLI; flags เริ่ม false |
 
 **ลำดับแนะนำ:** Deploy เว็บ → สร้าง Admin ด้วยคำสั่ง → เพิ่มลูกค้า/ไซต์ → เพิ่ม Owner/Customer User → ทดสอบเว็บ → เชื่อม broker ภายนอกที่ผู้ดูแล Gateway ให้ หรือ deploy MQTT ของเราเมื่อพร้อม
+
+## เปิด production finance อย่างเป็นขั้นตอน
+
+ทั้ง web และ combined staging Compose ส่ง `FINANCIAL_WRITES_ENABLED` และ `FINANCIAL_SCHEDULER_ENABLED` เข้า API โดย default false เริ่ม deploy ปิดทั้งสอง → Owner เติมข้อมูลบริษัท/logo/ลายเซ็น/บัญชีหลักและข้อมูลไซต์ → ตั้ง `SMTP_HOST/PORT/SECURE/FROM` และ `SMTP_USER/PASS` ใน Coolify (ไม่ใส่ secret ใน repository หรือ Owner UI) → Owner ยืนยัน readiness → เปิด writes/redeploy → รัน one-shot dry-run/apply/replay ด้วย inputs/key เดิมตาม [คู่มือ cutover](coolify-billing-test-th.md) → ตรวจผู้รับได้รับเอกสารจริงและ replay ไม่เพิ่มเอกสาร/อีเมล → เปิด scheduler/redeploy
+
+คำสั่ง cutover อยู่ใน API image, defaults dry-run, ต้อง `--apply` และ flags/current approval/site/SMTP ครบ โดยไม่เริ่ม recurring timer ตรวจ readiness ด้วยคำสั่งที่แสดงเฉพาะ IDs/booleans ในคู่มือ ไม่พิมพ์ SMTP secrets หาก startup prerequisites ไม่ครบให้ redeploy หลังแก้ เมื่อจำเป็นต้องหยุดให้ตั้งทั้งสอง flag false → redeploy และตรวจสถานะ เก็บ cycles/jobs/approvals/ต้นฉบับ/outbox ไว้สำหรับ reconciliation; ไม่ลบข้อมูลหรือย้อน schema เพื่อ rollback
 
 ## ผลตรวจโดเมน
 

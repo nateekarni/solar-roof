@@ -118,6 +118,9 @@ services:
     environment:
       NODE_ENV: production
       API_PORT: 3001
+      # Activate writes after Owner approval + controlled delivery/replay; scheduler last.
+      FINANCIAL_WRITES_ENABLED: ${FINANCIAL_WRITES_ENABLED:-false}
+      FINANCIAL_SCHEDULER_ENABLED: ${FINANCIAL_SCHEDULER_ENABLED:-false}
       WEB_URL: https://solar.fowir.com
       # Empty trust is safe; enabling the direct edge route requires runtime evidence.
       TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-}

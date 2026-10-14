@@ -43,7 +43,8 @@
 | API_EDGE_ENABLED / TRUSTED_PROXY_CIDRS | false / ว่าง |
 | INGEST_CONCURRENCY / API_READ_POOL_MAX / INGEST_DB_POOL_MAX | 2 / 4 / 2 |
 | PILOT_USERS_ENABLED | false; ใช้คำสั่งใน Terminal แทนการเปิด seed ค้างไว้ |
-| SMTP_* | ใส่จริงเมื่อจะใช้งานเชิญอีเมล; เพิ่ม user ด้วยคำสั่งไม่ต้องมี SMTP |
+| SMTP_* | ตั้งใน Coolify สำหรับ invitations/ส่งเอกสาร/scheduler; ไม่แสดง secrets ใน UI หรือหลักฐาน |
+| FINANCIAL_WRITES_ENABLED / FINANCIAL_SCHEDULER_ENABLED | false / false ตอน deploy ครั้งแรก; เปิด writes หลัง Owner confirmation และเปิด scheduler หลังส่งจริง/replay ผ่าน |
 | feature flags report/archive/retention/restore/monitoring/backup | เริ่ม false ตาม example จนตรวจระบบนั้นพร้อม |
 
 ไม่ต้องมี BOOTSTRAP_ADMIN_EMAIL/PASSWORD หรือ bootstrap resource แล้ว ถ้าอัปเดตของเดิมลบ variables เหล่านี้ออกจาก Coolify ได้ ไม่เปลี่ยนรหัส DB/MinIO ที่มีข้อมูลอยู่เพียงเพื่อให้เหมือน example
@@ -51,6 +52,12 @@
 WEB_URL=https://solar.fowir.com ถูกกำหนดใน API Compose; API_INTERNAL_URL=http://api:3001 ถูกกำหนดใน web Compose ไม่ใส่ localhost หรือ mqtt-solar เป็น API URL
 
 เก็บค่าพวก PLATFORM_RELEASE_REVISION / PLATFORM_IMAGE_DIGESTS_JSON / PLATFORM_RELEASE_EVIDENCE_JSON ตาม release ที่ผ่านการตรวจ หากยังไม่มี evidence สำหรับ feature เพิ่มเติมให้คง feature flags false ไม่สร้างผลตรวจสมมติ
+
+### เปิด finance และ SMTP หลังเว็บไซต์พร้อม
+
+ใช้ [คู่มือ billing cutover พร้อมคำสั่งจริง](coolify-billing-test-th.md): deploy ปิดทั้งสอง flag → Owner เติมข้อมูลบริษัท/บัญชีหลักและตรวจไซต์ → ตั้ง SMTP ใน Coolify → Owner ยืนยัน readiness → เปิด writes และ redeploy โดย scheduler ยัง false → API Terminal รัน `src/scripts/billing-cutover.ts` แบบ dry-run แล้ว `--apply` และ replay ด้วย site/period/operation key เดิม → ตรวจต้นฉบับ/hash/outbox/ผู้รับ → เปิด scheduler และ redeploy คำสั่ง one-shot กำหนด scheduler=true เฉพาะ process ของตัวเองโดยไม่ติดตั้ง timer
+
+SMTP readiness เป็นค่ารันไทม์แยกจาก Owner confirmation; flags ไม่ข้าม site/approval checks หากต้องหยุด writes ให้ตั้งทั้งสอง false แล้ว redeploy resource เดิม ตรวจ readiness ตามคู่มือ ไม่ลบ jobs/เอกสาร/outbox หรือ volumes
 
 ## 5. Deploy และตรวจ service
 

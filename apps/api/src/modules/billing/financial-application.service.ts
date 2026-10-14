@@ -215,15 +215,24 @@ export class FinancialApplicationService {
   }finally{await lock.query('SELECT pg_advisory_unlock(hashtextextended($1,0))',[key]);lock.release();}
  }
  async monthly(now=new Date()) {
-  await this.readiness.assertEnabled('calculate');const local=new Date(now.getTime()+7*3600000);if(local.getUTCDate()===1&&local.getUTCHours()<1)return [];
+  // Manual synthetic cutoff scripts retain their exact local binding. Production
+  // scheduling uses a global gate, with authoritative action context per job.
+  const scope=await this.readiness.isLocalTestReady()?'TEST':'PRODUCTION';
+  if(scope==='TEST')await this.readiness.assertEnabled('calculate');
+  else await this.readiness.assertSchedulerEnabled();
+  const local=new Date(now.getTime()+7*3600000);if(local.getUTCDate()===1&&local.getUTCHours()<1)return [];
   const start=new Date(Date.UTC(local.getUTCFullYear(),local.getUTCMonth()-1,1)).toISOString().slice(0,10),end=new Date(Date.UTC(local.getUTCFullYear(),local.getUTCMonth(),0)).toISOString().slice(0,10);
   await this.db.query(`INSERT INTO financial_month_jobs(id,site_id,period_start,period_end) SELECT gen_random_uuid(),s.id,$1,$2 FROM sites s WHERE EXISTS(SELECT 1 FROM site_billing_settings cfg WHERE cfg.site_id=s.id AND cfg.service_start_date<=$2::date) ON CONFLICT(site_id,period_start) DO NOTHING`,[start,end]);
   const jobs=(await this.db.query("SELECT *,to_char(period_start,'YYYY-MM-DD') AS starts,to_char(period_end,'YYYY-MM-DD') AS ends FROM financial_month_jobs WHERE state IN('pending','blocked') AND next_attempt_at<=now() ORDER BY period_start,site_id")).rows;
   for(const job of jobs){try{let cycles=(await this.db.query('SELECT bc.* FROM billing_cycles bc JOIN site_billing_settings cfg ON cfg.site_id=bc.site_id WHERE bc.site_id=$1 AND bc.period_start=greatest($2::date,cfg.service_start_date) AND bc.period_end=$3',[job.site_id,job.period_start,job.period_end])).rows;
     if(!cycles.length){const cfg=(await this.db.query("SELECT to_char(service_start_date,'YYYY-MM-DD') AS starts FROM site_billing_settings WHERE site_id=$1",[job.site_id])).rows[0];if(!cfg)throw new ConflictException('Site billing configuration required');cycles=(await this.calculate(job.site_id,[sqlCalendarPeriod(job).start,cfg.starts].sort().at(-1)!,sqlCalendarPeriod(job).end)).cycles;}
     for(const cycle of cycles){await this.issueInvoice(cycle.id);await this.send(cycle.id);}await this.db.query("UPDATE financial_month_jobs SET state='done',completed_at=now(),last_error=NULL,last_attempt_at=now() WHERE id=$1",[job.id]);
-   }catch(error){await this.db.query("UPDATE financial_month_jobs SET state='blocked',attempts=attempts+1,last_error=$2,last_attempt_at=now(),next_attempt_at=now()+interval '1 hour' WHERE id=$1",[job.id,(error as Error).message]);
-    await this.db.query(`WITH notice AS (INSERT INTO financial_staff_notices(id,job_id,site_id,kind,detail) VALUES($1,$2,$3,'monthly_billing_blocked',$4) ON CONFLICT(job_id,kind) DO NOTHING RETURNING id) INSERT INTO notification_deliveries(id,user_id,title,channel,recipient,status) SELECT gen_random_uuid(),u.id,'TEST monthly billing blocked: '||s.name||' · '||($4::jsonb->>'error'),'system',u.email,'delivered' FROM notice CROSS JOIN users u JOIN sites s ON s.id=$3 WHERE u.status='active' AND u.role IN('owner','accountant') AND (u.customer_id IS NULL OR u.customer_id=s.customer_id)`,[randomUUID(),job.id,job.site_id,JSON.stringify({error:(error as Error).message,periodStart:job.period_start,periodEnd:job.period_end})]);}
+   }catch(error){
+    const response=(error as {getResponse?:()=>unknown})?.getResponse?.() as {missing?:unknown}|undefined;
+    const missing=Array.isArray(response?.missing)?[...new Set(response.missing.filter((id):id is string=>typeof id==='string'&&/^(company|approval|environment|site|context|cycle|document)\.[a-z_]+$/.test(id)))]:[];
+    const code=missing.length?'FINANCIAL_NOT_READY':'MONTHLY_PROCESSING_FAILED';
+    await this.db.query("UPDATE financial_month_jobs SET state='blocked',attempts=attempts+1,last_error=$2,last_attempt_at=now(),next_attempt_at=now()+interval '1 hour' WHERE id=$1",[job.id,code+(missing.length?': '+missing.join(', '):'')]);
+    await this.db.query(`WITH notice AS (INSERT INTO financial_staff_notices(id,job_id,site_id,kind,detail) VALUES($1,$2,$3,'monthly_billing_blocked',$4) ON CONFLICT(job_id,kind) DO NOTHING RETURNING id) INSERT INTO notification_deliveries(id,user_id,title,channel,recipient,status) SELECT gen_random_uuid(),u.id,CASE WHEN ($4::jsonb->>'scope')='TEST' THEN 'TEST ' ELSE '' END||'Monthly billing blocked: '||s.name,'system',u.email,'delivered' FROM notice CROSS JOIN users u JOIN sites s ON s.id=$3 WHERE u.status='active' AND u.role IN('owner','accountant') AND (u.customer_id IS NULL OR u.customer_id=s.customer_id)`,[randomUUID(),job.id,job.site_id,JSON.stringify({scope,code,missing,...sqlCalendarPeriod(job)})]);}
   }return (await this.db.query('SELECT * FROM financial_month_jobs ORDER BY period_start,site_id')).rows;
  }
 }

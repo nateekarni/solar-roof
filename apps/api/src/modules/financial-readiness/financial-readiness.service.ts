@@ -229,6 +229,23 @@ export class FinancialReadinessService {
   }
 
   async isLocalTestReady():Promise<boolean> {return !!await localTestReadiness(this.db);}
+
+  /** Scheduler prerequisites are global; an incomplete site is handled by its own job. */
+  async assertSchedulerEnabled():Promise<{scope:'PRODUCTION';approvalId:string}> {
+    const missing:string[]=[];
+    if(process.env.FINANCIAL_WRITES_ENABLED!=='true')missing.push('environment.financial_writes');
+    if(process.env.FINANCIAL_SCHEDULER_ENABLED!=='true')missing.push('environment.scheduler');
+    if(!smtpReady())missing.push('environment.smtp');
+    if(!this.db)throw unavailable([...missing,'approval.confirmation']);
+    return this.db.transaction(async client=>{
+      await client.query("SELECT pg_advisory_xact_lock(hashtext('production-financial-configuration'))");
+      const config=await this.configuration(client);
+      missing.push(...config.items.filter(i=>!i.ready).map(i=>i.id));
+      if(await localTestReadiness(client))missing.push('environment.scheduler');
+      if(missing.length||!config.approval)throw unavailable([...new Set(missing)]);
+      return {scope:'PRODUCTION',approvalId:config.approval.id};
+    });
+  }
   async capabilities(role:string,hasScope:boolean,actor:ScopePrincipal={role}):Promise<Capabilities> {
     const status=await this.status(actor);
     const allowed:FinancialAction[]=hasScope&&['owner','accountant'].includes(role)?[...ACTIONS]:[];

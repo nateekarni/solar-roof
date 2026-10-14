@@ -5,6 +5,24 @@ import test from 'node:test';
 function compose(file,env='infra/docker/.env.web.example',extra=[]){
  return JSON.parse(execFileSync('docker',['compose','--env-file',env,'-f',file,...extra,'config','--format','json'],{encoding:'utf8',stdio:['ignore','pipe','pipe']}));
 }
+test('financial writes and scheduler default off and can be activated independently in deployment API',()=>{
+ const names=['FINANCIAL_WRITES_ENABLED','FINANCIAL_SCHEDULER_ENABLED'];
+ const previous=names.map(name=>process.env[name]);
+ try {
+  for(const [file,env] of [['infra/docker/docker-compose.web.yml','infra/docker/.env.web.example'],['infra/docker/docker-compose.staging.yml','infra/docker/.env.staging.example']]) {
+   for(const name of names)delete process.env[name];
+   let config=compose(file,env);
+   assert.equal(config.services.api.environment.FINANCIAL_WRITES_ENABLED,'false');
+   assert.equal(config.services.api.environment.FINANCIAL_SCHEDULER_ENABLED,'false');
+   process.env.FINANCIAL_WRITES_ENABLED='true';
+   config=compose(file,env);
+   assert.equal(config.services.api.environment.FINANCIAL_WRITES_ENABLED,'true');
+   assert.equal(config.services.api.environment.FINANCIAL_SCHEDULER_ENABLED,'false');
+   process.env.FINANCIAL_SCHEDULER_ENABLED='true';
+   assert.equal(compose(file,env).services.api.environment.FINANCIAL_SCHEDULER_ENABLED,'true');
+  }
+ } finally {names.forEach((name,index)=>{if(previous[index]===undefined)delete process.env[name];else process.env[name]=previous[index];});}
+});
 test('web and combined deployment start independently of user provisioning',()=>{
  for(const [file,env] of [['infra/docker/docker-compose.web.yml','infra/docker/.env.web.example'],['infra/docker/docker-compose.staging.yml','infra/docker/.env.staging.example']]){
   const config=compose(file,env);assert.equal(config.services.bootstrap,undefined);
