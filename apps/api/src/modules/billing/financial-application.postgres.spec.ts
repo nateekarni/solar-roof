@@ -203,6 +203,23 @@ test('production finance freezes configured policy and artifacts across calculat
    await pool.query("UPDATE users SET display_name='Later name',signature_data=NULL,company_position_id=NULL WHERE id=$1",[owner.id]);
    try{const replay=await service.approveInvoice(cycle.id,owner.id);assert.equal(replay.created,false);assert.equal(replay.document.id,invoice.id);assert.equal(JSON.stringify(replay.document.snapshot),original);assert.equal(replay.document.content_hash,hash);assert.deepEqual(await approvalState(),after);}finally{await pool.query("UPDATE users SET display_name='สมชาย ใจดี',signature_data=$2,company_position_id=$3 WHERE id=$1",[owner.id,signature,positionId]);}
   });
+  await t.test('approval controllers project PostgreSQL scoped labels and replay numbers without exposing resource existence',async()=>{
+   const controller=new BillingController(db,readiness,service,new ContractPdfService(db),siteBilling);
+   const ownerActor={id:owner.id,role:'owner'};
+   const names=(await pool.query('SELECT s.name AS site,c.name AS customer FROM sites s JOIN customers c ON c.id=s.customer_id WHERE s.id=$1',[siteId])).rows[0];
+   const before=await approvalState();const absent=randomUUID();
+   const expected={label:{period:'2026-09',customer:names.customer,site:names.site},status:'already_issued',documentNumber:invoice.document_number,message:'ออกใบวางบิลแล้วก่อนหน้านี้'};
+   assert.deepEqual(await controller.approveIssuance(cycle.id,{}, {user:ownerActor}),expected);
+   const batch=await controller.approveMany({billingCycleIds:[cycle.id,absent,cycle.id]},{user:ownerActor});
+   const unavailable={label:{period:'—',customer:'รายการที่ไม่สามารถเข้าถึงได้',site:'—'},status:'failed',message:'ไม่สามารถออกเอกสารได้'};
+   assert.deepEqual(batch,{results:[expected,unavailable]});
+   const scopedActor={id:owner.id,role:'operator',authorization:effectiveAuthorization('operator',1,[{domain:'business',preset:{'business.billing.approve':true},overrides:{},scope:{mode:'selected',siteIds:[]}}])};
+   assert.deepEqual(await controller.approveIssuance(cycle.id,{}, {user:scopedActor}),unavailable);
+   assert.deepEqual(await controller.approveIssuance(absent,{}, {user:scopedActor}),unavailable);
+   const serialized=JSON.stringify(batch);
+   for(const internalId of [cycle.id,siteId,owner.id,invoice.id,absent])assert.equal(serialized.includes(internalId),false);
+   assert.deepEqual(await approvalState(),before);
+  });
   await t.test('issue freezes company, recipients, bank, logo and original PDF with one outbox',async()=>{
    assert.equal(invoice.snapshot.policy.scope,'PRODUCTION');assert.equal(invoice.snapshot.company.company_name,'Production issuer');assert.equal(invoice.snapshot.company.signatory_name,'Authorized signer');assert.equal(invoice.snapshot.logoDataUri,logo);assert.ok(invoice.snapshot.banks.length);assert.ok(invoice.snapshot.recipients.length);
    assert.equal(financialDocumentSnapshot(invoice).syntheticTest,false);

@@ -16,6 +16,10 @@ export class PlatformAccessGuard implements CanActivate {
     const req = context.switchToHttp().getRequest();
     const path = String(req.path ?? req.url).split("?")[0]!.replace(/\/$/, "");
     if (!authorizedRoute(req.user, req.method, path)) throw new ForbiddenException("This action is not permitted for your current permissions");
+    // Approval actions resolve every item through the controller's scoped query.
+    // Generic lookup here mistakes the batch action for an ID and distinguishes
+    // inaccessible from missing single items before their display-safe mapping.
+    if (req.method === 'POST' && /^\/v1\/billing-cycles\/(?:[^/]+\/)?approve-issuance$/.test(path)) return true;
     const permission=permissionForRoute(req.method,path);
     const domain=permission?.split('.')[0] as PermissionDomain|undefined;
     const employeeSites=domain?siteScope(req.user,domain):null;

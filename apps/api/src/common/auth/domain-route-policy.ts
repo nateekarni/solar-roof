@@ -25,7 +25,7 @@ export function permissionForRoute(method:string,rawPath:string):string|undefine
  else if(/^\/v1\/settings\/technical(?:\/|$)/.test(path))resource='technical.settings';
  else if(/^\/v1\/dashboard\/(?:financial|revenue)(?:\/|$)/.test(path))resource='business.billing';
  if(!resource)return undefined;
- const action=/(?:download|export)(?:\/|$)/.test(path)?'download':/(?:approve|verify-payment)(?:\/|$)/.test(path)?'approve':['GET','HEAD'].includes(method)?'view':'edit';
+ const action=/(?:download|export)(?:\/|$)/.test(path)?'download':/(?:approve|approve-issuance|verify-payment)(?:\/|$)/.test(path)?'approve':['GET','HEAD'].includes(method)?'view':'edit';
  return `${resource}.${action}`;
 }
 export function authorizedRoute(user:AuthorizationPrincipal|undefined,method:string,path:string):boolean {

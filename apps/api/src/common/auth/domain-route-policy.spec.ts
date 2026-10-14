@@ -47,6 +47,18 @@ test('action matrix distinguishes view download edit and approval',()=>{
  assert.equal(authorizedRoute({role:'operator',authorization},'GET','/v1/billing-cycles'),true);
  assert.equal(authorizedRoute({role:'operator',authorization},'PATCH','/v1/billing-cycles/a/verify-payment'),false);
 });
+
+test('single and bulk invoice issuance require approval rather than editing authority',()=>{
+ const approval=effectiveAuthorization('operator',1,[{domain:'business',preset:{'business.billing.approve':true},overrides:{},scope:{mode:'selected',siteIds:['site']}}]);
+ const editing=effectiveAuthorization('accountant',1,[{domain:'business',preset:{'business.billing.edit':true},overrides:{},scope:{mode:'all',siteIds:[]}}]);
+ for(const path of ['/v1/billing-cycles/a/approve-issuance','/v1/billing-cycles/approve-issuance','/v1/billing-cycles/approve-issuance?ignored=true']){
+  assert.equal(permissionForRoute('POST',path),'business.billing.approve');
+  assert.equal(authorizedRoute({role:'operator',authorization:approval},'POST',path),true);
+  assert.equal(authorizedRoute({role:'accountant',authorization:editing},'POST',path),false);
+  for(const role of ['admin','accountant','operator','customer_user'])assert.equal(authorizedRoute({role},'POST',path),false);
+  assert.equal(authorizedRoute({role:'owner'},'POST',path),true);
+ }
+});
 test('managers can reach invitation lifecycle while service enforces who they may invite',()=>{
  for(const [method,path] of [['POST','/v1/users/invite'],['GET','/v1/users/invitations'],['POST','/v1/users/invitations/a/resend']]){
   for(const role of ['owner','admin'])assert.equal(authorizedRoute({role},method!,path!),true);

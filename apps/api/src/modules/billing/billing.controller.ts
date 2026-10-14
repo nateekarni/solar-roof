@@ -30,10 +30,40 @@ import { Roles } from "../../common/roles.decorator.js";
 
 import { FinancialReadinessService } from "../financial-readiness/financial-readiness.service.js";
 import { FinancialApplicationService } from './financial-application.service.js';
+import { approveIssuanceResult, validateIssuanceBatch, type IssuanceApprovalResult } from './issuance-approval.js';
 
 @Controller("v1")
 export class BillingController {
   constructor(@Inject(DatabaseService) private readonly db: DatabaseService, @Inject(FinancialReadinessService) private readonly readiness: FinancialReadinessService, @Inject(FinancialApplicationService) private readonly financial: FinancialApplicationService, @Inject(ContractPdfService) private readonly contractPdfs: ContractPdfService, @Inject(SiteBillingService) private readonly siteBilling?:SiteBillingService) {}
+
+  private issuanceActor(req: { user?: ScopedActor }): ScopedActor & { id: string } {
+    const actor = req?.user;
+    if (!actor?.id || !hasPermission(actor, 'business.billing.approve')) {
+      throw new ForbiddenException('Authorized billing approval actor required');
+    }
+    return { ...actor, id: actor.id };
+  }
+
+  @Roles('owner', 'accountant')
+  @Post('billing-cycles/approve-issuance')
+  async approveMany(@Body() body: unknown, @Req() req: { user?: ScopedActor }) {
+    const actor = this.issuanceActor(req);
+    const ids = validateIssuanceBatch(body);
+    const results: IssuanceApprovalResult[] = [];
+    for (const id of ids) results.push(await approveIssuanceResult(this.db, this.financial, id, actor));
+    return { results };
+  }
+
+  @Roles('owner', 'accountant')
+  @Post('billing-cycles/:id/approve-issuance')
+  async approveIssuance(@Param('id') id: string, @Body() body: unknown, @Req() req: { user?: ScopedActor }) {
+    const actor = this.issuanceActor(req);
+    if (body !== undefined && (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length)) {
+      throw new BadRequestException('ข้อมูลอนุมัติไม่ถูกต้อง');
+    }
+    validateIssuanceBatch({ billingCycleIds: [id] });
+    return approveIssuanceResult(this.db, this.financial, id, actor);
+  }
 
   @Roles("owner", "admin", "accountant")
   @Post("billing-cycles")
