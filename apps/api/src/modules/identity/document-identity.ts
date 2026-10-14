@@ -18,7 +18,7 @@ export class DocumentIdentityService {
     `, [userId])).rows[0];
     if (!row) throw new ForbiddenException('บัญชีผู้อนุมัติไม่พร้อมใช้งาน');
     if (!row.position?.trim()) {
-      throw new ConflictException(`กรุณากำหนดตำแหน่งของ ${row.display_name} ในหน้าพนักงานและสิทธิ์`);
+      throw new ConflictException({code:'DOCUMENT_APPROVER_POSITION_REQUIRED',message:`กรุณากำหนดตำแหน่งของ ${row.display_name} ในหน้าพนักงานและสิทธิ์`});
     }
     return {
       userId: row.id,

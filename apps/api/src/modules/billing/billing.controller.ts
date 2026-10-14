@@ -50,7 +50,8 @@ export class BillingController {
     const actor = this.issuanceActor(req);
     const ids = validateIssuanceBatch(body);
     const results: IssuanceApprovalResult[] = [];
-    for (const id of ids) results.push(await approveIssuanceResult(this.db, this.financial, id, actor));
+    const batchId = randomUUID();
+    for (const [itemIndex, id] of ids.entries()) results.push(await approveIssuanceResult(this.db, this.financial, id, actor, { id: batchId, itemIndex }));
     return { results };
   }
 

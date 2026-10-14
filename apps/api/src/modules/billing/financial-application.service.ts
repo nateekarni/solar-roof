@@ -20,6 +20,7 @@ import { FINANCIAL_TEMPLATE_VERSION, renderFinancialDocumentPdf } from '../docum
 import {frozenFinancialLogo} from './frozen-financial-logo.js';
 import {frozenFinancialTax} from './frozen-financial-tax.js';
 import {DocumentIdentityService,type DocumentIdentity} from '../identity/document-identity.js';
+import { lockIssuanceActor, authorizedIssuanceLabel } from './issuance-approval.js';
 type FinancialApprover=DocumentIdentity&{approvedAt:string};
 const validDate=validFinancialDate;
 export function reviewedActualEnergyDifference(opening:unknown,closing:unknown):string {
@@ -160,12 +161,16 @@ export class FinancialApplicationService {
   if(!actorId)throw new BadRequestException('บัญชีผู้อนุมัติจำเป็นต่อการออกเอกสาร');
   return this.db.transaction(async client=>{
    await client.query("SELECT pg_advisory_xact_lock(hashtext('production-financial-configuration'))");
+   // Configuration -> business permission gate -> actor -> cycle. Team mutations
+   // take the gate before users and never wait for the configuration lock.
+   const actor=await lockIssuanceActor(client,actorId);
    const cycle=(await client.query('SELECT * FROM billing_cycles WHERE id=$1 FOR UPDATE',[id])).rows[0];
-   if(!cycle)throw new NotFoundException('ไม่พบรอบบิล');
+   const label=cycle?await authorizedIssuanceLabel(client,id,actor):undefined;
+   if(!label)throw new NotFoundException('ไม่สามารถออกเอกสารได้');
    const existing=(await client.query("SELECT * FROM documents WHERE billing_cycle_id=$1 AND document_type='invoice' AND is_current",[id])).rows;
    if(existing.length){
     if(existing.length!==1||!existing[0].snapshot?.policy||!['issued','finalized'].includes(existing[0].status))throw new ConflictException('Legacy document requires explicit reconciliation');
-    return {created:false,document:{...existing[0],documentNumber:existing[0].document_number}};
+    return {created:false,label,document:{...existing[0],documentNumber:existing[0].document_number}};
    }
    if(cycle.status!=='pending_issue_approval')throw new ConflictException('ใบวางบิลรายการนี้ยังไม่พร้อมอนุมัติออกเอกสาร');
    const policy=validateFinancialPolicy(cycle);
@@ -175,7 +180,7 @@ export class FinancialApplicationService {
    const approvedAt=(await client.query('SELECT now() AS value')).rows[0].value.toISOString();
    const document=await this.issue(client,cycle,'invoice',actorId,{...identity,approvedAt});
    await client.query("UPDATE billing_cycles SET status='approved' WHERE id=$1",[id]);
-   return {created:true,document:{...document,documentNumber:document.document_number}};
+   return {created:true,label,document:{...document,documentNumber:document.document_number}};
   });
  }
  // Compatibility issuance path; caller migration follows in subsequent tasks.

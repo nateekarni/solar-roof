@@ -24,6 +24,9 @@ import type {ExecutionContext} from '@nestjs/common';
 import {RolesGuard as LegacyRolesGuard} from '../../common/roles.guard.js';
 import {PlatformAccessGuard} from '../../common/auth/platform-access.guard.js';
 import {effectiveAuthorization} from '../../common/auth/authorization.js';
+import {TeamService} from '../identity/team.service.js';
+import {financialPolicySnapshot,financialPolicyHash} from './financial-policy.js';
+import {manualTotals} from './site-billing-policy.js';
 
 test('legacy invoice generation and approval-status routes deny unauthorized actors through the registered guard chain',async()=>{
  for(const [handler,method,path] of [
@@ -50,7 +53,7 @@ test('production finance freezes configured policy and artifacts across calculat
  const savedEnv={...process.env};const originalTransport=nodemailer.createTransport;const messages:any[]=[];
  Object.assign(process.env,{NODE_ENV:'production',FINANCIAL_WRITES_ENABLED:'true',SMTP_HOST:'127.0.0.1',SMTP_PORT:'11049',SMTP_FROM:'finance@example.invalid',SMTP_SECURE:'false'});delete process.env.LOCAL_FINANCIAL_FIXTURE_MARKER;
  try{
-  const copy=['employee_positions','users','customers','sites','site_account_assignments','site_billing_settings','devices','payload_profile_revisions','billing_source_bindings','billing_meters','register_mapping_versions','rate_versions','company_profile','company_bank_accounts','contracts'];
+  const copy=['employee_positions','users','employee_position_domains','employee_domain_grants','customers','sites','site_account_assignments','site_billing_settings','devices','payload_profile_revisions','billing_source_bindings','billing_meters','register_mapping_versions','rate_versions','company_profile','company_bank_accounts','contracts'];
   for(const table of [...copy,'billing_cycles','documents','document_artifacts','financial_delivery_outbox','document_number_series','payments','audit_events','financial_readiness_approvals','telemetry_raw']){
    await pool.query(`CREATE TABLE ${schema}.${table} (LIKE public.${table} INCLUDING ALL)`);
    if(copy.includes(table))await pool.query(`INSERT INTO ${schema}.${table} SELECT * FROM public.${table}`);
@@ -174,9 +177,9 @@ test('production finance freezes configured policy and artifacts across calculat
    const before=await approvalState();
    await pool.query(`CREATE FUNCTION reject_early_invoice_number() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'number allocation reached before identity validation'; END $$; CREATE TRIGGER reject_early_invoice_number BEFORE INSERT OR UPDATE ON document_number_series FOR EACH ROW EXECUTE FUNCTION reject_early_invoice_number();`);
    try{
-   await assert.rejects(service.approveInvoice(cycle.id,randomUUID()),(error:any)=>error.getStatus()===403);assert.deepEqual(await approvalState(),before);
+   await assert.rejects(service.approveInvoice(cycle.id,randomUUID()),(error:any)=>error.getStatus()===404);assert.deepEqual(await approvalState(),before);
    await pool.query("UPDATE users SET status='disabled' WHERE id=$1",[owner.id]);
-   try{await assert.rejects(service.approveInvoice(cycle.id,owner.id),(error:any)=>error.getStatus()===403);assert.deepEqual(await approvalState(),before);}finally{await pool.query("UPDATE users SET status='active' WHERE id=$1",[owner.id]);}
+   try{await assert.rejects(service.approveInvoice(cycle.id,owner.id),(error:any)=>error.getStatus()===404);assert.deepEqual(await approvalState(),before);}finally{await pool.query("UPDATE users SET status='active' WHERE id=$1",[owner.id]);}
    await pool.query('UPDATE users SET company_position_id=NULL WHERE id=$1',[owner.id]);
    try{await assert.rejects(service.approveInvoice(cycle.id,owner.id),(error:any)=>error.getStatus()===409);assert.deepEqual(await approvalState(),before);}finally{await pool.query('UPDATE users SET company_position_id=$2 WHERE id=$1',[owner.id,positionId]);}
    }finally{await pool.query('DROP TRIGGER reject_early_invoice_number ON document_number_series');}
@@ -213,12 +216,15 @@ test('production finance freezes configured policy and artifacts across calculat
    const batch=await controller.approveMany({billingCycleIds:[cycle.id,absent,cycle.id]},{user:ownerActor});
    const unavailable={label:{period:'—',customer:'รายการที่ไม่สามารถเข้าถึงได้',site:'—'},status:'failed',message:'ไม่สามารถออกเอกสารได้'};
    assert.deepEqual(batch,{results:[expected,unavailable]});
-   const scopedActor={id:owner.id,role:'operator',authorization:effectiveAuthorization('operator',1,[{domain:'business',preset:{'business.billing.approve':true},overrides:{},scope:{mode:'selected',siteIds:[]}}])};
+   const employee=(await pool.query("SELECT id FROM users WHERE role='accountant' AND status='active' LIMIT 1")).rows[0];
+   await pool.query("UPDATE employee_domain_grants SET scope_mode='selected',site_ids='{}' WHERE user_id=$1 AND domain='business'",[employee.id]);
+   const scopedActor={id:employee.id,role:'accountant',authorization:effectiveAuthorization('accountant',1,[{domain:'business',preset:{'business.billing.approve':true},overrides:{},scope:{mode:'selected',siteIds:[]}}])};
    assert.deepEqual(await controller.approveIssuance(cycle.id,{}, {user:scopedActor}),unavailable);
    assert.deepEqual(await controller.approveIssuance(absent,{}, {user:scopedActor}),unavailable);
    const serialized=JSON.stringify(batch);
    for(const internalId of [cycle.id,siteId,owner.id,invoice.id,absent])assert.equal(serialized.includes(internalId),false);
-   assert.deepEqual(await approvalState(),before);
+   assert.deepEqual(await approvalState(),{...before,counts:{...before.counts,audits:before.counts.audits+1}});
+   await pool.query("UPDATE employee_domain_grants SET scope_mode='all' WHERE user_id=$1 AND domain='business'",[employee.id]);
   });
   await t.test('issue freezes company, recipients, bank, logo and original PDF with one outbox',async()=>{
    assert.equal(invoice.snapshot.policy.scope,'PRODUCTION');assert.equal(invoice.snapshot.company.company_name,'Production issuer');assert.equal(invoice.snapshot.company.signatory_name,'Authorized signer');assert.equal(invoice.snapshot.logoDataUri,logo);assert.ok(invoice.snapshot.banks.length);assert.ok(invoice.snapshot.recipients.length);
@@ -341,5 +347,133 @@ test('production finance freezes configured policy and artifacts across calculat
   assert.ok(gates.some(g=>g.action==='approve_payment'&&g.transaction),'Payment mutation must gate the same transaction to prevent approval revocation races');
   assert.ok(gates.filter(g=>g.action==='submit_payment').every(g=>g.transaction&&g.context.billingCycleId===cycle.id&&g.context.siteId===siteId));
   assert.equal((await pool.query("SELECT count(*)::int AS n FROM audit_events WHERE action='finance.issue_invoice' AND actor_id=$1",[owner.id])).rows[0].n,4);
+
+  // Review regressions run after the legacy fixture assertions and use additional
+  // manual drafts only within this same disposable schema.
+  const team=new TeamService(db),ownerActor={id:owner.id,role:'owner'};
+  const employee=(await pool.query("SELECT id FROM users WHERE role='accountant' AND status='active' ORDER BY id LIMIT 1")).rows[0];assert.ok(employee);
+  await pool.query('UPDATE site_billing_settings SET recipient_user_ids=$2,tax_confirmed=true WHERE site_id=$1',[siteId,invoice.snapshot.recipients.map((recipient:any)=>recipient.id)]);
+  await readiness.confirm(ownerActor);
+  const authorizeEmployee=async()=>team.updateGrant(ownerActor,employee.id,'business',{
+   revision:(await pool.query('SELECT permission_revision FROM users WHERE id=$1',[employee.id])).rows[0].permission_revision,
+   position:{name:'Review approval '+schema,rules:{'business.billing.approve':true}},overrides:{},scope:{mode:'selected',siteIds:[siteId]},
+  });
+  // Reuse the created preset on subsequent grants, just as the public team editor does.
+  const grant=await authorizeEmployee();
+  const restoreGrant=async()=>{await pool.query("UPDATE users SET role='accountant',status='active' WHERE id=$1",[employee.id]);return team.updateGrant(ownerActor,employee.id,'business',{
+   revision:(await pool.query('SELECT permission_revision FROM users WHERE id=$1',[employee.id])).rows[0].permission_revision,
+   position:{id:grant.position.id},overrides:{},scope:{mode:'selected',siteIds:[siteId]},
+  });};
+  const requestActor={id:employee.id,role:'accountant',authorization:effectiveAuthorization('accountant',1,[{domain:'business',preset:{'business.billing.approve':true},overrides:{},scope:{mode:'selected',siteIds:[siteId]}}])};
+  const controllerFor=(application=service)=>new BillingController(db,readiness,application,new ContractPdfService(db),siteBilling);
+  const draft=async(status='pending_issue_approval')=>{
+   const config=(await pool.query('SELECT * FROM site_billing_settings WHERE site_id=$1',[siteId])).rows[0];
+   const totals=manualTotals([{description:'Review fixture',quantity:'1',unitPrice:'105.5000'}],config.tax_rate,config.prices_include_tax);
+   const policy=financialPolicySnapshot(config,'PRODUCTION');const id=randomUUID();
+   await pool.query(`INSERT INTO billing_cycles(id,site_id,period_start,period_end,cutoff_time,status,quality,billing_settings_version,billing_kind,manual_lines,meter_snapshot,amount,subtotal,simulated_tax,policy_snapshot,policy_hash,financial_scope,opening_energy,closing_energy,consumed_kwh,rate)
+    VALUES($1,$2,'2026-09-15','2026-09-15',now(),$3,'complete',$4,'manual',$5,'[]',$6,$7,$8,$9,$10,'PRODUCTION',0,0,0,0)`,[id,siteId,status,config.version,JSON.stringify(totals.lines),totals.total,totals.subtotal,totals.tax,JSON.stringify(policy),financialPolicyHash(policy)]);
+   return id;
+  };
+  const numberState=async()=>(await pool.query('SELECT * FROM document_number_series ORDER BY prefix')).rows;
+  const assertUnissued=async(id:string)=>{
+   assert.equal((await pool.query('SELECT status FROM billing_cycles WHERE id=$1',[id])).rows[0].status,'pending_issue_approval');
+   assert.equal((await pool.query('SELECT count(*)::int AS n FROM documents WHERE billing_cycle_id=$1',[id])).rows[0].n,0);
+   assert.equal((await pool.query("SELECT count(*)::int AS n FROM audit_events WHERE entity_id=$1 AND action='finance.issue_invoice'",[id])).rows[0].n,0);
+  };
+  const unavailable={label:{period:'—',customer:'รายการที่ไม่สามารถเข้าถึงได้',site:'—'},status:'failed',message:'ไม่สามารถออกเอกสารได้'};
+
+  for(const change of ['grant','scope','preset','role','account'])await t.test(`live ${change} revocation between batch items blocks later issuance and hides labels`,async()=>{
+   await restoreGrant();await pool.query(`UPDATE employee_position_domains SET rules='{"business.billing.approve":true}' WHERE position_id=$1 AND domain='business'`,[grant.position.id]);
+   const first=await draft(),later=await draft();let afterFirst:any;
+   const application=Object.create(service) as FinancialApplicationService;
+   application.approveInvoice=async(id,actorId)=>{
+    const result=await service.approveInvoice(id,actorId);
+    if(id===first){
+     afterFirst=await numberState();
+     const revision=(await pool.query('SELECT permission_revision FROM users WHERE id=$1',[employee.id])).rows[0].permission_revision;
+     if(change==='grant')await team.revokeGrant(ownerActor,employee.id,'business',{revision});
+     else if(change==='scope')await team.updateGrant(ownerActor,employee.id,'business',{revision,position:{id:grant.position.id},overrides:{},scope:{mode:'selected',siteIds:[]}});
+     else if(change==='preset')await team.savePosition(ownerActor,'business',{name:grant.position.name,revision:(await pool.query("SELECT revision FROM employee_position_domains WHERE position_id=$1 AND domain='business'",[grant.position.id])).rows[0].revision,rules:{'business.billing.approve':false}},grant.position.id);
+     else if(change==='role')await pool.query("UPDATE users SET role='admin' WHERE id=$1",[employee.id]);
+     else await pool.query("UPDATE users SET status='disabled' WHERE id=$1",[employee.id]);
+    }
+    return result;
+   };
+   const batch=await controllerFor(application).approveMany({billingCycleIds:[first,later]},{user:requestActor});
+   assert.equal(batch.results[0]!.status,'issued');assert.deepEqual(batch.results[1],unavailable);
+   await assertUnissued(later);assert.deepEqual(await numberState(),afterFirst);
+   const failure=(await pool.query("SELECT actor_id,after_json FROM audit_events WHERE entity_id=$1 AND action='finance.invoice_approval_failed'",[later])).rows;
+   assert.equal(failure.length,1);assert.equal(failure[0].actor_id,employee.id);assert.equal(failure[0].after_json.reasonCode,'unavailable');assert.equal(failure[0].after_json.billingCycleId,later);
+   assert.equal(JSON.stringify(batch).includes(later),false);
+  });
+
+  await t.test('single approval waiting for configuration lock observes committed grant revocation',async()=>{
+   await pool.query(`UPDATE employee_position_domains SET rules='{"business.billing.approve":true}' WHERE position_id=$1 AND domain='business'`,[grant.position.id]);await restoreGrant();
+   const id=await draft(),before=await numberState();const lock=await pool.connect();let pending:ReturnType<BillingController['approveIssuance']>|undefined;
+   try{
+    await lock.query('BEGIN');await lock.query("SELECT pg_advisory_xact_lock(hashtext('production-financial-configuration'))");
+    pending=controllerFor().approveIssuance(id,{}, {user:requestActor});
+    let waiting=false;for(let attempt=0;attempt<100;attempt++){
+     waiting=(await pool.query("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE application_name=$1 AND wait_event='advisory') AS waiting",[schema])).rows[0].waiting;if(waiting)break;await new Promise(resolve=>setTimeout(resolve,10));
+    }
+    assert.ok(waiting);await team.revokeGrant(ownerActor,employee.id,'business',{revision:(await pool.query('SELECT permission_revision FROM users WHERE id=$1',[employee.id])).rows[0].permission_revision});
+   }finally{await lock.query('ROLLBACK');lock.release();}
+   assert.deepEqual(await pending,unavailable);await assertUnissued(id);assert.deepEqual(await numberState(),before);
+  });
+
+  await t.test('authorized corrective failures remain safe while each rolled-back batch item gets an independent audit',async()=>{
+   await restoreGrant();const controller=controllerFor();
+   const first=await draft(),bad=await draft('pending_review'),last=await draft();
+   const batch=await controller.approveMany({billingCycleIds:[first,bad,last]},{user:requestActor});
+   assert.deepEqual(batch.results.map(result=>result.status),['issued','failed','issued']);
+   assert.equal(batch.results[1]!.message,'กรุณาเตรียมใบวางบิลให้พร้อมตรวจอนุมัติก่อนออกเอกสาร');assert.notEqual(batch.results[1]!.label.customer,unavailable.label.customer);
+   const audit=(await pool.query("SELECT actor_id,after_json FROM audit_events WHERE entity_id=$1 AND action='finance.invoice_approval_failed'",[bad])).rows[0];
+   assert.equal(audit.actor_id,employee.id);assert.equal(audit.after_json.reasonCode,'draft_state');assert.equal(audit.after_json.billingCycleId,bad);
+   assert.equal((await pool.query('SELECT count(*)::int AS n FROM documents WHERE billing_cycle_id=ANY($1::uuid[])',[[first,last]])).rows[0].n,2);
+   const positionless=await draft();await pool.query('UPDATE users SET company_position_id=NULL WHERE id=$1',[employee.id]);
+   try{assert.equal((await controller.approveIssuance(positionless,{}, {user:requestActor})).message,'กรุณากำหนดตำแหน่งผู้อนุมัติในหน้าพนักงานและสิทธิ์');await assertUnissued(positionless);}finally{await pool.query('UPDATE users SET company_position_id=$2 WHERE id=$1',[employee.id,grant.position.id]);}
+   const stale=await draft();await pool.query('UPDATE billing_cycles SET billing_settings_version=billing_settings_version-1 WHERE id=$1',[stale]);
+   assert.equal((await controller.approveIssuance(stale,{}, {user:requestActor})).message,'กรุณาคำนวณใบวางบิลใหม่ตามการตั้งค่าปัจจุบันก่อนอนุมัติ');await assertUnissued(stale);
+   const notReady=await draft();await pool.query("UPDATE financial_readiness_approvals SET revoked_at=now(),revoked_by=$1,revoke_reason='Review fixture confirmation revoked' WHERE revoked_at IS NULL",[owner.id]);
+   try{assert.equal((await controller.approveIssuance(notReady,{}, {user:requestActor})).message,'กรุณาให้เจ้าของยืนยันความพร้อมด้านบัญชีก่อนอนุมัติออกเอกสาร');await assertUnissued(notReady);}finally{await readiness.confirm(ownerActor);}
+  });
+
+  await t.test('failure audit write errors cannot leak internals or undo independent batch successes',async()=>{
+   await restoreGrant();const first=await draft(),bad=await draft('pending_review'),last=await draft();
+   await pool.query(`CREATE FUNCTION reject_bulk_failure_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='finance.invoice_approval_failed' THEN RAISE EXCEPTION 'internal bulk failure %',NEW.entity_id; END IF; RETURN NEW; END $$; CREATE TRIGGER reject_bulk_failure_audit BEFORE INSERT ON audit_events FOR EACH ROW EXECUTE FUNCTION reject_bulk_failure_audit();`);
+   try{
+    const batch=await controllerFor().approveMany({billingCycleIds:[first,bad,last]},{user:requestActor});
+    assert.deepEqual(batch.results.map(result=>result.status),['issued','failed','issued']);
+    assert.equal((await pool.query('SELECT count(*)::int AS n FROM documents WHERE billing_cycle_id=ANY($1::uuid[])',[[first,last]])).rows[0].n,2);
+    assert.equal((await pool.query("SELECT count(*)::int AS n FROM audit_events WHERE entity_id=$1 AND action='finance.invoice_approval_failed'",[bad])).rows[0].n,0);
+    for(const secret of [first,bad,last,'internal bulk failure'])assert.equal(JSON.stringify(batch).includes(secret),false);
+   }finally{await pool.query('DROP TRIGGER reject_bulk_failure_audit ON audit_events');}
+  });
+
+  await t.test('unexpected render failure retains only currently authorized labels and a generic message',async()=>{
+   await restoreGrant();const id=await draft(),before=await numberState();
+   const application=new FinancialApplicationService(db,readiness,new DocumentIdentityService(),async()=>{throw new Error('private rendering detail '+id);});
+   const batch=await controllerFor(application).approveMany({billingCycleIds:[id]},{user:requestActor});
+   assert.equal(batch.results[0]!.status,'failed');assert.equal(batch.results[0]!.message,'ไม่สามารถออกเอกสารได้');assert.notEqual(batch.results[0]!.label.customer,unavailable.label.customer);
+   for(const secret of [id,'private rendering detail'])assert.equal(JSON.stringify(batch).includes(secret),false);
+   await assertUnissued(id);assert.deepEqual(await numberState(),before);
+   assert.equal((await pool.query("SELECT after_json->>'reasonCode' AS reason FROM audit_events WHERE action='finance.invoice_approval_failed' AND entity_id=$1",[id])).rows[0].reason,'unexpected');
+  });
+
+  await t.test('team revocation waits at the business gate during issuance and completes without a lock-order deadlock',async()=>{
+   await restoreGrant();const id=await draft();let entered!:()=>void,release!:()=>void;
+   const started=new Promise<void>(resolve=>entered=resolve),held=new Promise<void>(resolve=>release=resolve);
+   const application=new FinancialApplicationService(db,readiness,new DocumentIdentityService(),async document=>{entered();await held;return renderFinancialDocumentPdf(document);});
+   const issuance=controllerFor(application).approveIssuance(id,{}, {user:requestActor});await started;
+   const revoke=team.revokeGrant(ownerActor,employee.id,'business',{revision:(await pool.query('SELECT permission_revision FROM users WHERE id=$1',[employee.id])).rows[0].permission_revision});
+   try{
+    let waiting=false;for(let attempt=0;attempt<100;attempt++){
+     waiting=(await pool.query("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE application_name=$1 AND wait_event='advisory') AS waiting",[schema])).rows[0].waiting;if(waiting)break;await new Promise(resolve=>setTimeout(resolve,10));
+    }
+    assert.ok(waiting,'Team mutation must wait at the permission gate before user locks');
+   }finally{release();}
+   assert.equal((await issuance).status,'issued');await revoke;
+   const later=await draft(),before=await numberState();assert.deepEqual(await controllerFor().approveIssuance(later,{}, {user:requestActor}),unavailable);await assertUnissued(later);assert.deepEqual(await numberState(),before);
+  });
  }finally{nodemailer.createTransport=originalTransport;for(const k of Object.keys(process.env))if(!(k in savedEnv))delete process.env[k];Object.assign(process.env,savedEnv);await pool.end();await admin.query(`DROP SCHEMA ${schema} CASCADE`);await admin.end();}
 });

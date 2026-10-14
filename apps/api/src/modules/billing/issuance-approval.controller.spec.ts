@@ -1,7 +1,7 @@
 import 'reflect-metadata';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PATH_METADATA, METHOD_METADATA } from '@nestjs/common/constants.js';
 import { BillingController } from './billing.controller.js';
 import { effectiveAuthorization } from '../../common/auth/authorization.js';
@@ -13,6 +13,7 @@ import { Reflector } from '@nestjs/core';
 import type { ExecutionContext } from '@nestjs/common';
 import { PlatformAccessGuard } from '../../common/auth/platform-access.guard.js';
 import { RolesGuard } from '../../common/roles.guard.js';
+import { lockIssuanceActor, authorizedIssuanceLabel } from './issuance-approval.js';
 
 const first='11111111-1111-4111-8111-111111111111';
 const second='22222222-2222-4222-8222-222222222222';
@@ -33,22 +34,30 @@ function harness(){
   [third,{siteId:otherSite,label:{period:'2026-07',customer:'ลับ',site:'ไซต์ลับ'}}],
  ]);
  const issued=new Map<string,string>([[second,'INV260800001']]);
- const attempts:string[]=[];let failFirst=false;let failLookup=false;
- const db={query:async(sql:string,params:unknown[])=>{
+ const attempts:string[]=[];let failFirst=false;let failLookup=false;let liveRole='operator';let liveSites:string[]|null=[siteId];
+ const query=async(sql:string,params:unknown[]=[])=>{
   if(failLookup)throw new Error(`database failure ${first}`);
+  if(sql.includes('pg_advisory_xact_lock'))return {rows:[]};
+  if(sql.includes('FROM users WHERE id=$1 FOR SHARE'))return {rows:[{id:actorId,role:liveRole,status:'active',permission_revision:1}]};
+  if(sql.includes('FROM employee_domain_grants'))return {rows:[{domain:'business',preset:{'business.billing.approve':true},overrides:{},scope_mode:liveSites===null?'all':'selected',site_ids:liveSites??[]}]};
+  if(sql.includes('INSERT INTO audit_events'))return {rows:[]};
   assert.match(sql,/s\.id\s*=\s*ANY\(\$2::uuid\[\]\)/i);
   const row=records.get(String(params[0]));const scope=params[1] as string[]|null;
   return {rows:row&&(scope===null||scope.includes(row.siteId))?[{...row.label,id:params[0],siteId:row.siteId}]:[]};
- }};
+ };
+ const db={query,transaction:async(run:any)=>run({query})};
  const financial={approveInvoice:async(id:string,idOfActor:string)=>{
-  assert.equal(idOfActor,actorId);attempts.push(id);
+  assert.equal(idOfActor,actorId);
+  const label=await authorizedIssuanceLabel(db as any,id,await lockIssuanceActor(db as any,idOfActor));
+  if(!label)throw new NotFoundException('ไม่สามารถออกเอกสารได้');
+  attempts.push(id);
   if(failFirst&&id===first)throw new Error(`SQL secret and internal ${id}`);
   const prior=issued.get(id);
   const number=prior??'INV260900001';issued.set(id,number);
-  return {created:!prior,document:{id:'internal-document',documentNumber:number,snapshot:{secret:true}}};
+  return {created:!prior,label,document:{id:'internal-document',documentNumber:number,snapshot:{secret:true}}};
  }};
  const controller=new BillingController(db as unknown as DatabaseService,{} as FinancialReadinessService,financial as unknown as FinancialApplicationService,{} as ContractPdfService);
- return {controller,attempts,issued,setFail:()=>{failFirst=true;},setLookupFail:()=>{failLookup=true;}};
+ return {controller,attempts,issued,setFail:()=>{failFirst=true;},setLookupFail:()=>{failLookup=true;},setScope:(sites:string[]|null)=>{liveSites=sites;},setRole:(role:string)=>{liveRole=role;}};
 }
 
 test('approval routes register the static batch action before every billing-cycle parameter route',()=>{
@@ -102,9 +111,11 @@ test('missing and inaccessible single rows produce identical generic results wit
 });
 
 test('an empty business scope hides every row and owner scope permits all sites',async()=>{
- const {controller,attempts}=harness();
+ const {controller,attempts,setScope,setRole}=harness();
  const noSites={...actor,authorization:{...actor.authorization,scopes:{...actor.authorization.scopes,business:{mode:'selected' as const,siteIds:[]}}}};
+ setScope([]);
  assert.deepEqual(await (controller as any).approveIssuance(first,{}, {user:noSites}),unavailable);
+ setRole('owner');setScope(null);
  assert.equal((await (controller as any).approveIssuance(third,{}, {user:{id:actorId,role:'owner'}})).status,'issued');
  assert.deepEqual(attempts,[third]);
 });

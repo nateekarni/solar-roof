@@ -1,9 +1,11 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import type { IssuanceApprovalResult, IssuanceLabel, PendingIssuanceStatus } from '@solar/api-contracts';
-import { siteScope } from '../../common/auth/authorization.js';
+import { effectiveAuthorization, hasPermission, siteScope, type DomainGrant } from '../../common/auth/authorization.js';
 import type { ScopePrincipal } from '../../common/auth/route-policy.js';
 import type { DatabaseService } from '../../database/database.service.js';
 import type { FinancialApplicationService } from './financial-application.service.js';
+import type { PoolClient } from 'pg';
+import { randomUUID } from 'node:crypto';
 
 export type { IssuanceLabel, IssuanceApprovalResult, IssuanceApprovalRequest, IssuanceApprovalBatch } from '@solar/api-contracts';
 
@@ -41,32 +43,95 @@ export function displayResult(row: IssuanceApprovalResult): IssuanceApprovalResu
   };
 }
 
+/** Coordinates with TeamService's exclusive business mutation gate. */
+export async function lockIssuanceActor(client: Pick<PoolClient, 'query'>, actorId: string): Promise<ScopePrincipal & { id: string }> {
+  await client.query("SELECT pg_advisory_xact_lock_shared(hashtext('solar.team.permissions'),hashtext('business'))");
+  const user = (await client.query('SELECT id,role,status,permission_revision FROM users WHERE id=$1 FOR SHARE', [actorId])).rows[0];
+  if (!user || user.status !== 'active') throw new NotFoundException('ไม่สามารถออกเอกสารได้');
+  const rows = (await client.query(`SELECT g.domain,g.overrides,g.scope_mode,g.site_ids,COALESCE(p.rules,'{}'::jsonb) AS preset
+    FROM employee_domain_grants g LEFT JOIN employee_position_domains p ON p.position_id=g.position_id AND p.domain=g.domain
+    WHERE g.user_id=$1 AND g.domain='business'`, [actorId])).rows;
+  const grants: DomainGrant[] = rows.map(row => ({ domain: row.domain, preset: row.preset, overrides: row.overrides, scope: { mode: row.scope_mode, siteIds: row.site_ids } }));
+  const actor = { id: user.id as string, role: user.role as string, authorization: effectiveAuthorization(user.role, user.permission_revision, grants) };
+  if (!hasPermission(actor, 'business.billing.approve')) throw new NotFoundException('ไม่สามารถออกเอกสารได้');
+  return actor;
+}
+
+export async function authorizedIssuanceLabel(client: Pick<PoolClient, 'query'>, id: string, actor: ScopePrincipal): Promise<IssuanceLabel | undefined> {
+  const row = (await client.query<IssuanceLabel>(`
+    SELECT to_char(b.period_end,'YYYY-MM') AS period,c.name AS customer,s.name AS site
+    FROM billing_cycles b JOIN sites s ON s.id=b.site_id JOIN customers c ON c.id=s.customer_id
+    WHERE b.id=$1 AND ($2::uuid[] IS NULL OR s.id=ANY($2::uuid[]))
+  `, [id, siteScope(actor, 'business')])).rows[0];
+  return row ? { period: row.period, customer: row.customer, site: row.site } : undefined;
+}
+
+type FailureCode = 'unavailable' | 'approver_position' | 'draft_state' | 'draft_stale' | 'readiness_confirmation' | 'configuration_required' | 'unexpected';
+type SafeFailure = { code: FailureCode; message: string };
+const GENERIC_FAILURE = 'ไม่สามารถออกเอกสารได้';
+const CORRECTIVE_MESSAGES = {
+  approver_position: 'กรุณากำหนดตำแหน่งผู้อนุมัติในหน้าพนักงานและสิทธิ์',
+  draft_state: 'กรุณาเตรียมใบวางบิลให้พร้อมตรวจอนุมัติก่อนออกเอกสาร',
+  draft_stale: 'กรุณาคำนวณใบวางบิลใหม่ตามการตั้งค่าปัจจุบันก่อนอนุมัติ',
+  readiness_confirmation: 'กรุณาให้เจ้าของยืนยันความพร้อมด้านบัญชีก่อนอนุมัติออกเอกสาร',
+  configuration_required: 'กรุณาตรวจสอบการตั้งค่าการออกเอกสารและความพร้อมด้านบัญชี',
+} as const;
+
+/** Whitelist trusted domain types/codes; never use arbitrary error text in output. */
+export function classifyIssuanceFailure(error: unknown): SafeFailure {
+  let code: keyof typeof CORRECTIVE_MESSAGES | undefined;
+  if (error instanceof ConflictException) {
+    const response = error.getResponse();
+    if (typeof response === 'object' && (response as { code?: unknown }).code === 'DOCUMENT_APPROVER_POSITION_REQUIRED') code = 'approver_position';
+    else if (error.message === 'ใบวางบิลรายการนี้ยังไม่พร้อมอนุมัติออกเอกสาร') code = 'draft_state';
+    else if (['Site billing configuration changed; recalculate before issuance', 'Financial scope differs from saved cycle', 'Verified financial calculation required'].includes(error.message)) code = 'draft_stale';
+    else if (['Complete issuer and customer tax identity required', 'Confirmed site tax configuration required', 'Explicit paymentTermDays required', 'Usable configured payment account required', 'Selected verified organization recipients required'].includes(error.message)) code = 'configuration_required';
+  } else if (error instanceof ServiceUnavailableException) {
+    const response = error.getResponse() as { code?: unknown; missing?: unknown };
+    if (response?.code === 'FINANCIAL_NOT_READY' && Array.isArray(response.missing)) {
+      if (response.missing.includes('cycle.snapshot')) code = 'draft_stale';
+      else if (response.missing.includes('approval.confirmation')) code = 'readiness_confirmation';
+      else code = 'configuration_required';
+    }
+  }
+  return code ? { code, message: CORRECTIVE_MESSAGES[code] } : { code: 'unexpected', message: GENERIC_FAILURE };
+}
+
 /** Each call delegates to the single approval transaction; never wrap a batch. */
 export async function approveIssuanceResult(
-  db: Pick<DatabaseService, 'query'>,
+  db: Pick<DatabaseService, 'transaction'>,
   financial: Pick<FinancialApplicationService, 'approveInvoice'>,
   id: string,
   actor: ScopePrincipal & { id: string },
+  batch?: { id: string; itemIndex: number },
 ): Promise<IssuanceApprovalResult> {
   let label: IssuanceLabel = { period: '—', customer: 'รายการที่ไม่สามารถเข้าถึงได้', site: '—' };
+  let failure: SafeFailure = { code: 'unavailable', message: GENERIC_FAILURE };
   try {
-    const row = (await db.query<IssuanceLabel>(`
-      SELECT to_char(b.period_end,'YYYY-MM') AS period,c.name AS customer,s.name AS site
-      FROM billing_cycles b JOIN sites s ON s.id=b.site_id JOIN customers c ON c.id=s.customer_id
-      WHERE b.id=$1 AND ($2::uuid[] IS NULL OR s.id=ANY($2::uuid[]))
-    `, [id, siteScope(actor, 'business')])).rows[0];
-    if (row) {
-      label = { period: row.period, customer: row.customer, site: row.site };
-      const approval = await financial.approveInvoice(id, actor.id);
-      return displayResult({
-        label,
-        status: approval.created ? 'issued' : 'already_issued',
-        documentNumber: approval.document.documentNumber,
-        message: approval.created ? 'ออกใบวางบิลแล้ว' : 'ออกใบวางบิลแล้วก่อนหน้านี้',
-      });
-    }
-  } catch {
-    // Expected failures and infrastructure errors must never expose internals.
+    const approval = await financial.approveInvoice(id, actor.id);
+    return displayResult({
+      label: approval.label,
+      status: approval.created ? 'issued' : 'already_issued',
+      documentNumber: approval.document.documentNumber,
+      message: approval.created ? 'ออกใบวางบิลแล้ว' : 'ออกใบวางบิลแล้วก่อนหน้านี้',
+    });
+  } catch (error) {
+    // The item has rolled back. Re-resolve current visibility rather than retaining
+    // request labels or labels from an authorization that may have been revoked.
+    try {
+      const visible = await db.transaction(async client => authorizedIssuanceLabel(client, id, await lockIssuanceActor(client, actor.id)));
+      if (visible) { label = visible; failure = classifyIssuanceFailure(error); }
+    } catch { /* Permission/database failure stays indistinguishable from missing. */ }
   }
-  return displayResult({ label, status: 'failed', message: 'ไม่สามารถออกเอกสารได้' });
+  if (batch) {
+    try {
+      // Independent transaction: audit failure cannot undo earlier issued items.
+      await db.transaction(async client => {
+        await client.query(`INSERT INTO audit_events(id,actor_id,action,entity_type,entity_id,after_json,reason,correlation_id)
+          VALUES($1,$2,'finance.invoice_approval_failed','billing_cycle',$3,$4,$5,$6)`,
+        [randomUUID(), actor.id, id, JSON.stringify({ billingCycleId: id, reasonCode: failure.code, batchId: batch.id, itemIndex: batch.itemIndex }), failure.code, batch.id]);
+      });
+    } catch { /* Audit outages must not expose internals or abort partial success. */ }
+  }
+  return displayResult({ label, status: 'failed', message: failure.message });
 }

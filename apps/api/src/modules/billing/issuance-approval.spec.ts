@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ServiceUnavailableException } from '@nestjs/common';
 import type { IssuanceApprovalBatch, IssuanceApprovalResult } from '@solar/api-contracts';
-import { displayResult, validateIssuanceBatch } from './issuance-approval.js';
+import { displayResult, validateIssuanceBatch, classifyIssuanceFailure } from './issuance-approval.js';
 
 const firstId = '11111111-1111-4111-8111-111111111111';
 const secondId = '22222222-2222-4222-8222-222222222222';
@@ -69,4 +69,22 @@ test('display results retain batch order and statuses without inventing document
   const batch: IssuanceApprovalBatch = { results: rows.map(displayResult) };
   assert.deepEqual(batch, { results: rows });
   assert.equal(Object.hasOwn(batch.results[1]!, 'documentNumber'), false);
+});
+
+test('known authorized domain failures map to static corrective messages without exception text',()=>{
+ const cases=[
+  [new ConflictException({code:'DOCUMENT_APPROVER_POSITION_REQUIRED',message:`private name ${firstId}`}),{code:'approver_position',message:'กรุณากำหนดตำแหน่งผู้อนุมัติในหน้าพนักงานและสิทธิ์'}],
+  [new ConflictException('ใบวางบิลรายการนี้ยังไม่พร้อมอนุมัติออกเอกสาร'),{code:'draft_state',message:'กรุณาเตรียมใบวางบิลให้พร้อมตรวจอนุมัติก่อนออกเอกสาร'}],
+  [new ConflictException('Site billing configuration changed; recalculate before issuance'),{code:'draft_stale',message:'กรุณาคำนวณใบวางบิลใหม่ตามการตั้งค่าปัจจุบันก่อนอนุมัติ'}],
+  [new ServiceUnavailableException({code:'FINANCIAL_NOT_READY',missing:['approval.confirmation'],context:{billingCycleId:firstId}}),{code:'readiness_confirmation',message:'กรุณาให้เจ้าของยืนยันความพร้อมด้านบัญชีก่อนอนุมัติออกเอกสาร'}],
+  [new ServiceUnavailableException({code:'FINANCIAL_NOT_READY',missing:['cycle.snapshot']}),{code:'draft_stale',message:'กรุณาคำนวณใบวางบิลใหม่ตามการตั้งค่าปัจจุบันก่อนอนุมัติ'}],
+  [new ServiceUnavailableException({code:'FINANCIAL_NOT_READY',missing:['site.tax']}),{code:'configuration_required',message:'กรุณาตรวจสอบการตั้งค่าการออกเอกสารและความพร้อมด้านบัญชี'}],
+ ] as const;
+ for(const [error,expected] of cases){assert.deepEqual(classifyIssuanceFailure(error),expected);assert.equal(JSON.stringify(classifyIssuanceFailure(error)).includes(firstId),false);}
+});
+
+test('unknown errors and near-match domain text remain generic',()=>{
+ for(const error of [new Error(`SQL private ${firstId}`),new ConflictException(`Site billing configuration changed; recalculate before issuance ${firstId}`),new ServiceUnavailableException({code:'SQL_FAILURE',missing:['approval.confirmation']}),{code:'DOCUMENT_APPROVER_POSITION_REQUIRED'}]){
+  assert.deepEqual(classifyIssuanceFailure(error),{code:'unexpected',message:'ไม่สามารถออกเอกสารได้'});
+ }
 });
