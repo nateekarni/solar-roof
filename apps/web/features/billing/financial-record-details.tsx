@@ -7,7 +7,7 @@ import {useFinancialCapabilities} from '../../lib/financial-capabilities';
 import {apiClient} from '../../lib/api-client';
 import {Button} from '../../components/ui/button';
 import {renderRecordValue} from '../shared/record-value';
-import {renderReceiptStatusBadge} from '../../lib/status-badge';
+import {renderReceiptStatusBadge,renderBillingStatusBadge} from '../../lib/status-badge';
 import {getOperationActions} from '../shared/operation-actions';
 import {billingDetailRequest} from './billing-detail-request';
 import {billingRecordTransfers} from './billing-record-panel';
@@ -43,7 +43,7 @@ export function FinancialRecordDetails({resource,row}:{resource:string;row:Recor
  const fieldValue=(key:string)=>billing?.[key]??row[key];
  return <div className="grid min-w-0 grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(340px,1fr)] lg:gap-6 lg:grid-rows-[auto_1fr]">
   <section aria-label={th?'สรุปใบเรียกเก็บเงิน':'Billing summary'} className="min-w-0 space-y-5 rounded-xl border bg-card p-4 sm:p-6 lg:col-start-2 lg:row-start-1">
-   <header className="flex flex-wrap items-center justify-between gap-2"><h2 className="font-semibold">{resource==='receipts'?(th?'ข้อมูลใบเสร็จรับเงิน':'Receipt details'):(th?'ข้อมูลใบเรียกเก็บเงิน':'Billing details')}</h2>{resource==='receipts'?renderReceiptStatusBadge(String(row.status??''),locale):renderRecordValue(row.status,'status',locale)}</header>
+   <header className="flex flex-wrap items-center justify-between gap-2"><h2 className="font-semibold">{resource==='receipts'?(th?'ข้อมูลใบเสร็จรับเงิน':'Receipt details'):(th?'ข้อมูลใบเรียกเก็บเงิน':'Billing details')}</h2>{resource==='receipts'?renderReceiptStatusBadge(String(row.status??''),locale):renderBillingStatusBadge(row,locale)}</header>
    <dl className="space-y-3 text-sm"><div className="flex justify-between gap-4"><dt className="shrink-0 text-muted-foreground">{th?'ลูกค้า':'Customer'}</dt><dd className="text-right font-medium">{String(row.customerName??billing?.customerName??'—')}</dd></div><div className="flex justify-between gap-4"><dt className="shrink-0 text-muted-foreground">{th?'เลขเอกสาร':'Document number'}</dt><dd className="break-all text-right font-medium">{String(row.documentNumber??row.receiptNumber??row.invoiceNumber??'—')}</dd></div></dl>
    <div className="grid grid-cols-3 gap-3 rounded-lg bg-muted/50 p-3">{totals.map(total=><div key={total.label} className="min-w-0"><p className="text-xs text-muted-foreground">{total.label}</p><p className="mt-1 break-words text-base font-semibold tabular-nums">{money(total.value)}</p></div>)}</div>
    {calculations.some(([key])=>fieldValue(key!)!==null&&fieldValue(key!)!==undefined)&&<section className="border-t pt-3"><h3 className="text-sm font-medium">{th?'รายละเอียดการใช้ไฟ':'Electricity usage details'}</h3><dl className="mt-3 space-y-3 text-sm">{calculations.filter(([key])=>fieldValue(key!)!==null&&fieldValue(key!)!==undefined).map(([key,label])=><div key={key} className="flex justify-between gap-3"><dt className="text-muted-foreground">{label}</dt><dd className="text-right tabular-nums">{key==='quality'?renderRecordValue(fieldValue(key),key,locale):new Intl.NumberFormat(th?'th-TH':'en-US',{maximumFractionDigits:4}).format(Number(fieldValue(key!)))}</dd></div>)}</dl></section>}

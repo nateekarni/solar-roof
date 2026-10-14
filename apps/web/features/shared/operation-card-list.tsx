@@ -7,7 +7,7 @@ import {Card} from '../../components/ui/card';
 import {operationKeys,isTemporalColumn,operationColumnLabel} from './operation-columns';
 import {BillOverdueCell} from './bill-overdue-cell';
 import {TelemetryAgeLabel} from './telemetry-age-label';
-import {renderStatusBadge,renderReceiptStatusBadge,STATUS_MAP} from '../../lib/status-badge';
+import {renderStatusBadge,renderReceiptStatusBadge,renderBillingStatusBadge,STATUS_MAP} from '../../lib/status-badge';
 import {formatAppDate,formatAppDateTime,isIsoDateLike} from '../../lib/date-format';
 import {useLocale} from '../../providers/locale-provider';
 export interface OperationCardListProps {
@@ -41,7 +41,7 @@ export function OperationCardList({resource,columns:rawColumns,rows,idKey='id',o
           {rows.map((row, idx) => {
             const rawTitleVal = row[titleKey];
             const titleDisplay = String(rawTitleVal ?? "-");
-            const statusVal = statusKey ? row[statusKey] : null;
+            const statusVal = resource==='billing'?row.billingStatusView:statusKey ? row[statusKey] : null;
 
             return (
               <Card
@@ -70,7 +70,7 @@ export function OperationCardList({resource,columns:rawColumns,rows,idKey='id',o
 
                   {statusVal !== null && statusVal !== undefined && (
                     <div className="shrink-0">
-                      {getStatusBadge(String(statusVal))}
+                      {resource==='billing'?renderBillingStatusBadge(row,locale):getStatusBadge(String(statusVal))}
                     </div>
                   )}
                 </div>

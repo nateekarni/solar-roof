@@ -14,6 +14,9 @@ export const STATUS_MAP: Record<
   awaiting_payment: {th:'รอชำระเงิน',en:'Awaiting payment',variant:'secondary',className:'bg-warning/15 text-warning-emphasis border-warning/30'},
   unsuccessful: {th:'ไม่สำเร็จ',en:'Unsuccessful',variant:'destructive'},
   complete: {th:'ข้อมูลครบถ้วน',en:'Complete data',variant:'secondary',className:'bg-success/15 text-success border-success/30'},
+  partial: {th:'ข้อมูลบางส่วน',en:'Partial data',variant:'secondary',className:'bg-warning/15 text-warning-emphasis border-warning/30'},
+  estimated: {th:'ข้อมูลประมาณการ',en:'Estimated data',variant:'secondary',className:'bg-info/15 text-info border-info/30'},
+  invalid: {th:'ข้อมูลไม่ถูกต้อง',en:'Invalid data',variant:'destructive'},
   issued: {th:'ออกแล้ว',en:'Issued',variant:'secondary',className:'bg-success/15 text-success border-success/30'},
   finalized: {th:'ยืนยันแล้ว',en:'Finalized',variant:'secondary',className:'bg-success/15 text-success border-success/30'},
   superseded: {th:'ถูกแทนที่ด้วยฉบับใหม่',en:'Replaced by a new version',variant:'secondary',className:'bg-muted text-muted-foreground border-border'},
@@ -190,4 +193,9 @@ export function renderStatusBadge(cell: string, locale: "th" | "en" = "th") {
 export function renderReceiptStatusBadge(value:string,locale:'th'|'en'='th') {
  if(['issued','finalized','draft','cancelled','superseded'].includes(value))return renderStatusBadge(value,locale);
  return <Badge variant="secondary" className="bg-muted text-muted-foreground border-border">{locale==='th'?'ไม่ทราบสถานะเอกสาร':'Unknown document status'}</Badge>;
+}
+
+/** The collection-derived view is the public bill status; raw lifecycle state belongs to action rules. */
+export function renderBillingStatusBadge(row:Record<string,unknown>,locale:'th'|'en'='th') {
+ return renderStatusBadge(String(row.billingStatusView??''),locale);
 }

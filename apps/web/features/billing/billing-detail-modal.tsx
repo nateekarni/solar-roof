@@ -53,6 +53,7 @@ import {paymentMetadataCopy} from './payment-metadata-copy';
 import { PaymentHistory,type TransferHistoryRow } from "./payment-history";
 import { formatTransferAmount,transferAmount } from "./payment-input";
 import { billingDetailRequest } from "./billing-detail-request";
+import {renderBillingStatusBadge} from '../../lib/status-badge';
 
 export interface BillingDetailData {
   id: string;
@@ -237,16 +238,7 @@ export function BillingDetailModal({
                   <DialogTitle className="text-base sm:text-lg font-bold">
                     {locale === "th" ? "รายละเอียดรอบบิลและการเรียกเก็บเงิน" : "Billing Cycle & Payment Verification"}
                   </DialogTitle>
-                  <Badge
-                    variant={isPaid ? "default" : "secondary"}
-                    className={isPaid ? "bg-success text-success-foreground" : ""}
-                  >
-                    {isPaid
-                      ? locale === "th" ? "ชำระแล้ว (Paid)" : "Paid"
-                      : data.status === "pending_verification"
-                      ? locale === "th" ? "รอตรวจสอบสลิป" : "Pending Verification"
-                      : locale === "th" ? "รอชำระเงิน" : "Pending Payment"}
-                  </Badge>
+                  {renderBillingStatusBadge(data,locale)}
                 </div>
                 <DialogDescription className="text-xs text-muted-foreground mt-0.5">
                   {data.customerName || "องค์กร"} • {locale === "th" ? "รอบบิลประจำเดือน " : "Period "}{data.period || data.periodEnd}

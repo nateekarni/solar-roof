@@ -59,7 +59,7 @@ import { PaymentDialog } from "../billing/payment-dialog";
 import { SiteEditDialog } from "../sites/site-edit-dialog";
 import { SiteDeleteDialog } from "../sites/site-delete-dialog";
 import { SiteTelemetryDialog } from "../sites/site-telemetry-dialog";
-import { renderStatusBadge, renderReceiptStatusBadge, STATUS_MAP } from "../../lib/status-badge";
+import { renderStatusBadge, renderReceiptStatusBadge, renderBillingStatusBadge, STATUS_MAP } from "../../lib/status-badge";
 import { formatAppDate, formatAppDateTime, isIsoDateLike } from "../../lib/date-format";
 
 type SummaryItem = {
@@ -368,6 +368,7 @@ export function OperationTable({
         },
         cell: ({ row }) => {
           if(resource==='billing'&&key==='daysOverdue')return <BillOverdueCell row={row.original} locale={locale}/>;
+          if(resource==='billing'&&key==='status')return renderBillingStatusBadge(row.original,locale);
           const val = row.getValue(key);
           const str = String(val ?? "-").trim();
           const lower = str.toLowerCase();
