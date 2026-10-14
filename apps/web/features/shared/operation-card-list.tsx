@@ -4,6 +4,8 @@ import type {OperationRow} from '@solar/api-contracts';
 import {FileQuestion,Image as ImageIcon} from 'lucide-react';
 import {Button} from '../../components/ui/button';
 import {Card} from '../../components/ui/card';
+import {Checkbox} from '../../components/ui/checkbox';
+import {eligibleBillingRows,type BillingSelectionControls} from '../billing/billing-selection';
 import {operationKeys,isTemporalColumn,operationColumnLabel} from './operation-columns';
 import {BillOverdueCell} from './bill-overdue-cell';
 import {TelemetryAgeLabel} from './telemetry-age-label';
@@ -13,9 +15,13 @@ import {useLocale} from '../../providers/locale-provider';
 export interface OperationCardListProps {
  resource:string;title:string;columns:string[];rows:OperationRow[];idKey?:string;pageSize?:number;serverManaged?:boolean;
  onOpenDetail?:(row:OperationRow)=>void;renderActions?:(row:OperationRow)=>React.ReactNode;onOpenSlip?:(url:string)=>void;
+ selection?:BillingSelectionControls;
 }
-export function OperationCardList({resource,columns:rawColumns,rows,idKey='id',onOpenDetail,renderActions,onOpenSlip}:OperationCardListProps) {
+export function OperationCardList({resource,columns:rawColumns,rows,idKey='id',onOpenDetail,renderActions,onOpenSlip,selection}:OperationCardListProps) {
  const locale=useLocale();
+ const billingSelection=resource==='billing'?selection:undefined;
+ const eligibleIds=eligibleBillingRows(rows).map(row=>row.id);
+ const selectedCount=eligibleIds.filter(id=>billingSelection?.selected.has(id)).length;
  const keys=rows[0]?operationKeys(resource,rows[0],idKey):[];
  const titleKey=keys[0]||'title',statusKey=keys.find(k=>k.includes('status')||k.includes('severity'));
  const secondaryKeys=keys.filter(k=>k!==titleKey&&k!==statusKey);
@@ -23,6 +29,10 @@ export function OperationCardList({resource,columns:rawColumns,rows,idKey='id',o
  const isStatusValue=(value:unknown)=>Boolean(STATUS_MAP[String(value??'').trim().toLowerCase()]||STATUS_MAP[String(value??'').trim()]);
  const getStatusBadge=(value:string)=>resource==='receipts'?renderReceiptStatusBadge(value,locale):renderStatusBadge(value,locale);
  return <div className="space-y-3">
+      {billingSelection&&<div className="flex items-center gap-3 min-h-11 px-3">
+       <Checkbox aria-label={locale==='th'?'เลือกใบวางบิลที่รออนุมัติทั้งหมดในหน้านี้':'Select all eligible bills on this page'} disabled={eligibleIds.length===0} checked={selectedCount>0&&selectedCount===eligibleIds.length?true:selectedCount>0?'indeterminate':false} onCheckedChange={()=>billingSelection.togglePage(eligibleIds)}/>
+       <span className="text-sm">{locale==='th'?'เลือกทั้งหมดในหน้านี้':'Select all on this page'}</span>
+      </div>}
       {/* Cards List */}
       {rows.length === 0 ? (
         <Card className="flex flex-col items-center justify-center p-8 text-center bg-card border-border/80 rounded-xl">
@@ -59,6 +69,9 @@ export function OperationCardList({resource,columns:rawColumns,rows,idKey='id',o
               >
                 {/* Card Header: Title + Status */}
                 <div className="flex items-start justify-between gap-2">
+                  {billingSelection&&eligibleBillingRows([row]).length>0&&<div className="flex items-center justify-center min-h-11 min-w-11" onClick={event=>event.stopPropagation()}>
+                   <Checkbox aria-label={locale==='th'?`เลือก ${row.period??'—'} ${row.customerName??'—'} ${row.siteName??'—'}`:`Select ${row.period??'—'} ${row.customerName??'—'} ${row.siteName??'—'}`} checked={billingSelection.selected.has(row.id)} onCheckedChange={()=>billingSelection.toggle(row.id)}/>
+                  </div>}
                   <div className="min-w-0 flex-1">
                     <p className="text-xs font-semibold text-muted-foreground/70 uppercase tracking-wider text-[10px]">
                       {operationColumnLabel(resource,titleKey,locale,rawColumns[0] ?? titleKey)}

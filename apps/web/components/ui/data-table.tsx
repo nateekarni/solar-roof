@@ -57,6 +57,7 @@ interface DataTableProps<TData, TValue> {
   actionsComponent?: React.ReactNode;
   pageSize?: number;
   onRowClick?: (row: TData) => void;
+  onViewChange?: () => void;
   serverManaged?: boolean;
   variant?: "default" | "embedded";
   emptyContent?: React.ReactNode;
@@ -76,6 +77,7 @@ export function DataTable<TData, TValue>({
   actionsComponent,
   pageSize = 10,
   onRowClick,
+  onViewChange,
   serverManaged = false,
   variant = "default",
   renderSearchToolbar,
@@ -112,6 +114,10 @@ export function DataTable<TData, TValue>({
       },
     },
   });
+
+  const {pageIndex,pageSize:currentPageSize}=table.getState().pagination;
+  const sortingKey=JSON.stringify(sorting),filterKey=JSON.stringify(columnFilters);
+  React.useEffect(()=>{onViewChange?.();},[onViewChange,pageIndex,currentPageSize,sortingKey,filterKey,globalFilter]);
 
   return (
     <div className="space-y-3.5 w-full">

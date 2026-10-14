@@ -33,6 +33,8 @@ import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
 import { Card } from "../../components/ui/card";
 import { DataTable } from "../../components/ui/data-table";
+import { Checkbox } from "../../components/ui/checkbox";
+import {eligibleBillingRows,reduceSelection} from '../billing/billing-selection';
 import {
   Dialog,
   DialogContent,
@@ -79,6 +81,7 @@ export interface OperationTableProps {
   serverManaged?: boolean;
   toolbar?: React.ReactNode;
   resultsPanel?: {id:string;labelledBy:string};
+  selectionScope?:string;
 }
 
 const COLUMN_TRANSLATIONS: Record<string, string> = {
@@ -134,11 +137,23 @@ export function OperationTable({
   serverManaged = false,
   toolbar,
   resultsPanel,
+  selectionScope,
 }: OperationTableProps) {
   const t = useT();
   const locale = useLocale();
   const router = useRouter();
   const {query, setQuery} = useOperationQuery(["customers","sites","users"].includes(resource) ? "asc" : "desc");
+  const [selected,dispatchSelection]=React.useReducer(reduceSelection,new Set<string>());
+  const queryKey=JSON.stringify(query);
+  const resetSelection=React.useCallback(()=>dispatchSelection({type:'reset'}),[]);
+  React.useEffect(resetSelection,[queryKey,selectionScope,rows,resource,resetSelection]);
+  const toggleSelection=React.useCallback((id:string)=>{
+    if(eligibleBillingRows(rows).some(row=>row.id===id))dispatchSelection({type:'toggle',id});
+  },[rows]);
+  const togglePageSelection=React.useCallback((ids:readonly string[])=>{
+    const eligibleIds=new Set(eligibleBillingRows(rows).map(row=>row.id));
+    dispatchSelection({type:'togglePage',ids:ids.filter(id=>eligibleIds.has(id))});
+  },[rows]);
   const user = useSessionUser();
   const financial = useFinancialCapabilities();
   const [queryControlsReady,setQueryControlsReady]=React.useState(false);
@@ -455,6 +470,18 @@ export function OperationTable({
       };
     });
 
+    if(resource==='billing')cols.unshift({
+      id:'selection',
+      enableSorting:false,
+      enableHiding:false,
+      header:({table})=>{
+        const ids=eligibleBillingRows(table.getRowModel().rows.map(row=>row.original)).map(row=>row.id);
+        const count=ids.filter(id=>selected.has(id)).length;
+        return <Checkbox aria-label={locale==='th'?'เลือกใบวางบิลที่รออนุมัติทั้งหมดในหน้านี้':'Select all eligible bills on this page'} disabled={ids.length===0} checked={count>0&&count===ids.length?true:count>0?'indeterminate':false} onCheckedChange={()=>togglePageSelection(ids)}/>;
+      },
+      cell:({row})=>eligibleBillingRows([row.original]).length>0?<Checkbox aria-label={locale==='th'?`เลือก ${row.original.period??'—'} ${row.original.customerName??'—'} ${row.original.siteName??'—'}`:`Select ${row.original.period??'—'} ${row.original.customerName??'—'} ${row.original.siteName??'—'}`} checked={selected.has(row.original.id)} onCheckedChange={()=>toggleSelection(row.original.id)}/>:null,
+    });
+
     // Append Action column (header empty string / visually hidden label)
     cols.push({
       id: "actions",
@@ -491,7 +518,7 @@ export function OperationTable({
     });
 
     return cols;
-  }, [rows, rawColumns, idKey, locale, resource, openResourceDetail, query.sort, query.direction, queryControlsReady, serverManaged, setQuery]);
+  }, [rows, rawColumns, idKey, locale, resource, openResourceDetail, query.sort, query.direction, queryControlsReady, serverManaged, setQuery,selected,toggleSelection,togglePageSelection]);
 
   const searchPlaceholder =
     locale === "th"
@@ -534,7 +561,7 @@ export function OperationTable({
 
       {toolbar}
 
-      <div className="min-w-0" {...(resultsPanel?{id:resultsPanel.id,role:'tabpanel','aria-labelledby':resultsPanel.labelledBy,tabIndex:0}:{})}><ResponsiveDocumentRows role={user.role} resource={resource} mobile={<OperationCardList resource={resource} title={title} columns={rawColumns} rows={rows} idKey={idKey} onOpenDetail={row => openResourceDetail(resource, row)} renderActions={renderMobileActions} onOpenSlip={url => { setSelectedSlipImage(url); setSlipImageModalOpen(true); }} />} desktop={<div className="block min-w-0">
+      <div className="min-w-0" {...(resultsPanel?{id:resultsPanel.id,role:'tabpanel','aria-labelledby':resultsPanel.labelledBy,tabIndex:0}:{})}><ResponsiveDocumentRows role={user.role} resource={resource} mobile={<OperationCardList resource={resource} title={title} columns={rawColumns} rows={rows} idKey={idKey} {...(resource==='billing'?{selection:{selected,toggle:toggleSelection,togglePage:togglePageSelection}}:{})} onOpenDetail={row => openResourceDetail(resource, row)} renderActions={renderMobileActions} onOpenSlip={url => { setSelectedSlipImage(url); setSlipImageModalOpen(true); }} />} desktop={<div className="block min-w-0">
         <DataTable
           serverManaged={serverManaged}
           columns={tableColumns}
@@ -542,6 +569,7 @@ export function OperationTable({
           getRowId={row=>row.id}
           searchPlaceholder={searchPlaceholder}
           pageSize={10}
+          {...(resource==='billing'?{onViewChange:resetSelection}:{})}
           onRowClick={(row) => openResourceDetail(resource, row)}
         />
       </div>} /></div>
@@ -560,6 +588,7 @@ export function OperationTable({
         billingId={selectedBillingId}
         initialData={selectedBillingRow}
         onUpdated={() => {
+          resetSelection();
           router.refresh();
         }}
         onOpenInvoice={(detail) => {
