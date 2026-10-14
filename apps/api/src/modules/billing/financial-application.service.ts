@@ -226,12 +226,17 @@ export class FinancialApplicationService {
   const jobs=(await this.db.query("SELECT *,to_char(period_start,'YYYY-MM-DD') AS starts,to_char(period_end,'YYYY-MM-DD') AS ends FROM financial_month_jobs WHERE state IN('pending','blocked') AND next_attempt_at<=now() ORDER BY period_start,site_id")).rows;
   for(const job of jobs){try{let cycles=(await this.db.query('SELECT bc.* FROM billing_cycles bc JOIN site_billing_settings cfg ON cfg.site_id=bc.site_id WHERE bc.site_id=$1 AND bc.period_start=greatest($2::date,cfg.service_start_date) AND bc.period_end=$3',[job.site_id,job.period_start,job.period_end])).rows;
     if(!cycles.length){const cfg=(await this.db.query("SELECT to_char(service_start_date,'YYYY-MM-DD') AS starts FROM site_billing_settings WHERE site_id=$1",[job.site_id])).rows[0];if(!cfg)throw new ConflictException('Site billing configuration required');cycles=(await this.calculate(job.site_id,[sqlCalendarPeriod(job).start,cfg.starts].sort().at(-1)!,sqlCalendarPeriod(job).end)).cycles;}
-    for(const cycle of cycles){await this.issueInvoice(cycle.id);await this.send(cycle.id);}await this.db.query("UPDATE financial_month_jobs SET state='done',completed_at=now(),last_error=NULL,last_attempt_at=now() WHERE id=$1",[job.id]);
+    for(const cycle of cycles){await this.issueInvoice(cycle.id);const delivery=await this.send(cycle.id);
+     if(!('success' in delivery)||!delivery.success)throw new ConflictException({code:'MONTHLY_DELIVERY_PENDING'});
+     const outboxes=(await this.db.query(`SELECT o.state FROM documents d LEFT JOIN financial_delivery_outbox o ON o.document_id=d.id WHERE d.billing_cycle_id=$1 AND d.status='issued'`,[cycle.id])).rows;
+     if(!outboxes.length||outboxes.some(row=>row.state!=='sent'))throw new ConflictException({code:'MONTHLY_DELIVERY_PENDING'});
+    }await this.db.query("UPDATE financial_month_jobs SET state='done',completed_at=now(),last_error=NULL,last_attempt_at=now() WHERE id=$1",[job.id]);
    }catch(error){
-    const response=(error as {getResponse?:()=>unknown})?.getResponse?.() as {missing?:unknown}|undefined;
+    const response=(error as {getResponse?:()=>unknown})?.getResponse?.() as {missing?:unknown;code?:unknown}|undefined;
     const missing=Array.isArray(response?.missing)?[...new Set(response.missing.filter((id):id is string=>typeof id==='string'&&/^(company|approval|environment|site|context|cycle|document)\.[a-z_]+$/.test(id)))]:[];
-    const code=missing.length?'FINANCIAL_NOT_READY':'MONTHLY_PROCESSING_FAILED';
-    await this.db.query("UPDATE financial_month_jobs SET state='blocked',attempts=attempts+1,last_error=$2,last_attempt_at=now(),next_attempt_at=now()+interval '1 hour' WHERE id=$1",[job.id,code+(missing.length?': '+missing.join(', '):'')]);
+    const code=response?.code==='MONTHLY_DELIVERY_PENDING'?'MONTHLY_DELIVERY_PENDING':missing.length?'FINANCIAL_NOT_READY':'MONTHLY_PROCESSING_FAILED';
+    const blocked=await this.db.query("UPDATE financial_month_jobs SET state='blocked',attempts=attempts+1,last_error=$2,last_attempt_at=now(),next_attempt_at=now()+interval '1 hour' WHERE id=$1 AND state<>'done' RETURNING id",[job.id,code+(missing.length?': '+missing.join(', '):'')]);
+    if(!blocked.rows.length)continue;
     await this.db.query(`WITH notice AS (INSERT INTO financial_staff_notices(id,job_id,site_id,kind,detail) VALUES($1,$2,$3,'monthly_billing_blocked',$4) ON CONFLICT(job_id,kind) DO NOTHING RETURNING id) INSERT INTO notification_deliveries(id,user_id,title,channel,recipient,status) SELECT gen_random_uuid(),u.id,CASE WHEN ($4::jsonb->>'scope')='TEST' THEN 'TEST ' ELSE '' END||'Monthly billing blocked: '||s.name,'system',u.email,'delivered' FROM notice CROSS JOIN users u JOIN sites s ON s.id=$3 WHERE u.status='active' AND u.role IN('owner','accountant') AND (u.customer_id IS NULL OR u.customer_id=s.customer_id)`,[randomUUID(),job.id,job.site_id,JSON.stringify({scope,code,missing,...sqlCalendarPeriod(job)})]);}
   }return (await this.db.query('SELECT * FROM financial_month_jobs ORDER BY period_start,site_id')).rows;
  }
