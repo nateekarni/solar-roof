@@ -68,17 +68,29 @@ test('company readiness confirmation accepts absent legacy signer and preserves 
   Object.assign(f.state.company,{signatoryName:'Historical signer',signatoryTitle:'Director',signatureDataUri:png});
   assert.equal((await f.service.status(owner)).approval?.id,confirmed.approval.id);
 }));
-test('invoice approval capability requires live billing approval permission and an available issue action',()=>environment(async()=>{
+test('operations invoice approval capability requires live billing approval permission and an available issue action',()=>environment(async()=>{
   const f=fixture();f.approve();
   const employee={role:'accountant',authorization:{revision:1,permissions:['business.billing.edit'],scopes:{business:{mode:'selected' as const,siteIds:['site-a']},technical:{mode:'selected' as const,siteIds:[]}}}};
-  assert.equal((await f.service.capabilities('accountant',true,employee)).actions.includes('approve_invoice'),false);
+  const capabilities=()=>f.service.capabilities('accountant',true,employee);
+  const denied=await capabilities();
+  assert.equal(denied.operationsActions?.includes('approve_invoice'),false);
+  assert.equal(denied.actions.includes('approve_invoice'),false);
   employee.authorization.permissions.push('business.billing.approve');
-  assert.equal((await f.service.capabilities('accountant',true,employee)).actions.includes('approve_invoice'),true);
+  const allowed=await capabilities();
+  assert.equal(allowed.operationsActions?.includes('approve_invoice'),true);
+  assert.equal(allowed.actions.includes('approve_invoice'),true);
   employee.authorization.permissions=['business.billing.edit'];
-  assert.equal((await f.service.capabilities('accountant',true,employee)).actions.includes('approve_invoice'),false);
+  const removed=await capabilities();
+  assert.equal(removed.operationsActions?.includes('approve_invoice'),false);
+  assert.equal(removed.actions.includes('approve_invoice'),false);
   employee.authorization.permissions.push('business.billing.approve');process.env.FINANCIAL_WRITES_ENABLED='false';
-  assert.equal((await f.service.capabilities('accountant',true,employee)).actions.includes('approve_invoice'),false);
-  assert.equal((await f.service.capabilities('accountant',false,employee)).actions.includes('approve_invoice'),false);
+  const unavailable=await capabilities();
+  assert.equal(unavailable.operationsActions?.includes('approve_invoice'),false);
+  assert.equal(unavailable.actions.includes('approve_invoice'),false);
+  process.env.FINANCIAL_WRITES_ENABLED='true';
+  const unscoped=await f.service.capabilities('accountant',false,employee);
+  assert.equal(unscoped.operationsActions?.includes('approve_invoice'),false);
+  assert.equal(unscoped.actions.includes('approve_invoice'),false);
 }));
 test('contract issuance requires its persisted site, current approval and the master write flag',()=>environment(async()=>{
  const f=fixture(),context={contractId:'contract-a',siteId:'site-a'};
