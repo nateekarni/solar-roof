@@ -19,7 +19,7 @@ test('financial pages preserve all saved rows and keep signatures on final page'
     pages.forEach((p:any,i:number)=> {
       const lines=pageLines(p);
       assert.ok(lines.every((l:any)=>l.x>=9.9 && l.x+l.getWidth()<=585.4 && l.y+l.getHeight()<835), name);
-      assert.equal(lines.some((l:any)=>lineText(l).includes('ผู้รับเงิน')||lineText(l).includes('ผู้วางบิล')),i===pages.length-1,name);
+      assert.equal(lines.some((l:any)=>lineText(l).includes('ผู้รับเงิน')||lineText(l).includes('ผู้อนุมัติออกเอกสาร')),i===pages.length-1,name);
     });
   }
 });

@@ -1,6 +1,6 @@
 import { formatDocumentMoney, renderDocumentPdf, type DocumentParty, type DocumentSnapshot } from './document-layout.js';
 
-export const FINANCIAL_TEMPLATE_VERSION = 'sarabun-a4-v7';
+export const FINANCIAL_TEMPLATE_VERSION = 'sarabun-a4-v8';
 interface SavedFinancialParty {
   company_name: string;
   signatory_name?: string;
@@ -26,6 +26,7 @@ interface SavedFinancialDocument {
   snapshot: {
     policy?: {scope?:string;taxPercent?: string | number;taxMode?: string;taxRate?:string;pricesIncludeTax?:boolean};
     company: SavedFinancialParty;
+    approver?: {userId:string;displayName:string;position:string;signatureDataUri?:string;approvedAt:string};
     customer: SavedFinancialParty;
     cycle: {
       manual_lines?: {description:string;quantity:string;unitPrice:string;amount:string}[];
@@ -69,7 +70,7 @@ export function financialDocumentSnapshot(document: SavedFinancialDocument): Doc
     ...(s.customer.external_site_id ? { siteExternalId: s.customer.external_site_id } : {}),
     ...(s.customer.payment_terms ? { paymentTerms: s.customer.payment_terms } : {}),
     period: `${s.cycle.period_start.slice(0, 10)} - ${s.cycle.period_end.slice(0, 10)}`,
-    signatories: {issuer: {...(s.company.signatory_name ? {name:s.company.signatory_name} : {}), ...(s.company.signatory_title ? {title:s.company.signatory_title} : {}), ...(s.company.signature_data_uri ? {signatureDataUri:s.company.signature_data_uri} : {})}}, rates: [],
+    signatories: {issuer: document.document_type==='invoice' ? {...(s.approver?{name:s.approver.displayName,title:s.approver.position}:{}),...(s.approver?.signatureDataUri?{signatureDataUri:s.approver.signatureDataUri}:{})} : {...(s.company.signatory_name ? {name:s.company.signatory_name} : {}), ...(s.company.signatory_title ? {title:s.company.signatory_title} : {}), ...(s.company.signature_data_uri ? {signatureDataUri:s.company.signature_data_uri} : {})}}, rates: [],
     items: s.cycle.manual_lines ? s.cycle.manual_lines.map(line=>({description:line.description,quantity:line.quantity,rate:line.unitPrice,amount:line.amount})) : s.cycle.meter_snapshot.map(line => ({
       description: 'ค่าไฟฟ้าพลังงานแสงอาทิตย์',
       period: `${line.from} - ${new Date(Date.parse(line.to) - 86400000).toISOString().slice(0, 10)}`,

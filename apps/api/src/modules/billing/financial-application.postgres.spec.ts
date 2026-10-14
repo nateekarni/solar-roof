@@ -10,13 +10,34 @@ import {FinancialApplicationService} from './financial-application.service.js';
 import {SiteBillingService} from './site-billing.service.js';
 import {SiteBillingController} from './site-billing.controller.js';
 import {BillingController} from './billing.controller.js';
-import {financialDocumentSnapshot} from '../documents/financial-document-pdf.js';
+import {financialDocumentSnapshot,renderFinancialDocumentPdf} from '../documents/financial-document-pdf.js';
+import {DocumentIdentityService} from '../identity/document-identity.js';
 import {ContractPdfService} from '../documents/contract-pdf.service.js';
 import {routeAllowed} from '../../common/auth/route-policy.js';
 import {authorizedRoute} from '../../common/auth/domain-route-policy.js';
 import nodemailer from 'nodemailer';
 import {SettingsService} from '../settings/settings.service.js';
 import {renderDocumentPdf} from '../documents/document-layout.js';
+import sharp from 'sharp';
+import {Reflector} from '@nestjs/core';
+import type {ExecutionContext} from '@nestjs/common';
+import {RolesGuard as LegacyRolesGuard} from '../../common/roles.guard.js';
+import {PlatformAccessGuard} from '../../common/auth/platform-access.guard.js';
+import {effectiveAuthorization} from '../../common/auth/authorization.js';
+
+test('legacy invoice generation and approval-status routes deny unauthorized actors through the registered guard chain',async()=>{
+ for(const [handler,method,path] of [
+  [BillingController.prototype.generateInvoiceForBillingCycle,'POST','/v1/billing-cycles/cycle/generate-invoice'],
+  [BillingController.prototype.updateBillingCycleStatus,'PATCH','/v1/billing-cycles/cycle/status'],
+ ] as const){
+  for(const role of ['admin','operator','customer_user','accountant']){
+   const authorization=effectiveAuthorization(role,1,[{domain:'business',preset:{'business.billing.edit':false},overrides:{},scope:{mode:'all',siteIds:[]}}]);
+   const context={getHandler:()=>handler,getClass:()=>BillingController,switchToHttp:()=>({getRequest:()=>({method,path,user:{id:'actor',role,authorization}})})} as unknown as ExecutionContext;
+   const db={query:async()=>{throw new Error('Unauthorized request reached resource lookup');}} as unknown as DatabaseService;
+   await assert.rejects(async()=>{new LegacyRolesGuard(new Reflector()).canActivate(context);await new PlatformAccessGuard(db,new Reflector()).canActivate(context);},(error:any)=>error.getStatus()===403);
+  }
+ }
+});
 
 // Real database SQL, transactions, readiness and PDF rendering; SMTP is the only external double.
 test('production finance freezes configured policy and artifacts across calculation, revision, settlement, manual issuance and replay',
@@ -29,12 +50,13 @@ test('production finance freezes configured policy and artifacts across calculat
  const savedEnv={...process.env};const originalTransport=nodemailer.createTransport;const messages:any[]=[];
  Object.assign(process.env,{NODE_ENV:'production',FINANCIAL_WRITES_ENABLED:'true',SMTP_HOST:'127.0.0.1',SMTP_PORT:'11049',SMTP_FROM:'finance@example.invalid',SMTP_SECURE:'false'});delete process.env.LOCAL_FINANCIAL_FIXTURE_MARKER;
  try{
-  const copy=['users','customers','sites','site_account_assignments','site_billing_settings','devices','payload_profile_revisions','billing_source_bindings','billing_meters','register_mapping_versions','rate_versions','company_profile','company_bank_accounts','contracts'];
+  const copy=['employee_positions','users','customers','sites','site_account_assignments','site_billing_settings','devices','payload_profile_revisions','billing_source_bindings','billing_meters','register_mapping_versions','rate_versions','company_profile','company_bank_accounts','contracts'];
   for(const table of [...copy,'billing_cycles','documents','document_artifacts','financial_delivery_outbox','document_number_series','payments','audit_events','financial_readiness_approvals','telemetry_raw']){
    await pool.query(`CREATE TABLE ${schema}.${table} (LIKE public.${table} INCLUDING ALL)`);
    if(copy.includes(table))await pool.query(`INSERT INTO ${schema}.${table} SELECT * FROM public.${table}`);
   }
   await pool.query(await readFile(new URL('../../../../../infra/migrations/059_billing_issuance_approval.sql',import.meta.url),'utf8'));
+  await pool.query(await readFile(new URL('../../../../../infra/migrations/058_user_document_identity.sql',import.meta.url),'utf8'));
   // Authorization uses the real database function, with its unqualified tables resolving in this schema.
   const owner=(await pool.query("SELECT id FROM users WHERE role='owner' AND status='active' ORDER BY id LIMIT 1")).rows[0];assert.ok(owner);
   const fixture=(await pool.query(`SELECT s.id FROM sites s JOIN site_billing_settings cfg ON cfg.site_id=s.id WHERE EXISTS(SELECT 1 FROM billing_meters b WHERE b.site_id=s.id AND b.active) AND EXISTS(SELECT 1 FROM public.telemetry_raw tr WHERE tr.site_id=s.id AND tr.source_time='2026-09-01T00:00:00+07:00') ORDER BY s.id LIMIT 1`)).rows[0];assert.ok(fixture,'Existing dedicated review meter fixture required');const siteId=fixture.id;
@@ -46,6 +68,9 @@ test('production finance freezes configured policy and artifacts across calculat
   await pool.query('UPDATE rate_versions SET retired_at=now() WHERE site_id=$1',[siteId]);
   await pool.query("INSERT INTO rate_versions(id,site_id,effective_from,rate_type,rate,currency,changed_by,change_reason) VALUES($1,$2,'2026-09-01','fixed_kwh',4.3210,'THB',$3,'Task 7 deterministic fixture')",[randomUUID(),siteId,(await pool.query("SELECT id FROM users WHERE role='owner' LIMIT 1")).rows[0].id]);
   const logo='data:image/png;base64,'+(await readFile(new URL('../../../../web/public/brand/solar-roof-mark.png',import.meta.url))).toString('base64');
+  const signature='data:image/png;base64,'+(await sharp({create:{width:120,height:40,channels:4,background:'#123456'}}).png().toBuffer()).toString('base64');
+  const positionId=randomUUID();await pool.query("INSERT INTO employee_positions(id,name) VALUES($1,'กรรมการบริษัท')",[positionId]);
+  await pool.query("UPDATE users SET company_position_id=$2,display_name='สมชาย ใจดี',signature_data=$3 WHERE id=$1",[owner.id,positionId,signature]);
   await pool.query("UPDATE company_profile SET company_name='Production issuer',tax_id='1234567890123',branch='Head office',address='Issuer address',phone='021234567',email='billing@example.invalid',logo_url=$1,signature_data_uri=$1,signatory_name='Authorized signer',signatory_title='Director'",[logo]);
   await pool.query("UPDATE site_billing_settings SET tax_rate=10,prices_include_tax=false,tax_confirmed=true,version=version+1 WHERE site_id=$1",[siteId]);
   await pool.query("UPDATE customers SET legal_name='Production customer',tax_id='1234567890123',tax_address='Customer address',document_email='customer@example.invalid',status='active' WHERE id=(SELECT customer_id FROM sites WHERE id=$1)",[siteId]);
@@ -133,12 +158,67 @@ test('production finance freezes configured policy and artifacts across calculat
    const audit=(await pool.query("SELECT actor_id,after_json FROM audit_events WHERE action='finance.invoice_prepared' AND entity_id=$1",[cycle.id])).rows[0];
    assert.equal(audit.actor_id,owner.id);assert.equal(audit.after_json.status,'pending_issue_approval');
   });
-  await t.test('issue freezes signatory, company, recipients, bank, logo and original PDF with one outbox',async()=>{
-   invoice=(await service.issueInvoice(cycle.id,owner.id)).document;
+  const approvalState=async()=>({
+   cycle:(await pool.query('SELECT status,due_date FROM billing_cycles WHERE id=$1',[cycle.id])).rows[0],
+   counts:(await pool.query(`SELECT (SELECT count(*) FROM documents)::int AS documents,(SELECT count(*) FROM document_artifacts)::int AS artifacts,(SELECT count(*) FROM financial_delivery_outbox)::int AS outboxes,(SELECT count(*) FROM audit_events)::int AS audits`)).rows[0],
+   series:(await pool.query('SELECT * FROM document_number_series ORDER BY prefix')).rows,
+  });
+  await t.test('invoice approval refuses unprepared cycles before any issuance writes',async()=>{
+   for(const status of ['draft','pending_review','rejected','approved','pending_verification','paid','cancelled']){
+    await pool.query('UPDATE billing_cycles SET status=$2 WHERE id=$1',[cycle.id,status]);const before=await approvalState();
+    await assert.rejects(service.approveInvoice(cycle.id,owner.id),(error:any)=>error.getStatus()===409);assert.deepEqual(await approvalState(),before);
+   }
+   await pool.query("UPDATE billing_cycles SET status='pending_issue_approval' WHERE id=$1",[cycle.id]);
+  });
+  await t.test('inactive, absent and positionless approvers leave the invoice pending without consuming a number',async()=>{
+   const before=await approvalState();
+   await pool.query(`CREATE FUNCTION reject_early_invoice_number() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'number allocation reached before identity validation'; END $$; CREATE TRIGGER reject_early_invoice_number BEFORE INSERT OR UPDATE ON document_number_series FOR EACH ROW EXECUTE FUNCTION reject_early_invoice_number();`);
+   try{
+   await assert.rejects(service.approveInvoice(cycle.id,randomUUID()),(error:any)=>error.getStatus()===403);assert.deepEqual(await approvalState(),before);
+   await pool.query("UPDATE users SET status='disabled' WHERE id=$1",[owner.id]);
+   try{await assert.rejects(service.approveInvoice(cycle.id,owner.id),(error:any)=>error.getStatus()===403);assert.deepEqual(await approvalState(),before);}finally{await pool.query("UPDATE users SET status='active' WHERE id=$1",[owner.id]);}
+   await pool.query('UPDATE users SET company_position_id=NULL WHERE id=$1',[owner.id]);
+   try{await assert.rejects(service.approveInvoice(cycle.id,owner.id),(error:any)=>error.getStatus()===409);assert.deepEqual(await approvalState(),before);}finally{await pool.query('UPDATE users SET company_position_id=$2 WHERE id=$1',[owner.id,positionId]);}
+   }finally{await pool.query('DROP TRIGGER reject_early_invoice_number ON document_number_series');}
+  });
+  await t.test('render, audit and outbox failures roll back approval, allocated number and all artifacts',async()=>{
+   const before=await approvalState();
+   const failedRender=new FinancialApplicationService(db,readiness,new DocumentIdentityService(),async()=>{throw new Error('invoice render unavailable');});
+   await assert.rejects(failedRender.approveInvoice(cycle.id,owner.id),/invoice render unavailable/);assert.deepEqual(await approvalState(),before);
+   for(const table of ['audit_events','financial_delivery_outbox']){
+    await pool.query(`CREATE FUNCTION reject_invoice_${table}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'invoice ${table} unavailable'; END $$; CREATE TRIGGER reject_invoice_${table} BEFORE INSERT ON ${table} FOR EACH ROW EXECUTE FUNCTION reject_invoice_${table}();`);
+    try{await assert.rejects(service.approveInvoice(cycle.id,owner.id),new RegExp(`invoice ${table} unavailable`));assert.deepEqual(await approvalState(),before);}finally{await pool.query(`DROP TRIGGER reject_invoice_${table} ON ${table}`);}
+   }
+  });
+  await t.test('concurrent approvals freeze one approver, number, original PDF, audit and delivery outbox',async()=>{
+   const before=await approvalState();
+   const results=await Promise.all([service.approveInvoice(cycle.id,owner.id),service.approveInvoice(cycle.id,owner.id),service.approveInvoice(cycle.id,owner.id)]);
+   assert.equal(results.filter(result=>result.created).length,1);invoice=results[0]!.document;assert.ok(results.every(result=>result.document.id===invoice.id));
+   assert.equal(invoice.snapshot.approver.userId,owner.id);assert.equal(invoice.snapshot.approver.displayName,'สมชาย ใจดี');assert.equal(invoice.snapshot.approver.position,'กรรมการบริษัท');assert.equal(invoice.snapshot.approver.signatureDataUri,signature);assert.ok(Number.isFinite(Date.parse(invoice.snapshot.approver.approvedAt)));
+   const after=await approvalState();assert.equal(after.cycle.status,'approved');
+   for(const key of ['documents','artifacts','outboxes','audits'])assert.equal(after.counts[key],before.counts[key]+1);
+   assert.equal(after.series.find((s:any)=>s.prefix.startsWith('INV'))?.last_value,'1');
+   const audit=(await pool.query("SELECT actor_id,after_json FROM audit_events WHERE action='finance.issue_invoice' AND entity_id=$1",[cycle.id])).rows[0];assert.equal(audit.actor_id,owner.id);assert.equal(audit.after_json.documentId,invoice.id);
+   const original=JSON.stringify(invoice.snapshot);const hash=invoice.content_hash;
+   await pool.query("UPDATE users SET display_name='Later name',signature_data=NULL,company_position_id=NULL WHERE id=$1",[owner.id]);
+   try{const replay=await service.approveInvoice(cycle.id,owner.id);assert.equal(replay.created,false);assert.equal(replay.document.id,invoice.id);assert.equal(JSON.stringify(replay.document.snapshot),original);assert.equal(replay.document.content_hash,hash);assert.deepEqual(await approvalState(),after);}finally{await pool.query("UPDATE users SET display_name='สมชาย ใจดี',signature_data=$2,company_position_id=$3 WHERE id=$1",[owner.id,signature,positionId]);}
+  });
+  await t.test('issue freezes company, recipients, bank, logo and original PDF with one outbox',async()=>{
    assert.equal(invoice.snapshot.policy.scope,'PRODUCTION');assert.equal(invoice.snapshot.company.company_name,'Production issuer');assert.equal(invoice.snapshot.company.signatory_name,'Authorized signer');assert.equal(invoice.snapshot.logoDataUri,logo);assert.ok(invoice.snapshot.banks.length);assert.ok(invoice.snapshot.recipients.length);
    assert.equal(financialDocumentSnapshot(invoice).syntheticTest,false);
    const replay=await service.issueInvoice(cycle.id,owner.id);assert.equal(replay.document.id,invoice.id);assert.equal(replay.created,false);
    const artifact=(await pool.query('SELECT * FROM document_artifacts WHERE document_id=$1',[invoice.id])).rows[0];assert.equal(createHash('sha256').update(artifact.pdf_bytes).digest('hex'),invoice.content_hash);
+  });
+  await t.test('a positioned approver without signature issues and renders an invoice',async()=>{
+   const rollback=new Error('unsigned approval fixture rollback');
+   await assert.rejects(db.transaction(async client=>{
+    await client.query("DELETE FROM financial_delivery_outbox WHERE document_id=$1",[invoice.id]);await client.query('DELETE FROM document_artifacts WHERE document_id=$1',[invoice.id]);await client.query('DELETE FROM documents WHERE id=$1',[invoice.id]);
+    await client.query("UPDATE billing_cycles SET status='pending_issue_approval' WHERE id=$1",[cycle.id]);await client.query('UPDATE users SET signature_data=NULL WHERE id=$1',[owner.id]);
+    const transactionDb={transaction:async(run:any)=>run(client)} as DatabaseService;
+    const unsigned=(await new FinancialApplicationService(transactionDb,readiness).approveInvoice(cycle.id,owner.id)).document;
+    assert.equal(unsigned.snapshot.approver.signatureDataUri,undefined);assert.deepEqual(financialDocumentSnapshot(unsigned).signatories.issuer,{name:'สมชาย ใจดี',title:'กรรมการบริษัท'});assert.equal((await renderFinancialDocumentPdf(unsigned)).subarray(0,5).toString(),'%PDF-');
+    throw rollback;
+   }),error=>error===rollback);
   });
   await t.test('replacement draft migration retains current originals, permits one pending draft and enforces references and statuses',async()=>{
    const draftId=randomUUID();

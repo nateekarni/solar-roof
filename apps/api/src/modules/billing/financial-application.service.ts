@@ -1,6 +1,6 @@
 import {configuredTotals,manualTotals,scaledDecimal,type ManualLine} from './site-billing-policy.js';
 import { billableBoundary, verifyBillingSegment } from './billing-source-readings.js';
-import { BadRequestException, ForbiddenException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, ConflictException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { randomUUID, createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -19,13 +19,17 @@ import { allocateDocumentNumber } from '../documents/document-number.js';
 import { FINANCIAL_TEMPLATE_VERSION, renderFinancialDocumentPdf } from '../documents/financial-document-pdf.js';
 import {frozenFinancialLogo} from './frozen-financial-logo.js';
 import {frozenFinancialTax} from './frozen-financial-tax.js';
+import {DocumentIdentityService,type DocumentIdentity} from '../identity/document-identity.js';
+type FinancialApprover=DocumentIdentity&{approvedAt:string};
 const validDate=validFinancialDate;
 export function reviewedActualEnergyDifference(opening:unknown,closing:unknown):string {
  try{return actualEnergyDifference(opening,closing);}catch(error){throw new ConflictException((error as Error).message);}
 }
 @Injectable()
 export class FinancialApplicationService {
- constructor(@Inject(DatabaseService) private readonly db:DatabaseService,@Inject(FinancialReadinessService) private readonly readiness:FinancialReadinessService){}
+ constructor(@Inject(DatabaseService) private readonly db:DatabaseService,@Inject(FinancialReadinessService) private readonly readiness:FinancialReadinessService,
+  @Inject(DocumentIdentityService) private readonly documentIdentity:DocumentIdentityService=new DocumentIdentityService(),
+  @Optional() @Inject('FINANCIAL_PDF_RENDERER') private readonly render:typeof renderFinancialDocumentPdf=renderFinancialDocumentPdf){}
  private async audit(client:PoolClient,actorId:string|undefined,action:string,id:string,after:unknown){
   await client.query(`INSERT INTO audit_events(id,actor_id,action,entity_type,entity_id,after_json,reason,correlation_id) VALUES($1,$2,$3,'billing_cycle',$4,$5,$6,$7)`,[randomUUID(),actorId??null,action,id,JSON.stringify(after),'Financial workflow',randomUUID()]);
  }
@@ -65,7 +69,7 @@ export class FinancialApplicationService {
    return {cycles:result.rows};
   });
  }
- private async issue(client:PoolClient,cycle:any,type:'invoice'|'receipt',actorId?:string) {
+ private async issue(client:PoolClient,cycle:any,type:'invoice'|'receipt',actorId?:string,approver?:FinancialApprover) {
   const existing=(await client.query('SELECT * FROM documents WHERE billing_cycle_id=$1 AND document_type=$2 AND is_current',[cycle.id,type])).rows;
   if(existing.length){if(existing.length!==1||!existing[0].snapshot?.policy||!['issued','finalized'].includes(existing[0].status))throw new ConflictException('Legacy document requires explicit reconciliation');return existing[0];}
   const policy=validateFinancialPolicy(cycle);
@@ -90,9 +94,9 @@ export class FinancialApplicationService {
   const cycleDates=(await client.query(`SELECT to_char(period_start,'YYYY-MM-DD') AS starts,to_char(period_end,'YYYY-MM-DD') AS ends,to_char(due_date,'YYYY-MM-DD') AS due FROM billing_cycles WHERE id=$1`,[cycle.id])).rows[0];
   cycle={...cycle,period_start:cycleDates.starts,period_end:cycleDates.ends,due_date:cycle.due_date&&typeof cycle.due_date==='string'?cycle.due_date:cycleDates.due};
   const snapshot={brandPrimary:BRAND_PRIMARY,...(invoiceNumber?{invoiceNumber}:{}),templateVersion:FINANCIAL_TEMPLATE_VERSION,policy:invoiceOriginal?.snapshot?.policy??(policy.scope==='TEST'?{...policy,...frozenFinancialTax(undefined,customer.tax_rate,customer.prices_include_tax)}:policy),policyHash:invoiceOriginal?.snapshot?.policyHash??cycle.policy_hash,cycle,customer:invoiceOriginal?.snapshot?.customer??customer,company:invoiceOriginal?.snapshot?.company??company,banks:invoiceOriginal?.snapshot?.banks??banks,payments,recipients:invoiceOriginal?.snapshot?.recipients??recipients,logo:logoDataUri,logoDataUri,language:'th',issueDate:day,dueDate:cycle.due_date?(typeof cycle.due_date==='string'?cycle.due_date.slice(0,10):cycle.due_date.toISOString().slice(0,10)):new Date(Date.parse(day)+customer.payment_term_days*86400000).toISOString().slice(0,10)};
-  const document={id:randomUUID(),document_number:number,document_type:type,snapshot,amount:cycle.amount};
-  const bytes=await renderFinancialDocumentPdf(document);const sha256=createHash('sha256').update(bytes).digest('hex');
-  const doc=(await client.query(`INSERT INTO documents(id,site_id,billing_cycle_id,document_type,document_number,status,issue_date,amount,snapshot,content_hash,file_key,template_version,revision,supersedes_document_id) VALUES($1,$2,$3,$4,$5,'issued',$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,[document.id,cycle.site_id,cycle.id,type,number,day,cycle.amount,JSON.stringify(snapshot),sha256,`local-artifact:${document.id}`,FINANCIAL_TEMPLATE_VERSION,cycle.document_revision??1,cycle.supersedes_document_id??null])).rows[0];
+  const document={id:randomUUID(),document_number:number,document_type:type,snapshot:{...snapshot,...(approver?{approver:{...approver}}:{})},amount:cycle.amount};
+  const bytes=await this.render(document);const sha256=createHash('sha256').update(bytes).digest('hex');
+  const doc=(await client.query(`INSERT INTO documents(id,site_id,billing_cycle_id,document_type,document_number,status,issue_date,amount,snapshot,content_hash,file_key,template_version,revision,supersedes_document_id) VALUES($1,$2,$3,$4,$5,'issued',$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,[document.id,cycle.site_id,cycle.id,type,number,day,cycle.amount,JSON.stringify(document.snapshot),sha256,`local-artifact:${document.id}`,FINANCIAL_TEMPLATE_VERSION,cycle.document_revision??1,cycle.supersedes_document_id??null])).rows[0];
   if(type==='invoice')await client.query('UPDATE billing_cycles SET due_date=$2 WHERE id=$1 AND due_date IS NULL',[cycle.id,snapshot.dueDate]);
   await client.query('INSERT INTO document_artifacts(document_id,pdf_bytes,sha256) VALUES($1,$2,$3)',[doc.id,bytes,sha256]);
   await client.query('INSERT INTO financial_delivery_outbox(id,document_id,artifact_sha256) VALUES($1,$2,$3)',[randomUUID(),doc.id,sha256]);await this.audit(client,actorId,'finance.issue_'+type,cycle.id,{documentId:doc.id,contentHash:sha256,policyHash:cycle.policy_hash});return doc;
@@ -152,7 +156,29 @@ export class FinancialApplicationService {
    return {cycle:updated,created:true};
   });
  }
- // Compatibility issuance path; approval wiring and caller migration follow separately.
+ async approveInvoice(id:string,actorId:string){
+  if(!actorId)throw new BadRequestException('บัญชีผู้อนุมัติจำเป็นต่อการออกเอกสาร');
+  return this.db.transaction(async client=>{
+   await client.query("SELECT pg_advisory_xact_lock(hashtext('production-financial-configuration'))");
+   const cycle=(await client.query('SELECT * FROM billing_cycles WHERE id=$1 FOR UPDATE',[id])).rows[0];
+   if(!cycle)throw new NotFoundException('ไม่พบรอบบิล');
+   const existing=(await client.query("SELECT * FROM documents WHERE billing_cycle_id=$1 AND document_type='invoice' AND is_current",[id])).rows;
+   if(existing.length){
+    if(existing.length!==1||!existing[0].snapshot?.policy||!['issued','finalized'].includes(existing[0].status))throw new ConflictException('Legacy document requires explicit reconciliation');
+    return {created:false,document:{...existing[0],documentNumber:existing[0].document_number}};
+   }
+   if(cycle.status!=='pending_issue_approval')throw new ConflictException('ใบวางบิลรายการนี้ยังไม่พร้อมอนุมัติออกเอกสาร');
+   const policy=validateFinancialPolicy(cycle);
+   const evidence=await this.readiness.assertEnabled('issue',{billingCycleId:id},client);
+   if(policy.scope!==evidence.scope)throw new ConflictException('Financial scope differs from saved cycle');
+   const identity=await this.documentIdentity.resolve(client,actorId);
+   const approvedAt=(await client.query('SELECT now() AS value')).rows[0].value.toISOString();
+   const document=await this.issue(client,cycle,'invoice',actorId,{...identity,approvedAt});
+   await client.query("UPDATE billing_cycles SET status='approved' WHERE id=$1",[id]);
+   return {created:true,document:{...document,documentNumber:document.document_number}};
+  });
+ }
+ // Compatibility issuance path; caller migration follows in subsequent tasks.
  async issueInvoice(id:string,actorId?:string){return this.db.transaction(async client=>{await this.readiness.assertEnabled('issue',{billingCycleId:id},client);const cycle=(await client.query('SELECT * FROM billing_cycles WHERE id=$1 FOR UPDATE',[id])).rows[0];if(!cycle)throw new NotFoundException('Billing cycle not found');const prior=(await client.query("SELECT id FROM documents WHERE billing_cycle_id=$1 AND document_type='invoice' AND is_current",[id])).rows[0];const document=await this.issue(client,cycle,'invoice',actorId);await client.query("UPDATE billing_cycles SET status=CASE WHEN status IN('paid','pending_verification') THEN status ELSE 'approved' END WHERE id=$1",[id]);return {created:!prior,document:{...document,documentNumber:document.document_number}};});}
  async submitPayment(id:string,body:PaymentSubmission,actorId:string|undefined){
   if(!actorId)throw new BadRequestException('Actor required');

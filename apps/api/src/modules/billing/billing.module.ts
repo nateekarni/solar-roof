@@ -13,11 +13,12 @@ import { BillingController } from "./billing.controller.js";
 import { BillingCycleService } from "./billing-cycle.service.js";
 import { ContractService } from "./contract.service.js";
 import { RateService } from "./rate.service.js";
+import { DocumentIdentityService } from '../identity/document-identity.js';
 
 @Module({
   imports: [DatabaseModule, FinancialReadinessModule],
   controllers: [SiteBillingController, BillingController, BillingSourceBindingController],
-  providers: [SiteBillingService, ContractPdfService, BillingSourceBindingService, FinancialApplicationService, FinancialScheduler, ContractService, RateService, BillingCalculationService, BillingCycleService],
+  providers: [DocumentIdentityService, SiteBillingService, ContractPdfService, BillingSourceBindingService, FinancialApplicationService, FinancialScheduler, ContractService, RateService, BillingCalculationService, BillingCycleService],
   exports: [ContractService, RateService, BillingCalculationService, BillingCycleService],
 })
 export class BillingModule {}

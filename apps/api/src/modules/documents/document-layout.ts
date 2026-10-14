@@ -305,7 +305,7 @@ function signatures(s: DocumentSnapshot): any {
           left(
             contract
               ? "ผู้ลงนามฝ่ายผู้ขาย / Provider signatory"
-              : "ผู้วางบิล",
+              : "ผู้อนุมัติออกเอกสาร",
           ),
           centered(
             contract

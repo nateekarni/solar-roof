@@ -16,9 +16,20 @@ const fixture: DocumentSnapshot = {
 };
 const serialized = (definition: ReturnType<typeof documentDefinition>) => JSON.stringify(definition.content, (key, value) => key === 'image' ? '[approved-logo]' : value);
 
+test('invoice footer identifies the saved approver with and without uploaded signature bytes',async()=>{
+ for(const signatureDataUri of [fixture.logoDataUri,undefined]){
+  const snapshot={...fixture,signatories:{issuer:{name:'สมชาย ใจดี',title:'กรรมการบริษัท',...(signatureDataUri?{signatureDataUri}:{})}}};
+  const saved=JSON.stringify(snapshot);const definition=documentDefinition(snapshot);
+  const footer=definition.footer(1,1);assert.match(visibleText(footer),/สมชาย ใจดี/);assert.match(visibleText(footer),/กรรมการบริษัท/);assert.match(visibleText(footer),/ผู้อนุมัติออกเอกสาร/);
+  const signature=footer.stack[0].table.body[0][0];
+  if(signatureDataUri)assert.equal(signature.image,signatureDataUri);else assert.equal(signature.text,'________________________');
+  assert.equal(pdfPageCount(await renderDocumentPdf(snapshot)),1);assert.equal(JSON.stringify(snapshot),saved);
+ }
+});
+
 test('document layout prints reference A4 pages and keeps visible footer identity empty', () => {
  const d=documentDefinition(fixture);assert.equal(d.pageSize,'A4');assert.equal(d.defaultStyle.font,'THSarabunNew');assert.equal(d.defaultStyle.fontSize,11);assert.ok(serialized(d).includes('#f5f5f7'));assert.match(visibleText(d.footer(1,2)),/หน้า 1 \/ 2/);assert.doesNotMatch(visibleText(d.footer(2,2)),/INV|Page/);
- const t=d.content.find((n:any)=>n.table?.headerRows===1).table;assert.equal(t.dontBreakRows,false);assert.equal(t.keepWithHeaderRows,0);assert.match(visibleText(d.footer(1,1)),/ผู้วางบิล/);
+ const t=d.content.find((n:any)=>n.table?.headerRows===1).table;assert.equal(t.dontBreakRows,false);assert.equal(t.keepWithHeaderRows,0);assert.match(visibleText(d.footer(1,1)),/ผู้อนุมัติออกเอกสาร/);
 });
 
 test('invoice uses exact saved rate rows and totals without changing the snapshot', () => {
@@ -192,7 +203,7 @@ test('long financial documents paginate instead of shrinking or dropping saved r
  assert.ok(pdfPageCount(bytes)>1);assert.equal(JSON.stringify(snapshot),saved);
  const definition=documentDefinition(snapshot);const rows=definition.content.find((node:any)=>node.table?.headerRows===1).table;
  assert.equal(rows.body.length,46);assert.equal(rows.dontBreakRows,false);assert.equal(rows.keepWithHeaderRows,0);
- assert.match(visibleText(definition.footer(2,2)), /ผู้วางบิล/);
+ assert.match(visibleText(definition.footer(2,2)), /ผู้อนุมัติออกเอกสาร/);
 });
 
 
@@ -207,7 +218,7 @@ test('PPA presents frozen effective dates, every dated rate and payment days as 
 test('legacy site identity stays name-only and continuation signatures occur only on final page',()=>{
  const d=documentDefinition({...fixture,siteName:'ไซต์เก่า',contractNumber:'internal-contract',...{siteId:'internal-uuid'}});
  assert.match(visibleText(d.content),/ไซต์งาน: ไซต์เก่า/);assert.doesNotMatch(visibleText(d.content),/internal-uuid/);
- assert.doesNotMatch(visibleText(d.footer(1,2)),/ผู้วางบิล/);assert.match(visibleText(d.footer(2,2)),/ผู้วางบิล/);
+ assert.doesNotMatch(visibleText(d.footer(1,2)),/ผู้อนุมัติออกเอกสาร/);assert.match(visibleText(d.footer(2,2)),/ผู้อนุมัติออกเอกสาร/);
  const header=(d as any).header;assert.ok(header);assert.equal(header(1),null);assert.match(visibleText(header(2)),/INV2026100001/);assert.match(visibleText(header(2)),/ใบวางบิล/);assert.ok(header(2).columns.some((n:any)=>n.image));
 });
 
