@@ -16,7 +16,7 @@ const meter = {id:'meter-a',device_id:'device-a',semantic_field:'energy.active.i
 const cyclePolicyHash='02a3e86a9040eaf4840c3030c2b112e7929f6a039347d3d3824745e9caaa00f2';
 type Approval = {id:string;config_hash:string;approved_by:string;approved_at:string;revoked_at:string|null};
 function fixture() {
-  const state = {company:{...company},banks:[{...bank}],sites:[{...site}],meters:[{...meter}],rates:[{starts:'2026-01-01',ends:null as string|null,rate:'4.2500',currency:'THB',rate_type:'fixed_kwh'}],recipients:[{id:'recipient-a',email:'customer@example.com'}],approval:null as Approval|null,audits:[] as string[],cycle:null as any,documents:[] as any[],payments:[] as any[],boundaryMissing:false,boundaryMissingDates:[] as string[],local:false,auditFails:false};
+ const state = {company:{...company},banks:[{...bank}],sites:[{...site}],meters:[{...meter}],rates:[{starts:'2026-01-01',ends:null as string|null,rate:'4.2500',currency:'THB',rate_type:'fixed_kwh'}],recipients:[{id:'recipient-a',email:'customer@example.com'}],approval:null as Approval|null,audits:[] as string[],auditEvidence:[] as any[],contract:{id:'contract-a',site_id:'site-a',status:'active'},cycle:null as any,documents:[] as any[],payments:[] as any[],boundaryMissing:false,boundaryMissingDates:[] as string[],local:false,auditFails:false};
   const query = async (sql:string,values:unknown[] = []):Promise<any> => {
     if(sql.includes('pg_advisory_xact_lock')) return {rows:[]};
     if(sql.includes('FROM users WHERE id=$1')) return {rows:[{id:'owner-a',role:'owner',status:'active'}]};
@@ -25,9 +25,10 @@ function fixture() {
     if(sql.includes('UPDATE financial_readiness_approvals')) {const row=state.approval;if(!row||row.revoked_at)return {rows:[]};row.revoked_at='2026-10-13';return {rows:[{id:row.id}]};}
     if(sql.includes('INSERT INTO financial_readiness_approvals')) {state.approval={id:String(values[0]),config_hash:String(values[1]),approved_by:String(values[3]),approved_at:'2026-10-13T00:00:00.000Z',revoked_at:null};return {rows:[state.approval]};}
     if(sql.includes('FROM financial_readiness_approvals')) return {rows:state.approval&&!state.approval.revoked_at?[state.approval]:[]};
-    if(sql.includes('INSERT INTO audit_events')) {if(state.auditFails)throw Error('audit unavailable');state.audits.push(String(values[2]));return {rows:[]};}
+    if(sql.includes('INSERT INTO audit_events')) {if(state.auditFails)throw Error('audit unavailable');state.audits.push(String(values[2]));state.auditEvidence.push({before:sql.includes('before_json')?JSON.parse(String(values[4])):undefined,after:sql.includes('after_json')?JSON.parse(String(values[5])):undefined});return {rows:[]};}
     if(sql.includes('FROM local_financial_test_policy')) return {rows:state.local?[{id:'test-policy',selected_by:'owner-a',workflow_state:'verified',workflow_evidence:{runId:'run-a',startedAt:'date',completedAt:'date',purpose:'real_api_workflow_verification'}}]:[]};
     if(sql.includes('FROM billing_cycles')) return {rows:state.cycle?[state.cycle]:[]};
+    if(sql.includes('FROM contracts'))return {rows:values[0]===state.contract.id?[state.contract]:[]};
     if(sql.includes('FROM sites s JOIN customers')) return {rows:state.sites.filter(s=>(!values[0]||s.id===values[0])&&(!values[1]||(values[1] as string[]).includes(s.id)))};
     if(sql.includes('FROM billing_meters')) return {rows:state.meters};
     if(sql.includes('FROM rate_versions')) return {rows:state.rates};
@@ -60,6 +61,17 @@ test('missing uploaded logo, signatory and default bank produces safe Owner chec
   assert.ok(result.items.every(i=>Object.keys(i).every(key=>['id','ready','responsibility','destination','siteId'].includes(key))));
   assert.ok(!JSON.stringify(result).includes('1234567890123'));
 }));
+test('contract issuance requires its persisted site, current approval and the master write flag',()=>environment(async()=>{
+ const f=fixture(),context={contractId:'contract-a',siteId:'site-a'};
+ const gate=(ctx:any=context)=>f.service.assertEnabled('issue_contract' as any,ctx);
+ await assert.rejects(gate(),error=>(error as any).getResponse().missing.includes('approval.confirmation'));
+ f.approve();assert.equal((await gate()).scope,'PRODUCTION');
+ await assert.rejects(gate({contractId:'contract-a'}),error=>(error as any).getResponse().missing.includes('context.site'));
+ await assert.rejects(gate({...context,siteId:'site-b'}),error=>(error as any).getStatus()===400);
+ f.state.contract.status='draft';await assert.rejects(gate(),error=>(error as any).getResponse().missing.includes('site.contract'));f.state.contract.status='active';
+ process.env.FINANCIAL_WRITES_ENABLED='false';await assert.rejects(gate(),error=>(error as any).getResponse().missing.includes('environment.financial_writes'));process.env.FINANCIAL_WRITES_ENABLED='true';
+ f.state.company.companyName='Stale issuer';await assert.rejects(gate(),error=>(error as any).getResponse().missing.includes('approval.confirmation'));
+}));
 test('contract delivery gates its persisted original and site without relaxing invoice cycle issuance',()=>environment(async()=>{
  const f=fixture();f.approve();const bytes=Buffer.from('%PDF-1.7 saved contract');const hash=(await import('node:crypto')).createHash('sha256').update(bytes).digest('hex');
  f.state.documents=[{id:'contract-doc',site_id:'site-a',document_type:'contract',status:'issued',snapshot:{deliveryRecipients:[{id:'recipient-a',email:'customer@example.com'}]},pdf_bytes:bytes,sha256:hash,content_hash:hash}];
@@ -68,6 +80,12 @@ test('contract delivery gates its persisted original and site without relaxing i
  await assert.rejects(f.service.assertEnabled('send_contract' as any,{documentId:'contract-doc',siteId:'site-b'} as any),/context|site/i);
  f.state.company.companyName='Changed issuer';await assert.rejects(f.service.assertEnabled('send_contract' as any,{documentId:'contract-doc',siteId:'site-a'} as any),error=>(error as any).getStatus()===503);
 },{SMTP_HOST:'smtp.example.invalid',SMTP_PORT:'587',SMTP_FROM:'billing@example.com'}));
+test('blocked action includes its explicit site and period for safe HTTP actionability',()=>environment(async()=>{
+ const f=fixture();const context={siteId:'site-a',periodStart:'2026-01-01',periodEnd:'2026-01-31'};
+ await assert.rejects(f.service.assertEnabled('calculate',context),error=>{
+  const response=(error as any).getResponse();assert.deepEqual(response.missing,['approval.confirmation']);assert.deepEqual(response.context,context);return true;
+ });
+}));
 test('complete global data still requires matching persisted approval',()=>environment(async()=>{
   const f=fixture();const pending=await f.service.status(owner,{siteId:'site-a'});
   assert.deepEqual(pending.actions.calculate.missing,['approval.confirmation']);assert.equal(pending.scope,null);
@@ -107,6 +125,13 @@ test('snapshot, locked correction, artifact integrity and frozen recipients gate
   f.state.documents=[{id:'invoice-a',document_type:'invoice',status:'issued',is_current:true,snapshot:{policy:{},recipients:[{id:'recipient-a',email:'customer@example.com'}]},pdf_bytes:Buffer.from('%PDF-bad'),sha256:'bad',content_hash:'bad'}];
   const invalid=await f.service.status(owner,context);assert.ok(invalid.actions.send.missing.includes('document.artifact'));
   f.state.cycle.status='paid';assert.ok((await f.service.status(owner,context)).actions.adjust.missing.includes('cycle.correction'));
+}));
+test('confirmation audit retains safe approved evidence and replacement approval records invalidation',()=>environment(async()=>{
+ const f=fixture();const first=await f.service.confirm(owner);
+ assert.equal(f.state.auditEvidence[0].before,null);assert.equal(f.state.auditEvidence[0].after.status,'active');assert.equal(f.state.auditEvidence[0].after.id,first.approval?.id);assert.equal(f.state.auditEvidence[0].after.approvedBy,'owner-a');
+ assert.equal(f.state.auditEvidence[0].after.configuration.company.companyName,'Issuer');assert.ok(!JSON.stringify(f.state.auditEvidence).includes('base64,'));
+ f.state.company.companyName='Replacement issuer';await f.service.confirm(owner);
+ assert.equal(f.state.auditEvidence[1].before.status,'active');assert.equal(f.state.auditEvidence[1].after.status,'revoked');assert.equal(f.state.auditEvidence[1].after.revokedBy,'owner-a');
 }));
 test('only active Owner can confirm; same hash reuses approval and failed audit rolls back',()=>environment(async()=>{
   const f=fixture();await assert.rejects(f.service.confirm({id:'owner-a',role:'accountant'}),/Owner/);

@@ -15,6 +15,8 @@ import {ContractPdfService} from '../documents/contract-pdf.service.js';
 import {routeAllowed} from '../../common/auth/route-policy.js';
 import {authorizedRoute} from '../../common/auth/domain-route-policy.js';
 import nodemailer from 'nodemailer';
+import {SettingsService} from '../settings/settings.service.js';
+import {renderDocumentPdf} from '../documents/document-layout.js';
 
 // Real database SQL, transactions, readiness and PDF rendering; SMTP is the only external double.
 test('production finance freezes configured policy and artifacts across calculation, revision, settlement, manual issuance and replay',
@@ -23,7 +25,7 @@ test('production finance freezes configured policy and artifacts across calculat
  assert.equal(url.hostname,'127.0.0.1');assert.equal(url.port,'15449');assert.equal(url.pathname,'/solar_financial_flow_review');
  const schema='task7_'+randomUUID().replaceAll('-','');
  const admin=new Pool({connectionString:url.toString()});await admin.query(`CREATE SCHEMA ${schema}`);
- const pool=new Pool({connectionString:url.toString(),options:`-c search_path=${schema},public`,max:8});
+ const pool=new Pool({connectionString:url.toString(),options:`-c search_path=${schema},public`,max:8,application_name:schema});
  const savedEnv={...process.env};const originalTransport=nodemailer.createTransport;const messages:any[]=[];
  Object.assign(process.env,{NODE_ENV:'production',FINANCIAL_WRITES_ENABLED:'true',SMTP_HOST:'127.0.0.1',SMTP_PORT:'11049',SMTP_FROM:'finance@example.invalid',SMTP_SECURE:'false'});delete process.env.LOCAL_FINANCIAL_FIXTURE_MARKER;
  try{
@@ -60,8 +62,43 @@ test('production finance freezes configured policy and artifacts across calculat
    const contract={id:randomUUID()};
    await pool.query("INSERT INTO contracts(id,site_id,version,start_date,status,company_name,tax_id,tax_address,signer_name,signer_title,payment_terms,recipient_user_ids) VALUES($1,$2,1,'2026-09-01','active','Production customer','1234567890123','Customer address','Authorized signer','Director','30 days',(SELECT recipient_user_ids FROM site_billing_settings WHERE site_id=$2))",[contract.id,siteId]);
    await pool.query("INSERT INTO rate_versions(id,contract_id,effective_from,rate_type,rate,currency) VALUES($1,$2,'2026-09-01','fixed_kwh',4.3210,'THB')",[randomUUID(),contract.id]);
-   const original=await new ContractPdfService(db).ensureContractOriginal(contract.id,{id:owner.id,role:'owner'});
-   const controller=new BillingController(db,readiness,service,new ContractPdfService(db),siteBilling);
+   const pdfs=new ContractPdfService(db);const actor={id:owner.id,role:'owner'};
+   const controller=new BillingController(db,readiness,service,pdfs,siteBilling);
+   await assert.rejects(controller.contractOriginal(contract.id,{user:actor}),error=>(error as any).getStatus()===404);
+   await assert.rejects(controller.createContractOriginal(contract.id,{siteId:'caller-selected'},{user:actor}),error=>(error as any).getStatus()===400);
+   await assert.rejects(controller.createContractOriginal(contract.id,{},{user:{id:owner.id,role:'customer_user'}}),error=>(error as any).getStatus()===403);
+   process.env.FINANCIAL_WRITES_ENABLED='false';await assert.rejects(controller.createContractOriginal(contract.id,{},{user:actor}),error=>(error as any).getResponse().missing.includes('environment.financial_writes'));process.env.FINANCIAL_WRITES_ENABLED='true';
+   await pool.query("UPDATE company_profile SET company_name='Stale approval issuer'");
+   await assert.rejects(controller.createContractOriginal(contract.id,{},{user:actor}),error=>(error as any).getResponse().missing.includes('approval.confirmation'));
+   await pool.query("UPDATE company_profile SET company_name='Production issuer'");
+   await pool.query("UPDATE financial_readiness_approvals SET revoked_at=now(),revoked_by=$1,revoke_reason='test absent approval' WHERE revoked_at IS NULL",[owner.id]);
+   await assert.rejects(controller.createContractOriginal(contract.id,{},{user:actor}),error=>(error as any).getResponse().missing.includes('approval.confirmation'));await readiness.confirm(actor);
+   assert.equal((await pool.query('SELECT count(*)::int AS n FROM documents')).rows[0].n,0);
+   await pool.query(`CREATE FUNCTION reject_contract_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='finance.issue_contract' THEN RAISE EXCEPTION 'contract audit unavailable'; END IF; RETURN NEW; END $$; CREATE TRIGGER reject_contract_audit BEFORE INSERT ON audit_events FOR EACH ROW EXECUTE FUNCTION reject_contract_audit();`);
+   await assert.rejects(pdfs.ensureContractOriginal(contract.id,actor),/contract audit unavailable/);
+   assert.equal((await pool.query('SELECT count(*)::int AS n FROM documents')).rows[0].n,0);assert.equal((await pool.query('SELECT count(*)::int AS n FROM document_artifacts')).rows[0].n,0);
+   await pool.query('DROP TRIGGER reject_contract_audit ON audit_events');
+   const approval=(await readiness.status(actor)).approval!.id;
+   let entered!:()=>void,release!:()=>void;const atRender=new Promise<void>(resolve=>entered=resolve),renderHeld=new Promise<void>(resolve=>release=resolve);
+   const racingPdfs=new ContractPdfService(db,async snapshot=>{entered();await renderHeld;return renderDocumentPdf(snapshot);});
+   const issuance=racingPdfs.ensureContractOriginal(contract.id,actor);await atRender;
+   const settings=new SettingsService(db);const mutation=settings.updateCompanyProfile({companyName:'Later issuer'},owner.id);
+   let lockWaiting=false;
+   try {
+    for(let attempts=0;attempts<100;attempts++){
+     lockWaiting=(await pool.query("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE application_name=$1 AND wait_event='advisory') AS waiting",[schema])).rows[0].waiting;if(lockWaiting)break;await new Promise(resolve=>setTimeout(resolve,10));
+    }
+    assert.equal(lockWaiting,true,'Issuer mutation must wait for the issuance configuration lock');
+   }finally{release();}
+   const original=await issuance;await mutation;
+   const audit=(await pool.query("SELECT actor_id,after_json FROM audit_events WHERE action='finance.issue_contract' AND entity_id=$1",[original.documentId])).rows[0];assert.equal(audit.actor_id,owner.id);assert.equal(audit.after_json.siteId,siteId);assert.equal(audit.after_json.approvalId,approval);assert.equal(audit.after_json.contentHash,original.sha256);
+   assert.equal((await pool.query('SELECT snapshot FROM documents WHERE id=$1',[original.documentId])).rows[0].snapshot.issuer.name,'Production issuer');assert.equal((await readiness.status(actor)).approval,null);
+   assert.equal((await controller.contractOriginal(contract.id,{user:actor})).sha256,original.sha256);
+   const recipient=(await pool.query("SELECT u.id,u.customer_id FROM users u JOIN site_account_assignments sa ON sa.user_id=u.id WHERE sa.site_id=$1 AND sa.revoked_at IS NULL AND u.role='customer_user' AND u.status='active' LIMIT 1",[siteId])).rows[0];assert.ok(recipient);
+   process.env.FINANCIAL_WRITES_ENABLED='false';
+   try{const saved=await controller.contractOriginal(contract.id,{user:{id:recipient.id,role:'customer_user',customerId:recipient.customer_id,assignedSiteIds:[siteId]}});assert.equal(saved.sha256,original.sha256);assert.equal(saved.deliveryEnabled,false);}finally{process.env.FINANCIAL_WRITES_ENABLED='true';}
+   assert.equal((await pool.query("SELECT count(*)::int AS n FROM audit_events WHERE action='finance.issue_contract'")).rows[0].n,1);
+   await settings.updateCompanyProfile({companyName:'Production issuer'},owner.id);await readiness.confirm(actor);
    const metadata=await controller.contractOriginal(contract.id,{user:{id:owner.id,role:'owner'}});assert.equal(metadata.deliveryEnabled,true);
    process.env.FINANCIAL_WRITES_ENABLED='false';try{assert.equal((await controller.contractOriginal(contract.id,{user:{id:owner.id,role:'owner'}})).deliveryEnabled,false);}finally{process.env.FINANCIAL_WRITES_ENABLED='true';}
    assert.equal((await pool.query('SELECT billing_cycle_id FROM documents WHERE id=$1',[original.documentId])).rows[0].billing_cycle_id,null);

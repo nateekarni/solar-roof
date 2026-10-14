@@ -4,7 +4,8 @@ import { readFile } from 'node:fs/promises';
 import type { PoolClient } from 'pg';
 import { DatabaseService } from '../../database/database.service.js';
 import { customerScope, type ScopePrincipal } from '../../common/auth/route-policy.js';
-import {siteScope} from '../../common/auth/authorization.js';
+import {hasPermission,siteScope} from '../../common/auth/authorization.js';
+import {FinancialReadinessService} from '../financial-readiness/financial-readiness.service.js';
 import type { FrozenRecipient } from '../billing/saved-document-delivery.js';
 import { BRAND_PRIMARY } from '@solar/domain';
 import { localFinancialBinding } from '../billing/local-financial-policy.js';
@@ -73,10 +74,15 @@ async function approvedLogo():Promise<string>{
 export class ContractPdfService {
  constructor(@Inject(DatabaseService) private readonly db:DatabaseService,
   @Optional() @Inject('CONTRACT_PDF_RENDERER') private readonly render:(snapshot:DocumentSnapshot)=>Promise<Buffer>=renderDocumentPdf,
-  @Optional() @Inject('CONTRACT_DOCUMENT_LOGO') private readonly logo:()=>Promise<string>=approvedLogo){}
+  @Optional() @Inject('CONTRACT_DOCUMENT_LOGO') private readonly logo:()=>Promise<string>=approvedLogo,
+  @Inject(FinancialReadinessService) private readonly readiness:FinancialReadinessService=new FinancialReadinessService(db)){}
  async ensureContractOriginal(contractId:string,actor:ScopedActor):Promise<{documentId:string;documentNumber:string;sha256:string;deliveryAvailable:boolean}>{
   this.scope(actor);
   return this.db.transaction(client=>this.ensureInTransaction(client,contractId,actor));
+ }
+ async getContractOriginal(contractId:string,actor:ScopedActor){
+  this.scope(actor);
+  return this.db.transaction(client=>this.originalInTransaction(client,contractId,actor,false));
  }
  private scope(actor:ScopedActor){
   const scope=siteScope(actor,'business');
@@ -85,6 +91,9 @@ export class ContractPdfService {
  }
  /** Caller owns commit/rollback so contract, rates, snapshot and PDF are atomic. */
  async ensureInTransaction(client:PoolClient,contractId:string,actor:ScopedActor):Promise<{documentId:string;documentNumber:string;sha256:string;deliveryAvailable:boolean}>{
+  return this.originalInTransaction(client,contractId,actor,true);
+ }
+ private async originalInTransaction(client:PoolClient,contractId:string,actor:ScopedActor,create:boolean):Promise<{documentId:string;documentNumber:string;sha256:string;deliveryAvailable:boolean}>{
   const scope=this.scope(actor);
   const params:unknown[]=[contractId];if(scope!==null)params.push(scope,actor.role==='customer_user'?actor.id:null);
   // Scope is part of the lookup; no unscoped identity/artifact/settings read precedes it.
@@ -93,9 +102,15 @@ export class ContractPdfService {
    to_char(now() AT TIME ZONE 'Asia/Bangkok','YYYY-MM-DD') AS issue_date
    FROM contracts c JOIN sites s ON s.id=c.site_id WHERE c.id=$1 ${scope===null?'':'AND s.id=ANY($2::uuid[]) AND ($3::uuid IS NULL OR EXISTS(SELECT 1 FROM site_account_assignments a WHERE a.user_id=$3::uuid AND a.site_id=s.id AND a.revoked_at IS NULL))'}`,params)).rows[0];
   if(!contract)throw new NotFoundException('ไม่พบสัญญา / Contract not found');
-  await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`contract-original:${contractId}`]);
-  const existing=(await client.query<{documentId:string;documentNumber:string;sha256:string;deliveryAvailable:boolean}>(`SELECT d.id AS "documentId",d.document_number AS "documentNumber",a.sha256,(jsonb_array_length(coalesce(d.snapshot->'deliveryRecipients','[]'::jsonb))>0) AS "deliveryAvailable" FROM documents d JOIN document_artifacts a ON a.document_id=d.id WHERE d.contract_id=$1 AND d.document_type='contract'`,[contractId])).rows[0];
+  const saved=async()=>(await client.query<{documentId:string;documentNumber:string;sha256:string;deliveryAvailable:boolean}>(`SELECT d.id AS "documentId",d.document_number AS "documentNumber",a.sha256,(jsonb_array_length(coalesce(d.snapshot->'deliveryRecipients','[]'::jsonb))>0) AS "deliveryAvailable" FROM documents d JOIN document_artifacts a ON a.document_id=d.id WHERE d.contract_id=$1 AND d.document_type='contract'`,[contractId])).rows[0];
+  const existing=await saved();
   if(existing)return existing;
+  if(!create)throw new NotFoundException({code:'CONTRACT_ORIGINAL_NOT_ISSUED',message:'ยังไม่มีเอกสารต้นฉบับสัญญาที่ออกแล้ว / Contract original has not been issued'});
+  if(!actor.id||!['owner','accountant'].includes(actor.role??'')||!hasPermission(actor,'business.billing.edit'))throw new ForbiddenException('Authorized contract issuance actor required');
+  // Configuration lock precedes the document lock, matching financial writes.
+  const evidence=await this.readiness.assertEnabled('issue_contract',{contractId:contract.id,siteId:contract.site_id},client);
+  await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`contract-original:${contractId}`]);
+  const concurrent=await saved();if(concurrent)return concurrent;
   const issuer=(await client.query<IssuerSource>('SELECT * FROM company_profile WHERE is_configured=true ORDER BY updated_at DESC LIMIT 1')).rows[0];
   const rates=(await client.query<DocumentSnapshot['rates'][number]>(`SELECT to_char(effective_from,'YYYY-MM-DD') AS "startDate",to_char(effective_to,'YYYY-MM-DD') AS "endDate",rate::text AS rate FROM rate_versions WHERE contract_id=$1 ORDER BY effective_from,id`,[contractId])).rows;
   const allocation=await allocateDocumentNumber(client,'contract');
@@ -105,6 +120,7 @@ export class ContractPdfService {
   await client.query(`INSERT INTO documents(id,site_id,contract_id,document_type,document_number,status,issue_date,snapshot,content_hash,file_key,template_version)
    VALUES($1,$2,$3,'contract',$4,'issued',$5,$6,$7,$8,$9)`,[documentId,contract.site_id,contract.id,snapshot.documentNumber,snapshot.issueDate,JSON.stringify(snapshot),sha256,`local-artifact:${documentId}`,snapshot.templateVersion]);
   await client.query('INSERT INTO document_artifacts(document_id,pdf_bytes,sha256) VALUES($1,$2,$3)',[documentId,bytes,sha256]);
+  await client.query(`INSERT INTO audit_events(id,actor_id,action,entity_type,entity_id,before_json,after_json,reason,correlation_id) VALUES($1,$2,'finance.issue_contract','document',$3,'null'::jsonb,$4,'Contract original issuance',$5)`,[randomUUID(),actor.id,documentId,JSON.stringify({contractId:contract.id,siteId:contract.site_id,documentId,documentNumber:snapshot.documentNumber,contentHash:sha256,templateVersion:snapshot.templateVersion,scope:evidence.scope,approvalId:evidence.approvalId,configHash:evidence.policyHash}),randomUUID()]);
   return {documentId,documentNumber:snapshot.documentNumber,sha256,deliveryAvailable:snapshot.deliveryRecipients.length>0};
  }
 }

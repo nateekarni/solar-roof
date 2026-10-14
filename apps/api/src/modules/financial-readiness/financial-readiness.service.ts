@@ -7,7 +7,7 @@ import { siteScope } from '../../common/auth/authorization.js';
 import { routeAllowed, type ScopePrincipal } from '../../common/auth/route-policy.js';
 import { canonicalGlobalFinancialConfiguration, type CompanyProfile, type CompanyBankAccount } from '../settings/settings.service.js';
 import { decodeCompanyImage } from '../settings/company-image.js';
-import { financialConfigurationHash } from './financial-configuration.js';
+import { financialConfigurationHash, financialAuditEvidence } from './financial-configuration.js';
 import { localTestReadiness } from '../billing/local-test-readiness.js';
 import { TEST_FINANCIAL_POLICY_HASH, validFinancialDate } from '../billing/local-financial-policy.js';
 import { billableBoundary, verifyBillingSegment } from '../billing/billing-source-readings.js';
@@ -15,10 +15,10 @@ import { originalArtifactHash, frozenRecipients } from '../billing/saved-documen
 import { scaledDecimal, assertRateEditable } from '../billing/site-billing-policy.js';
 
 const ACTIONS: readonly FinancialAction[] = ['calculate','issue','approve_payment','adjust','send'];
-export type FinancialWorkflowAction = FinancialAction|'send_contract'|'submit_payment';
-export type FinancialWorkflowContext = FinancialReadinessContext&{documentId?:string};
+export type FinancialWorkflowAction = FinancialAction|'issue_contract'|'send_contract'|'submit_payment';
+export type FinancialWorkflowContext = FinancialReadinessContext&{documentId?:string;contractId?:string};
 type QueryBoundary = Pick<DatabaseService,'query'>;
-type Approval = {id:string;config_hash:string;approved_at:string|Date;approved_by:string};
+type Approval = {id:string;config_hash:string;approved_at:string|Date;approved_by:string;snapshot?:ReturnType<typeof canonicalGlobalFinancialConfiguration>;revoked_at?:string|Date};
 type Configuration = {company:CompanyProfile;banks:CompanyBankAccount[];snapshot:ReturnType<typeof canonicalGlobalFinancialConfiguration>;hash:string;approval:Approval|undefined;items:FinancialReadinessItem[]};
 const text = (value:unknown) => typeof value==='string' && value.trim().length>0;
 const email = (value:unknown) => typeof value==='string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
@@ -34,7 +34,7 @@ function smtpReady() {
 function item(id:string,ready:boolean,responsibility:FinancialReadinessItem['responsibility'],siteId?:string):FinancialReadinessItem {
   return {id,ready,responsibility,...(siteId?{siteId,destination:`/sites/${siteId}/settings`}:responsibility==='owner'?{destination:'/settings/company'}:{})};
 }
-const unavailable = (missing:string[]) => new ServiceUnavailableException({code:'FINANCIAL_NOT_READY',message:'Financial workflows await verified accounting requirements and implementation readiness.',missing});
+const unavailable = (missing:string[],context:FinancialWorkflowContext={}) => new ServiceUnavailableException({code:'FINANCIAL_NOT_READY',message:'Financial workflows await verified accounting requirements and implementation readiness.',missing,context});
 
 @Injectable()
 export class FinancialReadinessService {
@@ -44,7 +44,7 @@ export class FinancialReadinessService {
     const company=(await client.query<CompanyProfile>(`SELECT id,company_name AS "companyName",tax_id AS "taxId",branch,address,phone,email,logo_url AS "logoUrl",signatory_name AS "signatoryName",signatory_title AS "signatoryTitle",signature_data_uri AS "signatureDataUri" FROM company_profile ORDER BY updated_at DESC LIMIT 1 ${lock?'FOR UPDATE':''}`)).rows[0]??{companyName:'',taxId:'',branch:'',address:'',phone:'',email:''};
     const banks=(await client.query<CompanyBankAccount>(`SELECT id,bank_name AS "bankName",bank_code AS "bankCode",account_name AS "accountName",account_number AS "accountNumber",branch_name AS "branchName",promptpay_id AS "promptpayId",is_default AS "isDefault",is_configured AS "isConfigured" FROM company_bank_accounts ORDER BY id ${lock?'FOR UPDATE':''}`)).rows;
     const snapshot=canonicalGlobalFinancialConfiguration(company,banks),hash=financialConfigurationHash(snapshot);
-    const approval=(await client.query<Approval>(`SELECT id,config_hash,approved_at,approved_by FROM financial_readiness_approvals WHERE scope='PRODUCTION' AND revoked_at IS NULL ${lock?'FOR UPDATE':''}`)).rows[0];
+    const approval=(await client.query<Approval>(`SELECT id,config_hash,approved_at,approved_by,snapshot FROM financial_readiness_approvals WHERE scope='PRODUCTION' AND revoked_at IS NULL ${lock?'FOR UPDATE':''}`)).rows[0];
     const usable=(bank:CompanyBankAccount)=>bank.isConfigured&&text(bank.bankName)&&text(bank.accountName)&&text(bank.accountNumber);
     const items=[
       item('company.logo',image(company.logoUrl),'owner'),item('company.name',text(company.companyName),'owner'),
@@ -71,18 +71,21 @@ export class FinancialReadinessService {
       const missing=config.items.filter(i=>i.id!=='approval.confirmation'&&!i.ready).map(i=>i.id);
       if(missing.length)throw unavailable(missing);
       if(config.approval?.config_hash!==config.hash) {
-        const revoked=(await client.query<{id:string}>(`UPDATE financial_readiness_approvals SET revoked_at=now(),revoked_by=$1,revoke_reason='financial_configuration_changed' WHERE scope='PRODUCTION' AND revoked_at IS NULL RETURNING id`,[actor.id])).rows;
-        for(const row of revoked)await this.audit(client,actorId,'finance.approval.revoked',row.id);
+        const revoked=(await client.query<Approval>(`UPDATE financial_readiness_approvals SET revoked_at=now(),revoked_by=$1,revoke_reason='financial_configuration_changed' WHERE scope='PRODUCTION' AND revoked_at IS NULL RETURNING id,config_hash,snapshot,approved_by,approved_at,revoked_at`,[actor.id])).rows;
+        for(const row of revoked){
+          const before={id:row.id,status:'active',configHash:row.config_hash,approvedBy:row.approved_by,approvedAt:row.approved_at,...(row.snapshot?{configuration:financialAuditEvidence(row.snapshot)}:{})};
+          await this.audit(client,actorId,'finance.approval.revoked',row.id,before,{...before,status:'revoked',revokedAt:row.revoked_at,revokedBy:actorId,reason:'financial_configuration_changed'});
+        }
         const id=randomUUID();
-        await client.query(`INSERT INTO financial_readiness_approvals(id,scope,config_hash,snapshot,approved_by) VALUES($1,'PRODUCTION',$2,$3,$4)`,[id,config.hash,JSON.stringify(config.snapshot),actor.id]);
-        await this.audit(client,actorId,'finance.approval.confirmed',id);
+        const inserted=(await client.query<Approval>(`INSERT INTO financial_readiness_approvals(id,scope,config_hash,snapshot,approved_by) VALUES($1,'PRODUCTION',$2,$3,$4) RETURNING approved_at`,[id,config.hash,JSON.stringify(config.snapshot),actor.id])).rows[0];
+        await this.audit(client,actorId,'finance.approval.confirmed',id,null,{id,status:'active',scope:'PRODUCTION',configHash:config.hash,approvedBy:actorId,approvedAt:inserted?.approved_at,configuration:financialAuditEvidence(config.snapshot)});
       }
       return this.evaluate(client,actor,{});
     });
   }
 
-  private async audit(client:QueryBoundary,actorId:string,action:string,id:string) {
-    await client.query(`INSERT INTO audit_events(id,actor_id,action,entity_type,entity_id,correlation_id) VALUES($1,$2,$3,'financial_readiness_approval',$4,$5)`,[randomUUID(),actorId,action,id,randomUUID()]);
+  private async audit(client:QueryBoundary,actorId:string,action:string,id:string,before:unknown,after:unknown) {
+    await client.query(`INSERT INTO audit_events(id,actor_id,action,entity_type,entity_id,before_json,after_json,correlation_id) VALUES($1,$2,$3,'financial_readiness_approval',$4,$5,$6,$7)`,[randomUUID(),actorId,action,id,JSON.stringify(before),JSON.stringify(after),randomUUID()]);
   }
 
   async status(actor:ScopePrincipal,context:FinancialReadinessContext={},client?:PoolClient):Promise<FinancialReadinessStatus> {
@@ -195,11 +198,22 @@ export class FinancialReadinessService {
 
   async assertEnabled(action:FinancialWorkflowAction,context:FinancialWorkflowContext={},transactionClient?:PoolClient):Promise<{scope:FinancialScope;approvalId:string;policyHash:string}> {
     const local=await localTestReadiness(transactionClient??this.db);
-    const publicAction=action==='send_contract'?'send':action==='submit_payment'?'approve_payment':action;
+    const publicAction=action==='issue_contract'?'issue':action==='send_contract'?'send':action==='submit_payment'?'approve_payment':action;
     if(local&&process.env.FINANCIAL_WRITES_ENABLED==='true'&&local.actions.includes(publicAction))return {scope:'TEST',approvalId:local.accountingApprovalId,policyHash:TEST_FINANCIAL_POLICY_HASH};
     if(!this.db)throw unavailable(['approval.confirmation']);
     const gate=async (client:PoolClient)=>{
       await client.query("SELECT pg_advisory_xact_lock(hashtext('production-financial-configuration'))");
+      if(action==='issue_contract'){
+        const missingContext=[...(!context.contractId?['context.contract']:[]),...(!context.siteId?['context.site']:[])];
+        if(missingContext.length)throw unavailable(missingContext,context);
+        const contract=(await client.query<{id:string;site_id:string;status:string}>('SELECT id,site_id,status FROM contracts WHERE id=$1',[context.contractId])).rows[0];
+        if(!contract)throw unavailable(['context.contract'],context);
+        if(contract.site_id!==context.siteId)throw new BadRequestException('Contract and site context disagree');
+        const status=await this.evaluate(client,{role:'owner'},{siteId:contract.site_id});
+        const missing=[...status.actions.issue.missing,...(contract.status==='active'?[]:['site.contract'])];
+        if(missing.length||status.scope!=='PRODUCTION'||!status.approval)throw unavailable([...new Set(missing)],context);
+        return {scope:'PRODUCTION' as const,approvalId:status.approval.id,policyHash:(await this.configuration(client)).hash};
+      }
       if(action==='send_contract'){
         if(!context.documentId)throw unavailable(['context.document']);
         const document=(await client.query(`SELECT d.*,a.pdf_bytes,a.sha256 FROM documents d JOIN contracts c ON c.id=d.contract_id AND c.site_id=d.site_id LEFT JOIN document_artifacts a ON a.document_id=d.id WHERE d.id=$1 AND d.document_type='contract' AND d.status='issued'`,[context.documentId])).rows[0];
@@ -209,7 +223,7 @@ export class FinancialReadinessService {
         const missing=[...status.actions.issue.missing,...(!smtpReady()?['environment.smtp']:[])];
         try{originalArtifactHash(document);}catch{missing.push('document.artifact');}
         try{const frozen=frozenRecipients(document);const live=(await this.recipients(client,document.site_id,frozen.map(r=>r.id))).rows;if(live.length!==frozen.length||frozen.some(r=>!live.some(l=>l.id===r.id&&l.email===r.email)))missing.push('document.recipient');}catch{missing.push('document.recipient');}
-        if(missing.length||status.scope!=='PRODUCTION'||!status.approval)throw unavailable([...new Set(missing)]);
+        if(missing.length||status.scope!=='PRODUCTION'||!status.approval)throw unavailable([...new Set(missing)],{...context,siteId:document.site_id});
         return {scope:'PRODUCTION' as const,approvalId:status.approval.id,policyHash:(await this.configuration(client)).hash};
       }
       const status=await this.evaluate(client,{role:'owner'},context);
@@ -221,7 +235,7 @@ export class FinancialReadinessService {
         const invoice=(await client.query(`SELECT d.*,a.pdf_bytes,a.sha256 FROM documents d LEFT JOIN document_artifacts a ON a.document_id=d.id WHERE d.billing_cycle_id=$1 AND d.document_type='invoice' AND d.is_current AND d.status='issued'`,[context.billingCycleId])).rows[0];
         try{if(!invoice?.snapshot?.policy)throw Error('invoice');originalArtifactHash(invoice);}catch{missing.push('cycle.invoice');}
       }
-      if(missing.length||status.scope!=='PRODUCTION'||!status.approval)throw unavailable([...new Set(missing)]);
+      if(missing.length||status.scope!=='PRODUCTION'||!status.approval)throw unavailable([...new Set(missing)],context);
       const config=await this.configuration(client);
       return {scope:'PRODUCTION' as const,approvalId:status.approval.id,policyHash:config.hash};
     };

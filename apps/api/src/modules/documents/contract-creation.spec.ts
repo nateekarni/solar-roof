@@ -23,12 +23,12 @@ function fixture(failRender=false){
   return {rows:[]};
  };
  const client={query,release(){}};const db:any={query,pool:{connect:async()=>client},transaction:async(work:any)=>{await query('BEGIN');try{const value=await work(client);await query('COMMIT');return value;}catch(e){await query('ROLLBACK');throw e;}}};
- const originals=new ContractPdfService(db,async()=>{if(failRender)throw new Error('render failed');return Buffer.from('%PDF-original created');},async()=>'data:image/png;base64,approved');
+ const originals=new ContractPdfService(db,async()=>{if(failRender)throw new Error('render failed');return Buffer.from('%PDF-original created');},async()=>'data:image/png;base64,approved',{assertEnabled:async()=>({scope:'PRODUCTION',approvalId:'approval-a',policyHash:'b'.repeat(64)})} as any);
  const controller=new BillingController(db,{isLocalTestReady:async()=>false} as any,{} as any,originals);
  return {controller,contracts,rates,artifacts,documents,queries:()=>queries};
 }
 const input={siteId:'site-a',effectiveDate:'2026-10-08',paymentTerms:'30 days',ratePerKwh:4.25,signerName:'Edited provider',signerTitle:'Edited title',customerSignerName:'Buyer',customerSignerTitle:'Manager'};
-const request={user:{role:'owner'}};
+const request={user:{id:'owner-a',role:'owner'}};
 test('actual contract POST atomically creates a single saved PDF with editable signatory snapshots',async()=>{
  const f=fixture();const c=await f.controller.createContract(input,request);
  assert.equal(f.contracts.size,1);assert.equal(f.artifacts.size,1);assert.ok(c.documentId);assert.equal(c.contentHash.length,64);

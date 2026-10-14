@@ -9,7 +9,8 @@ import {openFixtureBrowser} from './browser-transport.mjs';
 // checklist transitions or duplicated issuer branding break these assertions.
 const fixture=JSON.parse(await readFile(process.env.PRODUCTION_FINANCE_BROWSER_FIXTURE,'utf8'));
 assert.match(fixture.schema,/^task9_[0-9a-f]{32}$/);
-assert.equal(fixture.apiUrl,'http://127.0.0.1:13059');assert.equal(fixture.webUrl,'http://localhost:13049');
+const isolated=fixture.apiUrl==='http://127.0.0.1:13069';assert.equal(fixture.apiUrl,isolated?'http://127.0.0.1:13069':'http://127.0.0.1:13059');assert.equal(fixture.webUrl,isolated?'http://localhost:13079':'http://localhost:13049');
+const artifacts=new URL(`../../../../test/artifacts/${isolated?`final-fixes-${fixture.schema}/`:''}`,import.meta.url);
 const browser=await openFixtureBrowser(chromium,process.env),context=await browser.newContext({viewport:{width:1440,height:1000}}),page=await context.newPage();
 const errors=[];page.on('pageerror',error=>errors.push(error.message));
 const phase=process.argv[2]??'setup',web=fixture.webUrl;
@@ -43,9 +44,13 @@ try {
   const dialog=page.getByRole('dialog');await dialog.getByPlaceholder(/045-8-91234-5/).fill('1234567890');await dialog.getByPlaceholder(/Solar Rooftop|บจก. โซลาร์/).fill(fields.companyName);
   await dialog.getByRole('button',{name:/Save|บันทึก/}).click();await expect(dialog).toHaveCount(0);
   await expect(confirm).toBeEnabled();
-  const unconfirmed=await page.request.post(web+'/v1/billing-cycles',{headers:{Origin:web},data:{siteId:fixture.siteId,periodStart:'2026-09-01',periodEnd:'2026-09-30'}});assert.equal(unconfirmed.status(),503,'Complete configuration still requires persisted Owner approval');assert.equal((await unconfirmed.json()).code,'FINANCIAL_NOT_READY');
+  const unconfirmed=await page.request.post(web+'/v1/billing-cycles',{headers:{Origin:web},data:{siteId:fixture.siteId,periodStart:'2026-09-01',periodEnd:'2026-09-30'}});assert.equal(unconfirmed.status(),503,'Complete configuration still requires persisted Owner approval');const failure=await unconfirmed.json();assert.equal(failure.code,'FINANCIAL_NOT_READY');assert.deepEqual(failure.missing,['approval.confirmation']);assert.deepEqual(failure.context,{siteId:fixture.siteId,periodStart:'2026-09-01',periodEnd:'2026-09-30'});
   const beforeApproval=await (await page.request.get(web+'/v1/settings/finance-readiness?'+new URLSearchParams({siteId:fixture.siteId,periodStart:'2026-09-01',periodEnd:'2026-09-30'}))).json();assert.deepEqual(beforeApproval.actions.calculate.missing,['approval.confirmation']);
   await confirm.click();await expect(confirm).toHaveCount(0);
+  if(fixture.blockedSiteId){const blocked=await page.request.post(web+'/v1/billing-cycles',{headers:{Origin:web},data:{siteId:fixture.blockedSiteId,periodStart:'2026-09-01',periodEnd:'2026-09-30'}});assert.equal(blocked.status(),503);const body=await blocked.json();assert.ok(body.missing.includes('site.tax'));assert.equal(body.context.siteId,fixture.blockedSiteId);assert.ok(!JSON.stringify(body).includes('SMTP_PASSWORD'));}
+  await page.request.put(web+'/v1/settings/company',{headers:{Origin:web},data:{companyName:fields.companyName+' updated'}});
+  const stale=await page.request.post(web+'/v1/billing-cycles',{headers:{Origin:web},data:{siteId:fixture.siteId,periodStart:'2026-09-01',periodEnd:'2026-09-30'}});assert.equal(stale.status(),503);assert.deepEqual((await stale.json()).missing,['approval.confirmation']);
+  assert.equal((await page.request.put(web+'/v1/settings/company',{headers:{Origin:web},data:{companyName:fields.companyName}})).status(),200);assert.equal((await page.request.post(web+'/v1/settings/finance-readiness/confirm',{headers:{Origin:web},data:{}})).status(),201);
   const uploaded=await page.request.get(web+'/v1/public/branding/logo');assert.equal(uploaded.status(),200);assert.equal(createHash('sha256').update(await uploaded.body()).digest('hex'),createHash('sha256').update(logo).digest('hex'));assert.notEqual(createHash('sha256').update(logo).digest('hex'),fallbackHash);
   const brandImages=page.locator('img[src*="/v1/public/branding/logo"]');assert.ok(await brandImages.count()>0);
   for(const image of await brandImages.all())await expect(image).toHaveJSProperty('naturalWidth',160);
@@ -65,7 +70,7 @@ try {
   const preview=page.locator('#financial-document-invoice');await expect(preview.locator('canvas')).toBeVisible();
   const link=page.locator('li').filter({has:page.locator('#financial-document-invoice')}).getByRole('link',{name:/Download PDF|ดาวน์โหลด PDF/});await expect(link).toBeVisible();
   const bytes=Buffer.from(await page.evaluate(async href=>Array.from(new Uint8Array(await (await fetch(href)).arrayBuffer())),await link.getAttribute('href')));
-  const evidence=JSON.parse(await readFile(new URL('../../../../test/artifacts/production-finance.json',import.meta.url),'utf8'));
+  const evidence=JSON.parse(await readFile(new URL('production-finance.json',artifacts),'utf8'));
   assert.equal(createHash('sha256').update(bytes).digest('hex'),evidence.invoiceHash);
   const {getDocument}=await import('pdfjs-dist/legacy/build/pdf.mjs');const task=getDocument({data:new Uint8Array(bytes),useSystemFonts:false});const pdf=await task.promise;
   try{const first=await pdf.getPage(1),text=await first.getTextContent();
@@ -74,7 +79,7 @@ try {
    assert.ok(!text.items.some(item=>item.transform?.[5]>first.view[3]-70&&item.str.includes('Siam Solar Operations')));
    assert.ok(text.items.some(item=>item.str.includes('Siam Solar Operations')));assert.ok(!text.items.some(item=>/Synthetic|TEST/.test(item.str)));
   }finally{await task.destroy();}
-  await page.screenshot({path:fileURLToPath(new URL('../../../../test/artifacts/production-finance-browser.png',import.meta.url)),fullPage:true});
+  await page.screenshot({path:fileURLToPath(new URL('production-finance-browser.png',artifacts)),fullPage:true});
   await page.locator('button[aria-controls="financial-document-receipt"]').first().click();
   const receiptPreview=page.locator('#financial-document-receipt');await expect(receiptPreview.locator('canvas')).toBeVisible();
   const receiptLink=page.locator('li').filter({has:receiptPreview}).getByRole('link',{name:/Download PDF|ดาวน์โหลด PDF/});
@@ -82,6 +87,6 @@ try {
   const receiptTask=getDocument({data:new Uint8Array(receiptBytes),useSystemFonts:false});
   try{const receiptPdf=await receiptTask.promise,first=await receiptPdf.getPage(1),text=await first.getTextContent();assert.ok(!text.items.some(item=>item.transform?.[5]>first.view[3]-70&&item.str.includes('Siam Solar Operations')));assert.ok(text.items.some(item=>item.str.includes('4,623.47')));assert.ok(!text.items.some(item=>/Synthetic|TEST/.test(item.str)));}finally{await receiptTask.destroy();}
  }
- assert.deepEqual(errors,[]);await writeFile(new URL(`../../../../test/artifacts/production-finance-browser-${phase}.json`,import.meta.url),JSON.stringify({phase,checks:phase==='setup'?['fallback','owner-notification','disabled-incomplete','upload-preview-save','bank-checklist','calculate-blocked-before-owner-confirmation','confirm','branding-login-sidebar-header','secret-free-blockers','admin-customer-denied']:['invoice-receipt-preview-no-duplicate-issuer','original-download-sha256','receipt-total'],pageErrors:errors},null,2));
+ assert.deepEqual(errors,[]);await writeFile(new URL(`production-finance-browser-${phase}.json`,artifacts),JSON.stringify({phase,checks:phase==='setup'?['fallback','owner-notification','disabled-incomplete','upload-preview-save','bank-checklist','calculate-blocked-before-owner-confirmation','structured-site-blockers','structured-stale-approval','confirm','branding-login-sidebar-header','secret-free-blockers','admin-customer-denied']:['invoice-receipt-preview-no-duplicate-issuer','original-download-sha256','receipt-total'],pageErrors:errors},null,2));
  console.log(`PASS production finance browser: ${phase}`);
 }finally{await context.close();await browser.close();}

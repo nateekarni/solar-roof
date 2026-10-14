@@ -8,6 +8,24 @@ import {
 } from "@nestjs/common";
 import type { Request, Response } from "express";
 
+const FINANCIAL_PREREQUISITES=new Set([
+  'company.logo','company.name','company.tax_id','company.branch','company.address','company.phone','company.email','company.signatory','company.signature','company.default_bank','approval.confirmation',
+  'environment.financial_writes','environment.smtp','environment.scheduler',
+  'site.customer','site.service','site.tax','site.recipient','site.rate','site.meter','site.binding','site.boundary_readings','site.contract',
+  'context.site','context.cycle','context.period','context.document','context.contract',
+  'cycle.snapshot','cycle.calculation','cycle.invoice','cycle.correction','document.artifact','document.recipient',
+]);
+function financialFailureDetails(value:Record<string,unknown>) {
+  const missing=Array.isArray(value.missing)?[...new Set(value.missing.filter((id):id is string=>typeof id==='string'&&FINANCIAL_PREREQUISITES.has(id)))]:[];
+  const context:Record<string,string>={};
+  if(value.context&&typeof value.context==='object'&&!Array.isArray(value.context)) {
+    const source=value.context as Record<string,unknown>;
+    for(const key of ['siteId','billingCycleId','documentId','contractId'])if(typeof source[key]==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(source[key]))context[key]=source[key];
+    for(const key of ['periodStart','periodEnd'])if(typeof source[key]==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(source[key])&&Number.isFinite(Date.parse(source[key]))&&new Date(source[key]).toISOString().slice(0,10)===source[key])context[key]=source[key];
+  }
+  return {missing,...(Object.keys(context).length?{context}:{})};
+}
+
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger(AllExceptionsFilter.name);
@@ -34,6 +52,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
         error = (r.error as string) || undefined;
         if (typeof r.code === "string") code = r.code;
         if(code==='FUTURE_RATE_REPLACEMENT_REQUIRED')details={siteId:r.siteId,effectiveDate:r.effectiveDate,futureRates:r.futureRates,documents:r.documents};
+        if(code==='FINANCIAL_NOT_READY')details=financialFailureDetails(r);
       }
     } else if(exception instanceof Error && 'type' in exception && exception.type==='entity.too.large'){
       status=HttpStatus.PAYLOAD_TOO_LARGE;message='ไฟล์แนบมีขนาดเกินที่ระบบรองรับ';

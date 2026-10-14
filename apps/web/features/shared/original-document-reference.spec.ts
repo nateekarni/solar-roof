@@ -15,6 +15,11 @@ test('contract resolves saved original then all PDF channels load its bytes',asy
  const blob=await loader.verifiedOriginalPdf(reference.id,reference.hash,async path=>{assert.equal(path,`/v1/operations/documents/${documentId}/pdf`);return new Blob([bytes],{type:'application/pdf'});});
  assert.equal(createHash('sha256').update(Buffer.from(await blob.arrayBuffer())).digest('hex'),hash);
 });
+test('explicit contract issuance uses POST and never creates through a GET request',async()=>{
+ let gets=0;const posts:any[]=[];
+ const reference=await resolve({type:'contract',id:contract},async()=>{gets++;return metadata;},async(path:string,body:unknown)=>{posts.push([path,body]);return metadata;});
+ assert.equal(gets,0);assert.deepEqual(posts,[[`/v1/operations/contracts/${contract}/original`,{}]]);assert.equal(reference.id,documentId);assert.equal(reference.hash,hash);
+});
 for(const type of ['invoice','receipt'])test(`${type} resolves stored metadata without company settings`,async()=>{
  const calls:string[]=[];
  const reference=await resolve({type,documentId},async(path:string)=>{calls.push(path);return {id:documentId,contentHash:hash,documentNumber:'INV-1',previewUrl:'/pdf'};});

@@ -34,7 +34,7 @@ const pool=new Pool({connectionString:target.toString(),options:`-c search_path=
 const db={pool,query:pool.query.bind(pool),transaction:DatabaseService.prototype.transaction} as unknown as DatabaseService;
 const readiness=new FinancialReadinessService(db),financial=new FinancialApplicationService(db,readiness),settings=new SettingsService(db);
 const ids={owner:randomUUID(),admin:randomUUID(),recipient:randomUUID(),customer:randomUUID(),site:randomUUID(),blockedSite:randomUUID(),gateway:randomUUID(),meter:randomUUID(),device:randomUUID(),profile:randomUUID(),binding:randomUUID(),contract:randomUUID()};
-const artifacts=new URL('../../../test/artifacts/',import.meta.url);
+const artifacts=new URL(`../../../test/artifacts/${process.env.PRODUCTION_FINANCE_ACCEPTANCE_ISOLATED==='true'?`final-fixes-${schema}/`:''}`,import.meta.url);
 const hash=(bytes:Buffer)=>createHash('sha256').update(bytes).digest('hex');
 const storage=new S3Client({endpoint:process.env.STORAGE_ENDPOINT,region:'us-east-1',forcePathStyle:true,credentials:{accessKeyId:process.env.STORAGE_ACCESS_KEY!,secretAccessKey:process.env.STORAGE_SECRET_KEY!}});
 const bucket=process.env.STORAGE_BUCKET!;assert.equal(bucket,local?'solar-financial-flow-review':'solar-readiness');
@@ -83,7 +83,7 @@ const password=process.env.PRODUCTION_FINANCE_PASSWORD??('Acceptance-local-only-
  await assert.rejects(readiness.confirm(owner),(error:any)=>error.getStatus()===503);
  await assert.rejects(readiness.confirm({id:ids.admin,role:'admin'}),(error:any)=>error.getStatus()===403);
  if(process.env.PRODUCTION_FINANCE_BROWSER==='true'){
-  apps=await startAcceptanceApps(target.toString(),password,schema,ids.site,retain);apps.browser('setup');
+  apps=await startAcceptanceApps(target.toString(),password,schema,ids.site,retain,ids.blockedSite);apps.browser('setup');
  }else{
   const image=await readFile(new URL('../../web/public/brand/solar-roof-mark.png',import.meta.url));
   await settings.updateCompanyProfile({companyName:'Siam Solar Operations Co., Ltd.',taxId:'0105558123456',branch:'Head office',address:'88 Wireless Road, Bangkok 10330',phone:'021234567',email:'billing@acceptance.example.test',logoUrl:`data:image/png;base64,${image.toString('base64')}`,signatureDataUri:`data:image/png;base64,${image.toString('base64')}`,signatoryName:'Natee Energy',signatoryTitle:'Finance Director'},ids.owner);

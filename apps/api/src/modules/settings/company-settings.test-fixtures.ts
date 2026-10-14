@@ -9,7 +9,7 @@ export function bank(id: string, isDefault = false, isConfigured = true): Config
 
 /** Stateful external SQL boundary: commits, rollback and returned rows are observable. */
 export function settingsDatabase(company = {...testCompany}, banks: ConfiguredBank[] = [bank('bank-a',true)]) {
-  let state = {company, banks, approval:{id:'approval-a',revokedBy:null as string|null}, audits:[] as {actor:string;action:string;entity:string}[]};
+  let state = {company, banks, approval:{id:'approval-a',revokedBy:null as string|null}, audits:[] as {actor:string;action:string;entity:string;before:any;after:any}[]};
   const statements: {sql:string;transaction:boolean}[] = [];
   let inTransaction = false;
   let failAudit = false;
@@ -41,7 +41,7 @@ export function settingsDatabase(company = {...testCompany}, banks: ConfiguredBa
       if(state.approval.revokedBy)return {rows:[]};state.approval.revokedBy=p[0];return {rows:[{id:state.approval.id}]};
     }
     if(sql.includes('INSERT INTO audit_events')) {
-      if(failAudit)throw Error('Audit unavailable');state.audits.push({actor:p[1],action:p[2],entity:p[3]});return {rows:[]};
+      if(failAudit)throw Error('Audit unavailable');state.audits.push({actor:p[1],action:p[2],entity:p[3],before:sql.includes('before_json')?JSON.parse(p[5]):undefined,after:sql.includes('after_json')?JSON.parse(p[6]):undefined});return {rows:[]};
     }
     throw Error(`Unhandled SQL: ${sql}`);
   }

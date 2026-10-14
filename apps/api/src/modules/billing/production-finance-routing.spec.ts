@@ -5,6 +5,18 @@ import {BillingController} from './billing.controller.js';
 import {FinancialApplicationService} from './financial-application.service.js';
 import {DocumentsController} from '../documents/documents.controller.js';
 import {DocumentService,NumberSeriesService} from '../documents/document.service.js';
+import {routeAllowed} from '../../common/auth/route-policy.js';
+import {authorizedRoute} from '../../common/auth/domain-route-policy.js';
+
+test('explicit contract issuance is writable only by Owner or Accountant with billing edit permission',()=>{
+ const path='/v1/operations/contracts/contract-a/original';
+ for(const [role,allowed]of [['owner',true],['accountant',true],['admin',false],['operator',false],['customer_user',false]] as const){
+  const user={role,authorization:{revision:1,permissions:['business.billing.edit'],scopes:{business:{mode:'all' as const,siteIds:[]},technical:{mode:'selected' as const,siteIds:[]}}}};
+  assert.equal(routeAllowed(role,'POST',path),allowed,role);assert.equal(authorizedRoute(user,'POST',path),allowed,role);
+ }
+ assert.equal(routeAllowed('admin','GET',path),false);
+ assert.equal(authorizedRoute({role:'accountant',authorization:{revision:1,permissions:['business.billing.view'],scopes:{business:{mode:'all',siteIds:[]},technical:{mode:'selected',siteIds:[]}}}},'POST',path),false);
+});
 
 // Catches a production endpoint falling back to legacy SQL that omits snapshots/PDF artifacts.
 test('production invoice endpoint fails closed for a legacy calculation without frozen policy',async()=>{

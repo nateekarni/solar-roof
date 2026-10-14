@@ -2,6 +2,31 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { SettingsService } from './settings.service.js';
 import { bank, settingsDatabase, testCompany } from './company-settings.test-fixtures.js';
+import {createHash} from 'node:crypto';
+
+test('company and approval revocation audits retain before/after evidence with hashed images',async()=>{
+ const image='data:image/png;base64,iVBORw0KGgo=';
+ const f=settingsDatabase({...testCompany,logoUrl:image,signatureDataUri:image});
+ await new SettingsService(f.db).updateCompanyProfile({companyName:'Updated legal issuer'},'owner-a');
+ const mutation=f.state.audits[0]!,revocation=f.state.audits[1]!;
+ assert.ok(mutation.before,'Persisted before_json is required');assert.ok(mutation.after,'Persisted after_json is required');
+ assert.equal(mutation.before.company.companyName,'Issuer');assert.equal(mutation.after.company.companyName,'Updated legal issuer');
+ assert.equal(mutation.before.company.logoUrl.sha256,createHash('sha256').update(image).digest('hex'));
+ assert.ok(!JSON.stringify(f.state.audits).includes('base64,'));
+ assert.equal(revocation.before.status,'active');assert.equal(revocation.after.status,'revoked');assert.equal(revocation.after.revokedBy,'owner-a');assert.equal(revocation.after.reason,'financial_configuration_changed');
+ assert.notEqual(mutation.before.configHash,mutation.after.configHash);
+});
+
+test('bank deletion audit preserves the deleted default and the promoted default without raw account numbers',async()=>{
+ const f=settingsDatabase({...testCompany},[{...bank('bank-a',true),accountNumber:'0123456789'},bank('bank-b')]);
+ await new SettingsService(f.db).deleteBankAccount('bank-a','owner-a');
+ const mutation=f.state.audits[0]!;
+ assert.ok(mutation.before,'Persisted before_json is required');assert.ok(mutation.after,'Persisted after_json is required');
+ assert.deepEqual(mutation.before.banks.map((b:any)=>[b.id,b.isDefault]),[['bank-a',true],['bank-b',false]]);
+ assert.deepEqual(mutation.after.banks.map((b:any)=>[b.id,b.isDefault]),[['bank-b',true]]);
+ assert.equal(mutation.before.banks[0].accountNumber.sha256,createHash('sha256').update('0123456789').digest('hex'));
+ assert.ok(!JSON.stringify(f.state.audits).includes('0123456789'));
+});
 
 test('company financial change commits actor audit and approval revocation together',async()=>{
   const f=settingsDatabase();const service=new SettingsService(f.db);

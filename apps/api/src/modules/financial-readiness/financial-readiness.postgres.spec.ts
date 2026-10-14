@@ -31,7 +31,7 @@ test('PostgreSQL serializes confirmation with company and bank mutations and ret
       CREATE TABLE documents(id uuid PRIMARY KEY,billing_cycle_id uuid,is_current boolean,status text,created_at timestamptz,document_type text,snapshot jsonb,content_hash text);
       CREATE TABLE document_artifacts(document_id uuid PRIMARY KEY,pdf_bytes bytea,sha256 text);
       CREATE TABLE payments(billing_cycle_id uuid,status text);
-      CREATE TABLE audit_events(id uuid PRIMARY KEY,actor_id uuid REFERENCES users(id),action text,entity_type text,entity_id uuid,correlation_id text);
+      CREATE TABLE audit_events(id uuid PRIMARY KEY,actor_id uuid REFERENCES users(id),action text,entity_type text,entity_id uuid,before_json jsonb,after_json jsonb,correlation_id text);
       CREATE TABLE customers(id uuid PRIMARY KEY,status text,legal_name text,tax_id text,tax_address text,document_email text);
       CREATE TABLE sites(id uuid PRIMARY KEY,customer_id uuid,status text,timezone text);
       CREATE TABLE site_billing_settings(site_id uuid,version integer,service_start_date date,payment_term_days integer,tax_rate numeric,prices_include_tax boolean,tax_confirmed boolean,recipient_user_ids uuid[]);
@@ -51,6 +51,7 @@ test('PostgreSQL serializes confirmation with company and bank mutations and ret
       assert.ok(statuses.every(s=>s.scope==='PRODUCTION'&&s.approval));
       assert.equal((await pool.query('SELECT count(*)::int AS total FROM financial_readiness_approvals')).rows[0].total,1);
       assert.equal((await pool.query("SELECT count(*)::int AS total FROM audit_events WHERE action='finance.approval.confirmed' AND actor_id=$1",[owner.id])).rows[0].total,1);
+      const audit=(await pool.query("SELECT before_json,after_json FROM audit_events WHERE action='finance.approval.confirmed'")).rows[0];assert.equal(audit.before_json,null);assert.equal(audit.after_json.status,'active');assert.equal(audit.after_json.approvedBy,owner.id);assert.equal(audit.after_json.configuration.company.companyName,'Issuer');assert.ok(!JSON.stringify(audit).includes('base64,'));
     });
     await t.test('logo mutation revokes approval and emits actor audit in its committed transaction',async()=>{
       const id=(await readiness.status(owner)).approval!.id;
@@ -59,6 +60,7 @@ test('PostgreSQL serializes confirmation with company and bank mutations and ret
       assert.ok(row.revoked_at);assert.equal(row.revoked_by,owner.id);assert.equal(row.revoke_reason,'financial_configuration_changed');
       assert.equal((await readiness.status(owner)).approval,null);
       assert.equal((await pool.query("SELECT count(*)::int AS total FROM audit_events WHERE action='finance.approval.revoked' AND entity_id=$1 AND actor_id=$2",[id,owner.id])).rows[0].total,1);
+      const audit=(await pool.query("SELECT before_json,after_json FROM audit_events WHERE action='company.profile.updated'")).rows[0];assert.ok(audit.before_json.company.logoUrl.sha256);assert.ok(audit.after_json.company.logoUrl.sha256);assert.notEqual(audit.before_json.company.logoUrl.sha256,audit.after_json.company.logoUrl.sha256);
     });
     await t.test('failed confirmation audit rolls back inserted approval and repeated unchanged bank save keeps approval',async()=>{
       await pool.query(`CREATE FUNCTION reject_confirmation_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='finance.approval.confirmed' THEN RAISE EXCEPTION 'test audit failure'; END IF; RETURN NEW; END $$;
@@ -96,6 +98,19 @@ test('PostgreSQL serializes confirmation with company and bank mutations and ret
       assert.equal((await pool.query('SELECT count(*)::int AS total FROM financial_readiness_approvals')).rows[0].total,3);
       await pool.query("UPDATE users SET status='disabled' WHERE id=$1",[owner.id]);
       await assert.rejects(readiness.confirm(owner),/Owner/);
+    });
+    await t.test('bank deletion evidence retains defaults and audit failure rolls back deletion plus approval invalidation',async()=>{
+      await pool.query("UPDATE users SET status='active' WHERE id=$1",[owner.id]);
+      const alternate=await settings.saveBankAccount({bankName:'Other bank',accountName:'Issuer',accountNumber:'0123456789'},owner.id);await readiness.confirm(owner);
+      const prior=(await pool.query('SELECT id,is_default FROM company_bank_accounts ORDER BY id')).rows;
+      const approval=(await readiness.status(owner)).approval!.id;
+      const auditCount=(await pool.query('SELECT count(*)::int AS n FROM audit_events')).rows[0].n;
+      await pool.query(`CREATE FUNCTION reject_revocation_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='finance.approval.revoked' THEN RAISE EXCEPTION 'test revocation audit failure'; END IF; RETURN NEW; END $$; CREATE TRIGGER reject_revocation BEFORE INSERT ON audit_events FOR EACH ROW EXECUTE FUNCTION reject_revocation_audit();`);
+      await assert.rejects(settings.deleteBankAccount(bankId,owner.id),/test revocation audit failure/);
+      assert.deepEqual((await pool.query('SELECT id,is_default FROM company_bank_accounts ORDER BY id')).rows,prior);assert.equal((await readiness.status(owner)).approval!.id,approval);assert.equal((await pool.query('SELECT count(*)::int AS n FROM audit_events')).rows[0].n,auditCount);
+      await pool.query('DROP TRIGGER reject_revocation ON audit_events');await settings.deleteBankAccount(bankId,owner.id);
+      const evidence=(await pool.query("SELECT before_json,after_json FROM audit_events WHERE action='company.bank.deleted' AND entity_id=$1",[bankId])).rows[0];
+      assert.equal(evidence.before_json.banks.find((b:any)=>b.id===bankId).isDefault,true);assert.deepEqual(evidence.after_json.banks.map((b:any)=>[b.id,b.isDefault]),[[alternate.id,true]]);assert.ok(!JSON.stringify(evidence).includes('0123456789'));assert.equal((await readiness.status(owner)).approval,null);
     });
   }finally {
     for(const key of Object.keys(process.env))if(!(key in previous))delete process.env[key];Object.assign(process.env,previous);

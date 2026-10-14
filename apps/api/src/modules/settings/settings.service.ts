@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, NotFoundException, Inject, Inje
 import { randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { decodeCompanyImage } from './company-image.js';
-import { financialConfigurationHash } from '../financial-readiness/financial-configuration.js';
+import { financialConfigurationHash, financialAuditEvidence } from '../financial-readiness/financial-configuration.js';
 import { DOMAIN_SETTING_DEFAULTS, validateSettingsPatch } from './domain-settings.js';
 import type { PermissionDomain } from '../../common/auth/authorization.js';
 import { DatabaseService } from "../../database/database.service.js";
@@ -150,8 +150,9 @@ export class SettingsService {
       if(current.id) await client.query(`UPDATE company_profile SET company_name=$1,tax_id=$2,branch=$3,address=$4,phone=$5,email=$6,logo_url=$7,signatory_name=$8,signatory_title=$9,signature_data_uri=$10,updated_at=now() WHERE id=$11`,[...values,current.id]);
       else await client.query(`INSERT INTO company_profile(company_name,tax_id,branch,address,phone,email,logo_url,signatory_name,signatory_title,signature_data_uri,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now())`,values);
       const saved = await this.getCompanyProfile(client);
-      await this.auditFinancialMutation(client, actorId, 'company.profile.updated', saved.id!);
-      await this.revokeChangedApproval(client,actorId,before,canonicalGlobalFinancialConfiguration(saved,banks));
+      const after=canonicalGlobalFinancialConfiguration(saved,banks);
+      await this.auditFinancialMutation(client, actorId, 'company.profile.updated', saved.id!,financialAuditEvidence(before),financialAuditEvidence(after));
+      await this.revokeChangedApproval(client,actorId,before,after);
       return saved;
     });
   }
@@ -185,8 +186,9 @@ export class SettingsService {
         id = inserted.rows[0]!.id;
       }
       const after = await this.ensureDefaultBank(client,data.isDefault ? id : undefined);
-      await this.auditFinancialMutation(client,actorId,data.id?'company.bank.updated':'company.bank.created',id!);
-      await this.revokeChangedApproval(client,actorId,before,canonicalGlobalFinancialConfiguration(company,after));
+      const snapshot=canonicalGlobalFinancialConfiguration(company,after);
+      await this.auditFinancialMutation(client,actorId,data.id?'company.bank.updated':'company.bank.created',id!,financialAuditEvidence(before),financialAuditEvidence(snapshot));
+      await this.revokeChangedApproval(client,actorId,before,snapshot);
       return after.find(bank=>bank.id===id)!;
     });
   }
@@ -200,8 +202,9 @@ export class SettingsService {
       const before = canonicalGlobalFinancialConfiguration(company,banks);
       await client.query('DELETE FROM company_bank_accounts WHERE id = $1',[id]);
       const after = await this.ensureDefaultBank(client);
-      await this.auditFinancialMutation(client,actorId,'company.bank.deleted',id);
-      await this.revokeChangedApproval(client,actorId,before,canonicalGlobalFinancialConfiguration(company,after));
+      const snapshot=canonicalGlobalFinancialConfiguration(company,after);
+      await this.auditFinancialMutation(client,actorId,'company.bank.deleted',id,financialAuditEvidence(before),financialAuditEvidence(snapshot));
+      await this.revokeChangedApproval(client,actorId,before,snapshot);
       return true;
     });
   }
@@ -221,14 +224,16 @@ export class SettingsService {
     return this.listBankAccounts(client);
   }
 
-  private async auditFinancialMutation(client: PoolClient, actorId: string, action: string, entityId: string) {
-    await client.query(`INSERT INTO audit_events(id,actor_id,action,entity_type,entity_id,correlation_id) VALUES($1,$2,$3,$4,$5,$6)`,[randomUUID(),actorId,action,action.startsWith('finance.')?'financial_readiness_approval':action.startsWith('company.bank.')?'company_bank_account':'company_profile',entityId,randomUUID()]);
+  private async auditFinancialMutation(client: PoolClient, actorId: string, action: string, entityId: string,before:unknown,after:unknown) {
+    await client.query(`INSERT INTO audit_events(id,actor_id,action,entity_type,entity_id,before_json,after_json,correlation_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,[randomUUID(),actorId,action,action.startsWith('finance.')?'financial_readiness_approval':action.startsWith('company.bank.')?'company_bank_account':'company_profile',entityId,JSON.stringify(before),JSON.stringify(after),randomUUID()]);
   }
 
   private async revokeChangedApproval(client: PoolClient, actorId: string, before: unknown, after: unknown) {
     if(financialConfigurationHash(before)===financialConfigurationHash(after)) return;
-    const revoked = await client.query<{id:string}>(`UPDATE financial_readiness_approvals SET revoked_at=now(),revoked_by=$1,revoke_reason='financial_configuration_changed' WHERE scope='PRODUCTION' AND revoked_at IS NULL RETURNING id`,[actorId]);
-    for(const approval of revoked.rows) await this.auditFinancialMutation(client,actorId,'finance.approval.revoked',approval.id);
+    const revoked = await client.query<{id:string;config_hash:string;revoked_at:Date}>(`UPDATE financial_readiness_approvals SET revoked_at=now(),revoked_by=$1,revoke_reason='financial_configuration_changed' WHERE scope='PRODUCTION' AND revoked_at IS NULL RETURNING id,config_hash,revoked_at`,[actorId]);
+    for(const approval of revoked.rows) await this.auditFinancialMutation(client,actorId,'finance.approval.revoked',approval.id,
+      {id:approval.id,status:'active',configHash:approval.config_hash,configuration:financialAuditEvidence(before)},
+      {id:approval.id,status:'revoked',configHash:approval.config_hash,revokedAt:approval.revoked_at,revokedBy:actorId,reason:'financial_configuration_changed',configuration:financialAuditEvidence(after)});
   }
 }
 

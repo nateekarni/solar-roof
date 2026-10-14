@@ -260,5 +260,28 @@ test('production monthly jobs isolate blocked sites, retain safe notices and ret
     assert.equal(job.state,'blocked');assert.equal(job.completed_at,null);assert.equal(job.last_error,'MONTHLY_DELIVERY_PENDING');
    } finally {await pool.query('DELETE FROM documents WHERE id=$1',[missingId]);}
   });
+  await t.test('first month ending on service start retains a same-day manual bill and creates a distinct metered energy invoice',async()=>{
+   const manual=await service.manualInvoice({siteId,lines:[{description:'Installation service',quantity:'1.000',unitPrice:'100.0000'}],idempotencyKey:randomUUID()},owner.id);
+   // A historical manual bill issued on the first service day. Only this private
+   // fixture's calendar fields are backdated; its saved artifact remains intact.
+   await pool.query("UPDATE billing_cycles SET period_start='2026-08-31',period_end='2026-08-31' WHERE id=$1",[manual.cycle.id]);
+   await pool.query("UPDATE site_billing_settings SET service_start_date='2026-08-31' WHERE site_id=$1",[siteId]);
+   await pool.query("INSERT INTO rate_versions(id,site_id,effective_from,effective_to,rate_type,rate,currency,changed_by,change_reason) VALUES($1,$2,'2026-08-31','2026-08-31','fixed_kwh',4.3210,'THB',$3,'Month-end regression agreed tariff')",[randomUUID(),siteId,owner.id]);
+   await pool.query("INSERT INTO telemetry_raw SELECT (jsonb_populate_record(NULL::telemetry_raw,to_jsonb(tr)||jsonb_build_object('id',$1::uuid,'ingestion_id',$1::text,'source_time','2026-08-31T00:00:00+07:00','normalized_value',950,'total_energy_kwh',950))).* FROM telemetry_raw tr WHERE device_id=$2 AND semantic_field=$3 AND source_time='2026-09-01T00:00:00+07:00' LIMIT 1",[randomUUID(),meter.device_id,meter.semantic_field]);
+   const monthEnd=new Date('2026-08-31T18:00:00Z');
+   await service.monthly(monthEnd);
+   const job=(await pool.query("SELECT state,last_error FROM financial_month_jobs WHERE site_id=$1 AND period_start='2026-08-01'",[siteId])).rows[0];
+   assert.equal(job.state,'done',job.last_error);
+   const cycles=(await pool.query("SELECT * FROM billing_cycles WHERE site_id=$1 AND period_start='2026-08-31' AND period_end='2026-08-31' ORDER BY billing_kind",[siteId])).rows;
+   assert.deepEqual(cycles.map(c=>c.billing_kind),['energy','manual']);
+   assert.equal(cycles[1].id,manual.cycle.id);assert.equal(Number(cycles[0].consumed_kwh),50);assert.equal(Number(cycles[0].amount),237.66);
+   assert.equal((await pool.query("SELECT state FROM financial_month_jobs WHERE site_id=$1 AND period_start='2026-08-01'",[siteId])).rows[0].state,'done');
+   const originals=(await pool.query('SELECT id,content_hash FROM documents WHERE billing_cycle_id=ANY($1::uuid[]) ORDER BY id',[cycles.map(c=>c.id)])).rows;
+   assert.equal(originals.length,2);const beforeMail=(await reviewMessages()).total;
+   await pool.query("UPDATE financial_month_jobs SET state='pending',completed_at=NULL,next_attempt_at=now() WHERE site_id=$1 AND period_start='2026-08-01'",[siteId]);
+   await service.monthly(monthEnd);
+   assert.deepEqual((await pool.query('SELECT id,content_hash FROM documents WHERE billing_cycle_id=ANY($1::uuid[]) ORDER BY id',[cycles.map(c=>c.id)])).rows,originals);
+   assert.equal((await reviewMessages()).total,beforeMail);
+  });
  } finally {await pool.end();await admin.query(`DROP SCHEMA ${schema} CASCADE`);await admin.end();}
 }));

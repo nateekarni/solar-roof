@@ -32,6 +32,7 @@ export function authorizedRoute(user:AuthorizationPrincipal|undefined,method:str
  if(!user?.role)return false;
  if(/^\/v1\/settings\/finance-readiness(?:\/|$)/.test(path))return routeAllowed(user.role,method,path);
  if(isOwnerCompanyMutation(method,path))return user.role==='owner';
+ if(/^\/v1\/operations\/contracts\/[^/]+\/original$/.test(path)&&method==='POST')return ['owner','accountant'].includes(user.role)&&hasPermission(user,'business.billing.edit');
  if(/^\/v1\/contracts\/[^/]+\/send-email$/.test(path)&&method==='POST')return ['owner','accountant'].includes(user.role)&&hasPermission(user,'business.billing.edit');
  if(/^\/v1\/contracts(?:\/|$)/.test(path)&&!['GET','HEAD'].includes(method))return false;
  if(/^\/v1\/(?:reports|jobs|history)(?:\/|$)/.test(path)||/^\/v1\/operations\/(?:reports|notifications)(?:\/|$)/.test(path))return false;
