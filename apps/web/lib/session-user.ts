@@ -5,7 +5,7 @@ import { canVisitPage } from "@solar/domain";
 import type { AuthUser } from "../stores/auth-store";
 import { getApiBaseUrl, serverFetch } from "./server-fetch";
 export const getSessionUser = cache(async (): Promise<AuthUser> => {
- const response = await serverFetch(getApiBaseUrl()+"/v1/auth/me", { cache: "no-store" });
+ const response = await serverFetch(getApiBaseUrl()+"/v1/me", { cache: "no-store" });
  if (response.status === 403) redirect("/login");
  if (!response.ok) throw new Error("Unable to verify session");
  const user: AuthUser = await response.json();

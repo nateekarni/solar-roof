@@ -11,7 +11,10 @@ export type { IssuanceLabel, IssuanceApprovalResult, IssuanceApprovalRequest, Is
 
 export const PENDING_ISSUANCE_STATUS: PendingIssuanceStatus = 'pending_issue_approval';
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+// PostgreSQL stored pre-fix manual IDs with arbitrary version/variant bits.
+// Validate canonical hex shape here; authorization and existence stay in the
+// transaction's scoped lookup. Never rewrite historical financial identities.
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function validateIssuanceBatch(input: unknown): string[] {
   if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(key => key !== 'billingCycleIds')) {

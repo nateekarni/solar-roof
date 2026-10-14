@@ -43,7 +43,7 @@ async function fixture(){
   page.on('pageerror',error=>errors.push(error.message));
   await page.route('http://billing-selection.test/**',async route=>{
    if(route.request().url().endsWith('/v1/auth/capabilities'))await route.fulfill({json:{actions:[],unavailable:{}}});
-   else if(route.request().url().endsWith('/v1/auth/me'))await route.fulfill({json:user});
+   else if(route.request().url().endsWith('/v1/me'))await route.fulfill({json:user});
    else await route.fulfill({contentType:'text/html',body:'<!doctype html><html><title>Billing selection test</title><div id="root"></div></html>'});
   });
   await page.goto('http://billing-selection.test/billing');

@@ -34,10 +34,14 @@ test('batch validation rejects malformed request objects and unknown fields', ()
 });
 
 test('batch validation rejects non-UUID and non-string IDs', () => {
-  for (const value of ['', 'not-a-uuid', ` ${firstId}`, '11111111-1111-0111-8111-111111111111', '11111111-1111-4111-7111-111111111111', 1, null, {}]) {
+  for (const value of ['', 'not-a-uuid', ` ${firstId}`, '11111111-1111-g111-8111-111111111111', '11111111-1111-4111-8111-1111111111111', firstId.replaceAll('-',''), 1, null, {}]) {
     assert.throws(() => validateIssuanceBatch({ billingCycleIds: [value] }), BadRequestException);
   }
   assert.throws(() => validateIssuanceBatch({ billingCycleIds: Array(1) }), BadRequestException);
+});
+test('canonical PostgreSQL UUID-shaped legacy manual IDs remain valid approval references',()=>{
+ const legacy='11111111-1111-e111-3111-111111111111';
+ assert.deepEqual(validateIssuanceBatch({billingCycleIds:[legacy,legacy.toUpperCase()]}),[legacy]);
 });
 
 test('display result projects human-readable labels and document number without internal fields', () => {

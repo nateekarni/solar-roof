@@ -6,7 +6,7 @@ import {writeFile,mkdir} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 
 // Test-only process ownership and cleanup; never added to production providers.
-export async function startAcceptanceApps(databaseUrl:string,password:string,schema:string,siteId:string,retain=false,blockedSiteId?:string) {
+export async function startAcceptanceApps(databaseUrl:string,password:string,schema:string,siteId:string,retain=false,blockedSiteId?:string,options:{browserScript?:string;fixture?:Record<string,unknown>;nextOutputDir?:string}={}) {
  const root=fileURLToPath(new URL('../../../',import.meta.url));
  const isolated=process.env.PRODUCTION_FINANCE_ACCEPTANCE_ISOLATED==='true';assert.ok(!isolated||!retain,'Isolated acceptance evidence is disposable');
  const webPort=isolated?13079:13049,apiPort=isolated?13069:13059;
@@ -18,6 +18,7 @@ export async function startAcceptanceApps(databaseUrl:string,password:string,sch
  const scoped=new URL(databaseUrl);scoped.searchParams.set('options',`-c search_path=${schema},public`);
  const env:NodeJS.ProcessEnv={...process.env,DATABASE_URL:scoped.toString(),NODE_ENV:'production',API_HOST:'127.0.0.1',API_PORT:String(apiPort),WEB_URL:`http://localhost:${webPort}`,API_INTERNAL_URL:`http://127.0.0.1:${apiPort}`,JWT_ACCESS_SECRET:'acceptance-access-secret-local-only-2026',JWT_REFRESH_SECRET:'acceptance-refresh-secret-local-only-2026',MQTT_ENABLED:'false',MQTT_DEFAULT_BROKER_ENABLED:'false',REPORT_WORKER_ENABLED:'false',HISTORY_API_ENABLED:'false',FINANCIAL_SCHEDULER_ENABLED:'false',TSX_TSCONFIG_PATH:fileURLToPath(new URL('../tsconfig.json',import.meta.url))};
  delete env.LOCAL_FINANCIAL_FIXTURE_MARKER;
+ if(options.nextOutputDir)env.NEXT_BUILD_OUTPUT_DIR=options.nextOutputDir;
  const children:ChildProcess[]=[];
  const launch=(name:string,args:string[],cwd:string)=>{
   const fd=openSync(fileURLToPath(new URL(`production-${name}.log`,artifacts)),'w');
@@ -35,8 +36,8 @@ export async function startAcceptanceApps(databaseUrl:string,password:string,sch
    let ready=false;for(let attempt=0;attempt<90;attempt++){assert.ok(children.every(child=>child.exitCode===null),'Acceptance app exited; inspect owned logs');try{if((await fetch(url)).ok){ready=true;break;}}catch{}await new Promise(resolve=>setTimeout(resolve,500));}assert.ok(ready,`Acceptance app unavailable: ${url}`);
   }
   const fixture=fileURLToPath(new URL('production-browser-fixture.json',artifacts));
-  await writeFile(fixture,JSON.stringify({schema,password,siteId,blockedSiteId,apiUrl:`http://127.0.0.1:${apiPort}`,webUrl:`http://localhost:${webPort}`},null,2),{mode:0o600});
-  const browser=(phase:string,cycleId='')=>execFileSync(process.execPath,['test/platform/finance-readiness-browser.mjs',phase,cycleId],{cwd:fileURLToPath(new URL('../../web/',import.meta.url)),env:{...env,PRODUCTION_FINANCE_BROWSER_FIXTURE:fixture},stdio:'inherit',timeout:180000});
+  await writeFile(fixture,JSON.stringify({...options.fixture,schema,password,siteId,blockedSiteId,apiUrl:`http://127.0.0.1:${apiPort}`,webUrl:`http://localhost:${webPort}`},null,2),{mode:0o600});
+  const browser=(phase:string,cycleId='')=>execFileSync(process.execPath,[options.browserScript??'test/platform/finance-readiness-browser.mjs',phase,cycleId],{cwd:fileURLToPath(new URL('../../web/',import.meta.url)),env:{...env,PRODUCTION_FINANCE_BROWSER_FIXTURE:fixture},stdio:'inherit',timeout:180000});
   return {browser,stop,pids:children.map(child=>child.pid)};
  }catch(error){await stop();throw error;}
 }

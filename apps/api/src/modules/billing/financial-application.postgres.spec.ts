@@ -27,6 +27,8 @@ import {effectiveAuthorization} from '../../common/auth/authorization.js';
 import {TeamService} from '../identity/team.service.js';
 import {financialPolicySnapshot,financialPolicyHash} from './financial-policy.js';
 import {manualTotals} from './site-billing-policy.js';
+import {manualBillIds} from './manual-bill-identity.js';
+import {validateIssuanceBatch} from './issuance-approval.js';
 
 test('legacy invoice generation and approval-status routes deny unauthorized actors through the registered guard chain',async()=>{
  for(const [handler,method,path] of [
@@ -520,6 +522,26 @@ test('production finance freezes configured policy and artifacts across calculat
    assert.equal((await pool.query("SELECT count(*)::int AS n FROM audit_events WHERE entity_id=$1 AND action='finance.issue_invoice'",[id])).rows[0].n,0);
   };
   const unavailable={label:{period:'—',customer:'รายการที่ไม่สามารถเข้าถึงได้',site:'—'},status:'failed',message:'ไม่สามารถออกเอกสารได้'};
+
+  await t.test('new and pre-fix manual draft identities replay once and approve through the real controller without rewriting originals',async()=>{
+   const input={siteId,lines:[{description:'Manual identity regression',quantity:'1',unitPrice:'100'}],idempotencyKey:'manual-identity-'+schema};
+   const first=await manualController.manual(input,{user:ownerActor});
+   assert.match(first.cycle.id,/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+   assert.deepEqual(validateIssuanceBatch({billingCycleIds:[first.cycle.id]}),[first.cycle.id]);
+   const approved=await controllerFor().approveIssuance(first.cycle.id,{}, {user:ownerActor});assert.equal(approved.status,'issued');assert.ok(approved.documentNumber);
+   // Insert only a pre-fix-shaped pending fixture, never alter an issued row.
+   let legacyInput={...input,idempotencyKey:'legacy-manual-'+schema};
+   let identity=manualBillIds(siteId,legacyInput.idempotencyKey);
+   while(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab]/.test(identity.legacyId)){legacyInput={...legacyInput,idempotencyKey:legacyInput.idempotencyKey+'x'};identity=manualBillIds(siteId,legacyInput.idempotencyKey);}
+   const row={...first.cycle,id:identity.legacyId,status:'pending_issue_approval'};
+   await pool.query('INSERT INTO billing_cycles SELECT * FROM json_populate_record(NULL::billing_cycles,$1::json)',[JSON.stringify(row)]);
+   const before=(await pool.query('SELECT count(*)::int n FROM billing_cycles')).rows[0].n;
+   const replay=await manualController.manual(legacyInput,{user:ownerActor});assert.equal(replay.cycle.id,identity.legacyId);
+   assert.equal((await pool.query('SELECT count(*)::int n FROM billing_cycles')).rows[0].n,before);
+   const legacyApproved=await controllerFor().approveIssuance(identity.legacyId,{}, {user:ownerActor});assert.equal(legacyApproved.status,'issued');assert.ok(legacyApproved.documentNumber);
+   const replayApproved=await controllerFor().approveIssuance(identity.legacyId,{}, {user:ownerActor});assert.equal(replayApproved.status,'already_issued');assert.equal(replayApproved.documentNumber,legacyApproved.documentNumber);
+   assert.equal((await pool.query('SELECT count(*)::int n FROM billing_cycles WHERE id=$1',[identity.id])).rows[0].n,0);
+  });
 
   for(const change of ['grant','scope','preset','role','account'])await t.test(`live ${change} revocation between batch items blocks later issuance and hides labels`,async()=>{
    await restoreGrant();await pool.query(`UPDATE employee_position_domains SET rules='{"business.billing.approve":true}' WHERE position_id=$1 AND domain='business'`,[grant.position.id]);

@@ -21,6 +21,7 @@ import {frozenFinancialLogo} from './frozen-financial-logo.js';
 import {frozenFinancialTax} from './frozen-financial-tax.js';
 import {DocumentIdentityService,type DocumentIdentity} from '../identity/document-identity.js';
 import { lockIssuanceActor, authorizedIssuanceLabel } from './issuance-approval.js';
+import {manualBillIds} from './manual-bill-identity.js';
 type FinancialApprover=DocumentIdentity&{approvedAt:string};
 const validDate=validFinancialDate;
 export function reviewedActualEnergyDifference(opening:unknown,closing:unknown):string {
@@ -141,9 +142,10 @@ export class FinancialApplicationService {
    const day=(await client.query("SELECT to_char(now() AT TIME ZONE 'Asia/Bangkok','YYYY-MM-DD') AS day")).rows[0].day;
    const payload={lines:totals.lines,note:input.note?.trim()??null,dueDate:input.dueDate??null};
    const key=input.idempotencyKey!.trim();
-   const digits=createHash('sha256').update(`manual-invoice:${input.siteId}:${key}`).digest('hex').slice(0,32);
-   const id=digits.replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/,'$1-$2-$3-$4-$5');
-   let cycle=(await client.query('SELECT *,to_char(due_date,\'YYYY-MM-DD\') AS due FROM billing_cycles WHERE id=$1 FOR UPDATE',[id])).rows[0];
+   const {id,legacyId}=manualBillIds(input.siteId,key);
+   // Existing financial identities are immutable. Prefer a pre-fix row rather
+   // than creating a second intent when replay crosses the formatting upgrade.
+   let cycle=(await client.query('SELECT *,to_char(due_date,\'YYYY-MM-DD\') AS due FROM billing_cycles WHERE id=ANY($1::uuid[]) ORDER BY CASE WHEN id=$2::uuid THEN 0 ELSE 1 END FOR UPDATE',[[legacyId,id],legacyId])).rows[0];
    if(cycle){if(financialPolicyHash({lines:cycle.manual_lines,note:cycle.billing_note,dueDate:input.dueDate?cycle.due:null})!==financialPolicyHash(payload))throw new ConflictException('Idempotency key already used for another manual invoice');}
    else cycle=(await client.query(`INSERT INTO billing_cycles(id,site_id,period_start,period_end,cutoff_time,status,quality,opening_energy,closing_energy,consumed_kwh,rate,amount,subtotal,simulated_tax,meter_snapshot,policy_hash,billing_settings_version,billing_kind,manual_lines,billing_note,due_date,policy_snapshot,financial_scope) VALUES($1,$2,$11,$11,now(),'pending_review','complete',0,0,0,0,$3,$4,$5,'[]',$6,$7,'manual',$8,$9,$10,$12,$13) RETURNING *`,[id,input.siteId,totals.total,totals.subtotal,totals.tax,hash,cfg.version,JSON.stringify(totals.lines),payload.note,payload.dueDate,day,JSON.stringify(policy),policy.scope])).rows[0];
    await this.readiness.assertEnabled('issue',{billingCycleId:cycle.id},client);
