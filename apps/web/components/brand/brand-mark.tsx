@@ -3,7 +3,7 @@
 import * as React from 'react';
 import {cn} from '../../lib/utils';
 import {brandingLogoSrc, getBrandingRevision, subscribeBranding} from './branding-logo';
-export const BRAND_NAME = 'Solar Roof';
+export {BRAND_NAME} from './brand-identity';
 export function BrandMark({label, className}: {label?:string|undefined; className?:string}) {
   const revision = React.useSyncExternalStore(subscribeBranding, getBrandingRevision, () => 0);
   const src = brandingLogoSrc(revision);

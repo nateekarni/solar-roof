@@ -1,4 +1,4 @@
-import {BRAND_NAME} from "../components/brand/brand-mark";
+import {BRAND_NAME} from "../components/brand/brand-identity";
 import { BRAND_PRIMARY } from "@solar/domain";
 import type { CSSProperties, ReactNode } from "react";
 import "./globals.css";
