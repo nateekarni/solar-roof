@@ -54,12 +54,31 @@ async function environment(work:()=>Promise<void>,patch:Record<string,string|und
 }
 
 // Removing any individual global field guard must expose the corresponding missing ID.
-test('missing uploaded logo, signatory and default bank produces safe Owner checklist IDs',()=>environment(async()=>{
+test('missing uploaded logo and default bank produces safe Owner checklist without deprecated signers',()=>environment(async()=>{
   const f=fixture();f.state.company.logoUrl='/brand/legacy.png';f.state.company.signatoryTitle='';f.state.banks=[];
   const result=await f.service.status(owner);
-  assert.deepEqual(result.items.filter(i=>i.responsibility==='owner'&&!i.ready&&!i.siteId).map(i=>i.id),['company.logo','company.signatory','company.default_bank','approval.confirmation']);
+  assert.deepEqual(result.items.filter(i=>i.responsibility==='owner'&&!i.ready&&!i.siteId).map(i=>i.id),['company.logo','company.default_bank','approval.confirmation']);
+  assert.ok(result.items.every(i=>!['company.signatory','company.signature'].includes(i.id)));
   assert.ok(result.items.every(i=>Object.keys(i).every(key=>['id','ready','responsibility','destination','siteId'].includes(key))));
   assert.ok(!JSON.stringify(result).includes('1234567890123'));
+}));
+test('company readiness confirmation accepts absent legacy signer and preserves approval after signer changes',()=>environment(async()=>{
+  const f=fixture();Object.assign(f.state.company,{signatoryName:'',signatoryTitle:'',signatureDataUri:''});
+  const confirmed=await f.service.confirm(owner);assert.ok(confirmed.approval);
+  Object.assign(f.state.company,{signatoryName:'Historical signer',signatoryTitle:'Director',signatureDataUri:png});
+  assert.equal((await f.service.status(owner)).approval?.id,confirmed.approval.id);
+}));
+test('invoice approval capability requires live billing approval permission and an available issue action',()=>environment(async()=>{
+  const f=fixture();f.approve();
+  const employee={role:'accountant',authorization:{revision:1,permissions:['business.billing.edit'],scopes:{business:{mode:'selected' as const,siteIds:['site-a']},technical:{mode:'selected' as const,siteIds:[]}}}};
+  assert.equal((await f.service.capabilities('accountant',true,employee)).actions.includes('approve_invoice'),false);
+  employee.authorization.permissions.push('business.billing.approve');
+  assert.equal((await f.service.capabilities('accountant',true,employee)).actions.includes('approve_invoice'),true);
+  employee.authorization.permissions=['business.billing.edit'];
+  assert.equal((await f.service.capabilities('accountant',true,employee)).actions.includes('approve_invoice'),false);
+  employee.authorization.permissions.push('business.billing.approve');process.env.FINANCIAL_WRITES_ENABLED='false';
+  assert.equal((await f.service.capabilities('accountant',true,employee)).actions.includes('approve_invoice'),false);
+  assert.equal((await f.service.capabilities('accountant',false,employee)).actions.includes('approve_invoice'),false);
 }));
 test('contract issuance requires its persisted site, current approval and the master write flag',()=>environment(async()=>{
  const f=fixture(),context={contractId:'contract-a',siteId:'site-a'};

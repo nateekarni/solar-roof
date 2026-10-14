@@ -1,6 +1,19 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { canonicalFinancialConfiguration, financialConfigurationHash } from './financial-configuration.js';
+import { canonicalGlobalFinancialConfiguration, SettingsService } from '../settings/settings.service.js';
+import { settingsDatabase, testCompany, bank } from '../settings/company-settings.test-fixtures.js';
+
+test('public company settings and historical storage produce the same approved company facts',async()=>{
+  const stored={...testCompany,logoUrl:'uploaded logo',signatureDataUri:'historical signature'};
+  const publicProfile=await new SettingsService(settingsDatabase(stored).db).getCompanyProfile();
+  const canonical=canonicalGlobalFinancialConfiguration(stored,[bank('bank-a',true)]);
+  assert.deepEqual(canonical.company,{companyName:'Issuer',taxId:'1234567890123',branch:'Head office',address:'Address',phone:'02',email:'issuer@example.test',logoUrl:'uploaded logo'});
+  assert.equal(financialConfigurationHash(canonical),financialConfigurationHash(canonicalGlobalFinancialConfiguration(publicProfile,[bank('bank-a',true)])));
+  assert.equal(financialConfigurationHash(canonical),financialConfigurationHash(canonicalGlobalFinancialConfiguration({...stored,signatoryName:'Changed',signatoryTitle:'Changed',signatureDataUri:''},[bank('bank-a',true)])));
+  for(const changed of [{companyName:'Changed'},{logoUrl:'Changed'},{taxId:'9876543210123'}])assert.notEqual(financialConfigurationHash(canonical),financialConfigurationHash(canonicalGlobalFinancialConfiguration({...stored,...changed},[bank('bank-a',true)])));
+  assert.notEqual(financialConfigurationHash(canonical),financialConfigurationHash(canonicalGlobalFinancialConfiguration(stored,[{...bank('bank-a',true),accountNumber:'Changed'}])));
+});
 
 test('canonical financial configuration sorts object keys recursively', () => {
   assert.equal(

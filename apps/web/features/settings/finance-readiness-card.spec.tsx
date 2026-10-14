@@ -22,9 +22,16 @@ test('complete global Owner data permits confirmation despite site and environme
   const html=render(status([{id:'company.logo',ready:true,responsibility:'owner'},confirmation,{id:'site.tax',siteId:'site-a',ready:false,responsibility:'owner',destination:'/sites/site-a/settings'},{id:'environment.smtp',ready:false,responsibility:'environment',destination:'/secret-smtp'},{id:'site.meter',siteId:'site-a',ready:false,responsibility:'technical',destination:'/sites/site-a/settings'}]));
   assert.match(html,/Confirm production readiness/);
   assert.doesNotMatch(html,/<button[^>]* disabled=""/);
-  assert.match(html,/href="\/records\/sites\/site-a"/);
+  assert.match(html,/Site readiness/);
+  assert.match(html,/aria-expanded="false"/);
   assert.doesNotMatch(html,/secret-smtp|SMTP_PASSWORD|type="password"/);
-  assert.match(html,/technical team|deployment administrator/i);
+  assert.match(html,/Finance and delivery services/);
+});
+test('current site step has setup navigation and technical guidance without displaying its ID',()=>{
+  const html=render(status([{...confirmation,ready:true},{id:'site.tax',siteId:'site-a',ready:false,responsibility:'owner',destination:'/sites/site-a/settings'},{id:'site.meter',siteId:'site-a',ready:false,responsibility:'technical',destination:'/sites/site-a/settings'}],approval));
+  assert.match(html,/href="\/records\/sites\/site-a"/);
+  assert.match(html,/Ask the technical team/);
+  assert.doesNotMatch(html,/>site-a<|\(site-a\)/);
 });
 test('approved configuration shows infrastructure blockers and does not ask for confirmation again',()=>{
   const html=render(status([{...confirmation,ready:true},{id:'environment.smtp',ready:false,responsibility:'environment'}],approval));
@@ -45,23 +52,35 @@ test('unavailable company configuration and unsaved edits cannot be confirmed',(
   assert.match(html,/<button[^>]* disabled=""/);
   assert.match(html,/Save or cancel/);
 });
-test('Owner progress excludes infrastructure and technical items in either locale',()=>{
-  const value=status([{id:'company.logo',ready:true,responsibility:'owner'},{id:'company.signature',ready:false,responsibility:'owner'},confirmation,{id:'site.tax',siteId:'site-a',ready:true,responsibility:'owner'},{id:'environment.smtp',ready:true,responsibility:'environment'},{id:'site.meter',siteId:'site-a',ready:false,responsibility:'technical'}]);
+test('progress counts readiness requirements and hides completed labels in either locale',()=>{
+  const value=status([{id:'company.logo',ready:true,responsibility:'owner'},{id:'company.name',ready:false,responsibility:'owner'},confirmation,{id:'site.tax',siteId:'site-a',ready:true,responsibility:'owner'},{id:'environment.smtp',ready:true,responsibility:'environment'},{id:'site.meter',siteId:'site-a',ready:false,responsibility:'technical'}]);
   const en=render(value);
-  assert.match(en,/Owner checklist: 2 of 4 complete/);
+  assert.match(en,/3 of 6 complete/);
+  assert.match(en,/role="progressbar"[^>]*aria-valuemin="0"[^>]*aria-valuemax="6"[^>]*aria-valuenow="3"/);
+  assert.doesNotMatch(en,/Company logo|Confirmed tax settings|Email delivery/);
   const th=renderToStaticMarkup(<FinanceReadinessCard status={value} locale="th" isOwner confirming={false} onConfirm={()=>{}}/>);
-  assert.match(th,/รายการของเจ้าของ: ครบแล้ว 2 จาก 4 รายการ/);
+  assert.match(th,/ครบแล้ว 3 จาก 6 รายการ/);
 });
-test('current approval exposes its actor and Bangkok timestamp in either locale',()=>{
+test('current approval shows a readable actor and Bangkok timestamp without long identifiers',()=>{
   const value=status([{...confirmation,ready:true}],{id:'confirmed',approvedBy:'owner-confirmed-123',approvedAt:'2026-10-13T00:00:00Z'});
   const en=render(value);
-  assert.match(en,/<dt[^>]*>Confirmed by<\/dt><dd[^>]*>owner-confirmed-123<\/dd>/);
+  assert.match(en,/Confirmed by<\/dt><dd[^>]*>Owner<\/dd>/);
+  assert.doesNotMatch(en,/owner-confirmed-123/);
   assert.match(en,/<time dateTime="2026-10-13T00:00:00Z">13 October 2026 07:00 \(Asia\/Bangkok\)<\/time>/);
   const th=renderToStaticMarkup(<FinanceReadinessCard status={value} locale="th" isOwner confirming={false} onConfirm={()=>{}}/>);
   assert.match(th,/ยืนยันโดย/);
-  assert.match(th,/owner-confirmed-123/);
+  assert.doesNotMatch(th,/owner-confirmed-123/);
   assert.match(th,/13 ตุลาคม 2569 07:00 \(เวลาไทย\)/);
   assert.doesNotMatch(render({...value,approval:null,scope:null}),/owner-confirmed-123|dateTime=/);
+});
+
+test('first missing step is expanded while future steps stay compact with accessible disclosure',()=>{
+  const html=render(status([{id:'company.name',ready:false,responsibility:'owner',destination:'/settings/company'},confirmation,{id:'site.tax',siteId:'f50c102a-6160-4e3c-8cf0-8bca1677ddbe',ready:false,responsibility:'owner',destination:'/sites/f50c102a-6160-4e3c-8cf0-8bca1677ddbe/settings'}]));
+  assert.match(html,/<li[^>]*aria-current="step"/);
+  assert.match(html,/aria-expanded="true"/);
+  assert.equal((html.match(/aria-expanded="false"/g)??[]).length,2);
+  assert.match(html,/Company name/);
+  assert.doesNotMatch(html,/Confirmed tax settings|>f50c102a-6160-4e3c-8cf0-8bca1677ddbe<|site\.tax/);
 });
 test('awaiting confirmation is distinct from incomplete setup despite infrastructure blockers',()=>{
   const value=status([{id:'company.logo',ready:true,responsibility:'owner'},confirmation,{id:'environment.smtp',ready:false,responsibility:'environment'}]);

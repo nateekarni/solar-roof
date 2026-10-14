@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import type { Capabilities, FinancialAction, FinancialReadinessContext, FinancialReadinessItem, FinancialReadinessStatus, FinancialScope } from '@solar/api-contracts';
 import { DatabaseService } from '../../database/database.service.js';
-import { siteScope } from '../../common/auth/authorization.js';
+import { hasPermission, siteScope } from '../../common/auth/authorization.js';
 import { routeAllowed, type ScopePrincipal } from '../../common/auth/route-policy.js';
 import { canonicalGlobalFinancialConfiguration, type CompanyProfile, type CompanyBankAccount } from '../settings/settings.service.js';
 import { decodeCompanyImage } from '../settings/company-image.js';
@@ -41,7 +41,7 @@ export class FinancialReadinessService {
   constructor(@Inject(DatabaseService) private readonly db?:DatabaseService) {}
 
   private async configuration(client:QueryBoundary,lock=false):Promise<Configuration> {
-    const company=(await client.query<CompanyProfile>(`SELECT id,company_name AS "companyName",tax_id AS "taxId",branch,address,phone,email,logo_url AS "logoUrl",signatory_name AS "signatoryName",signatory_title AS "signatoryTitle",signature_data_uri AS "signatureDataUri" FROM company_profile ORDER BY updated_at DESC LIMIT 1 ${lock?'FOR UPDATE':''}`)).rows[0]??{companyName:'',taxId:'',branch:'',address:'',phone:'',email:''};
+    const company=(await client.query<CompanyProfile>(`SELECT id,company_name AS "companyName",tax_id AS "taxId",branch,address,phone,email,logo_url AS "logoUrl" FROM company_profile ORDER BY updated_at DESC LIMIT 1 ${lock?'FOR UPDATE':''}`)).rows[0]??{companyName:'',taxId:'',branch:'',address:'',phone:'',email:''};
     const banks=(await client.query<CompanyBankAccount>(`SELECT id,bank_name AS "bankName",bank_code AS "bankCode",account_name AS "accountName",account_number AS "accountNumber",branch_name AS "branchName",promptpay_id AS "promptpayId",is_default AS "isDefault",is_configured AS "isConfigured" FROM company_bank_accounts ORDER BY id ${lock?'FOR UPDATE':''}`)).rows;
     const snapshot=canonicalGlobalFinancialConfiguration(company,banks),hash=financialConfigurationHash(snapshot);
     const approval=(await client.query<Approval>(`SELECT id,config_hash,approved_at,approved_by,snapshot FROM financial_readiness_approvals WHERE scope='PRODUCTION' AND revoked_at IS NULL ${lock?'FOR UPDATE':''}`)).rows[0];
@@ -50,8 +50,7 @@ export class FinancialReadinessService {
       item('company.logo',image(company.logoUrl),'owner'),item('company.name',text(company.companyName),'owner'),
       item('company.tax_id',taxId(company.taxId),'owner'),item('company.branch',text(company.branch),'owner'),
       item('company.address',text(company.address),'owner'),item('company.phone',text(company.phone),'owner'),
-      item('company.email',email(company.email),'owner'),item('company.signatory',text(company.signatoryName)&&text(company.signatoryTitle),'owner'),
-      item('company.signature',image(company.signatureDataUri),'owner'),
+      item('company.email',email(company.email),'owner'),
       item('company.default_bank',banks.some(usable)&&banks.filter(b=>b.isDefault).length===1&&banks.some(b=>b.isDefault&&usable(b)),'owner'),
       item('approval.confirmation',approval?.config_hash===hash,'owner'),
     ];
@@ -264,6 +263,6 @@ export class FinancialReadinessService {
     const status=await this.status(actor);
     const allowed:FinancialAction[]=hasScope&&['owner','accountant'].includes(role)?[...ACTIONS]:[];
     const operationsActions=hasScope?[['read_invoice','GET','/v1/operations/documents/fixture'],['read_receipt','GET','/v1/operations/documents/fixture'],['submit_payment','POST','/v1/billing-cycles/fixture/pay']].filter(([,method,path])=>routeAllowed(role,method!,path!)).map(([action])=>action!):[];
-    return {...(status.scope?{financialScope:status.scope}:{}),operationsActions,actions:[...(hasScope&&routeAllowed(role,'POST','/v1/contracts')?['create_contract']:[]),...allowed.filter(a=>status.actions[a].enabled)],unavailable:Object.fromEntries(allowed.filter(a=>!status.actions[a].enabled).map(a=>[a,'Financial workflows await verified accounting requirements and implementation readiness.']))};
+    return {...(status.scope?{financialScope:status.scope}:{}),operationsActions,actions:[...(hasScope&&routeAllowed(role,'POST','/v1/contracts')?['create_contract']:[]),...allowed.filter(a=>status.actions[a].enabled),...(hasScope&&hasPermission(actor,'business.billing.approve')&&status.actions.issue.enabled?['approve_invoice']:[])],unavailable:Object.fromEntries(allowed.filter(a=>!status.actions[a].enabled).map(a=>[a,'Financial workflows await verified accounting requirements and implementation readiness.']))};
   }
 }

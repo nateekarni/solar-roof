@@ -250,6 +250,6 @@ export class SettingsService {
 
 /** Explicit financial fields exclude storage timestamps and retain deterministic bank ordering. */
 export function canonicalGlobalFinancialConfiguration(company: CompanyProfile, banks: CompanyBankAccount[]) {
-  return {company:{companyName:company.companyName,taxId:company.taxId,branch:company.branch,address:company.address,phone:company.phone,email:company.email,logoUrl:company.logoUrl??'',signatoryName:company.signatoryName??'',signatoryTitle:company.signatoryTitle??'',signatureDataUri:company.signatureDataUri??''},
+  return {company:{companyName:company.companyName,taxId:company.taxId,branch:company.branch,address:company.address,phone:company.phone,email:company.email,logoUrl:company.logoUrl??''},
     banks:[...banks].sort((a,b)=>a.id.localeCompare(b.id)).map(bank=>({id:bank.id,bankName:bank.bankName,bankCode:bank.bankCode,accountName:bank.accountName,accountNumber:bank.accountNumber,branchName:bank.branchName,promptpayId:bank.promptpayId,isDefault:bank.isDefault}))};
 }
