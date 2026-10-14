@@ -8,10 +8,10 @@ import {CompanyProfileCard} from './company-profile-card';
 let editing = false;
 let logoUrl = 'data:image/png;base64,aGVsbG8=';
 
-function companyMarkup(locale: 'th'|'en') {
+function companyMarkup(locale: 'th'|'en', canEdit = true) {
   return renderToStaticMarkup(<CompanyProfileCard
     company={{id: 'private-company-id', companyName: 'Issuer', taxId: '1234567890123', branch: 'Head office', address: 'Address', phone: '02', email: 'billing@example.test', logoUrl}}
-    locale={locale} editingCompany={editing} canEdit disabled={false} savingCompany={false}
+    locale={locale} editingCompany={editing} canEdit={canEdit} disabled={false} savingCompany={false}
     setCompany={()=>{}} onEdit={()=>{}} onCancel={()=>{}} onSave={()=>{}}/>);
 }
 
@@ -33,6 +33,18 @@ test('company view explains how to add a missing logo', () => {
   const html = companyMarkup('th');
   assert.match(html, /ยังไม่ได้อัปโหลดโลโก้/);
   assert.match(html, /แก้ไข/);
+  assert.match(companyMarkup('en'), /Choose Edit to add your company logo/);
+});
+
+test('non-owner missing-logo guidance does not refer to unavailable edit controls', () => {
+  editing = false;
+  logoUrl = '';
+  for (const locale of ['th', 'en'] as const) {
+    const html = companyMarkup(locale, false);
+    assert.match(html, locale === 'th' ? /ยังไม่ได้อัปโหลดโลโก้/ : /No logo uploaded/);
+    assert.doesNotMatch(html, /เลือกแก้ไข|Choose Edit/);
+    assert.doesNotMatch(html, /<button/);
+  }
 });
 
 test('company edit contains legal facts and logo upload without signer configuration', () => {

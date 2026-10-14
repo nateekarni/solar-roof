@@ -55,7 +55,9 @@ export function CompanyProfileCard({company, locale, editingCompany, canEdit, di
           </Badge>
           {!editingCompany && (company.logoUrl ?
             <img src={company.logoUrl} alt={locale === 'th' ? 'โลโก้บริษัท' : 'Company logo'} className="max-h-24 max-w-full object-contain md:max-w-48"/> :
-            <p className="text-sm text-muted-foreground">{locale === 'th' ? 'ยังไม่ได้อัปโหลดโลโก้ เลือกแก้ไขเพื่อเพิ่มโลโก้บริษัท' : 'No logo uploaded. Choose Edit to add your company logo.'}</p>)}
+            <p className="text-sm text-muted-foreground">{locale === 'th'
+              ? (canEdit ? 'ยังไม่ได้อัปโหลดโลโก้ เลือกแก้ไขเพื่อเพิ่มโลโก้บริษัท' : 'ยังไม่ได้อัปโหลดโลโก้')
+              : (canEdit ? 'No logo uploaded. Choose Edit to add your company logo.' : 'No logo uploaded.')}</p>)}
         </div>
         {!editingCompany ? <div className="space-y-4"><dl className="grid grid-cols-1 gap-4 md:grid-cols-2">{([
             ['companyName', 'ชื่อบริษัท / นิติบุคคล', 'Company name'], ['taxId', 'เลขประจำตัวผู้เสียภาษี', 'Tax ID'], ['branch', 'สาขา', 'Branch'], ['phone', 'เบอร์โทรศัพท์', 'Phone'], ['email', 'อีเมลสำหรับการเงิน', 'Billing email'], ['address', 'ที่อยู่จดทะเบียนภาษี', 'Tax address']
@@ -157,4 +159,3 @@ export function CompanyProfileCard({company, locale, editingCompany, canEdit, di
     </Card>
   );
 }
-
