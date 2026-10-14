@@ -50,14 +50,20 @@ export function EmployeeEditor({employee,domain,positions,permissions,sites,onSa
  const initialChoice:PositionChoice|null=initialPosition?{kind:'existing',id:initialPosition.id,name:initialPosition.name}:null;
  const [choice,setChoice]=useState<PositionChoice|null>(initialChoice),[draftRules,setDraftRules]=useState<Record<string,RuleValue>>({}),[permissionsConfigured,setPermissionsConfigured]=useState(false),[overrides,setOverrides]=useState(employee.grant?.overrides??{}),[scope,setScope]=useState<Scope>(employee.grant?.scope??{mode:'selected',siteIds:[]}),[error,setError]=useState(''),[busy,setBusy]=useState(false),[impact,setImpact]=useState<{activeSessions:number;domains:{domain:string;scopeMode:string;siteIds:string[]}[]}|null>(null);
  const [editorTab,setEditorTab]=useState('profile'),[siteSearch,setSiteSearch]=useState('');
+ const [baseRevision,setBaseRevision]=useState(employee.revision),[currentPositions,setCurrentPositions]=useState(positions),[conflict,setConflict]=useState<'revision'|'position'|null>(null),[latest,setLatest]=useState<{employee:Employee;positions:Position[]}|null>(null);
+ const [conflictingPositionId,setConflictingPositionId]=useState<string|null>(null);
  const positionKey=(value:PositionChoice|null)=>value?.kind==='existing'?value.id:value?'new:'+value.name:'';
  const dirty=staffDraftChanged({positionId:positionKey(initialChoice),overrides:employee.grant?.overrides??{},scope:employee.grant?.scope??{mode:'selected',siteIds:[]}},{positionId:positionKey(choice),overrides,scope});
  const close=()=>{if(!busy&&(!dirty||window.confirm(th?'ละทิ้งการเปลี่ยนแปลงที่ยังไม่บันทึก?':'Discard unsaved changes?')))onClose();};
- const rules=choice?.kind==='existing'?positions.find(p=>p.id===choice.id)?.rules??{}:draftRules;
+ const rules=choice?.kind==='existing'?currentPositions.find(p=>p.id===choice.id)?.rules??{}:draftRules;
  const choosePosition=(next:PositionChoice)=>{if(next.kind==='new'){setDraftRules(rules);setPermissionsConfigured(false);}setChoice(next);setError('');};
- async function save(e:FormEvent){e.preventDefault();if(busy)return;setError('');if(!choice){setError(th?'กรุณาเลือกหรือสร้างตำแหน่ง':'Choose or create a position');return;}if(choice.kind==='new'&&!builtInManager&&!permissionsConfigured){setEditorTab('permissions');setError(th?'กรุณากำหนดและยืนยันสิทธิ์สำหรับตำแหน่งใหม่':'Configure and confirm permissions for the new position');return;}setBusy(true);try{const result=await apiClient.patch<{success:true;revision:number;position:{id:string;name:string}}>(`/v1/team/employees/${employee.id}/${domain}`,employeePositionDraft({revision:employee.revision,choice,domain,permissions,rules,overrides,scope,permissionsConfigured,builtInManager}));setChoice({kind:'existing',id:result.position.id,name:result.position.name});onSaved();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
- async function revoke(){setBusy(true);setError('');try{await apiClient.delete(`/v1/team/employees/${employee.id}/${domain}`,{headers:{"Content-Type":"application/json"},body:JSON.stringify({revision:employee.revision})});onSaved();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
- async function deactivate(){setBusy(true);setError('');try{if(!impact)setImpact(await apiClient.get(`/v1/team/employees/${employee.id}/deactivation-impact`));else{await apiClient.post(`/v1/team/employees/${employee.id}/deactivate`,{revision:employee.revision,impactConfirmed:true});onSaved();}}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
+ async function save(e:FormEvent){e.preventDefault();if(busy||conflict)return;setError('');if(!choice){setError(th?'กรุณาเลือกหรือสร้างตำแหน่ง':'Choose or create a position');return;}if(choice.kind==='new'&&!builtInManager&&!permissionsConfigured){setEditorTab('permissions');setError(th?'กรุณากำหนดและยืนยันสิทธิ์สำหรับตำแหน่งใหม่':'Configure and confirm permissions for the new position');return;}setBusy(true);try{const result=await apiClient.patch<{success:true;revision:number;position:{id:string;name:string}}>(`/v1/team/employees/${employee.id}/${domain}`,employeePositionDraft({revision:baseRevision,choice,domain,permissions,rules,overrides,scope,permissionsConfigured,builtInManager}));setChoice({kind:'existing',id:result.position.id,name:result.position.name});onSaved();}catch(e){const failure=e as Error&{status?:number;code?:string;details?:{position?:{id?:string}}};setError(failure.message);if(failure.status===409){setConflict(failure.code==='POSITION_NAME_EXISTS'?'position':'revision');setLatest(null);setConflictingPositionId(typeof failure.details?.position?.id==='string'?failure.details.position.id:null);}}finally{setBusy(false);}}
+ async function loadLatest(){if(busy)return;setBusy(true);setError('');try{const [employeesResponse,positionsResponse]=await Promise.all([apiClient.get<{employees:Employee[]}>(`/v1/team/employees?domain=${domain}`,{cache:'no-store'}),apiClient.get<{positions:Position[]}>(`/v1/team/positions?domain=${domain}`,{cache:'no-store'})]);const fresh=employeesResponse.employees.find(item=>item.id===employee.id);if(!fresh||fresh.role!==employee.role||fresh.status!==employee.status)throw new Error(th?'สถานะหรือบทบาทบัญชีเปลี่ยนแล้ว กรุณาปิดหน้าต่างและตรวจสอบทีมงาน':'Account status or role changed. Close this editor and review the team.');setLatest({employee:fresh,positions:positionsResponse.positions});}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
+ const duplicatePreset=(conflict==='position'||choice?.kind==='new')&&choice?latest?.positions.find(position=>conflictingPositionId?position.id===conflictingPositionId:position.name.trim().normalize('NFC').toLocaleLowerCase()===choice.name.trim().normalize('NFC').toLocaleLowerCase()):undefined;
+ const reviewedDraftRules=duplicatePreset?.rules??(choice?.kind==='existing'?latest?.positions.find(position=>position.id===choice.id)?.rules??{}:draftRules);
+ const reviewLatest=()=>{if(!latest||busy||conflict==='position'&&!duplicatePreset)return;setBaseRevision(latest.employee.revision);setCurrentPositions(latest.positions);if(duplicatePreset)setChoice({kind:'existing',id:duplicatePreset.id,name:duplicatePreset.name});setConflict(null);setLatest(null);setError('');setImpact(null);};
+ async function revoke(){setBusy(true);setError('');try{await apiClient.delete(`/v1/team/employees/${employee.id}/${domain}`,{headers:{"Content-Type":"application/json"},body:JSON.stringify({revision:baseRevision})});onSaved();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
+ async function deactivate(){setBusy(true);setError('');try{if(!impact)setImpact(await apiClient.get(`/v1/team/employees/${employee.id}/deactivation-impact`));else{await apiClient.post(`/v1/team/employees/${employee.id}/deactivate`,{revision:baseRevision,impactConfirmed:true});onSaved();}}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
   return (
   <Dialog open onOpenChange={(open:boolean)=>{if(!open)close();}}>
    <DialogContent className="min-w-0 gap-5 overflow-x-hidden sm:max-w-5xl">
@@ -102,7 +108,7 @@ export function EmployeeEditor({employee,domain,positions,permissions,sites,onSa
         </div>
         <div className="grid gap-2 rounded-xl border bg-muted/20 p-4 sm:grid-cols-[140px_minmax(0,1fr)] sm:items-center sm:gap-4">
          <Label htmlFor="staff-position">{th?'ตำแหน่ง':'Position'}</Label>
-         <PositionCombobox id="staff-position" value={choice} positions={positions} onChange={choosePosition} disabled={busy}/>
+         <PositionCombobox id="staff-position" value={choice} positions={currentPositions} onChange={choosePosition} disabled={busy||!!conflict}/>
         </div>
        </section>
       </TabsContent>
@@ -132,8 +138,8 @@ export function EmployeeEditor({employee,domain,positions,permissions,sites,onSa
         <p className="mt-1 text-xs text-muted-foreground">{th?'ถอนสิทธิ์ในเขตนี้ หรือดูผลกระทบก่อนปิดบัญชี':'Remove domain access or review the impact of closing this account.'}</p>
        </div>
        <div className="flex flex-wrap gap-2">
-        <Button type="button" variant="outline" className="text-destructive" disabled={busy||!employee.grant} onClick={()=>void revoke()}>{th?'ถอนสิทธิ์เขตนี้':'Revoke this domain'}</Button>
-        {canDeactivate&&<Button type="button" variant="destructive" disabled={busy} onClick={()=>void deactivate()}>{impact?(th?'ยืนยันปิดบัญชีทั้งหมด':'Confirm account deactivation'):(th?'ตรวจผลกระทบการปิดบัญชี':'Preview account deactivation')}</Button>}
+        <Button type="button" variant="outline" className="text-destructive" disabled={busy||!!conflict||!employee.grant} onClick={()=>void revoke()}>{th?'ถอนสิทธิ์เขตนี้':'Revoke this domain'}</Button>
+        {canDeactivate&&<Button type="button" variant="destructive" disabled={busy||!!conflict} onClick={()=>void deactivate()}>{impact?(th?'ยืนยันปิดบัญชีทั้งหมด':'Confirm account deactivation'):(th?'ตรวจผลกระทบการปิดบัญชี':'Preview account deactivation')}</Button>}
        </div>
       </div>
       {impact&&<div role="status" className="space-y-2 rounded-lg border border-destructive/20 bg-background p-3 text-sm">
@@ -142,10 +148,28 @@ export function EmployeeEditor({employee,domain,positions,permissions,sites,onSa
        <Button type="button" variant="ghost" disabled={busy} onClick={()=>setImpact(null)}>{th?'ยกเลิก':'Cancel'}</Button>
       </div>}
      </section>}
+     {conflict&&<section className="flex flex-col gap-3 rounded-xl border p-4" aria-label={th?'แก้ไขข้อมูลที่เปลี่ยนแปลง':'Resolve changed information'}>
+      <p>{conflict==='position'?(th?'มีตำแหน่งชื่อนี้แล้ว โหลดตำแหน่งที่มีอยู่และตรวจสอบสิทธิ์ก่อนบันทึก':'This position exists. Load and review its permissions before saving.'):(th?'ข้อมูลถูกเปลี่ยนโดยผู้ใช้อื่น ร่างของคุณยังอยู่ กรุณาโหลดและตรวจสอบข้อมูลล่าสุด':'Another user changed this information. Your draft is preserved. Load and review the latest data.')}</p>
+      <Button type="button" variant="outline" disabled={busy} onClick={()=>void loadLatest()}>{th?'โหลดข้อมูลล่าสุดเพื่อตรวจสอบ':'Load latest information for review'}</Button>
+      {latest&&<section role="region" aria-label={th?'ตรวจสอบข้อมูลล่าสุด':'Review latest information'} className="flex flex-col gap-3">
+       <p>{th?'ตำแหน่งล่าสุด':'Latest company position'}: {employeePositionLabel(latest.employee,latest.positions)}</p>
+       {duplicatePreset&&<p>{th?'ตำแหน่งที่มีอยู่':'Existing position'}: {duplicatePreset.name}</p>}
+       {!builtInManager&&<>
+        <p>{th?'สิทธิ์ที่บันทึกไว้ล่าสุด':'Latest saved permissions'}</p>
+        <fieldset disabled><RuleMatrix permissions={permissions} rules={latest.positions.find(position=>position.id===latest.employee.grant?.positionId)?.rules??{}} overrides={latest.employee.grant?.overrides??{}} onChange={()=>{}}/></fieldset>
+        <p>{th?'ขอบเขตไซต์ล่าสุด':'Latest site scope'}: {latest.employee.grant?.scope.mode==='all'?(th?'ทุกไซต์':'All sites'):latest.employee.grant?.scope.siteIds.map(id=>sites.find(site=>site.id===id)?.name??(th?'ไซต์ที่ไม่มีข้อมูล':'Unavailable site')).join(', ')||(th?'ไม่มีไซต์':'No sites')}</p>
+        <p>{th?'สิทธิ์ของร่างเมื่อใช้ข้อมูลล่าสุด':'Draft permissions using the latest preset'}: {duplicatePreset?.name??choice?.name??'—'}</p>
+        <fieldset disabled><RuleMatrix permissions={permissions} rules={reviewedDraftRules} overrides={overrides} onChange={()=>{}}/></fieldset>
+        <p>{th?'ขอบเขตไซต์ของร่าง':'Draft site scope'}: {scope.mode==='all'?(th?'ทุกไซต์':'All sites'):scope.siteIds.map(id=>sites.find(site=>site.id===id)?.name??(th?'ไซต์ที่ไม่มีข้อมูล':'Unavailable site')).join(', ')||(th?'ไม่มีไซต์':'No sites')}</p>
+       </>}
+       <p>{th?'การยืนยันจะใช้ข้อมูลล่าสุดเป็นฐาน ร่างสิทธิ์และขอบเขตไซต์ของคุณยังอยู่ แล้วกดบันทึกอีกครั้ง':'Confirm to use the latest state as a base while retaining your draft permissions and site scope. Save explicitly afterward.'}</p>
+       <Button type="button" disabled={busy||conflict==='position'&&!duplicatePreset} onClick={reviewLatest}>{th?'ยืนยันว่าได้ตรวจสอบข้อมูลล่าสุด':'Confirm latest information reviewed'}</Button>
+      </section>}
+     </section>}
      {error&&<p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{error}</p>}
      <div className="flex justify-end gap-2 border-t pt-4">
       <Button type="button" variant="outline" disabled={busy} onClick={close}>{th?'ยกเลิก':'Cancel'}</Button>
-      <Button type="submit" disabled={busy}>{th?'บันทึกสิทธิ์':'Save permissions'}</Button>
+      <Button type="submit" disabled={busy||!!conflict}>{th?'บันทึกสิทธิ์':'Save permissions'}</Button>
      </div>
     </form>
    </DialogContent>

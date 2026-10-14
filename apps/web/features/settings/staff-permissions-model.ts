@@ -3,8 +3,9 @@ export type PositionChoice={kind:'existing';id:string;name:string}|{kind:'new';n
 export function positionOptions(query:string,positions:readonly {id:string;name:string}[]):PositionChoice[]{
  const name=query.trim().normalize('NFC'),term=name.toLocaleLowerCase();
  const matches=positions.filter(position=>position.name.trim().normalize('NFC').toLocaleLowerCase().includes(term));
- if(matches.length)return matches.map(position=>({kind:'existing',id:position.id,name:position.name}));
- return name&&name.length<=120?[{kind:'new',name}]:[];
+ const choices:PositionChoice[]=matches.map(position=>({kind:'existing',id:position.id,name:position.name}));
+ if(name&&name.length<=120&&!positions.some(position=>position.name.trim().normalize('NFC').toLocaleLowerCase()===term))choices.push({kind:'new',name});
+ return choices;
 }
 export function employeePositionLabel(employee:{companyPosition?:string|null;grant:{positionId:string|null}|null},positions:readonly {id:string;name:string}[]):string{
  return employee.companyPosition||positions.find(position=>position.id===employee.grant?.positionId)?.name||'—';

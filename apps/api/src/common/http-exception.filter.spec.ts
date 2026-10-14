@@ -1,5 +1,12 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import {ConflictException,ServiceUnavailableException,type ArgumentsHost} from '@nestjs/common';import {AllExceptionsFilter} from './http-exception.filter.js';
+test('position duplicate conflicts expose only the reusable display identity',()=>{
+ let body:Record<string,unknown>={};const response={status:()=>response,json:(value:Record<string,unknown>)=>{body=value;}};
+ const host={switchToHttp:()=>({getResponse:()=>response,getRequest:()=>({url:'/v1/team/employees'})})} as unknown as ArgumentsHost;
+ const position={id:'00000000-0000-0000-0000-000000000003',name:'Finance',rules:{secret:true},signature:'private'};
+ new AllExceptionsFilter().catch(new ConflictException({code:'POSITION_NAME_EXISTS',message:'Review existing preset',position,secret:'private'}),host);
+ assert.equal(body.code,'POSITION_NAME_EXISTS');assert.deepEqual(body.position,{id:position.id,name:'Finance'});assert.equal(body.secret,undefined);
+});
 test('future tariff conflict retains reviewable impact and upload errors return413',()=>{
  let status=0,body:Record<string,unknown>={};const response={status:(value:number)=>{status=value;return response;},json:(value:Record<string,unknown>)=>{body=value;}};
  const host={switchToHttp:()=>({getResponse:()=>response,getRequest:()=>({url:'/v1/billing-cycles/b/rate'})})} as unknown as ArgumentsHost;

@@ -4,11 +4,13 @@ import * as model from './staff-permissions-model';
 const presets=[{id:'p1',name:'กรรมการบริษัท',rules:{'business.billing.view':true}},{id:'p2',name:'Sales Lead',rules:{}}];
 test('position search uses labels and offers creation only when no normalized duplicate exists',()=>{
  assert.equal(typeof model.positionOptions,'function');
- assert.deepEqual(model.positionOptions('กรรม',presets),[{kind:'existing',id:'p1',name:'กรรมการบริษัท'}]);
+ assert.deepEqual(model.positionOptions('กรรม',presets),[{kind:'existing',id:'p1',name:'กรรมการบริษัท'},{kind:'new',name:'กรรม'}]);
  assert.deepEqual(model.positionOptions('  หัวหน้าฝ่ายขาย  ',presets),[{kind:'new',name:'หัวหน้าฝ่ายขาย'}]);
  assert.deepEqual(model.positionOptions(' sales lead ',presets),[{kind:'existing',id:'p2',name:'Sales Lead'}]);
  assert.deepEqual(model.positionOptions('   ',[]),[]);
  assert.deepEqual(model.positionOptions('x'.repeat(121),presets),[]);
+ assert.deepEqual(model.positionOptions('บัญชี',[{id:'p3',name:'หัวหน้าบัญชี'}]),[{kind:'existing',id:'p3',name:'หัวหน้าบัญชี'},{kind:'new',name:'บัญชี'}]);
+ assert.deepEqual(model.positionOptions('café',[{id:'p4',name:'  CAFE\u0301  '}]),[{kind:'existing',id:'p4',name:'  CAFE\u0301  '}]);
 });
 test('atomic employee drafts select presets and keep overrides restricted to the managed domain',()=>{
  assert.equal(typeof model.employeePositionDraft,'function');

@@ -23,7 +23,7 @@ test('grant patches reject unknown fields, delegated management, and invalid sco
  await assert.rejects(()=>service.updateGrant(owner,'user','business',{revision:0,position:{id:positionId},overrides:{},scope:{mode:'selected',siteIds:['bad']}}),/scope/);
 });
 
-function grantFixture(options:{role?:string;revision?:number;presetExists?:boolean;actorRole?:string;actorStatus?:string}={}){
+function grantFixture(options:{role?:string;revision?:number;presetExists?:boolean;actorRole?:string;actorStatus?:string;duplicateName?:boolean}={}){
  const statements:{sql:string;values:unknown[]}[]=[];
  let transactions=0;
  const client={query:async(sql:string,values:unknown[]=[])=>{
@@ -33,11 +33,24 @@ function grantFixture(options:{role?:string;revision?:number;presetExists?:boole
    return {rows:values[1]===undefined||values[1]===owner.id?[manager]:[manager,{id:values[1],role:options.role??'operator',status:'active',permission_revision:options.revision??0}]};
   }
   if(sql.startsWith('SELECT p.name'))return {rows:options.presetExists===false?[]:[{name:'กรรมการบริษัท'}]};
+  if(sql.startsWith('INSERT INTO employee_positions'))return {rows:options.duplicateName?[]:[{id:values[0],name:values[1]}]};
+  if(sql.startsWith('SELECT id,name FROM employee_positions'))return {rows:[{id:positionId,name:'Finance'}]};
+  if(sql.startsWith('INSERT INTO employee_position_domains'))return {rows:options.duplicateName?[]:[{position_id:values[0]}]};
   return {rows:[]};
  }} as unknown as PoolClient;
  const db={transaction:async<T>(work:(client:PoolClient)=>Promise<T>)=>{transactions++;return work(client);}} as unknown as DatabaseService;
  return {service:new TeamService(db),statements,transactionCount:()=>transactions};
 }
+
+test('normalized duplicate creation returns a safe review conflict before any employee mutation',async()=>{
+ const {service,statements}=grantFixture({duplicateName:true});
+ await assert.rejects(()=>service.updateGrant(owner,employee,'business',{revision:0,position:{name:'  finance  ',rules},overrides,scope}),error=>{
+  assert.ok(error instanceof ConflictException);
+  assert.deepEqual(error.getResponse(),{code:'POSITION_NAME_EXISTS',message:'Position already exists; review existing preset',position:{id:positionId,name:'Finance'}});
+  return true;
+ });
+ assert.equal(statements.some(({sql})=>sql.startsWith('UPDATE users')||sql.startsWith('INSERT INTO employee_domain_grants')||sql.startsWith('INSERT INTO audit_events')),false);
+});
 
 test('typed position creates explicit preset and assigns canonical position in one transaction',async()=>{
  const {service,statements,transactionCount}=grantFixture();

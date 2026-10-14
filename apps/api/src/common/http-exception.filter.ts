@@ -53,6 +53,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
         if (typeof r.code === "string") code = r.code;
         if(code==='FUTURE_RATE_REPLACEMENT_REQUIRED')details={siteId:r.siteId,effectiveDate:r.effectiveDate,futureRates:r.futureRates,documents:r.documents};
         if(code==='FINANCIAL_NOT_READY')details=financialFailureDetails(r);
+        if(code==='POSITION_NAME_EXISTS'&&r.position&&typeof r.position==='object'){
+          const position=r.position as Record<string,unknown>;
+          if(typeof position.id==='string'&&/^[0-9a-f-]{36}$/i.test(position.id)&&typeof position.name==='string'&&position.name.length<=120)details={position:{id:position.id,name:position.name}};
+        }
       }
     } else if(exception instanceof Error && 'type' in exception && exception.type==='entity.too.large'){
       status=HttpStatus.PAYLOAD_TOO_LARGE;message='ไฟล์แนบมีขนาดเกินที่ระบบรองรับ';

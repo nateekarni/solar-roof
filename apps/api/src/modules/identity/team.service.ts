@@ -10,7 +10,7 @@ export interface TeamGrantDraft {
  overrides:Record<string,boolean|null>;
  scope:SiteAccessScope;
 }
-export interface TeamGrantResult {success:true;revision:number;position:{id:string;name:string}}
+export interface TeamGrantResult {success:true;revision:number;position:{id:string;name:string};positionReused?:true}
 function domainFor(actor:TeamActor,domain:unknown):PermissionDomain {
  if((domain!=='business'&&domain!=='technical')||actor.role!==(domain==='business'?'owner':'admin'))throw new ForbiddenException('Managers may administer only their own permission domain');
  return domain;
@@ -59,6 +59,15 @@ export class TeamService {
  private async audit(client:PoolClient,actor:TeamActor,domain:PermissionDomain,id:string,action:string,after?:unknown){
   await client.query(`INSERT INTO audit_events(id,actor_id,action,entity_type,entity_id,correlation_id,after_json) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb)`,[randomUUID(),actor.id,`${domain}.${action}`,'employee_permission',id,randomUUID(),after===undefined?null:JSON.stringify(after)]);
  }
+ private async createPosition(client:PoolClient,domain:PermissionDomain,name:string,rules:Record<string,boolean|null>){
+  const inserted=(await client.query('INSERT INTO employee_positions(id,name) VALUES($1,$2) ON CONFLICT (employee_position_name_key(name)) DO NOTHING RETURNING id,name',[randomUUID(),name])).rows[0];
+  // Unique-index arbitration waits for competing creators, including other domains.
+  // Reuse only the shared identity; an existing domain preset is never overwritten.
+  const position=inserted??(await client.query('SELECT id,name FROM employee_positions WHERE employee_position_name_key(name)=employee_position_name_key($1) FOR SHARE',[name])).rows[0];
+  const preset=(await client.query('INSERT INTO employee_position_domains(position_id,domain,rules) VALUES($1,$2,$3::jsonb) ON CONFLICT (position_id,domain) DO NOTHING RETURNING position_id',[position.id,domain,JSON.stringify(rules)])).rows[0];
+  if(!preset)throw new ConflictException({code:'POSITION_NAME_EXISTS',message:'Position already exists; review existing preset',position:{id:position.id,name:position.name}});
+  return {id:position.id as string,name:position.name as string,reused:!inserted};
+ }
  async updateGrant(actor:TeamActor,userId:string,rawDomain:unknown,input:unknown):Promise<TeamGrantResult>{
   const domain=domainFor(actor,rawDomain),body=object(input,['revision','position','overrides','scope']);
   const expected=revision(body.revision),overrides=validateDomainRules(domain,body.overrides),scope=validateScope(body.scope);
@@ -69,25 +78,23 @@ export class TeamService {
    selectedId=uuid(draft.id);
   }else{
    if(typeof draft.name!=='string'||!draft.name.trim()||draft.name.trim().length>120)throw new BadRequestException('Position name required');
-   positionName=draft.name.trim();presetRules=validateDomainRules(domain,draft.rules);
+   positionName=draft.name.trim().normalize('NFC');presetRules=validateDomainRules(domain,draft.rules);
   }
   return this.db.transaction(async client=>{
    const user=await this.authorizeCurrent(client,actor,domain,{userId});
    if(!user)throw new NotFoundException('Employee not found');
    const employee=['operator','accountant'].includes(user.role);
    if(!employee&&user.role!==(domain==='business'?'owner':'admin'))throw new ForbiddenException('Only employees and this domain manager may receive a company position');
-   if(user.permission_revision!==expected)throw new ConflictException('Permissions changed; reload before saving');
+   if(user.permission_revision!==expected)throw new ConflictException({code:'EMPLOYEE_REVISION_CONFLICT',message:'Permissions changed; reload before saving'});
    if(scope.siteIds.length){const sites=await client.query('SELECT id FROM sites WHERE id=ANY($1::uuid[]) FOR SHARE',[scope.siteIds]);if(sites.rows.length!==scope.siteIds.length)throw new BadRequestException('Unknown site scope');}
-   const positionId=selectedId??randomUUID();
+   let positionId=selectedId!,positionReused=false;
    let name:string;
    if(selectedId){
     const preset=(await client.query('SELECT p.name FROM employee_positions p JOIN employee_position_domains d ON d.position_id=p.id AND d.domain=$2 WHERE p.id=$1 FOR SHARE',[positionId,domain])).rows[0];
     if(!preset)throw new BadRequestException('Position has no permission preset in this domain');
     name=preset.name;
    }else{
-    name=positionName!;
-    await client.query('INSERT INTO employee_positions(id,name) VALUES($1,$2)',[positionId,name]);
-    await client.query('INSERT INTO employee_position_domains(position_id,domain,rules) VALUES($1,$2,$3::jsonb)',[positionId,domain,JSON.stringify(presetRules)]);
+    const created=await this.createPosition(client,domain,positionName!,presetRules!);positionId=created.id;name=created.name;positionReused=created.reused;
    }
    await client.query('UPDATE users SET company_position_id=$2,updated_at=now() WHERE id=$1',[userId,positionId]);
    // Manager authority remains role-derived; presets and overrides apply only to employees.
@@ -96,7 +103,7 @@ export class TeamService {
    await client.query('UPDATE users SET permission_revision=permission_revision+1,updated_at=now() WHERE id=$1',[userId]);
    const position={id:positionId,name};
    await this.audit(client,actor,domain,userId,'permissions.updated',{position});
-   return {success:true,revision:expected+1,position};
+   return {success:true,revision:expected+1,position,...(positionReused?{positionReused:true as const}:{})};
   });
  }
  async revokeGrant(actor:TeamActor,userId:string,rawDomain:unknown,input:unknown){
@@ -117,7 +124,7 @@ export class TeamService {
   const rules=validateDomainRules(domain,body.rules),expected=positionId?revision(body.revision):0;
   return this.db.transaction(async client=>{
    await this.authorizeCurrent(client,actor,domain,positionId?{positionId}:undefined);
-   const id=positionId?uuid(positionId):randomUUID();
+   let id=positionId?uuid(positionId):'';let name=body.name.trim().normalize('NFC'),positionReused=false;
    if(positionId){
     const current=(await client.query('SELECT revision FROM employee_position_domains WHERE position_id=$1 AND domain=$2 FOR UPDATE',[id,domain])).rows[0];
     if(!current)throw new NotFoundException('Position not found');
@@ -128,10 +135,9 @@ export class TeamService {
     await client.query('UPDATE employee_position_domains SET rules=$3::jsonb,revision=revision+1 WHERE position_id=$1 AND domain=$2',[id,domain,JSON.stringify(rules)]);
     await client.query('UPDATE users SET permission_revision=permission_revision+1 WHERE id IN (SELECT user_id FROM employee_domain_grants WHERE position_id=$1 AND domain=$2)',[id,domain]);
    }else{
-    await client.query('INSERT INTO employee_positions(id,name) VALUES($1,$2)',[id,body.name.trim()]);
-    await client.query('INSERT INTO employee_position_domains(position_id,domain,rules) VALUES($1,$2,$3::jsonb)',[id,domain,JSON.stringify(rules)]);
+    const created=await this.createPosition(client,domain,name,rules);id=created.id;name=created.name;positionReused=created.reused;
    }
-   await this.audit(client,actor,domain,id,'position.updated');return {id,name:body.name.trim(),rules,revision:positionId?expected+1:0};
+   await this.audit(client,actor,domain,id,'position.updated');return {id,name,rules,revision:positionId?expected+1:0,...(positionReused?{positionReused:true as const}:{})};
   });
  }
  async positionImpact(actor:TeamActor,positionId:string,rawDomain:unknown,input:unknown){

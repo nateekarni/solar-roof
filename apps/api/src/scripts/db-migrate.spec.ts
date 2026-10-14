@@ -5,7 +5,7 @@ import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 
-test('supported migration runner applies document identity after previously applied migrations', async () => {
+for(const scenario of ['fresh','duplicate','already-applied'] as const)test(`supported migration runner handles document identity: ${scenario}`, async () => {
   const migration = 'infra/migrations/058_user_document_identity.sql';
   const root = new URL('../../../../', import.meta.url);
   const entry = new URL('./db-migrate.ts', import.meta.url);
@@ -22,13 +22,14 @@ test('supported migration runner applies document identity after previously appl
       const client = {
         async query(sql, params) {
           if (sql.startsWith('SELECT checksum')) {
-            if (params[0] === ${JSON.stringify(migration)}) return {rows: []};
+            if (params[0] === ${JSON.stringify(migration)}) return {rows: ${scenario==='already-applied'?'[{checksum:"unreleased-previous-checksum"}]':'[]'}};
             const content = await readFile(new URL(params[0], root), 'utf8');
             return {rows: [{checksum: createHash('sha256').update(content.replaceAll('\\r\\n', '\\n')).digest('hex')}]};
           }
           if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') events.push({sql});
           else if (sql.startsWith('INSERT INTO schema_migrations')) events.push({sql, params});
           else if (!sql.startsWith('SELECT pg_advisory_') && !sql.startsWith('CREATE TABLE IF NOT EXISTS schema_migrations')) events.push({sql});
+          if (${JSON.stringify(scenario)} === 'duplicate' && sql.includes('Duplicate normalized position names')) throw new Error('Duplicate normalized position names');
           return {rows: []};
         },
         release() {},
@@ -56,10 +57,18 @@ test('supported migration runner applies document identity after previously appl
     env: {...process.env, DATABASE_URL: 'postgresql://unused@127.0.0.1:1/test_migration_runner', TSX_TSCONFIG_PATH: fileURLToPath(new URL('../../tsconfig.json', import.meta.url))},
     encoding: 'utf8', timeout: 20000,
   });
-  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.status, scenario==='fresh'?0:1, result.stderr);
   const eventLine = result.stdout.split(/\r?\n/).find(line => line.startsWith('MIGRATION_EVENTS:'));
   assert.ok(eventLine, result.stdout);
-  assert.deepEqual(JSON.parse(eventLine.slice('MIGRATION_EVENTS:'.length)), [
+  const events=JSON.parse(eventLine.slice('MIGRATION_EVENTS:'.length));
+  if(scenario==='duplicate'){
+    assert.match(result.stderr,/Duplicate normalized position names/);
+    assert.deepEqual(events,[{sql:'BEGIN'},{sql},{sql:'ROLLBACK'}]);return;
+  }
+  if(scenario==='already-applied'){
+    assert.match(result.stderr,/Applied migration changed/);assert.deepEqual(events,[]);return;
+  }
+  assert.deepEqual(events, [
     {sql: 'BEGIN'},
     {sql},
     {sql: 'INSERT INTO schema_migrations(name,checksum) VALUES($1,$2)', params: [migration, createHash('sha256').update(sql.replaceAll('\r\n', '\n')).digest('hex')]},
