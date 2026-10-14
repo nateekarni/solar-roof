@@ -33,3 +33,10 @@ test('staff status labels localize every employee lifecycle state',()=>{
  assert.equal(model.staffStatusLabel('inactive','en'),'Inactive');
  assert.equal(model.staffStatusLabel('new-status','en'),'new-status');
 });
+
+test('staff position filters include canonical manager assignments without grants',()=>{
+ const manager={displayName:'Owner',email:'owner@example.test',status:'active',companyPositionId:'director',grant:null};
+ assert.deepEqual(model.filterEmployees([manager],'','all','director'),[manager]);
+ assert.deepEqual(model.filterEmployees([manager],'','all','unassigned'),[]);
+ assert.deepEqual(model.filterPositions([{id:'director',name:'Director'}],[manager],'','assigned'),[{id:'director',name:'Director'}]);
+});
