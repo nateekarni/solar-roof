@@ -20,6 +20,7 @@ export class PlatformAccessGuard implements CanActivate {
     // Generic lookup here mistakes the batch action for an ID and distinguishes
     // inaccessible from missing single items before their display-safe mapping.
     if (req.method === 'POST' && /^\/v1\/billing-cycles\/(?:[^/]+\/)?approve-issuance$/.test(path)) return true;
+    if (['GET','HEAD'].includes(req.method) && /^\/v1\/billing-cycles\/[^/]+\/issuance-preview$/.test(path)) return true;
     const permission=permissionForRoute(req.method,path);
     const domain=permission?.split('.')[0] as PermissionDomain|undefined;
     const employeeSites=domain?siteScope(req.user,domain):null;

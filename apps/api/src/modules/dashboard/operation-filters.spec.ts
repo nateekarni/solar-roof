@@ -34,10 +34,10 @@ test('filtered customer and report summaries expose the same filter columns as l
   assert.equal((await service.summary(resource,{id:'u',role:'owner'},filter))[0]?.value,2);
  }
 });
-test('financial cohort filters bind site and derived collection status with exact billing days',()=>{
+test('legacy financial cohort links bind the canonical billing view with exact billing days',()=>{
  const query=parseOperationQuery('billing',{siteId:'00000000-0000-4000-8000-000000000001',collectionStatus:'pending_review',from:'2026-09-05',to:'2026-09-20'});
  const params:unknown[]=[];const sql=operationPredicate('billing',query,params).join(' AND ');
- assert.match(sql,/siteId/);assert.match(sql,/collectionStatus/);assert.match(sql,/periodStart/);assert.deepEqual(params,['00000000-0000-4000-8000-000000000001','pending_review','2026-09-05','2026-09-21']);
+ assert.match(sql,/siteId/);assert.match(sql,/billingStatusView/);assert.doesNotMatch(sql,/collectionStatus/);assert.match(sql,/periodStart/);assert.deepEqual(params,['00000000-0000-4000-8000-000000000001','pending_verification','2026-09-05','2026-09-21']);
 });
 test('bill list exposes Bangkok overdue days and counts successful reminder slots once across recipients and channels',async()=>{
  let sql='';const service=new OperationsService({query:async(value:string)=>{sql=value;return {rows:[]};}} as unknown as DatabaseService);

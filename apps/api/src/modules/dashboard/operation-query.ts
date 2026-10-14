@@ -49,7 +49,11 @@ export function parseOperationQuery(resource: string, raw: Record<string, unknow
   const filters:Partial<OperationQuery>={};
   if(resource==='billing'&&raw.status!==undefined){const legacy=String(raw.status);if(!Object.hasOwn(legacyBillingStatusViews,legacy))throw new BadRequestException('Invalid legacy billing status');filters.billingStatusView=legacyBillingStatusViews[legacy]!;}
   if(raw.siteId!==undefined){if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(raw.siteId)))throw new BadRequestException('Invalid site filter');filters.siteId=String(raw.siteId);}
-  if(raw.collectionStatus!==undefined){if(!['paid','pending_review','overdue','awaiting_payment'].includes(String(raw.collectionStatus)))throw new BadRequestException('Invalid collection filter');filters.collectionStatus=raw.collectionStatus as NonNullable<OperationQuery['collectionStatus']>;}
+  if(raw.collectionStatus!==undefined){
+    if(!['paid','pending_review','overdue','awaiting_payment'].includes(String(raw.collectionStatus)))throw new BadRequestException('Invalid collection filter');
+    if(resource==='billing')filters.billingStatusView=raw.collectionStatus==='pending_review'?'pending_verification':raw.collectionStatus as BillingStatusView;
+    else filters.collectionStatus=raw.collectionStatus as NonNullable<OperationQuery['collectionStatus']>;
+  }
   if(raw.billingStatusView!==undefined){if(!['all','pending_issue_approval','awaiting_payment','pending_verification','overdue','paid','unsuccessful'].includes(String(raw.billingStatusView)))throw new BadRequestException('Invalid billing status view');filters.billingStatusView=raw.billingStatusView as NonNullable<OperationQuery['billingStatusView']>;}
   for(const filter of operationFilters[resource]??[]){
     const value=raw[filter.key];
@@ -69,7 +73,7 @@ export function operationPredicate(resource: string, query: OperationQuery, para
   const clauses: string[] = [];
   const bind = (value: unknown) => { params.push(value); return `$${params.length}`; };
   if(query.siteId)clauses.push(`q."siteId" = ${bind(query.siteId)}::uuid`);
-  if(query.collectionStatus)clauses.push(`q."collectionStatus" = ${bind(query.collectionStatus)}`);
+  if(resource!=='billing'&&query.collectionStatus)clauses.push(`q."collectionStatus" = ${bind(query.collectionStatus)}`);
   if(query.billingStatusView&&query.billingStatusView!=='all')clauses.push(`q."billingStatusView" = ${bind(query.billingStatusView)}`);
   for(const filter of operationFilters[resource]??[]){
     const value=query[filter.key];

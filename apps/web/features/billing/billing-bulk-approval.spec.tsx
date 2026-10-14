@@ -4,12 +4,30 @@ import test from 'node:test';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {BillingApprovalConfirmation,BillingApprovalResults,submitBillingApproval} from './billing-bulk-approval';
 import type {IssuanceApprovalResult} from '@solar/api-contracts';
-const rows=[{id:'b5ca6e69-688d-4d43-8b8f-99f2b0df26ca',billingStatusView:'pending_issue_approval',period:'2026-09',customerName:'บริษัท ตัวอย่าง',siteName:'สำนักงานใหญ่',amount:'1070',simulatedTax:'70',dueDate:'2026-10-15'}];
+const rows=[{id:'b5ca6e69-688d-4d43-8b8f-99f2b0df26ca',reviewToken:'a'.repeat(64),billingStatusView:'pending_issue_approval',period:'2026-09',customerName:'บริษัท ตัวอย่าง',siteName:'สำนักงานใหญ่',amount:'1070',simulatedTax:'70',dueDate:'2026-10-15'}];
 const approver={displayName:'สมชาย ใจดี',position:'กรรมการบริษัท',hasSignature:false};
 test('bulk confirmation shows readable selected bills and current approver',()=>{
  const html=renderToStaticMarkup(<BillingApprovalConfirmation rows={rows} approver={approver} locale="th" busy={false} onApprove={()=>{}}/>);
  assert.match(html,/2026-09.*บริษัท ตัวอย่าง.*สำนักงานใหญ่/s);assert.match(html,/สมชาย ใจดี.*กรรมการบริษัท/s);
  assert.doesNotMatch(html,/[0-9a-f]{8}-[0-9a-f]{4}/i);
+});
+
+test('replacement confirmation reviews proposed financial facts and actual recipient destinations',()=>{
+ const proposed={rate:'5',subtotal:'5000',tax:'500',amount:'5500',dueDate:'2026-11-15'};
+ const html=renderToStaticMarkup(<BillingApprovalConfirmation rows={[{...rows[0]!,pendingReplacement:proposed,recipients:[{name:'Review Recipient',email:'recipient@example.test'}]}]} approver={approver} locale="en" busy={false} onApprove={()=>{}}/>);
+ assert.match(html,/5,500.00/);assert.match(html,/5,000.00/);assert.match(html,/500.00/);assert.doesNotMatch(html,/1,070.00/);
+ assert.match(html,/Review Recipient/);assert.match(html,/recipient@example.test/);assert.match(html,/original remains valid/i);
+});
+
+test('review token travels with the single or per-item bulk approval',async()=>{
+ const calls:unknown[]=[];const post=async(path:string,body:unknown)=>{calls.push(body);return path.includes('/'+rows[0]!.id+'/')?results[0]:{results};};
+ const reviewed=[{...rows[0]!,reviewToken:'a'.repeat(64)}];
+ await submitBillingApproval(reviewed,'single',post);await submitBillingApproval(reviewed,'bulk',post);
+ assert.deepEqual(calls,[{reviewToken:'a'.repeat(64)},{billingCycleIds:[rows[0]!.id],reviewTokens:{[rows[0]!.id]:'a'.repeat(64)}}]);
+});
+test('approval review preserves the four-decimal proposed energy rate',()=>{
+ const html=renderToStaticMarkup(<BillingApprovalConfirmation rows={[{...rows[0]!,rate:'4.3217'}]} approver={approver} locale="en" busy={false} onApprove={()=>{}}/>);
+ assert.match(html,/4\.3217/);
 });
 const label={period:'2026-09',customer:'Server customer',site:'Server site'};
 const results:IssuanceApprovalResult[]=[{label,status:'issued',documentNumber:'INV-01',message:'ออกใบวางบิลแล้ว'},{label,status:'already_issued',documentNumber:'INV-02',message:'ออกใบวางบิลแล้วก่อนหน้านี้'},{label,status:'failed',message:'กรุณาคำนวณใบวางบิลใหม่ตามการตั้งค่าปัจจุบันก่อนอนุมัติ'}];
@@ -28,9 +46,9 @@ test('single and bulk submissions use reviewed routes and IDs only in request',a
  const requests:{path:string;body:unknown}[]=[];
  const post=async(path:string,body:unknown)=>{requests.push({path,body});return path.endsWith('ca/approve-issuance')?results[0]:{results};};
  assert.deepEqual(await submitBillingApproval(rows,'bulk',post),results);
- assert.deepEqual(requests[0],{path:'/v1/billing-cycles/approve-issuance',body:{billingCycleIds:[rows[0]!.id]}});
+ assert.deepEqual(requests[0],{path:'/v1/billing-cycles/approve-issuance',body:{billingCycleIds:[rows[0]!.id],reviewTokens:{[rows[0]!.id]:'a'.repeat(64)}}});
  assert.deepEqual(await submitBillingApproval(rows,'single',post),[results[0]]);
- assert.deepEqual(requests[1],{path:`/v1/billing-cycles/${rows[0]!.id}/approve-issuance`,body:{}});
+ assert.deepEqual(requests[1],{path:`/v1/billing-cycles/${rows[0]!.id}/approve-issuance`,body:{reviewToken:'a'.repeat(64)}});
 });
 test('empty, oversized and ineligible requests never submit',async()=>{
  let calls=0;const post=async()=>{calls++;return {results};};

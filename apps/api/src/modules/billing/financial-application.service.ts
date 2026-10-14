@@ -13,7 +13,7 @@ import { FinancialReadinessService } from '../financial-readiness/financial-read
 import { requireTestTransferAmount, validFinancialDate, decimal, sqlCalendarPeriod, actualEnergyDifference, requireTestSettlement, TEST_FINANCIAL_POLICY_HASH, localFinancialBinding } from './local-financial-policy.js';
 import {energyCharge,financialPolicySnapshot,financialPolicyHash,validateFinancialPolicy,financialTotals} from './financial-policy.js';
 import { BRAND_PRIMARY } from '@solar/domain';
-import type { PaymentSubmission } from '@solar/api-contracts';
+import type { PaymentSubmission, IssuancePreview } from '@solar/api-contracts';
 import { reviewedPaymentMetadata } from './payment-metadata.js';
 import { allocateDocumentNumber } from '../documents/document-number.js';
 import { FINANCIAL_TEMPLATE_VERSION, renderFinancialDocumentPdf } from '../documents/financial-document-pdf.js';
@@ -71,13 +71,14 @@ export class FinancialApplicationService {
    return {cycles:result.rows};
   });
  }
- private async issue(client:PoolClient,cycle:any,type:'invoice'|'receipt',actorId?:string,approver?:FinancialApprover) {
-  const existing=(await client.query('SELECT * FROM documents WHERE billing_cycle_id=$1 AND document_type=$2 AND is_current',[cycle.id,type])).rows;
-  if(existing.length&&!cycle.supersedes_document_id){if(existing.length!==1||!existing[0].snapshot?.policy||!['issued','finalized'].includes(existing[0].status))throw new ConflictException('Legacy document requires explicit reconciliation');return existing[0];}
+ /** Read-only snapshot facts, shared by review and the issuance transaction. */
+ private async documentFacts(client:PoolClient,cycle:any,type:'invoice'|'receipt',review=false) {
   const policy=validateFinancialPolicy(cycle);
   if(cycle.quality!=='complete'||!cycle.meter_snapshot)throw new ConflictException('Verified financial calculation required');
   const customer=(await client.query(`SELECT cfg.*,sc.id AS customer_id,sc.legal_name AS company_name,sc.tax_id,sc.tax_branch AS branch,sc.tax_address,sc.document_email AS billing_email,sc.phone AS billing_phone,s.name AS site_name,s.external_site_id,sc.name AS customer_name FROM site_billing_settings cfg JOIN sites s ON s.id=cfg.site_id JOIN customers sc ON sc.id=s.customer_id WHERE cfg.site_id=$1`,[cycle.site_id])).rows[0];
-  if(type==='invoice'&&cycle.billing_settings_version!==undefined&&cycle.billing_settings_version!==null&&cycle.billing_settings_version!==customer?.version)throw new ConflictException('Site billing configuration changed; recalculate before issuance');
+  // Review may show a stale draft alongside ready batch items. Approval still
+  // rejects its stale calculation independently before any official write.
+  if(!review&&type==='invoice'&&cycle.billing_settings_version!==undefined&&cycle.billing_settings_version!==null&&cycle.billing_settings_version!==customer?.version)throw new ConflictException('Site billing configuration changed; recalculate before issuance');
   const company=(await client.query('SELECT * FROM company_profile WHERE is_configured=true ORDER BY updated_at DESC LIMIT 1')).rows[0];
   if(!company?.company_name||!company.tax_id||!company.address||!customer?.company_name||!customer.tax_id||!customer.tax_address)throw new ConflictException('Complete issuer and customer tax identity required');
   if(!customer.tax_confirmed||customer.tax_rate===null)throw new ConflictException('Confirmed site tax configuration required');
@@ -88,7 +89,7 @@ export class FinancialApplicationService {
   if(!recipients.length||recipients.length!==customer.recipient_user_ids.length)throw new ConflictException('Selected verified organization recipients required');
   const payments=type==='receipt'?(await client.query("SELECT * FROM payments WHERE billing_cycle_id=$1 AND status='paid' ORDER BY submitted_at,id",[cycle.id])).rows:[];
   if(type==='receipt')requireTestSettlement(payments.map(p=>p.verified_amount),cycle.amount);
-  const {number,issueDate:day}=await allocateDocumentNumber(client,type);
+  const day=(await client.query("SELECT to_char(now() AT TIME ZONE 'Asia/Bangkok','YYYY-MM-DD') AS day")).rows[0].day;
   const invoiceOriginal=type==='receipt'?(await client.query("SELECT document_number,snapshot FROM documents WHERE billing_cycle_id=$1 AND document_type='invoice' AND is_current",[cycle.id])).rows[0]:undefined;const invoiceNumber=invoiceOriginal?.document_number;
   if(type==='receipt'&&!invoiceNumber)throw new ConflictException('Issued invoice reference required');
   const logo=await readFile(fileURLToPath(new URL('../../../../web/public/brand/solar-roof-document-stacked.png',import.meta.url)));
@@ -96,6 +97,35 @@ export class FinancialApplicationService {
   const cycleDates=(await client.query(`SELECT to_char(period_start,'YYYY-MM-DD') AS starts,to_char(period_end,'YYYY-MM-DD') AS ends,to_char(due_date,'YYYY-MM-DD') AS due FROM billing_cycles WHERE id=$1`,[cycle.id])).rows[0];
   cycle={...cycle,period_start:cycleDates.starts,period_end:cycleDates.ends,due_date:cycle.due_date&&typeof cycle.due_date==='string'?cycle.due_date:cycleDates.due};
   const snapshot={brandPrimary:BRAND_PRIMARY,...(invoiceNumber?{invoiceNumber}:{}),templateVersion:FINANCIAL_TEMPLATE_VERSION,policy:invoiceOriginal?.snapshot?.policy??(policy.scope==='TEST'?{...policy,...frozenFinancialTax(undefined,customer.tax_rate,customer.prices_include_tax)}:policy),policyHash:invoiceOriginal?.snapshot?.policyHash??cycle.policy_hash,cycle,customer:invoiceOriginal?.snapshot?.customer??customer,company:invoiceOriginal?.snapshot?.company??company,banks:invoiceOriginal?.snapshot?.banks??banks,payments,recipients:invoiceOriginal?.snapshot?.recipients??recipients,logo:logoDataUri,logoDataUri,language:'th',issueDate:day,dueDate:cycle.due_date?(typeof cycle.due_date==='string'?cycle.due_date.slice(0,10):cycle.due_date.toISOString().slice(0,10)):new Date(Date.parse(day)+customer.payment_term_days*86400000).toISOString().slice(0,10)};
+  return snapshot;
+ }
+ private reviewToken(snapshot:any,identity:DocumentIdentity){
+  // Only commercial facts participate: transient revision staging fields and
+  // approval time must not invalidate a review of the same pending proposal.
+  const facts={billingCycleId:snapshot.cycle.id,periodStart:snapshot.cycle.period_start,periodEnd:snapshot.cycle.period_end,rate:String(snapshot.cycle.rate),subtotal:String(snapshot.cycle.subtotal),tax:String(snapshot.cycle.simulated_tax),amount:String(snapshot.cycle.amount),meterSnapshot:snapshot.cycle.meter_snapshot,policy:snapshot.policy,policyHash:snapshot.policyHash,customer:snapshot.customer,company:snapshot.company,banks:snapshot.banks,recipients:snapshot.recipients,logo:snapshot.logoDataUri,issueDate:snapshot.issueDate,dueDate:snapshot.dueDate,identity};
+  return createHash('sha256').update(JSON.stringify(facts)).digest('hex');
+ }
+ async previewInvoice(id:string,actorId:string):Promise<IssuancePreview>{
+  return this.db.transaction(async client=>{
+   await client.query("SELECT pg_advisory_xact_lock(hashtext('production-financial-configuration'))");
+   const actor=await lockIssuanceActor(client,actorId);
+   const cycle=(await client.query('SELECT * FROM billing_cycles WHERE id=$1 FOR SHARE',[id])).rows[0];
+   const label=cycle?await authorizedIssuanceLabel(client,id,actor):undefined;
+   if(!label)throw new NotFoundException('ไม่สามารถออกเอกสารได้');
+   const replacement=(await client.query("SELECT * FROM billing_replacement_drafts WHERE billing_cycle_id=$1 AND status='pending_issue_approval'",[id])).rows[0];
+   if(!replacement&&cycle.status!=='pending_issue_approval'||replacement&&cycle.status!=='approved')throw new ConflictException('ใบวางบิลรายการนี้ยังไม่พร้อมอนุมัติออกเอกสาร');
+   const proposed=replacement?.snapshot?.cycle??cycle;
+   const snapshot=await this.documentFacts(client,proposed,'invoice',true);
+   const identity=await this.documentIdentity.resolve(client,actorId);
+   return {period:label.period,customerName:label.customer,siteName:label.site,rate:String(proposed.rate),subtotal:String(proposed.subtotal),tax:String(proposed.simulated_tax),amount:String(proposed.amount),dueDate:snapshot.dueDate,replacement:!!replacement,recipients:snapshot.recipients.map((recipient:any)=>({name:recipient.name,email:recipient.email})),approver:{displayName:identity.displayName,position:identity.position,hasSignature:!!identity.signatureDataUri},reviewToken:this.reviewToken(snapshot,identity)};
+  });
+ }
+ private async issue(client:PoolClient,cycle:any,type:'invoice'|'receipt',actorId?:string,approver?:FinancialApprover,reviewToken?:string) {
+  const existing=(await client.query('SELECT * FROM documents WHERE billing_cycle_id=$1 AND document_type=$2 AND is_current',[cycle.id,type])).rows;
+  if(existing.length&&!cycle.supersedes_document_id){if(existing.length!==1||!existing[0].snapshot?.policy||!['issued','finalized'].includes(existing[0].status))throw new ConflictException('Legacy document requires explicit reconciliation');return existing[0];}
+  const snapshot=await this.documentFacts(client,cycle,type);
+  if(reviewToken&&approver){const {approvedAt:_time,...identity}=approver;if(reviewToken!==this.reviewToken(snapshot,identity))throw new ConflictException('Issuance review changed; refresh before approval');}
+  const {number,issueDate:day}=await allocateDocumentNumber(client,type);
   const document={id:randomUUID(),document_number:number,document_type:type,snapshot:{...snapshot,...(approver?{approver:{...approver}}:{})},amount:cycle.amount};
   const bytes=await this.render(document);const sha256=createHash('sha256').update(bytes).digest('hex');
   // A replacement is staged only inside approval. The old original remains
@@ -175,7 +205,7 @@ export class FinancialApplicationService {
    return {cycle:updated,created:true};
   });
  }
- async approveInvoice(id:string,actorId:string){
+ async approveInvoice(id:string,actorId:string,reviewToken?:string){
   if(!actorId)throw new BadRequestException('บัญชีผู้อนุมัติจำเป็นต่อการออกเอกสาร');
   return this.db.transaction(async client=>{
    await client.query("SELECT pg_advisory_xact_lock(hashtext('production-financial-configuration'))");
@@ -197,7 +227,7 @@ export class FinancialApplicationService {
     if(policy.scope!==evidence.scope)throw new ConflictException('Financial scope differs from saved replacement');
     const identity=await this.documentIdentity.resolve(client,actorId);
     const approvedAt=(await client.query('SELECT now() AS value')).rows[0].value.toISOString();
-    const staged=await this.issue(client,{...proposed,document_revision:prior.revision+1,supersedes_document_id:prior.id},'invoice',actorId,{...identity,approvedAt});
+    const staged=await this.issue(client,{...proposed,document_revision:prior.revision+1,supersedes_document_id:prior.id},'invoice',actorId,{...identity,approvedAt},reviewToken);
     await client.query("UPDATE documents SET status='superseded',is_current=false WHERE id=$1",[prior.id]);
     const document=(await client.query("UPDATE documents SET status='issued',is_current=true WHERE id=$1 RETURNING *",[staged.id])).rows[0];
     await client.query('UPDATE billing_cycles SET rate=$2,amount=$3,subtotal=$4,simulated_tax=$5,meter_snapshot=$6,billing_settings_version=$7,policy_snapshot=$8,policy_hash=$9,financial_scope=$10 WHERE id=$1',[id,proposed.rate,proposed.amount,proposed.subtotal,proposed.simulated_tax,JSON.stringify(proposed.meter_snapshot),proposed.billing_settings_version,JSON.stringify(proposed.policy_snapshot),proposed.policy_hash,proposed.financial_scope]);
@@ -215,7 +245,7 @@ export class FinancialApplicationService {
    if(policy.scope!==evidence.scope)throw new ConflictException('Financial scope differs from saved cycle');
    const identity=await this.documentIdentity.resolve(client,actorId);
    const approvedAt=(await client.query('SELECT now() AS value')).rows[0].value.toISOString();
-   const document=await this.issue(client,cycle,'invoice',actorId,{...identity,approvedAt});
+   const document=await this.issue(client,cycle,'invoice',actorId,{...identity,approvedAt},reviewToken);
    await client.query("UPDATE billing_cycles SET status='approved' WHERE id=$1",[id]);
    return {created:true,label,document:{...document,documentNumber:document.document_number}};
   });

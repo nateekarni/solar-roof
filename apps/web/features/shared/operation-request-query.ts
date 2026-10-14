@@ -35,6 +35,9 @@ const legacyBillingViews:Readonly<Record<string,BillingStatusView>>={
 export function billingStatusViewFromQuery(params:Pick<URLSearchParams,'get'>):BillingStatusView {
  const explicit=params.get('billingStatusView');
  if(explicit!==null)return billingViews.includes(explicit)?explicit as BillingStatusView:'all';
+ const collection=params.get('collectionStatus');
+ if(collection==='pending_review')return 'pending_verification';
+ if(collection&&['paid','overdue','awaiting_payment'].includes(collection))return collection as BillingStatusView;
  const legacy=params.get('status')??'';
  return Object.hasOwn(legacyBillingViews,legacy)?legacyBillingViews[legacy]!:'all';
 }
@@ -42,7 +45,7 @@ export function billingStatusViewFromQuery(params:Pick<URLSearchParams,'get'>):B
 export function patchOperationQuery(current:URLSearchParams,patch:Partial<OperationQuery>):URLSearchParams {
  const params=new URLSearchParams(current);
  if(Object.keys(patch).some(key=>key!=='cursor'))params.delete('cursor');
- if(patch.billingStatusView!==undefined)params.delete('status');
+ if(patch.billingStatusView!==undefined){params.delete('status');params.delete('collectionStatus');}
  for(const [key,value] of Object.entries(patch)){if(value===undefined||value==='')params.delete(key);else params.set(key,String(value));}
  return params;
 }

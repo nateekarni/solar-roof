@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
-import type { IssuanceApprovalResult, IssuanceLabel, PendingIssuanceStatus } from '@solar/api-contracts';
+import type { IssuanceApprovalResult, IssuanceLabel, IssuancePreviewResponse, PendingIssuanceStatus } from '@solar/api-contracts';
 import { effectiveAuthorization, hasPermission, siteScope, type DomainGrant } from '../../common/auth/authorization.js';
 import type { ScopePrincipal } from '../../common/auth/route-policy.js';
 import type { DatabaseService } from '../../database/database.service.js';
@@ -17,7 +17,7 @@ export const PENDING_ISSUANCE_STATUS: PendingIssuanceStatus = 'pending_issue_app
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function validateIssuanceBatch(input: unknown): string[] {
-  if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(key => key !== 'billingCycleIds')) {
+  if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(key => !['billingCycleIds','reviewTokens'].includes(key))) {
     throw new BadRequestException('ข้อมูลอนุมัติไม่ถูกต้อง');
   }
   const raw = (input as { billingCycleIds?: unknown }).billingCycleIds;
@@ -27,6 +27,11 @@ export function validateIssuanceBatch(input: unknown): string[] {
   if (!Array.isArray(raw) || raw.length > 100 || Array.from(raw).some(value => typeof value !== 'string' || !UUID.test(value))) {
     throw new BadRequestException('เลือกใบวางบิล 1 ถึง 100 รายการ');
   }
+  const tokens=(input as {reviewTokens?:unknown}).reviewTokens;
+  if(tokens!==undefined){
+    if(!tokens||typeof tokens!=='object'||Array.isArray(tokens)||Object.keys(tokens).some(id=>!raw.includes(id))||raw.some(id=>!Object.hasOwn(tokens,id)))throw new BadRequestException('ข้อมูลตรวจอนุมัติไม่ถูกต้อง');
+    for(const token of Object.values(tokens))validateReviewToken(token);
+  }
   const seen = new Set<string>();
   return (raw as string[]).filter(id => {
     const key = id.toLowerCase();
@@ -34,6 +39,11 @@ export function validateIssuanceBatch(input: unknown): string[] {
     seen.add(key);
     return true;
   });
+}
+
+export function validateReviewToken(value:unknown):string {
+ if(typeof value!=='string'||! /^[0-9a-f]{64}$/.test(value))throw new BadRequestException('ข้อมูลตรวจอนุมัติไม่ถูกต้อง');
+ return value;
 }
 
 /** Copy only display fields, including the nested label, from an authorized result. */
@@ -69,10 +79,11 @@ export async function authorizedIssuanceLabel(client: Pick<PoolClient, 'query'>,
   return row ? { period: row.period, customer: row.customer, site: row.site } : undefined;
 }
 
-type FailureCode = 'unavailable' | 'approver_position' | 'draft_state' | 'draft_stale' | 'readiness_confirmation' | 'configuration_required' | 'unexpected';
+type FailureCode = 'unavailable' | 'approver_position' | 'draft_state' | 'draft_stale' | 'review_changed' | 'readiness_confirmation' | 'configuration_required' | 'unexpected';
 type SafeFailure = { code: FailureCode; message: string };
 const GENERIC_FAILURE = 'ไม่สามารถออกเอกสารได้';
 const CORRECTIVE_MESSAGES = {
+  review_changed: 'ข้อมูลตรวจอนุมัติเปลี่ยนแล้ว กรุณาเปิดตรวจสอบใหม่ก่อนอนุมัติ',
   approver_position: 'กรุณากำหนดตำแหน่งผู้อนุมัติในหน้าพนักงานและสิทธิ์',
   draft_state: 'กรุณาเตรียมใบวางบิลให้พร้อมตรวจอนุมัติก่อนออกเอกสาร',
   draft_stale: 'กรุณาคำนวณใบวางบิลใหม่ตามการตั้งค่าปัจจุบันก่อนอนุมัติ',
@@ -86,6 +97,7 @@ export function classifyIssuanceFailure(error: unknown): SafeFailure {
   if (error instanceof ConflictException) {
     const response = error.getResponse();
     if (typeof response === 'object' && (response as { code?: unknown }).code === 'DOCUMENT_APPROVER_POSITION_REQUIRED') code = 'approver_position';
+    else if(error.message==='Issuance review changed; refresh before approval')code='review_changed';
     else if (error.message === 'ใบวางบิลรายการนี้ยังไม่พร้อมอนุมัติออกเอกสาร') code = 'draft_state';
     else if (['Site billing configuration changed; recalculate before issuance', 'Financial scope differs from saved cycle', 'Verified financial calculation required'].includes(error.message)) code = 'draft_stale';
     else if (['Complete issuer and customer tax identity required', 'Confirmed site tax configuration required', 'Explicit paymentTermDays required', 'Usable configured payment account required', 'Selected verified organization recipients required'].includes(error.message)) code = 'configuration_required';
@@ -100,6 +112,25 @@ export function classifyIssuanceFailure(error: unknown): SafeFailure {
   return code ? { code, message: CORRECTIVE_MESSAGES[code] } : { code: 'unexpected', message: GENERIC_FAILURE };
 }
 
+/** Preview failures are display-safe per-item outcomes, with no issuance or audit writes. */
+export async function previewIssuanceResult(
+  db: Pick<DatabaseService, 'transaction'>,
+  financial: Pick<FinancialApplicationService, 'previewInvoice'>,
+  id: string,
+  actor: ScopePrincipal & {id:string},
+): Promise<IssuancePreviewResponse> {
+  try { return await financial.previewInvoice(id,actor.id); }
+  catch(error) {
+    let label: IssuanceLabel = {period:'—',customer:'รายการที่ไม่สามารถเข้าถึงได้',site:'—'};
+    let message=GENERIC_FAILURE;
+    try {
+      const visible=await db.transaction(async client=>authorizedIssuanceLabel(client,id,await lockIssuanceActor(client,actor.id)));
+      if(visible){label=visible;message=classifyIssuanceFailure(error).message;}
+    } catch { /* Missing, revoked and inaccessible remain indistinguishable. */ }
+    return {failure:displayResult({label,status:'failed',message})};
+  }
+}
+
 /** Each call delegates to the single approval transaction; never wrap a batch. */
 export async function approveIssuanceResult(
   db: Pick<DatabaseService, 'transaction'>,
@@ -107,11 +138,12 @@ export async function approveIssuanceResult(
   id: string,
   actor: ScopePrincipal & { id: string },
   batch?: { id: string; itemIndex: number },
+  reviewToken?:string,
 ): Promise<IssuanceApprovalResult> {
   let label: IssuanceLabel = { period: '—', customer: 'รายการที่ไม่สามารถเข้าถึงได้', site: '—' };
   let failure: SafeFailure = { code: 'unavailable', message: GENERIC_FAILURE };
   try {
-    const approval = await financial.approveInvoice(id, actor.id);
+    const approval = await financial.approveInvoice(id, actor.id,reviewToken);
     return displayResult({
       label: approval.label,
       status: approval.created ? 'issued' : 'already_issued',

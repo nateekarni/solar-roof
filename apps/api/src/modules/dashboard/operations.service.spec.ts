@@ -46,6 +46,7 @@ test('billing status mapping and scoped facet counts execute against isolated Po
    CREATE TABLE payments(id uuid PRIMARY KEY,billing_cycle_id uuid,amount numeric,verified_amount numeric,status text,paid_at timestamptz,slip_url text,rejection_reason text);
    CREATE TABLE documents(id uuid PRIMARY KEY,billing_cycle_id uuid,document_type text,is_current boolean,status text,revision int,document_number text,issue_date date);
    CREATE TABLE operational_delivery_outbox(billing_cycle_id uuid,state text,dedupe_key text);
+   CREATE TABLE billing_replacement_drafts(billing_cycle_id uuid,status text,snapshot jsonb);
    INSERT INTO customers VALUES('${id(100)}','Customer');
    INSERT INTO sites VALUES('${id(101)}','${id(100)}','Selected site','SITE-A'),('${id(102)}','${id(100)}','Other site','SITE-B');
    INSERT INTO site_account_assignments VALUES('${id(103)}','${id(101)}',NULL);
@@ -85,7 +86,7 @@ test('billing status mapping and scoped facet counts execute against isolated Po
   const none=await service.list('billing',owner,{...scope,search:'no matches'});
   assert.equal(none.facets?.billingStatusCounts?.all,0);assert.equal(none.rows.length,0);
   const collection=await service.list('billing',owner,{...scope,billingStatusView:'paid',collectionStatus:'overdue'});
-  assert.equal(collection.rows.length,0);assert.equal(collection.facets?.billingStatusCounts?.all,1);assert.equal(collection.facets?.billingStatusCounts?.overdue,1);
+  assert.equal(collection.rows.length,1);assert.equal(collection.rows[0]?.billingStatusView,'paid');assert.deepEqual(collection.facets,all.facets);
   const customer=await service.list('billing',{id:id(103),role:'customer_user',assignedSiteIds:[id(101)]},{from:'2026-09-01',to:'2026-09-30'});
   assert.deepEqual(customer.facets,all.facets);
   await client.query('UPDATE site_account_assignments SET revoked_at=now()');
@@ -104,6 +105,16 @@ test('billing status mapping and scoped facet counts execute against isolated Po
    if(expectedView!=='all')assert.ok(page.rows.every(row=>row.billingStatusView===expectedView));
    assert.deepEqual(page.facets,all.facets);
   }
+  await client.query(`
+   INSERT INTO billing_replacement_drafts VALUES('${id(2)}','pending_issue_approval','{"cycle":{"rate":"5.0000","subtotal":"5000.00","simulated_tax":"500.00","amount":"5500.00","due_date":"2026-11-15"}}');`);
+  const replacements=await service.list('billing',owner,{...scope,billingStatusView:'pending_issue_approval'});
+  assert.equal(replacements.facets?.billingStatusCounts?.pending_issue_approval,2);
+  const proposal=replacements.rows.find(row=>row.id===id(2));assert.ok(proposal);
+  assert.equal(proposal.status,'issued');assert.equal(proposal.invoiceNumber,'INV-2');assert.equal(Number(proposal.amount),100);
+  assert.deepEqual(proposal.pendingReplacement,{rate:'5.0000',subtotal:'5000.00',tax:'500.00',amount:'5500.00',dueDate:'2026-11-15'});
+  await client.query('UPDATE site_account_assignments SET revoked_at=NULL');
+  const customerOriginal=await service.list('billing',{id:id(103),role:'customer_user',assignedSiteIds:[id(101)]},{...scope,billingStatusView:'awaiting_payment'});
+  assert.equal(customerOriginal.rows[0]?.id,id(2));assert.equal(customerOriginal.rows[0]?.pendingReplacement,null);assert.equal(Number(customerOriginal.rows[0]?.amount),100);
  } finally {await client.query('ROLLBACK');client.release();await pool.end();}
 });
 

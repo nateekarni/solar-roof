@@ -29,6 +29,7 @@ import {financialPolicySnapshot,financialPolicyHash} from './financial-policy.js
 import {manualTotals} from './site-billing-policy.js';
 import {manualBillIds} from './manual-bill-identity.js';
 import {validateIssuanceBatch} from './issuance-approval.js';
+import {OperationsService} from '../dashboard/operations.service.js';
 
 test('legacy invoice generation and approval-status routes deny unauthorized actors through the registered guard chain',async()=>{
  for(const [handler,method,path] of [
@@ -202,8 +203,28 @@ test('production finance freezes configured policy and artifacts across calculat
   });
   await t.test('concurrent approvals freeze one approver, number, original PDF, audit and delivery outbox',async()=>{
    const before=await approvalState();
-   const results=await Promise.all([service.approveInvoice(cycle.id,owner.id),service.approveInvoice(cycle.id,owner.id),service.approveInvoice(cycle.id,owner.id)]);
+   const preview=await service.previewInvoice(cycle.id,owner.id);
+   assert.deepEqual(await approvalState(),before);
+   await assert.rejects(service.previewInvoice(cycle.id,randomUUID()),(error:any)=>error.getStatus()===404);
+   const recipient=(await pool.query('SELECT display_name,email FROM users WHERE id IN(SELECT unnest(recipient_user_ids) FROM site_billing_settings WHERE site_id=$1) ORDER BY id',[siteId])).rows[0];
+   assert.ok(preview.recipients.some(value=>value.name===recipient.display_name&&value.email===recipient.email));
+   assert.doesNotMatch(JSON.stringify(preview),/signatureDataUri|userId|data:image/);
+   const expectedDue=(await pool.query("SELECT to_char((now() AT TIME ZONE 'Asia/Bangkok')::date+payment_term_days,'YYYY-MM-DD') AS due FROM site_billing_settings WHERE site_id=$1",[siteId])).rows[0].due;
+   assert.equal(preview.dueDate,expectedDue);
+   const rollbackPreview=new Error('scoped preview test rollback');
+   await assert.rejects(db.transaction(async client=>{
+    const reviewer=(await client.query("SELECT id FROM users WHERE role='accountant' AND status='active' LIMIT 1")).rows[0];assert.ok(reviewer);
+    await client.query("INSERT INTO employee_domain_grants(user_id,domain,overrides,scope_mode,site_ids) VALUES($1,'business',$2,'selected','{}') ON CONFLICT(user_id,domain) DO UPDATE SET overrides=excluded.overrides,scope_mode='selected',site_ids='{}'",[reviewer.id,JSON.stringify({'business.billing.approve':true})]);
+    const application=new FinancialApplicationService({transaction:async(run:any)=>run(client)} as DatabaseService,readiness);
+    await assert.rejects(application.previewInvoice(cycle.id,reviewer.id),(error:any)=>error.getStatus()===404);
+    throw rollbackPreview;
+   }),error=>error===rollbackPreview);
+   await pool.query("UPDATE users SET display_name=display_name||' changed' WHERE id IN(SELECT unnest(recipient_user_ids) FROM site_billing_settings WHERE site_id=$1)",[siteId]);
+   await assert.rejects(service.approveInvoice(cycle.id,owner.id,preview.reviewToken),/review changed/i);assert.deepEqual(await approvalState(),before);
+   await pool.query("UPDATE users SET display_name=left(display_name,length(display_name)-8) WHERE id IN(SELECT unnest(recipient_user_ids) FROM site_billing_settings WHERE site_id=$1)",[siteId]);
+   const results=await Promise.all([service.approveInvoice(cycle.id,owner.id,preview.reviewToken),service.approveInvoice(cycle.id,owner.id,preview.reviewToken),service.approveInvoice(cycle.id,owner.id,preview.reviewToken)]);
    assert.equal(results.filter(result=>result.created).length,1);invoice=results[0]!.document;assert.ok(results.every(result=>result.document.id===invoice.id));
+   assert.equal(invoice.snapshot.dueDate,preview.dueDate);assert.deepEqual(invoice.snapshot.recipients.map(({name,email}:any)=>({name,email})),preview.recipients);
    approvedInvoice=invoice;
    assert.equal(invoice.snapshot.approver.userId,owner.id);assert.equal(invoice.snapshot.approver.displayName,'สมชาย ใจดี');assert.equal(invoice.snapshot.approver.position,'กรรมการบริษัท');assert.equal(invoice.snapshot.approver.signatureDataUri,signature);assert.ok(Number.isFinite(Date.parse(invoice.snapshot.approver.approvedAt)));
    const after=await approvalState();assert.equal(after.cycle.status,'approved');
@@ -331,6 +352,14 @@ test('production finance freezes configured policy and artifacts across calculat
    for(const field of ['documents','artifacts','outboxes'] as const)assert.equal(prepared.counts[field],before.counts[field]);
    assert.equal((await pool.query('SELECT is_current FROM documents WHERE id=$1',[invoice.id])).rows[0].is_current,true);
    assert.equal(Number((await pool.query('SELECT amount FROM billing_cycles WHERE id=$1',[cycle.id])).rows[0].amount),4753.1);
+   const operations=new OperationsService(db),actor={id:owner.id,role:'owner'};
+   const pendingPage=await operations.list('billing',actor,{billingStatusView:'pending_issue_approval',siteId});
+   assert.ok(pendingPage.rows.some(row=>row.id===cycle.id));assert.ok(pendingPage.facets!.billingStatusCounts!.pending_issue_approval>=1);
+   const detail=(await operations.detail('billing',cycle.id,actor)).row;
+   assert.equal(detail.status,'approved');assert.equal(detail.invoiceNumber,original.document_number);assert.equal(Number(detail.amount),4753.1);
+   assert.deepEqual(detail.pendingReplacement,{rate:'5.0000',amount:'5500.00',subtotal:'5000.00',tax:'500.00',dueDate:original.snapshot.dueDate});
+   const preview=await service.previewInvoice(cycle.id,owner.id);
+   assert.equal(preview.replacement,true);assert.equal(Number(preview.amount),5500);assert.equal(preview.dueDate,original.snapshot.dueDate);
    const replacementState=async()=>({cycle:(await pool.query('SELECT * FROM billing_cycles WHERE id=$1',[cycle.id])).rows[0],drafts:(await pool.query('SELECT * FROM billing_replacement_drafts ORDER BY id')).rows,documents:(await pool.query('SELECT * FROM documents ORDER BY id')).rows,artifacts:(await pool.query('SELECT * FROM document_artifacts ORDER BY document_id')).rows,outboxes:(await pool.query('SELECT * FROM financial_delivery_outbox ORDER BY id')).rows,series:(await pool.query('SELECT * FROM document_number_series ORDER BY prefix')).rows,audits:(await pool.query('SELECT * FROM audit_events ORDER BY id')).rows});
    const stable=await replacementState();
    const cancelledRollback=new Error('cancelled proposal fixture rollback');
@@ -376,7 +405,7 @@ test('production finance freezes configured policy and artifacts across calculat
    // Correction replay racing with approval must reuse either the proposal or
    // its issued original, never create a second pending replacement.
    const racingCorrection=propose();
-   const approved=await Promise.all([service.approveInvoice(cycle.id,owner.id),service.approveInvoice(cycle.id,owner.id)]);
+   const approved=await Promise.all([service.approveInvoice(cycle.id,owner.id,preview.reviewToken),service.approveInvoice(cycle.id,owner.id,preview.reviewToken)]);
    const racingResult=await racingCorrection;assert.ok([draft.id,approved[0].document.id].includes(racingResult.id));
    assert.deepEqual(approved.map(result=>result.created).sort(),[false,true]);assert.equal(approved[0].document.id,approved[1].document.id);
    invoice=approved[0].document;
@@ -469,9 +498,12 @@ test('production finance freezes configured policy and artifacts across calculat
    assert.equal(first.cycle.status,'pending_issue_approval');assert.equal('document' in first,false);assert.equal(first.cycle.id,replay.cycle.id);
    assert.equal(Number(first.cycle.subtotal),100);assert.equal(Number(first.cycle.simulated_tax),5.5);assert.equal(Number(first.cycle.amount),105.5);
    for(const field of ['documents','artifacts','outboxes'] as const)assert.equal((await approvalState()).counts[field],before.counts[field]);assert.deepEqual((await approvalState()).series,before.series);assert.equal(messages.length,mailBefore);
-   const issued=(await service.approveInvoice(first.cycle.id,owner.id)).document;assert.equal(issued.snapshot.policy.pricesIncludeTax,true);
-   const second=await manualController.manual({...input,idempotencyKey:'second-identical-'+schema},{user:{id:owner.id,role:'owner'}});assert.notEqual(second.cycle.id,first.cycle.id);
-   const issuedSecond=(await service.approveInvoice(second.cycle.id,owner.id)).document;assert.notEqual(issuedSecond.id,issued.id);
+   const preview=await service.previewInvoice(first.cycle.id,owner.id);assert.ok(preview.recipients.length);assert.match(preview.dueDate,/^\d{4}-\d{2}-\d{2}$/);
+   const issued=(await service.approveInvoice(first.cycle.id,owner.id,preview.reviewToken)).document;assert.equal(issued.snapshot.policy.pricesIncludeTax,true);
+   assert.equal(issued.snapshot.dueDate,preview.dueDate);assert.deepEqual(issued.snapshot.recipients.map(({name,email}:any)=>({name,email})),preview.recipients);
+   const second=await manualController.manual({...input,dueDate:'2026-12-15',idempotencyKey:'second-identical-'+schema},{user:{id:owner.id,role:'owner'}});assert.notEqual(second.cycle.id,first.cycle.id);
+   const explicit=await service.previewInvoice(second.cycle.id,owner.id);assert.equal(explicit.dueDate,'2026-12-15');
+   const issuedSecond=(await service.approveInvoice(second.cycle.id,owner.id,explicit.reviewToken)).document;assert.notEqual(issuedSecond.id,issued.id);assert.equal(issuedSecond.snapshot.dueDate,explicit.dueDate);
    await assert.rejects(manualController.manual({...input,lines:[{description:'Different work',quantity:'1',unitPrice:'105.5000'}]},{user:{id:owner.id,role:'owner'}}),/already used/);
    await pool.query('UPDATE site_billing_settings SET tax_confirmed=false WHERE site_id=$1',[siteId]);
    const cyclesBefore=(await pool.query('SELECT count(*)::int AS n FROM billing_cycles')).rows[0].n;

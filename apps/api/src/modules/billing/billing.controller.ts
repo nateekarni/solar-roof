@@ -30,7 +30,7 @@ import { Roles } from "../../common/roles.decorator.js";
 
 import { FinancialReadinessService } from "../financial-readiness/financial-readiness.service.js";
 import { FinancialApplicationService } from './financial-application.service.js';
-import { approveIssuanceResult, validateIssuanceBatch, type IssuanceApprovalResult } from './issuance-approval.js';
+import { approveIssuanceResult, previewIssuanceResult, validateIssuanceBatch, validateReviewToken, type IssuanceApprovalResult } from './issuance-approval.js';
 
 @Controller("v1")
 export class BillingController {
@@ -51,7 +51,8 @@ export class BillingController {
     const ids = validateIssuanceBatch(body);
     const results: IssuanceApprovalResult[] = [];
     const batchId = randomUUID();
-    for (const [itemIndex, id] of ids.entries()) results.push(await approveIssuanceResult(this.db, this.financial, id, actor, { id: batchId, itemIndex }));
+    const tokens=(body as {reviewTokens?:Record<string,string>}).reviewTokens;
+    for (const [itemIndex, id] of ids.entries()) results.push(await approveIssuanceResult(this.db, this.financial, id, actor, { id: batchId, itemIndex },tokens?.[id]));
     return { results };
   }
 
@@ -59,11 +60,19 @@ export class BillingController {
   @Post('billing-cycles/:id/approve-issuance')
   async approveIssuance(@Param('id') id: string, @Body() body: unknown, @Req() req: { user?: ScopedActor }) {
     const actor = this.issuanceActor(req);
-    if (body !== undefined && (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length)) {
+    if (body !== undefined && (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(key=>key!=='reviewToken'))) {
       throw new BadRequestException('ข้อมูลอนุมัติไม่ถูกต้อง');
     }
     validateIssuanceBatch({ billingCycleIds: [id] });
-    return approveIssuanceResult(this.db, this.financial, id, actor);
+    const token=body&&Object.hasOwn(body,'reviewToken')?validateReviewToken((body as {reviewToken:unknown}).reviewToken):undefined;
+    return approveIssuanceResult(this.db, this.financial, id, actor,undefined,token);
+  }
+
+  @Roles('owner','accountant')
+  @Get('billing-cycles/:id/issuance-preview')
+  async issuancePreview(@Param('id') id:string,@Req() req:{user?:ScopedActor}){
+    const actor=this.issuanceActor(req);validateIssuanceBatch({billingCycleIds:[id]});
+    return previewIssuanceResult(this.db,this.financial,id,actor);
   }
 
   @Roles("owner", "admin", "accountant")

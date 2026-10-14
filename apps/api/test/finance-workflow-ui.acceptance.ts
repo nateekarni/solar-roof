@@ -25,8 +25,8 @@ const admin=new Pool({connectionString:target.toString()});
 const pool=new Pool({connectionString:target.toString(),options:`-c search_path=${schema},public`,max:8});
 const db={pool,query:pool.query.bind(pool),transaction:DatabaseService.prototype.transaction} as unknown as DatabaseService;
 const readiness=new FinancialReadinessService(db),financial=new FinancialApplicationService(db,readiness),settings=new SettingsService(db);
-const ids={owner:randomUUID(),accountant:randomUUID(),recipient:randomUUID(),position:randomUUID(),reviewerPosition:randomUUID(),customer:randomUUID(),sites:[randomUUID(),randomUUID(),randomUUID()] as const};
-const recipients=[ids.recipient,randomUUID(),randomUUID()];
+const ids={owner:randomUUID(),accountant:randomUUID(),recipient:randomUUID(),position:randomUUID(),reviewerPosition:randomUUID(),customer:randomUUID(),sites:[randomUUID(),randomUUID(),randomUUID(),randomUUID()] as const};
+const recipients=[ids.recipient,randomUUID(),randomUUID(),randomUUID()];
 const ownerName='Somchai Approval',reviewerName='Suda Receipt Review';
 let apps:Awaited<ReturnType<typeof startAcceptanceApps>>|undefined;
 try{
@@ -45,7 +45,7 @@ try{
  await pool.query("INSERT INTO customers(id,name,code,region,legal_name,tax_id,tax_address,document_email,status) VALUES($1,'Bangkok Energy Customer','ACCEPTANCE','Bangkok','Bangkok Energy Customer Co., Ltd.','0105559123456','99 Rama IX Road, Bangkok','customer_user@acceptance.example.test','active')",[ids.customer]);
  await pool.query('UPDATE users SET customer_id=$2 WHERE id=$1',[ids.recipient,ids.customer]);
  for(const [i,id]of recipients.entries())if(i>0)await pool.query("INSERT INTO users(id,email,display_name,role,status,password_hash,email_verified_at,verified_email,customer_id) VALUES($1,$2,'Customer Contact','customer_user','active',$3,now(),$2,$4)",[id,`customer_${i}@acceptance.example.test`,auth.hashPassword(password),ids.customer]);
- const siteNames=['Single approval rooftop','Batch success rooftop','Batch corrective rooftop'];
+ const siteNames=['Single approval rooftop','Batch success rooftop','Batch corrective rooftop','Replacement approval rooftop'];
  for(const [i,id]of ids.sites.entries()){
   await pool.query("INSERT INTO sites(id,customer_id,name,capacity_mwp,status,timezone) VALUES($1,$2,$3,0.25,'active','Asia/Bangkok')",[id,ids.customer,siteNames[i]]);
   await pool.query("INSERT INTO site_billing_settings(site_id,service_start_date,payment_term_days,recipient_user_ids,tax_rate,tax_confirmed,prices_include_tax) VALUES($1,'2026-09-01',30,$2,7,true,false)",[id,[recipients[i]]]);
@@ -59,6 +59,7 @@ try{
   await pool.query("INSERT INTO billing_meters(id,site_id,device_id,semantic_field) VALUES($1,$2,$3,'energy.active.import.total')",[meter,id,device]);
   await pool.query("INSERT INTO billing_source_bindings(id,meter_id,site_id,device_id,profile_revision_id,source_tag,canonical_tag,source_unit,target_unit,conversion,measurement_purpose,created_by) VALUES($1,$2,$3,$4,$5,'energy','energy.active.import.total','kWh','kWh','identity','solar-delivered',$6)",[binding,meter,id,device,profile,ids.owner]);
   await pool.query('UPDATE billing_meters SET billing_source_binding_id=$2 WHERE id=$1',[meter,binding]);
+  if(i===3)for(const [date,value]of [['2026-09-01',1000],['2026-10-01',2000]])await pool.query("INSERT INTO telemetry_raw(id,device_id,site_id,source_time,received_time,raw_payload,normalized_value,unit,quality,ingestion_id,semantic_field,total_energy_kwh,payload_profile_revision_id,billing_source_binding_id) VALUES($1::uuid,$2,$3,($4::date::timestamp AT TIME ZONE 'Asia/Bangkok'),now(),$5,$6,'kWh','complete',$1::text,'energy.active.import.total',$6,$7,$8)",[randomUUID(),device,id,date,JSON.stringify({acceptance:true,source:'controlled boundary reading'}),value,profile,binding]);
   await pool.query("INSERT INTO rate_versions(id,site_id,effective_from,rate_type,rate,currency,changed_by,change_reason) VALUES($1,$2,'2026-09-01','fixed_kwh',4.3210,'THB',$3,'Controlled browser acceptance tariff')",[randomUUID(),id,ids.owner]);
  }
  const logo='data:image/png;base64,'+(await readFile(new URL('../../web/public/brand/solar-roof-mark.png',import.meta.url))).toString('base64');
@@ -66,17 +67,24 @@ try{
  await settings.saveBankAccount({bankName:'Bangkok Bank',bankCode:'BBL',accountName:'Siam Solar Workflow Co., Ltd.',accountNumber:'1234567890',branchName:'Head office',promptpayId:'',isDefault:true},ids.owner);
  await readiness.confirm({id:ids.owner,role:'owner'});
  const cycles:string[]=[];
- for(const siteId of ids.sites){const result=await financial.manualInvoice({siteId,lines:[{description:'Energy services',quantity:'1',unitPrice:'100'}],dueDate:'2026-11-15',idempotencyKey:randomUUID()},ids.owner);cycles.push(result.cycle.id);}
+ for(const [index,siteId] of ids.sites.entries()){
+  if(index===3){const result=await financial.calculate(siteId,'2026-09-01','2026-09-30',ids.owner);const cycle=result.cycles[0];await financial.prepareInvoice(cycle.id,ids.owner);cycles.push(cycle.id);}
+  else {const result=await financial.manualInvoice({siteId,lines:[{description:'Energy services',quantity:'1',unitPrice:'100'}],...(index===0?{}:{dueDate:'2026-11-15'}),idempotencyKey:randomUUID()},ids.owner);cycles.push(result.cycle.id);}
+ }
  // Persist a stale calculated-settings version to exercise a real independent
  // corrective failure, while retaining canonical pending eligibility in UI.
  await pool.query('UPDATE site_billing_settings SET version=version+1 WHERE site_id=$1',[ids.sites[2]]);
  assert.equal((await pool.query('SELECT count(*)::int n FROM documents')).rows[0].n,0);assert.equal((await pool.query('SELECT count(*)::int n FROM document_number_series')).rows[0].n,0);
- apps=await startAcceptanceApps(target.toString(),password,schema,ids.sites[0],false,ids.sites[2],{browserScript:'test/platform/finance-workflow-ui-browser.mjs',nextOutputDir:'.next/task7-webpack',fixture:{cycles,ids,ownerName,reviewerName,siteNames}});
+ const effectiveDueDate=(await pool.query("SELECT to_char((now() AT TIME ZONE 'Asia/Bangkok')::date+30,'YYYY-MM-DD') AS due")).rows[0].due;
+ apps=await startAcceptanceApps(target.toString(),password,schema,ids.sites[0],false,ids.sites[2],{browserScript:'test/platform/finance-workflow-ui-browser.mjs',nextOutputDir:process.env.NEXT_BUILD_OUTPUT_DIR??'.next/task7-webpack',fixture:{cycles,ids,ownerName,reviewerName,siteNames,effectiveDueDate}});
  apps.browser('issuance');
  const invoice=(await pool.query("SELECT * FROM documents WHERE billing_cycle_id=$1 AND document_type='invoice'",[cycles[0]])).rows[0];assert.ok(invoice?.document_number);
  const ownerIdentity=(await pool.query('SELECT display_name,signature_data,p.name AS position FROM users u JOIN employee_positions p ON p.id=u.company_position_id WHERE u.id=$1',[ids.owner])).rows[0];
  assert.equal(ownerIdentity.position,'Workflow Approval Director');assert.equal(invoice.snapshot.approver.userId,ids.owner);assert.equal(invoice.snapshot.approver.displayName,ownerName);assert.equal(invoice.snapshot.approver.position,ownerIdentity.position);assert.equal(invoice.snapshot.approver.signatureDataUri,ownerIdentity.signature_data);
- const issued=(await pool.query("SELECT billing_cycle_id,document_number FROM documents WHERE document_type='invoice' ORDER BY billing_cycle_id")).rows;assert.equal(issued.length,2);assert.ok(issued.some(row=>row.billing_cycle_id===cycles[1]));assert.ok(!issued.some(row=>row.billing_cycle_id===cycles[2]));
+ const issued=(await pool.query("SELECT billing_cycle_id,document_number FROM documents WHERE document_type='invoice' AND is_current ORDER BY billing_cycle_id")).rows;assert.equal(issued.length,3);assert.ok(issued.some(row=>row.billing_cycle_id===cycles[1]));assert.ok(!issued.some(row=>row.billing_cycle_id===cycles[2]));
+ assert.equal(invoice.snapshot.dueDate,effectiveDueDate);
+ const replacements=(await pool.query("SELECT * FROM documents WHERE billing_cycle_id=$1 ORDER BY revision",[cycles[3]])).rows;
+ assert.equal(replacements.length,2);assert.equal(replacements[0].status,'superseded');assert.equal(replacements[1].is_current,true);assert.equal(replacements[1].supersedes_document_id,replacements[0].id);assert.equal(Number(replacements[1].amount),5350);assert.equal(replacements[1].snapshot.dueDate,effectiveDueDate);
  assert.equal((await pool.query('SELECT status FROM billing_cycles WHERE id=$1',[cycles[2]])).rows[0].status,'pending_issue_approval');
  // The payment is a controlled real pending submission prerequisite. Its
  // approval and receipt allocation happen solely through the rendered UI.

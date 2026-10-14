@@ -46,8 +46,16 @@ test('changing a billing tab resets cursor, removes legacy status and preserves 
  assert.equal(next.get('billingStatusView'),'all');
  assert.equal(next.has('cursor'),false);
  assert.equal(next.has('status'),false);
- for(const key of ['search','from','to','siteId','collectionStatus','sort','direction','limit','custom'])assert.equal(next.get(key),initial.get(key),key);
+ assert.equal(next.has('collectionStatus'),false);
+ for(const key of ['search','from','to','siteId','sort','direction','limit','custom'])assert.equal(next.get(key),initial.get(key),key);
  assert.equal(initial.get('cursor'),'next');
+});
+
+test('legacy collection links select one billing view with explicit tab precedence',()=>{
+ for(const [collectionStatus,expected] of [['paid','paid'],['pending_review','pending_verification'],['overdue','overdue'],['awaiting_payment','awaiting_payment']] as const){
+  assert.equal(billingStatusViewFromQuery(new URLSearchParams({collectionStatus,status:'approved'})),expected);
+  assert.equal(billingStatusViewFromQuery(new URLSearchParams({collectionStatus,billingStatusView:'all'})),'all');
+ }
 });
 
 test('cursor navigation and nonbilling status changes retain their own filters',()=>{

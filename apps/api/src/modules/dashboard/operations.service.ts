@@ -11,7 +11,7 @@ const daysOverdue="greatest(0,(now() AT TIME ZONE 'Asia/Bangkok')::date-b.due_da
 const collectionStatus=`CASE WHEN b.status IN ('draft','cancelled','superseded') OR NOT EXISTS(SELECT 1 FROM documents invoice WHERE invoice.billing_cycle_id=b.id AND invoice.document_type='invoice' AND invoice.is_current AND invoice.status IN('issued','finalized')) THEN NULL WHEN ${approvedAmount}>=b.amount THEN 'paid' WHEN EXISTS(SELECT 1 FROM payments WHERE billing_cycle_id=b.id AND status='pending_verification') THEN 'pending_review' WHEN ${daysOverdue}>0 THEN 'overdue' ELSE 'awaiting_payment' END`;
 // Project once from the collection result so rows, tab filters, and counts cannot drift.
 const billingStatusView=`CASE
- WHEN q.status='pending_issue_approval' THEN 'pending_issue_approval'
+ WHEN q.status='pending_issue_approval' OR q."pendingReplacement" IS NOT NULL THEN 'pending_issue_approval'
  WHEN q."collectionStatus"='pending_review' THEN 'pending_verification'
  WHEN q."collectionStatus"='overdue' THEN 'overdue'
  WHEN q."collectionStatus"='paid' THEN 'paid'
@@ -45,7 +45,8 @@ export class OperationsService {
           p.rejection_reason AS "rejectionReason",d.id AS "invoiceId",r.id AS "receiptId",d.document_number AS "invoiceNumber",r.document_number AS "receiptNumber",
           CASE WHEN ${approvedAmount}>=b.amount OR b.status IN('draft','cancelled','superseded') THEN 0 ELSE ${daysOverdue} END AS "daysOverdue",
           (SELECT count(DISTINCT split_part(o.dedupe_key,':',3))::int FROM operational_delivery_outbox o WHERE o.billing_cycle_id=b.id AND o.state='sent' AND starts_with(o.dedupe_key,'reminder:'||b.id::text||':')) AS "successfulReminderCount",
-          ${collectionStatus} AS "collectionStatus"
+          ${collectionStatus} AS "collectionStatus",
+          ${user?.role!=='customer_user'&&hasPermission(user,'business.billing.view')?`(SELECT jsonb_build_object('rate',proposal.snapshot->'cycle'->>'rate','subtotal',proposal.snapshot->'cycle'->>'subtotal','tax',proposal.snapshot->'cycle'->>'simulated_tax','amount',proposal.snapshot->'cycle'->>'amount','dueDate',proposal.snapshot->'cycle'->>'due_date') FROM billing_replacement_drafts proposal WHERE proposal.billing_cycle_id=b.id AND proposal.status='pending_issue_approval')`:'NULL::jsonb'} AS "pendingReplacement"
           FROM billing_cycles b JOIN sites si ON si.id=b.site_id JOIN customers s ON s.id=si.customer_id
           LEFT JOIN LATERAL (SELECT * FROM payments WHERE billing_cycle_id=b.id ORDER BY paid_at DESC NULLS LAST,id DESC LIMIT 1) p ON true
           LEFT JOIN LATERAL (SELECT id,document_number,issue_date FROM documents WHERE billing_cycle_id=b.id AND document_type='invoice' AND is_current ORDER BY revision DESC,id DESC LIMIT 1) d ON true

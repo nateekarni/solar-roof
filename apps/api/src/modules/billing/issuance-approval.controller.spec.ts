@@ -1,7 +1,7 @@
 import 'reflect-metadata';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PATH_METADATA, METHOD_METADATA } from '@nestjs/common/constants.js';
 import { BillingController } from './billing.controller.js';
 import { effectiveAuthorization } from '../../common/auth/authorization.js';
@@ -46,7 +46,7 @@ function harness(){
   return {rows:row&&(scope===null||scope.includes(row.siteId))?[{...row.label,id:params[0],siteId:row.siteId}]:[]};
  };
  const db={query,transaction:async(run:any)=>run({query})};
- const financial={approveInvoice:async(id:string,idOfActor:string)=>{
+ const financial={previewInvoice:async()=>{throw new ConflictException('Selected verified organization recipients required');},approveInvoice:async(id:string,idOfActor:string)=>{
   assert.equal(idOfActor,actorId);
   const label=await authorizedIssuanceLabel(db as any,id,await lockIssuanceActor(db as any,idOfActor));
   if(!label)throw new NotFoundException('ไม่สามารถออกเอกสารได้');
@@ -67,6 +67,15 @@ test('approval routes register the static batch action before every billing-cycl
  assert.ok(batch>=0);assert.ok(single>batch);
  assert.equal(routes[batch]!.method,1);assert.equal(routes[single]!.method,1);
  for(const [index,route] of routes.entries())if(route.path?.startsWith('billing-cycles/:'))assert.ok(index>batch);
+});
+
+test('preview failures return scoped display-safe per-item outcomes without issuing',async()=>{
+ const {controller,attempts,issued,setScope}=harness();
+ assert.deepEqual(await controller.issuancePreview(first,{user:actor}),{failure:{label:{period:'2026-09',customer:'บริษัท ก',site:'โรงงาน ก'},status:'failed',message:'กรุณาตรวจสอบการตั้งค่าการออกเอกสารและความพร้อมด้านบัญชี'}});
+ assert.deepEqual(await controller.issuancePreview(third,{user:actor}),{failure:unavailable});
+ assert.deepEqual(await controller.issuancePreview(missing,{user:actor}),{failure:unavailable});
+ setScope([]);assert.deepEqual(await controller.issuancePreview(first,{user:actor}),{failure:unavailable});
+ assert.deepEqual(attempts,[]);assert.equal(issued.size,1);
 });
 
 test('single approval returns only authorized labels and saved number on issue and replay',async()=>{
@@ -128,6 +137,17 @@ test('malformed single IDs or payload overrides and invalid batches fail before 
  assert.deepEqual(attempts,[]);
 });
 
+test('review tokens are validated and forwarded for single and each independent batch item',async()=>{
+ const calls:unknown[]=[];const token='a'.repeat(64);
+ const financial={approveInvoice:async(...args:unknown[])=>{calls.push(args);return {created:true,label:{period:'2026-09',customer:'Customer',site:'Site'},document:{documentNumber:'INV1'}};}};
+ const controller=new BillingController({} as DatabaseService,{} as FinancialReadinessService,financial as unknown as FinancialApplicationService,{} as ContractPdfService);
+ await controller.approveIssuance(first,{reviewToken:token},{user:actor});
+ await controller.approveMany({billingCycleIds:[first,second],reviewTokens:{[first]:token,[second]:'b'.repeat(64)}},{user:actor});
+ assert.deepEqual(calls,[[first,actorId,token],[first,actorId,token],[second,actorId,'b'.repeat(64)]]);
+ for(const reviewToken of ['',null,123,'raw'])await assert.rejects(controller.approveIssuance(first,{reviewToken},{user:actor}),BadRequestException);
+ await assert.rejects(controller.approveMany({billingCycleIds:[first,second],reviewTokens:{[first]:token}},{user:actor}),BadRequestException);
+});
+
 test('label lookup failures never expose database errors or authorize issuance',async()=>{
  const {controller,attempts,setLookupFail}=harness();setLookupFail();
  assert.deepEqual(await (controller as any).approveMany({billingCycleIds:[first]},{user:actor}),{results:[unavailable]});
@@ -162,4 +182,11 @@ test('registered guard chain permits granted staff and preserves identical inacc
   outputs.push(await controller.approveIssuance(id,{}, {user:actor}));
  }
  assert.deepEqual(outputs,[unavailable,unavailable]);
+});
+
+test('preview guard delegates scoped existence to its live authorized projection',async()=>{
+ const context={getHandler:()=>BillingController.prototype.issuancePreview,getClass:()=>BillingController,switchToHttp:()=>({getRequest:()=>({path:`/v1/billing-cycles/${third}/issuance-preview`,method:'GET',user:actor})})} as unknown as ExecutionContext;
+ const db={query:async()=>{throw new Error('Preview must not reveal existence before its scoped projection');}} as unknown as DatabaseService;
+ assert.equal(new RolesGuard(new Reflector()).canActivate(context),true);
+ assert.equal(await new PlatformAccessGuard(db,new Reflector()).canActivate(context),true);
 });

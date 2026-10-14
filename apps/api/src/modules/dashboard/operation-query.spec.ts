@@ -2,6 +2,17 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { operationPageSql, operationPredicate, parseOperationQuery } from './operation-query.js';
 
+test('billing collection aliases normalize into the canonical tab and cannot constrain it',()=>{
+ for(const [collectionStatus,expected] of [['paid','paid'],['pending_review','pending_verification'],['overdue','overdue'],['awaiting_payment','awaiting_payment']] as const){
+  const legacy=parseOperationQuery('billing',{collectionStatus,status:'approved'});
+  assert.equal(legacy.billingStatusView,expected);assert.equal(legacy.collectionStatus,undefined);
+  const explicit=parseOperationQuery('billing',{collectionStatus,billingStatusView:'pending_issue_approval'});
+  assert.equal(explicit.billingStatusView,'pending_issue_approval');assert.equal(explicit.collectionStatus,undefined);
+  assert.deepEqual(operationPredicate('billing',explicit,[]),['q."billingStatusView" = $1']);
+ }
+ assert.equal(parseOperationQuery('receipts',{collectionStatus:'paid'}).collectionStatus,'paid');
+});
+
 test('billing status views validate the tab vocabulary and reject raw or unrelated filters',()=>{
  for(const status of ['all','pending_issue_approval','awaiting_payment','pending_verification','overdue','paid','unsuccessful']) {
   assert.equal(parseOperationQuery('billing',{billingStatusView:status}).billingStatusView,status);

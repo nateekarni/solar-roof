@@ -50,6 +50,7 @@ export interface IssuanceLabel {
 /** Internal routing references are accepted only in the request. */
 export interface IssuanceApprovalRequest {
   billingCycleIds: string[];
+  reviewTokens?:Record<string,string>;
 }
 
 /** Display-safe result; deliberately independent of OperationRow and its IDs. */
@@ -65,6 +66,8 @@ export interface IssuanceApprovalBatch {
 }
 
 export interface BillingRow extends OperationRow {
+ /** Proposed correction; original cycle amounts and issued document stay authoritative until approval. */
+ pendingReplacement?: BillingReplacementProposal | null;
  payments?: PaymentTransferRow[];
  /** Persisted calculation tax, shown before issuance without recalculating in the browser. */
  simulatedTax?: string | null;
@@ -73,6 +76,16 @@ export interface BillingRow extends OperationRow {
  invoiceId: string | null; receiptId: string | null;
  invoiceNumber: string | null; receiptNumber: string | null;
 }
+export interface BillingReplacementProposal {
+ rate:string;subtotal:string;tax:string;amount:string;dueDate:string|null;
+}
+/** Display-safe review facts. reviewToken is opaque request metadata, never rendered. */
+export interface IssuancePreview {
+ period:string;customerName:string;siteName:string;rate:string;subtotal:string;tax:string;amount:string;dueDate:string;
+ replacement:boolean;recipients:Array<{name:string;email:string}>;
+ approver:{displayName:string;position:string;hasSignature:boolean};reviewToken:string;
+}
+export type IssuancePreviewResponse = IssuancePreview | {failure: IssuanceApprovalResult};
 export interface OperationAction { id: string; label: string; enabled: boolean; reason?: string; }
 export interface PersistedDocumentRow extends OperationRow {
  siteId: string; billingCycleId: string | null; documentNumber: string;

@@ -21,7 +21,7 @@ test('billing tabs expose translated names and scoped counts with the selected v
  assert.doesNotMatch(html,/pending_issue_approval|pending_verification/);
 });
 
-test('billing toolbar renders tabs below search and dates while retaining collection controls',()=>{
+test('billing toolbar replaces both status dropdowns with tabs below search and dates',()=>{
  const html=renderToStaticMarkup(<AppRouterContext.Provider value={{bfcacheId:'test',back(){},forward(){},refresh(){},push(){},replace(){},prefetch(){}}}>
   <SearchParamsContext.Provider value={new URLSearchParams('search=school&billingStatusView=paid')}><PathnameContext.Provider value="/billing">
    <SessionUserProvider user={{id:'session-user',email:'user@example.test',displayName:'Officer',role:'owner'}}>
@@ -32,7 +32,7 @@ test('billing toolbar renders tabs below search and dates while retaining collec
  const tabs=html.indexOf('role="tablist"');
  assert.ok(tabs>html.indexOf('id="billing-search"'));
  assert.ok(tabs>html.indexOf('ช่วงเวลา'));
- assert.match(html,/สถานะการชำระเงิน/);
+ assert.doesNotMatch(html,/สถานะการชำระเงิน/);
  assert.doesNotMatch(html,/aria-label="สถานะ"/);
  assert.match(html,/120/);
  const panelId=/<div[^>]*id="([^"]+)"[^>]*role="tabpanel"/.exec(html)?.[1];
@@ -47,6 +47,17 @@ test('English billing tabs have human names and default missing counts to zero',
  assert.match(html,/Awaiting evidence review/);
  assert.match(html,/Unsuccessful/);
  assert.equal((html.match(/>0<\/span>/g)??[]).length,7);
+});
+
+test('receipts retain their independent collection filter without billing tabs',()=>{
+ const html=renderToStaticMarkup(<AppRouterContext.Provider value={{bfcacheId:'test',back(){},forward(){},refresh(){},push(){},replace(){},prefetch(){}}}>
+  <SearchParamsContext.Provider value={new URLSearchParams('collectionStatus=paid')}><PathnameContext.Provider value="/receipts">
+   <SessionUserProvider user={{id:'session-user',email:'user@example.test',displayName:'Officer',role:'owner'}}>
+    <OperationQueryTable resource="receipts" title="ใบเสร็จ" summary={[]} initial={{idKey:'id',columns:[],rows:[],page:{limit:25,nextCursor:null,hasMore:false}}}/>
+   </SessionUserProvider>
+  </PathnameContext.Provider></SearchParamsContext.Provider>
+ </AppRouterContext.Provider>);
+ assert.match(html,/สถานะการชำระเงิน/);assert.doesNotMatch(html,/role="tablist"/);
 });
 
 test('display-safe tab values produce the public billing status view',()=>{

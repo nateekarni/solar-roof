@@ -25,11 +25,12 @@ export function permissionForRoute(method:string,rawPath:string):string|undefine
  else if(/^\/v1\/settings\/technical(?:\/|$)/.test(path))resource='technical.settings';
  else if(/^\/v1\/dashboard\/(?:financial|revenue)(?:\/|$)/.test(path))resource='business.billing';
  if(!resource)return undefined;
- const action=/(?:download|export)(?:\/|$)/.test(path)?'download':/(?:approve|approve-issuance|verify-payment)(?:\/|$)/.test(path)?'approve':['GET','HEAD'].includes(method)?'view':'edit';
+ const action=/(?:download|export)(?:\/|$)/.test(path)?'download':/(?:approve|approve-issuance|issuance-preview|verify-payment)(?:\/|$)/.test(path)?'approve':['GET','HEAD'].includes(method)?'view':'edit';
  return `${resource}.${action}`;
 }
 export function authorizedRoute(user:AuthorizationPrincipal|undefined,method:string,path:string):boolean {
  if(!user?.role)return false;
+ if(/^\/v1\/billing-cycles\/[^/]+\/issuance-preview(?:\?|$)/.test(path))return hasPermission(user,'business.billing.approve');
  if(/^\/v1\/settings\/finance-readiness(?:\/|$)/.test(path))return routeAllowed(user.role,method,path);
  if(isOwnerCompanyMutation(method,path))return user.role==='owner';
  if(/^\/v1\/operations\/contracts\/[^/]+\/original$/.test(path)&&method==='POST')return ['owner','accountant'].includes(user.role)&&hasPermission(user,'business.billing.edit');

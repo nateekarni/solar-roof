@@ -8,7 +8,7 @@ const {build}=createRequire(import.meta.resolve('tsx'))('esbuild');
 const ids=['b5ca6e69-688d-4d43-8b8f-99f2b0df26ca','b5ca6e69-688d-4d43-8b8f-99f2b0df26cb'];
 const rows=ids.map((id,index)=>({id,period:'2026-09',customerName:'บริษัท ตัวอย่าง',siteName:`Roof ${index+1}`,amount:'1070',simulatedTax:'70',dueDate:'2026-10-15',status:'draft',billingStatusView:'pending_issue_approval'}));
 const results=[{label:{period:'2026-09',customer:'Server customer',site:'Server roof'},status:'issued',documentNumber:'INV-01',message:'ออกใบวางบิลแล้ว'},{label:{period:'2026-09',customer:'Server customer',site:'Server failed roof'},status:'failed',message:'กรุณาคำนวณใบวางบิลใหม่ตามการตั้งค่าปัจจุบันก่อนอนุมัติ'}];
-async function fixture(position='กรรมการบริษัท',{denyApproval=false,rejectAfterFirst=false,surface='table',legacySeed=false}={}){
+async function fixture(position='กรรมการบริษัท',{denyApproval=false,rejectAfterFirst=false,surface='table',legacySeed=false,previewUnavailableSecond=false}={}){
  const user={id:'actor',email:'actor@example.test',displayName:'สมชาย ใจดี',role:'accountant',companyPosition:position,hasSignature:false};
  const legacyUser={id:user.id,email:user.email,displayName:user.displayName,role:user.role};
  const initial={columns:[],rows,idKey:'id',page:{limit:25,nextCursor:null,hasMore:false},facets:{billingStatusCounts:{all:2,pending_issue_approval:2,awaiting_payment:0,pending_verification:0,overdue:0,paid:0,unsuccessful:0}}};
@@ -32,7 +32,8 @@ async function fixture(position='กรรมการบริษัท',{denyA
  page.on('pageerror',error=>errors.push(error.message));
  await page.route('http://approval.test/**',async route=>{
   const request=route.request(),path=new URL(request.url()).pathname;
-  if(request.method()==='POST'){posts.push({path,body:request.postDataJSON()});if(rejectAfterFirst&&submitted){await route.fulfill({status:500,json:{message:'Internal failure b5ca6e69-688d-4d43-8b8f-99f2b0df26ca'}});return;}submitted=true;await route.fulfill({json:path=== '/v1/billing-cycles/approve-issuance'?{results}:results[0]});}
+  if(request.method()==='POST'){posts.push({path,body:request.postDataJSON()});if(rejectAfterFirst&&submitted){await route.fulfill({status:500,json:{message:'Internal failure b5ca6e69-688d-4d43-8b8f-99f2b0df26ca'}});return;}submitted=true;await route.fulfill({json:path=== '/v1/billing-cycles/approve-issuance'?{results:previewUnavailableSecond?[results[0]]:results}:results[0]});}
+  else if(path.endsWith('/issuance-preview')){gets.push(path);const row=rows.find(row=>path.includes(row.id));await route.fulfill({json:previewUnavailableSecond&&row.id===ids[1]?{failure:results[1]}:{...row,rate:'4',subtotal:'1000',tax:'70',dueDate:'2026-11-15',recipients:[{name:'Review Recipient',email:'recipient@example.test'}],approver:{displayName:user.displayName,position:user.companyPosition,hasSignature:user.hasSignature},reviewToken:'a'.repeat(64)}});}
   else if(path==='/v1/auth/me')await route.fulfill({json:legacyUser});
   else if(path==='/v1/me'){gets.push(path);await route.fulfill({json:user});}
   else if(path==='/v1/auth/capabilities')await route.fulfill({json:{actions:[],unavailable:{},operationsActions:denyApproval?[]:['approve_invoice']}});
@@ -54,7 +55,7 @@ test('partial bulk completion refreshes counts, clears selection and keeps failu
   await dialog.getByRole('button',{name:'Approve and issue',exact:true}).click();
   await page.getByText('1 still awaiting approval',{exact:true}).waitFor();
   await page.getByRole('tab',{name:/Awaiting issuance approval.*1/}).waitFor();
-  assert.deepEqual(posts,[{path:'/v1/billing-cycles/approve-issuance',body:{billingCycleIds:ids}}]);
+  assert.deepEqual(posts,[{path:'/v1/billing-cycles/approve-issuance',body:{billingCycleIds:ids,reviewTokens:Object.fromEntries(ids.map(id=>[id,'a'.repeat(64)]))}}]);
   assert.ok(gets.includes('/v1/operations/billing/summary'));
   const pending=page.getByRole('checkbox',{name:'Select 2026-09 บริษัท ตัวอย่าง Roof 2',exact:true});assert.equal(await pending.getAttribute('aria-checked'),'false');
   await pending.click();assert.equal(await pending.getAttribute('aria-checked'),'true');
@@ -62,13 +63,26 @@ test('partial bulk completion refreshes counts, clears selection and keeps failu
   assert.doesNotMatch(await page.locator('body').innerHTML(),/b5ca6e69/);assert.deepEqual(errors,[]);
  }finally{await browser.close();}
 });
-test('row approval uses the single endpoint with an empty body',async()=>{
+test('row approval reviews actual recipients and effective date before submitting its token',async()=>{
  const {browser,page,posts,errors}=await fixture();try{
   await page.getByRole('button',{name:'Open actions menu',exact:true}).first().click();
   await page.getByRole('menuitem',{name:'Approve and issue',exact:true}).click();
+  await page.getByText('Review Recipient · recipient@example.test',{exact:true}).waitFor();
+  assert.match(await page.getByRole('dialog').innerText(),/15 November 2026/);
   await page.getByRole('dialog').getByRole('button',{name:'Approve and issue',exact:true}).click();
   await page.getByText('1 document issued',{exact:true}).waitFor();
-  assert.deepEqual(posts,[{path:`/v1/billing-cycles/${ids[0]}/approve-issuance`,body:{}}]);assert.deepEqual(errors,[]);
+  assert.deepEqual(posts,[{path:`/v1/billing-cycles/${ids[0]}/approve-issuance`,body:{reviewToken:'a'.repeat(64)}}]);assert.deepEqual(errors,[]);
+ }finally{await browser.close();}
+});
+
+test('an unavailable preview stays pending while other reviewed bills can be approved',async()=>{
+ const {browser,page,posts}=await fixture('Director',{previewUnavailableSecond:true});try{
+  await page.getByRole('checkbox',{name:'Select all eligible bills on this page',exact:true}).check();await page.getByRole('button',{name:'Approve and issue',exact:true}).click();
+  const dialog=page.getByRole('dialog');await dialog.getByText(/Server failed roof/).waitFor();
+  await dialog.getByRole('button',{name:'Approve and issue',exact:true}).click();
+  await page.waitForFunction(()=>!document.querySelector('[role=dialog]'));
+  assert.deepEqual(posts[0],{path:'/v1/billing-cycles/approve-issuance',body:{billingCycleIds:[ids[0]],reviewTokens:{[ids[0]]:'a'.repeat(64)}}});
+  assert.match(await page.locator('body').innerText(),/Server failed roof.*Recalculate/s);
  }finally{await browser.close();}
 });
 test('missing position prevents submission and provides account navigation',async()=>{
@@ -106,7 +120,7 @@ for(const surface of ['record','modal']){
    await page.getByRole('dialog').last().getByRole('button',{name:'Approve and issue',exact:true}).click();
    await page.getByText('1 document issued',{exact:true}).waitFor();
    await page.waitForFunction(()=>!Array.from(document.querySelectorAll('button')).some(button=>button.textContent==='Approve and issue'));
-   assert.match(await page.locator('body').innerText(),/Server customer.*Server roof/s);assert.deepEqual(posts,[{path:`/v1/billing-cycles/${ids[0]}/approve-issuance`,body:{}}]);assert.deepEqual(errors,[]);
+   assert.match(await page.locator('body').innerText(),/Server customer.*Server roof/s);assert.deepEqual(posts,[{path:`/v1/billing-cycles/${ids[0]}/approve-issuance`,body:{reviewToken:'a'.repeat(64)}}]);assert.deepEqual(errors,[]);
   }finally{await browser.close();}
  });
 }
@@ -115,11 +129,10 @@ for(const surface of ['record','table']){
   const {browser,page,gets,errors}=await fixture('Live Director',{surface,legacySeed:true});try{
    if(surface==='table')await page.getByRole('checkbox',{name:'Select all eligible bills on this page',exact:true}).click();
    await page.getByRole('button',{name:'Approve and issue',exact:true}).click();
-   const dialog=page.getByRole('dialog');await dialog.waitFor();assert.equal(await dialog.getByRole('button',{name:'Approve and issue',exact:true}).isDisabled(),true);
-   assert.match(await dialog.innerText(),/Position not assigned/);
+   const dialog=page.getByRole('dialog');await dialog.waitFor();
    await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
    await page.getByText('Company position: Live Director',{exact:true}).waitFor();
-   assert.equal(await dialog.getByRole('button',{name:'Approve and issue',exact:true}).isDisabled(),false);assert.ok(gets.includes('/v1/me'));assert.deepEqual(errors,[]);
+   await page.waitForFunction(()=>Array.from(document.querySelectorAll('[role=dialog] button')).some(button=>button.textContent==='Approve and issue'&&!button.disabled));assert.ok(gets.some(path=>path.endsWith('/issuance-preview')));assert.ok(gets.includes('/v1/me'));assert.deepEqual(errors,[]);
   }finally{await browser.close();}
  });
 }

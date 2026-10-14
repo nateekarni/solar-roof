@@ -16,10 +16,11 @@ page.on('pageerror',error=>errors.push(error.message));
 page.on('response',response=>{const req=response.request();if(['POST','PATCH','PUT'].includes(req.method())&&!req.url().includes('/auth/'))mutations.push({path:new URL(req.url()).pathname,method:req.method(),status:response.status()});});
 await context.tracing.start({screenshots:true,snapshots:true,sources:false});
 const web=fixture.webUrl,uuid=/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+const effectiveDueDateText=new Intl.DateTimeFormat('en-GB',{day:'numeric',month:'long',year:'numeric',timeZone:'Asia/Bangkok'}).format(new Date(fixture.effectiveDueDate));
 async function readable(scope=page.locator('main').first()){
  const text=await scope.innerText();assert.doesNotMatch(text,uuid);assert.doesNotMatch(text,/pending_issue_approval|pending_verification|awaiting_payment/);assert.doesNotMatch(text,/Application error|Unhandled Runtime Error/);return text;
 }
-async function screenshot(name){await page.screenshot({path:fileURLToPath(new URL(name+'.png',artifacts)),fullPage:true});}
+async function screenshot(name){await page.screenshot({path:fileURLToPath(new URL(name+'.png',artifacts)),fullPage:true,animations:'disabled'});}
 async function originalPdf(kind,name,position){
  const title=kind==='invoice'?'Billing statement':'Receipt',toggle=page.getByRole('button',{name:new RegExp('^'+title+' ·')}).first();await toggle.waitFor();const previewId=await toggle.getAttribute('aria-controls');assert.ok(previewId);
  if(await toggle.getAttribute('aria-expanded')!=='true')await toggle.click();
@@ -48,9 +49,45 @@ try{
   await signedAccount('owner');await screenshot('live-owner-signature');
   await page.goto(web+'/records/billing/'+fixture.cycles[0]);await page.getByRole('button',{name:'Approve and issue',exact:true}).waitFor();
   const before=await page.request.get(web+'/v1/operations/billing/records/'+fixture.cycles[0]);assert.equal(before.status(),200);const beforeRow=(await before.json()).row;assert.ok(!beforeRow.invoiceNumber&&!beforeRow.receiptNumber);await readable();await screenshot('live-before-approval');checks.push('no-official-number-before-approval');
-  await page.getByRole('button',{name:'Approve and issue',exact:true}).click();dialog=page.getByRole('dialog',{name:'Confirm approval and issuance',exact:true});await dialog.waitFor();const confirmation=await readable(dialog);assert.match(confirmation,new RegExp(fixture.ownerName));assert.match(confirmation,/Workflow Approval Director/);await screenshot('live-single-confirmation');
+  await page.getByRole('button',{name:'Approve and issue',exact:true}).click();dialog=page.getByRole('dialog',{name:'Confirm approval and issuance',exact:true});await dialog.waitFor();await expect(dialog).toContainText('Customer Contact · customer_user@acceptance.example.test');await expect(dialog.getByRole('button',{name:'Approve and issue',exact:true})).toBeEnabled();const confirmation=await readable(dialog);assert.match(confirmation,new RegExp(fixture.ownerName));assert.match(confirmation,/Workflow Approval Director/);await screenshot('live-single-confirmation');
+  await expect(dialog).toContainText(effectiveDueDateText);
   const singleResponse=page.waitForResponse(r=>new URL(r.url()).pathname===`/v1/billing-cycles/${fixture.cycles[0]}/approve-issuance`&&r.request().method()==='POST');await dialog.getByRole('button',{name:'Approve and issue',exact:true}).click();const single=await singleResponse;assert.equal(single.status(),201);const issued=await single.json();assert.equal(issued.status,'issued');assert.ok(issued.documentNumber);assert.equal(issued.label.site,fixture.siteNames[0]);
   const result=page.getByRole('region',{name:'Issuance approval results',exact:true});await expect(result).toContainText(issued.documentNumber);await readable();await originalPdf('invoice',fixture.ownerName,'Workflow Approval Director');await screenshot('live-single-issued');checks.push('single-real-ui-issued-official-number');
+  // Actual calculated invoice -> rate correction -> scoped pending list and
+  // mobile selection -> reviewed replacement. The current original survives a
+  // rejected stale confirmation, including its saved PDF bytes and number.
+  const replacementId=fixture.cycles[3],recordUrl=web+'/records/billing/'+replacementId;
+  await page.goto(recordUrl);await page.getByRole('button',{name:'Approve and issue',exact:true}).click();
+  dialog=page.getByRole('dialog',{name:'Confirm approval and issuance',exact:true});
+  await expect(dialog).toContainText('Customer Contact · customer_3@acceptance.example.test');
+  const calculatedPreview=await(await page.request.get(web+`/v1/billing-cycles/${replacementId}/issuance-preview`)).json();assert.equal(calculatedPreview.dueDate,fixture.effectiveDueDate);assert.equal(Number(calculatedPreview.amount),4623.47);
+  await expect(dialog).toContainText(effectiveDueDateText);
+  await dialog.getByRole('button',{name:'Approve and issue',exact:true}).click();await page.getByText('1 document issued',{exact:true}).waitFor();
+  let original=(await(await page.request.get(web+'/v1/operations/billing/records/'+replacementId)).json()).row;
+  const originalBytes=await(await page.request.get(web+`/v1/operations/documents/${original.invoiceId}/pdf`)).body(),originalHash=createHash('sha256').update(originalBytes).digest('hex');
+  await page.getByRole('button',{name:'Edit this site’s rate',exact:true}).click();
+  dialog=page.getByRole('dialog',{name:'Correct bill rate',exact:true});await expect(dialog).toContainText('original remains valid');
+  await dialog.getByLabel('New rate (THB/kWh)',{exact:true}).fill('5');await dialog.getByLabel('Reason',{exact:true}).fill('Reviewed replacement acceptance');
+  await dialog.getByRole('button',{name:'Prepare replacement for approval',exact:true}).click();await expect(dialog).toHaveCount(0);
+  const prepared=(await(await page.request.get(web+'/v1/operations/billing/records/'+replacementId)).json()).row;
+  assert.equal(prepared.status,'approved');assert.equal(prepared.invoiceNumber,original.invoiceNumber);assert.equal(Number(prepared.amount),4623.47);assert.equal(Number(prepared.pendingReplacement.amount),5350);assert.equal(prepared.billingStatusView,'pending_issue_approval');
+  await page.goto(web+'/billing?collectionStatus=paid&status=paid&billingStatusView=pending_issue_approval');
+  await expect(page.getByRole('combobox',{name:'Collection status',exact:true})).toHaveCount(0);await expect(page.getByRole('combobox',{name:'Status',exact:true})).toHaveCount(0);
+  const select=page.getByRole('checkbox',{name:/Select .*Replacement approval rooftop/}).first();await select.check();
+  await page.getByRole('tab',{name:/^All/}).click();assert.ok(!new URL(page.url()).searchParams.has('collectionStatus'));assert.ok(!new URL(page.url()).searchParams.has('status'));
+  await expect(select).not.toBeChecked();await page.goBack();await expect(page.getByRole('tab',{name:/Awaiting issuance approval/})).toHaveAttribute('aria-selected','true');
+  await page.reload();await expect(select).toBeVisible();await page.goForward();await expect(page.getByRole('tab',{name:/^All/})).toHaveAttribute('aria-selected','true');
+  await page.getByRole('tab',{name:/Awaiting issuance approval/}).click();await page.setViewportSize({width:390,height:844});
+  const mobileSelect=page.getByRole('checkbox',{name:/Select .*Replacement approval rooftop/}).last();await expect(mobileSelect).toBeVisible();await mobileSelect.check();await screenshot('live-replacement-mobile-pending');await page.setViewportSize({width:1440,height:1000});
+  await page.goto(recordUrl);await page.getByRole('button',{name:'Approve and issue',exact:true}).click();dialog=page.getByRole('dialog',{name:'Confirm approval and issuance',exact:true});
+  await expect(dialog).toContainText('Customer Contact · customer_3@acceptance.example.test');await expect(dialog).toContainText('5,350.00');await expect(dialog).toContainText('5,000.00');await expect(dialog).toContainText('350.00');await expect(dialog).not.toContainText('4,623.47');await screenshot('live-replacement-confirmation');
+  const changed=await page.request.put(web+'/v1/me/profile',{headers:{Origin:web},data:{displayName:fixture.ownerName+' Changed'}});assert.equal(changed.status(),200);
+  await dialog.getByRole('button',{name:'Approve and issue',exact:true}).click();await page.getByText('Review facts changed. Open the review again before approval.',{exact:true}).waitFor();
+  const failed=(await(await page.request.get(web+'/v1/operations/billing/records/'+replacementId)).json()).row;assert.equal(failed.invoiceId,original.invoiceId);assert.equal(failed.invoiceNumber,original.invoiceNumber);assert.equal(failed.billingStatusView,'pending_issue_approval');
+  assert.equal(createHash('sha256').update(await(await page.request.get(web+`/v1/operations/documents/${original.invoiceId}/pdf`)).body()).digest('hex'),originalHash);
+  assert.equal((await page.request.put(web+'/v1/me/profile',{headers:{Origin:web},data:{displayName:fixture.ownerName}})).status(),200);
+  await page.getByRole('button',{name:'Approve and issue',exact:true}).click();dialog=page.getByRole('dialog',{name:'Confirm approval and issuance',exact:true});await expect(dialog).toContainText('Customer Contact · customer_3@acceptance.example.test');await dialog.getByRole('button',{name:'Approve and issue',exact:true}).click();await page.getByText('1 document issued',{exact:true}).waitFor();
+  const replaced=(await(await page.request.get(web+'/v1/operations/billing/records/'+replacementId)).json()).row;assert.notEqual(replaced.invoiceNumber,original.invoiceNumber);assert.equal(replaced.pendingReplacement,null);assert.equal(Number(replaced.amount),5350);assert.equal(replaced.dueDate,fixture.effectiveDueDate);await screenshot('live-replacement-issued');checks.push('calculated-preview-recipients-default-date','legacy-tabs-refresh-back-forward-selection-reset','replacement-mobile-selection','stale-approval-keeps-original-number-pdf','replacement-review-proposed-totals-atomic-supersession');
   await page.goto(web+'/billing');await page.getByRole('tab',{name:/Awaiting issuance approval/}).click();await page.getByRole('checkbox',{name:'Select all eligible bills on this page',exact:true}).waitFor();await page.getByRole('checkbox',{name:'Select all eligible bills on this page',exact:true}).check();await page.getByRole('button',{name:'Approve and issue',exact:true}).click();dialog=page.getByRole('dialog',{name:'Confirm approval and issuance',exact:true});await dialog.waitFor();await readable(dialog);
   const bulkResponse=page.waitForResponse(r=>new URL(r.url()).pathname==='/v1/billing-cycles/approve-issuance'&&r.request().method()==='POST');await dialog.getByRole('button',{name:'Approve and issue',exact:true}).click();const bulk=await bulkResponse;assert.equal(bulk.status(),201);const batch=await bulk.json();assert.equal(batch.results.length,2);assert.deepEqual(batch.results.map(row=>row.status).sort(),['failed','issued']);assert.ok(batch.results.find(row=>row.status==='issued').documentNumber);assert.equal(batch.results.find(row=>row.status==='failed').label.site,fixture.siteNames[2]);assert.doesNotMatch(JSON.stringify(batch),uuid);
   const results=page.getByRole('region',{name:'Issuance approval results',exact:true});await expect(results).toContainText('1 document issued');await expect(results).toContainText('1 still awaiting approval');await expect(results).toContainText('Recalculate');await expect(results).toContainText(fixture.siteNames[1]);await expect(results).toContainText(fixture.siteNames[2]);await readable();await screenshot('live-mixed-batch');checks.push('mixed-real-ui-success-corrective-failure-id-free');

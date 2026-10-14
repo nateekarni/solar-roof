@@ -48,15 +48,16 @@ test('action matrix distinguishes view download edit and approval',()=>{
  assert.equal(authorizedRoute({role:'operator',authorization},'PATCH','/v1/billing-cycles/a/verify-payment'),false);
 });
 
-test('single and bulk invoice issuance require approval rather than editing authority',()=>{
+test('single and bulk invoice issuance and its preview require approval rather than editing authority',()=>{
  const approval=effectiveAuthorization('operator',1,[{domain:'business',preset:{'business.billing.approve':true},overrides:{},scope:{mode:'selected',siteIds:['site']}}]);
  const editing=effectiveAuthorization('accountant',1,[{domain:'business',preset:{'business.billing.edit':true},overrides:{},scope:{mode:'all',siteIds:[]}}]);
- for(const path of ['/v1/billing-cycles/a/approve-issuance','/v1/billing-cycles/approve-issuance','/v1/billing-cycles/approve-issuance?ignored=true']){
-  assert.equal(permissionForRoute('POST',path),'business.billing.approve');
-  assert.equal(authorizedRoute({role:'operator',authorization:approval},'POST',path),true);
-  assert.equal(authorizedRoute({role:'accountant',authorization:editing},'POST',path),false);
-  for(const role of ['admin','accountant','operator','customer_user'])assert.equal(authorizedRoute({role},'POST',path),false);
-  assert.equal(authorizedRoute({role:'owner'},'POST',path),true);
+ for(const path of ['/v1/billing-cycles/a/approve-issuance','/v1/billing-cycles/approve-issuance','/v1/billing-cycles/approve-issuance?ignored=true','/v1/billing-cycles/a/issuance-preview']){
+  const method=path.endsWith('issuance-preview')?'GET':'POST';
+  assert.equal(permissionForRoute(method,path),'business.billing.approve');
+  assert.equal(authorizedRoute({role:'operator',authorization:approval},method,path),true);
+  assert.equal(authorizedRoute({role:'accountant',authorization:editing},method,path),false);
+  for(const role of ['admin','accountant','operator','customer_user'])assert.equal(authorizedRoute({role},method,path),false);
+  assert.equal(authorizedRoute({role:'owner'},method,path),true);
  }
 });
 test('managers can reach invitation lifecycle while service enforces who they may invite',()=>{
