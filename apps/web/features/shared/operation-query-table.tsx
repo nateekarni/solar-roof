@@ -14,11 +14,14 @@ import {ListPeriodPicker} from './list-period-picker';
 import { SearchInput } from '../../components/ui/search-input';
 import { OperationTable, type OperationTableProps } from './operation-table';
 import { useLocale } from '../../providers/locale-provider';
-import { operationQueryKeys } from './operation-request-query';
+import { operationQueryKeys,billingStatusViewFromQuery,patchOperationQuery } from './operation-request-query';
+import {BillingStatusTabs,billingStatusTabId} from '../billing/billing-status-tabs';
 
 export function OperationQueryTable({ initial, ...props }: Omit<OperationTableProps,'rows'|'columns'> & {initial:OperationPage<OperationRow>}) {
   const th=useLocale()==='th';
   const searchParams=useSearchParams();
+  const resultsPanelId=React.useId();
+  const billingStatusView=billingStatusViewFromQuery(searchParams);
   const {setQuery}=useOperationQuery();
   const query=React.useMemo(()=>{const q=new URLSearchParams();for(const key of operationQueryKeys){const value=searchParams.get(key);if(value!==null)q.set(key,value);}return q.toString();},[searchParams]);
   const [data,setData]=React.useState(initial),[summary,setSummary]=React.useState(props.summary);
@@ -34,9 +37,7 @@ export function OperationQueryTable({ initial, ...props }: Omit<OperationTablePr
   }, [props.resource,query]);
   const update=React.useCallback((changes:Partial<OperationQuery>,reset=true)=>{
     if(reset)history.current=[];
-    const next=new URLSearchParams(query);
-    if(Object.keys(changes).some(key=>key!=='cursor'))next.delete('cursor');
-    for(const [key,value] of Object.entries(changes)){if(value===undefined||value==='')next.delete(key);else next.set(key,String(value));}
+    const next=patchOperationQuery(new URLSearchParams(query),changes);
     try{saveCursorHistory(sessionStorage,props.resource,next.toString(),history.current);}catch{/* Storage may be unavailable. */}
     setQuery(changes);
   },[setQuery,props.resource,query]);
@@ -84,17 +85,17 @@ export function OperationQueryTable({ initial, ...props }: Omit<OperationTablePr
     } catch (e) { if (revision.current === current) setError(e instanceof Error ? e.message : 'Unable to load last page'); }
     finally { if (revision.current === current) setLoading(false); }
   };
-  const toolbar = <div className="flex flex-wrap items-end justify-between gap-3">
+  const toolbar = <div className="flex min-w-0 flex-col gap-3"><div className="flex flex-wrap items-end justify-between gap-3">
     <div className="w-full max-w-xs"><SearchInput id={`${props.resource}-search`} aria-label={th?'ค้นหา':'Search'} placeholder={th?'ค้นหา…':'Search…'} value={search} onChange={e=>setSearch(e.target.value)} /></div>
     <div className='ml-auto flex flex-wrap items-center justify-end gap-2'>
      {['billing','receipts'].includes(props.resource)&&<ChoiceSelect aria-label={th?'สถานะการชำระเงิน':'Collection status'} className='h-10 min-w-32 w-auto' value={searchParams.get('collectionStatus')??''} onChange={event=>update({collectionStatus:(event.target.value||undefined) as OperationQuery['collectionStatus']})}><option value=''>{th?'สถานะการชำระเงิน: ทั้งหมด':'Collection status: All'}</option>{[['paid','ชำระแล้ว','Paid'],['pending_review','รอตรวจสอบ','Pending review'],['overdue','ค้างชำระ','Overdue'],['awaiting_payment','รอชำระ','Awaiting payment']].filter(option=>props.resource==='billing'||option[0]==='paid').map(option=><option key={option[0]} value={option[0]}>{option[th?1:2]}</option>)}</ChoiceSelect>}
-     {(operationFilters[props.resource]??[]).map(filter=><ChoiceSelect key={filter.key} aria-label={filter.label[th?0:1]} className='h-10 min-w-32 w-auto' value={searchParams.get(filter.key)??''} onChange={event=>update({[filter.key]:event.target.value})}><option value=''>{filter.label[th?0:1]}: {th?'ทั้งหมด':'All'}</option>{filter.options.map(option=><option key={option.value} value={option.value}>{option.label[th?0:1]}</option>)}</ChoiceSelect>)}
+     {(operationFilters[props.resource]??[]).filter(filter=>props.resource!=='billing'||filter.key!=='status').map(filter=><ChoiceSelect key={filter.key} aria-label={filter.label[th?0:1]} className='h-10 min-w-32 w-auto' value={searchParams.get(filter.key)??''} onChange={event=>update({[filter.key]:event.target.value})}><option value=''>{filter.label[th?0:1]}: {th?'ทั้งหมด':'All'}</option>{filter.options.map(option=><option key={option.value} value={option.value}>{option.label[th?0:1]}</option>)}</ChoiceSelect>)}
      {!['customers','sites','users'].includes(props.resource)&&<ListPeriodPicker from={searchParams.get('from')??''} to={searchParams.get('to')??''} onValueChange={period=>update(period)}/>}
     </div>
-  </div>;
+  </div>{props.resource==='billing'&&<BillingStatusTabs value={billingStatusView} panelId={resultsPanelId} counts={data.facets?.billingStatusCounts} locale={th?'th':'en'} onValueChange={billingStatusView=>update({billingStatusView})}/>}</div>;
 return <div className="space-y-3" aria-busy={loading}>
     {error&&<p role="alert">{error}</p>}
-    <OperationTable {...props} columns={data.columns} rows={error?[]:data.rows} summary={summary} toolbar={toolbar} serverManaged />
+    <OperationTable {...props} {...(props.resource==='billing'?{resultsPanel:{id:resultsPanelId,labelledBy:billingStatusTabId(resultsPanelId,billingStatusView)}}:{})} columns={data.columns} rows={error?[]:data.rows} summary={summary} toolbar={toolbar} serverManaged />
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3">
       <p role="status" className="text-sm text-muted-foreground">{loading?(th?'กำลังโหลด…':'Loading…'):(th?`${data.rows.length} รายการในหน้านี้`:`${data.rows.length} rows on this page`)}</p>
       <div className="flex flex-wrap items-center gap-3"><span className="text-xs text-muted-foreground">{th?'ต่อหน้า':'Rows per page'}</span><ChoiceSelect aria-label={th?'จำนวนต่อหน้า':'Rows per page'} className="h-10 w-16" value={searchParams.get('limit')??'25'} onChange={e=>update({limit:Number(e.target.value)})}>{[10,25,50,100].map(size=><option key={size} value={size}>{size}</option>)}</ChoiceSelect><span className="text-xs text-muted-foreground">{th?'หน้า':'Page'} {searchParams.has('cursor')?history.current.length+1:1}</span><div className="flex gap-1">

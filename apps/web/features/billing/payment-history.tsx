@@ -7,7 +7,7 @@ export function PaymentHistory({payments,locale}:{payments:TransferHistoryRow[];
  if(!payments.length)return null;
  const copy=paymentMetadataCopy[locale];
 
- const status=(value:string)=>({pending_verification:locale==='th'?'รอตรวจสอบ':'Pending verification',paid:locale==='th'?'อนุมัติแล้ว':'Approved',rejected:locale==='th'?'ปฏิเสธ':'Rejected'}[value]??value);
+ const status=(value:string)=>({pending_verification:locale==='th'?'รอตรวจสอบ':'Pending verification',paid:locale==='th'?'อนุมัติแล้ว':'Approved',rejected:locale==='th'?'ปฏิเสธ':'Rejected'}[value]??(locale==='th'?'ไม่ทราบสถานะ':'Unknown status'));
  return <section aria-label={locale==='th'?'ประวัติการโอนเงิน':'Transfer history'} className="space-y-3 border-t pt-4">
   <h3 className="font-semibold">{locale==='th'?'ประวัติการโอนเงิน':'Transfer history'}</h3>
   <ul className="space-y-2">{payments.map(payment=><li key={payment.id} className="space-y-1 border-b pb-2">

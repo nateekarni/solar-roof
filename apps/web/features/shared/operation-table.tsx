@@ -78,6 +78,7 @@ export interface OperationTableProps {
   idKey?: string | undefined;
   serverManaged?: boolean;
   toolbar?: React.ReactNode;
+  resultsPanel?: {id:string;labelledBy:string};
 }
 
 const COLUMN_TRANSLATIONS: Record<string, string> = {
@@ -132,6 +133,7 @@ export function OperationTable({
   idKey = "id",
   serverManaged = false,
   toolbar,
+  resultsPanel,
 }: OperationTableProps) {
   const t = useT();
   const locale = useLocale();
@@ -531,7 +533,7 @@ export function OperationTable({
 
       {toolbar}
 
-      <ResponsiveDocumentRows role={user.role} resource={resource} mobile={<OperationCardList resource={resource} title={title} columns={rawColumns} rows={rows} idKey={idKey} onOpenDetail={row => openResourceDetail(resource, row)} renderActions={renderMobileActions} onOpenSlip={url => { setSelectedSlipImage(url); setSlipImageModalOpen(true); }} />} desktop={<div className="block min-w-0">
+      <div className="min-w-0" {...(resultsPanel?{id:resultsPanel.id,role:'tabpanel','aria-labelledby':resultsPanel.labelledBy,tabIndex:0}:{})}><ResponsiveDocumentRows role={user.role} resource={resource} mobile={<OperationCardList resource={resource} title={title} columns={rawColumns} rows={rows} idKey={idKey} onOpenDetail={row => openResourceDetail(resource, row)} renderActions={renderMobileActions} onOpenSlip={url => { setSelectedSlipImage(url); setSlipImageModalOpen(true); }} />} desktop={<div className="block min-w-0">
         <DataTable
           serverManaged={serverManaged}
           columns={tableColumns}
@@ -541,7 +543,7 @@ export function OperationTable({
           pageSize={10}
           onRowClick={(row) => openResourceDetail(resource, row)}
         />
-      </div>} />
+      </div>} /></div>
 
       {/* Interactive Document Preview Modal */}
       <DocumentPreviewModal

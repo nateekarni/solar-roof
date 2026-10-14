@@ -11,7 +11,7 @@ test('Organization financial records return to Documents in both locales',()=>{
  assert.deepEqual(recordBackLink('billing','admin','/billing','en'),{href:'/billing',label:'Back to list'});
 });
 test('payment status renders localized existing badges and absent status stays unavailable',()=>{
- assert.match(renderToStaticMarkup(<>{renderRecordValue('pending_verification','paymentStatus','th')}</>),/รอตรวจสอบการชำระเงิน/);
+ assert.match(renderToStaticMarkup(<>{renderRecordValue('pending_verification','paymentStatus','th')}</>),/รอตรวจหลักฐาน/);
  assert.match(renderToStaticMarkup(<>{renderRecordValue('rejected','paymentStatus','en')}</>),/Rejected/);
  assert.equal(renderRecordValue(null,'paymentStatus','en'),'—');
 });

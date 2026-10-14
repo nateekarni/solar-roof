@@ -10,6 +10,10 @@ export const STATUS_MAP: Record<
     className?: string;
   }
 > = {
+  pending_issue_approval: {th:'รออนุมัติออกเอกสาร',en:'Awaiting issuance approval',variant:'secondary',className:'bg-warning/15 text-warning-emphasis border-warning/30'},
+  awaiting_payment: {th:'รอชำระเงิน',en:'Awaiting payment',variant:'secondary',className:'bg-warning/15 text-warning-emphasis border-warning/30'},
+  unsuccessful: {th:'ไม่สำเร็จ',en:'Unsuccessful',variant:'destructive'},
+  complete: {th:'ข้อมูลครบถ้วน',en:'Complete data',variant:'secondary',className:'bg-success/15 text-success border-success/30'},
   issued: {th:'ออกแล้ว',en:'Issued',variant:'secondary',className:'bg-success/15 text-success border-success/30'},
   finalized: {th:'ยืนยันแล้ว',en:'Finalized',variant:'secondary',className:'bg-success/15 text-success border-success/30'},
   superseded: {th:'ถูกแทนที่ด้วยฉบับใหม่',en:'Replaced by a new version',variant:'secondary',className:'bg-muted text-muted-foreground border-border'},
@@ -36,8 +40,8 @@ export const STATUS_MAP: Record<
     className: "bg-warning/15 text-warning-emphasis border-warning/30",
   },
   pending_verification: {
-    th: "รอตรวจสอบการชำระเงิน",
-    en: "Pending Verification",
+    th: "รอตรวจหลักฐาน",
+    en: "Awaiting evidence review",
     variant: "secondary",
     className: "bg-warning/15 text-warning-emphasis border-warning/30 font-medium",
   },
@@ -180,7 +184,7 @@ export function renderStatusBadge(cell: string, locale: "th" | "en" = "th") {
     );
   }
 
-  return <Badge variant="secondary">{trimmed || "-"}</Badge>;
+  return <Badge variant="secondary">{trimmed?(locale==='th'?'ไม่ทราบสถานะ':'Unknown status'):'—'}</Badge>;
 }
 
 export function renderReceiptStatusBadge(value:string,locale:'th'|'en'='th') {

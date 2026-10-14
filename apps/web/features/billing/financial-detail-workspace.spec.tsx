@@ -57,7 +57,10 @@ test('expanded evidence preview stays inside the selected list item',()=>{
  assert.equal(items.length,3);
  assert.match(items[2]!,/<img[^>]+second\.png/);
  assert.doesNotMatch(items[1]!,/<img/);
- assert.match(items[2]!,/aria-controls="financial-document-payment:second"/);
+ const controlledId=/aria-controls="([^"]+)"/.exec(items[2]!)?.[1];
+ assert.ok(controlledId);
+ assert.ok(items[2]!.includes(`id="${controlledId}"`));
+ assert.doesNotMatch(items[2]!,/payment:second/);
 });
 
 test('split review has only one document selector owned by the workspace',()=>{
