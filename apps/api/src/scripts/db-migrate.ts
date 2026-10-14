@@ -65,6 +65,7 @@ try {
     "infra/migrations/056_production_financial_readiness.sql",
     "infra/migrations/057_gateway_latest_sample_index.sql",
     "infra/migrations/058_user_document_identity.sql",
+    "infra/migrations/059_billing_issuance_approval.sql",
   ];
   for (const file of migrationFiles) {
     const sql = await readFile(new URL(`../../../../${file}`, import.meta.url), "utf8");

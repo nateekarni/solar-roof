@@ -5,8 +5,8 @@ import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 
-for(const scenario of ['fresh','duplicate','already-applied'] as const)test(`supported migration runner handles document identity: ${scenario}`, async () => {
-  const migration = 'infra/migrations/058_user_document_identity.sql';
+for(const migration of ['infra/migrations/058_user_document_identity.sql','infra/migrations/059_billing_issuance_approval.sql'])
+for(const scenario of ['fresh','duplicate','already-applied'] as const)test(`supported migration runner handles ${migration}: ${scenario}`, async () => {
   const root = new URL('../../../../', import.meta.url);
   const entry = new URL('./db-migrate.ts', import.meta.url);
   const sql = await readFile(new URL(migration, root), 'utf8');
@@ -29,7 +29,7 @@ for(const scenario of ['fresh','duplicate','already-applied'] as const)test(`sup
           if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') events.push({sql});
           else if (sql.startsWith('INSERT INTO schema_migrations')) events.push({sql, params});
           else if (!sql.startsWith('SELECT pg_advisory_') && !sql.startsWith('CREATE TABLE IF NOT EXISTS schema_migrations')) events.push({sql});
-          if (${JSON.stringify(scenario)} === 'duplicate' && sql.includes('Duplicate normalized position names')) throw new Error('Duplicate normalized position names');
+          if (${JSON.stringify(scenario)} === 'duplicate' && sql === ${JSON.stringify(sql)}) throw new Error('Migration SQL rejected');
           return {rows: []};
         },
         release() {},
@@ -62,7 +62,7 @@ for(const scenario of ['fresh','duplicate','already-applied'] as const)test(`sup
   assert.ok(eventLine, result.stdout);
   const events=JSON.parse(eventLine.slice('MIGRATION_EVENTS:'.length));
   if(scenario==='duplicate'){
-    assert.match(result.stderr,/Duplicate normalized position names/);
+    assert.match(result.stderr,/Migration SQL rejected/);
     assert.deepEqual(events,[{sql:'BEGIN'},{sql},{sql:'ROLLBACK'}]);return;
   }
   if(scenario==='already-applied'){

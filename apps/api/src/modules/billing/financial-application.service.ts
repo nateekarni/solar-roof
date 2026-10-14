@@ -133,6 +133,26 @@ export class FinancialApplicationService {
    await client.query("UPDATE billing_cycles SET status='approved' WHERE id=$1 AND status='pending_review'",[cycle.id]);return {cycle:{...cycle,status:cycle.status==='pending_review'?'approved':cycle.status},document};
   });await this.send(result.cycle.id,actorId);return result;
  }
+ async prepareInvoice(id:string,actorId?:string){
+  return this.db.transaction(async client=>{
+   // Acquire configuration before the cycle, as in issuance and manual billing.
+   // The readiness gate shares this lock with configuration changes/revocation.
+   await client.query("SELECT pg_advisory_xact_lock(hashtext('production-financial-configuration'))");
+   const cycle=(await client.query('SELECT * FROM billing_cycles WHERE id=$1 FOR UPDATE',[id])).rows[0];
+   if(!cycle)throw new NotFoundException('ไม่พบรอบบิล');
+   if(!['draft','pending_review','rejected','pending_issue_approval'].includes(cycle.status))throw new ConflictException('สถานะรอบบิลไม่สามารถส่งตรวจอนุมัติออกเอกสารได้');
+   const lines=cycle.billing_kind==='manual'?cycle.manual_lines:cycle.meter_snapshot;
+   if(cycle.quality!=='complete'||!Array.isArray(lines)||!lines.length)throw new ConflictException('ข้อมูลรอบบิลยังไม่พร้อมตรวจอนุมัติ');
+   const policy=validateFinancialPolicy(cycle);
+   const evidence=await this.readiness.assertEnabled('issue',{billingCycleId:id},client);
+   if(policy.scope!==evidence.scope)throw new ConflictException('Financial scope differs from saved cycle');
+   if(cycle.status==='pending_issue_approval')return {cycle,created:false};
+   const updated=(await client.query("UPDATE billing_cycles SET status='pending_issue_approval' WHERE id=$1 RETURNING *",[id])).rows[0];
+   await this.audit(client,actorId,'finance.invoice_prepared',id,{status:updated.status,previousStatus:cycle.status,policyHash:cycle.policy_hash,approvalId:evidence.approvalId});
+   return {cycle:updated,created:true};
+  });
+ }
+ // Compatibility issuance path; approval wiring and caller migration follow separately.
  async issueInvoice(id:string,actorId?:string){return this.db.transaction(async client=>{await this.readiness.assertEnabled('issue',{billingCycleId:id},client);const cycle=(await client.query('SELECT * FROM billing_cycles WHERE id=$1 FOR UPDATE',[id])).rows[0];if(!cycle)throw new NotFoundException('Billing cycle not found');const prior=(await client.query("SELECT id FROM documents WHERE billing_cycle_id=$1 AND document_type='invoice' AND is_current",[id])).rows[0];const document=await this.issue(client,cycle,'invoice',actorId);await client.query("UPDATE billing_cycles SET status=CASE WHEN status IN('paid','pending_verification') THEN status ELSE 'approved' END WHERE id=$1",[id]);return {created:!prior,document:{...document,documentNumber:document.document_number}};});}
  async submitPayment(id:string,body:PaymentSubmission,actorId:string|undefined){
   if(!actorId)throw new BadRequestException('Actor required');

@@ -16,6 +16,59 @@ import {FinancialApplicationService} from './financial-application.service.js';
 import {TEST_FINANCIAL_POLICY_HASH} from './local-financial-policy.js';
 import type {DatabaseService} from '../../database/database.service.js';
 import type {FinancialReadinessService} from '../financial-readiness/financial-readiness.service.js';
+
+function invoicePreparationHarness(overrides:Record<string,unknown>={}) {
+ const cycle={id:'cycle',status:'pending_review',quality:'complete',meter_snapshot:[{consumedKwh:'25.000'}],policy_hash:TEST_FINANCIAL_POLICY_HASH,...overrides};
+ const audits:unknown[][]=[];
+ const client={query:async(sql:string,params:unknown[]=[])=>{
+  if(sql.startsWith('SELECT pg_advisory_xact_lock'))return {rows:[]};
+  if(sql==='SELECT * FROM billing_cycles WHERE id=$1 FOR UPDATE')return {rows:overrides.missing?[]:[{...cycle}]};
+  if(sql.startsWith('UPDATE billing_cycles')){cycle.status='pending_issue_approval';return {rows:[{...cycle}]};}
+  if(sql.startsWith('INSERT INTO audit_events')){audits.push(params);return {rows:[]};}
+  throw new Error(`Preparation crossed the draft boundary: ${sql}`);
+ }};
+ const readiness={assertEnabled:async(action:string,context:unknown,transaction:unknown)=>{
+  assert.equal(action,'issue');assert.deepEqual(context,{billingCycleId:'cycle'});assert.equal(transaction,client);
+  if(overrides.notReady)throw new ConflictException('Financial readiness required');
+  return {scope:'TEST',approvalId:'readiness',policyHash:TEST_FINANCIAL_POLICY_HASH};
+ }};
+ const service=new FinancialApplicationService({transaction:async(run:any)=>run(client)} as unknown as DatabaseService,readiness as unknown as FinancialReadinessService);
+ return {service,cycle,audits};
+}
+
+test('preparing a bill persists only approval status and one audit, with no number, document, artifact, current switch or delivery',async()=>{
+ const {service,cycle,audits}=invoicePreparationHarness();
+ const result=await service.prepareInvoice('cycle','actor');
+ assert.equal(result.cycle.status,'pending_issue_approval');assert.equal(result.created,true);assert.equal(cycle.status,'pending_issue_approval');
+ assert.equal(audits.length,1);assert.equal(audits[0]![1],'actor');assert.equal(audits[0]![2],'finance.invoice_prepared');
+ const replay=await service.prepareInvoice('cycle','actor');assert.equal(replay.created,false);assert.equal(replay.cycle.id,'cycle');assert.equal(audits.length,1);
+});
+
+test('preparation accepts only eligible draft states and leaves issued or settled cycles unchanged',async()=>{
+ for(const status of ['draft','pending_review','rejected']){
+  const {service}=invoicePreparationHarness({status});assert.equal((await service.prepareInvoice('cycle')).created,true);
+ }
+ for(const status of ['approved','pending_verification','paid','cancelled','unknown']){
+  const {service,cycle,audits}=invoicePreparationHarness({status});
+  await assert.rejects(service.prepareInvoice('cycle'),error=>error instanceof ConflictException&&/approval|อนุมัติ/.test(error.message));
+  assert.equal(cycle.status,status);assert.equal(audits.length,0);
+ }
+});
+
+test('manual preparation uses saved manual lines when its meter snapshot is empty',async()=>{
+ const {service}=invoicePreparationHarness({billing_kind:'manual',meter_snapshot:[],manual_lines:[{description:'Maintenance',subtotal:'100.00'}]});
+ assert.equal((await service.prepareInvoice('cycle')).cycle.status,'pending_issue_approval');
+ const empty=invoicePreparationHarness({billing_kind:'manual',meter_snapshot:[],manual_lines:[]});
+ await assert.rejects(empty.service.prepareInvoice('cycle'),error=>error instanceof ConflictException);
+});
+
+test('preparation rejects absent cycles, incomplete calculations, invalid policy and unavailable readiness without writes',async()=>{
+ for(const overrides of [{missing:true},{quality:'incomplete'},{meter_snapshot:null},{meter_snapshot:[]},{policy_hash:'corrupt'},{notReady:true}]){
+  const {service,cycle,audits}=invoicePreparationHarness(overrides);
+  await assert.rejects(service.prepareInvoice('cycle'),(error:any)=>[404,409,503].includes(error.getStatus()));
+  assert.equal(cycle.status,'pending_review');assert.equal(audits.length,0);
+ }
+});
 test('TEST payment persistence keeps an exact large string amount',async()=>{
  let inserted=false;
  const db={transaction:async(run:any)=>run({query:async(sql:string,params:unknown[])=>{

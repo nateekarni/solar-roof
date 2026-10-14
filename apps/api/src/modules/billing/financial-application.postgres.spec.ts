@@ -34,6 +34,7 @@ test('production finance freezes configured policy and artifacts across calculat
    await pool.query(`CREATE TABLE ${schema}.${table} (LIKE public.${table} INCLUDING ALL)`);
    if(copy.includes(table))await pool.query(`INSERT INTO ${schema}.${table} SELECT * FROM public.${table}`);
   }
+  await pool.query(await readFile(new URL('../../../../../infra/migrations/059_billing_issuance_approval.sql',import.meta.url),'utf8'));
   // Authorization uses the real database function, with its unqualified tables resolving in this schema.
   const owner=(await pool.query("SELECT id FROM users WHERE role='owner' AND status='active' ORDER BY id LIMIT 1")).rows[0];assert.ok(owner);
   const fixture=(await pool.query(`SELECT s.id FROM sites s JOIN site_billing_settings cfg ON cfg.site_id=s.id WHERE EXISTS(SELECT 1 FROM billing_meters b WHERE b.site_id=s.id AND b.active) AND EXISTS(SELECT 1 FROM public.telemetry_raw tr WHERE tr.site_id=s.id AND tr.source_time='2026-09-01T00:00:00+07:00') ORDER BY s.id LIMIT 1`)).rows[0];assert.ok(fixture,'Existing dedicated review meter fixture required');const siteId=fixture.id;
@@ -114,12 +115,45 @@ test('production finance freezes configured policy and artifacts across calculat
    assert.equal(Number(cycle.subtotal),4321);assert.equal(Number(cycle.simulated_tax),432.1);assert.equal(Number(cycle.amount),4753.1);
    assert.equal((await service.calculate(siteId,'2026-09-01','2026-09-30',owner.id)).cycles[0].id,cycle.id);
   });
+  await t.test('preparation rolls back failed audit and readiness, then serializes concurrent retries without issuing',async()=>{
+   const originals=(await pool.query('SELECT * FROM documents ORDER BY id')).rows;
+   const series=(await pool.query('SELECT * FROM document_number_series ORDER BY prefix')).rows;
+   process.env.FINANCIAL_WRITES_ENABLED='false';
+   try{await assert.rejects(service.prepareInvoice(cycle.id,owner.id),error=>(error as any).getStatus()===503);}finally{process.env.FINANCIAL_WRITES_ENABLED='true';}
+   assert.equal((await pool.query('SELECT status FROM billing_cycles WHERE id=$1',[cycle.id])).rows[0].status,'pending_review');
+   await pool.query(`CREATE FUNCTION reject_prepared_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='finance.invoice_prepared' THEN RAISE EXCEPTION 'preparation audit unavailable'; END IF; RETURN NEW; END $$; CREATE TRIGGER reject_prepared_audit BEFORE INSERT ON audit_events FOR EACH ROW EXECUTE FUNCTION reject_prepared_audit();`);
+   try{await assert.rejects(service.prepareInvoice(cycle.id,owner.id),/preparation audit unavailable/);}finally{await pool.query('DROP TRIGGER reject_prepared_audit ON audit_events');}
+   assert.equal((await pool.query('SELECT status FROM billing_cycles WHERE id=$1',[cycle.id])).rows[0].status,'pending_review');
+   const results=await Promise.all([service.prepareInvoice(cycle.id,owner.id),service.prepareInvoice(cycle.id,owner.id),service.prepareInvoice(cycle.id,owner.id)]);
+   assert.equal(results.filter(result=>result.created).length,1);assert.ok(results.every(result=>result.cycle.status==='pending_issue_approval'));
+   const counts=(await pool.query(`SELECT (SELECT count(*) FROM documents)::int AS documents,(SELECT count(*) FROM document_artifacts)::int AS artifacts,(SELECT count(*) FROM financial_delivery_outbox)::int AS outboxes,(SELECT count(*) FROM document_number_series)::int AS series,(SELECT count(*) FROM audit_events WHERE action='finance.invoice_prepared' AND entity_id=$1)::int AS audits`,[cycle.id])).rows[0];
+   assert.deepEqual(counts,{documents:1,artifacts:1,outboxes:1,series:1,audits:1}); // The earlier unrelated contract original remains untouched.
+   assert.deepEqual((await pool.query('SELECT * FROM documents ORDER BY id')).rows,originals);
+   assert.deepEqual((await pool.query('SELECT * FROM document_number_series ORDER BY prefix')).rows,series);
+   const audit=(await pool.query("SELECT actor_id,after_json FROM audit_events WHERE action='finance.invoice_prepared' AND entity_id=$1",[cycle.id])).rows[0];
+   assert.equal(audit.actor_id,owner.id);assert.equal(audit.after_json.status,'pending_issue_approval');
+  });
   await t.test('issue freezes signatory, company, recipients, bank, logo and original PDF with one outbox',async()=>{
    invoice=(await service.issueInvoice(cycle.id,owner.id)).document;
    assert.equal(invoice.snapshot.policy.scope,'PRODUCTION');assert.equal(invoice.snapshot.company.company_name,'Production issuer');assert.equal(invoice.snapshot.company.signatory_name,'Authorized signer');assert.equal(invoice.snapshot.logoDataUri,logo);assert.ok(invoice.snapshot.banks.length);assert.ok(invoice.snapshot.recipients.length);
    assert.equal(financialDocumentSnapshot(invoice).syntheticTest,false);
    const replay=await service.issueInvoice(cycle.id,owner.id);assert.equal(replay.document.id,invoice.id);assert.equal(replay.created,false);
    const artifact=(await pool.query('SELECT * FROM document_artifacts WHERE document_id=$1',[invoice.id])).rows[0];assert.equal(createHash('sha256').update(artifact.pdf_bytes).digest('hex'),invoice.content_hash);
+  });
+  await t.test('replacement draft migration retains current originals, permits one pending draft and enforces references and statuses',async()=>{
+   const draftId=randomUUID();
+   const insert=(id:string,cycleId=cycle.id,documentId=invoice.id,status='pending_issue_approval',actor=owner.id)=>pool.query('INSERT INTO billing_replacement_drafts(id,billing_cycle_id,supersedes_document_id,rate,amount,snapshot,status,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[id,cycleId,documentId,'5.12345678','123.12345678',JSON.stringify({reason:'Reviewed replacement'}),status,actor]);
+   await insert(draftId);
+   await assert.rejects(insert(randomUUID()),(error:any)=>error.code==='23505');
+   await assert.rejects(insert(randomUUID(),randomUUID()),(error:any)=>error.code==='23503');
+   await assert.rejects(insert(randomUUID(),cycle.id,randomUUID(),'cancelled'),(error:any)=>error.code==='23503');
+   await assert.rejects(insert(randomUUID(),cycle.id,invoice.id,'invalid'),(error:any)=>error.code==='23514');
+   await assert.rejects(insert(randomUUID(),cycle.id,invoice.id,'cancelled',randomUUID()),(error:any)=>error.code==='23503');
+   const draft=(await pool.query('SELECT * FROM billing_replacement_drafts WHERE id=$1',[draftId])).rows[0];
+   assert.equal(draft.rate,'5.12345678');assert.equal(draft.amount,'123.12345678');assert.equal(draft.created_by,owner.id);assert.ok(draft.created_at);assert.deepEqual(draft.snapshot,{reason:'Reviewed replacement'});
+   assert.equal((await pool.query('SELECT status,is_current FROM documents WHERE id=$1',[invoice.id])).rows[0].is_current,true);
+   await pool.query("UPDATE billing_replacement_drafts SET status='cancelled' WHERE id=$1",[draftId]);await insert(randomUUID());
+   await pool.query("UPDATE billing_replacement_drafts SET status='issued' WHERE status='pending_issue_approval'");await insert(randomUUID());
   });
   await t.test('delivery intent audit failure rolls back sending state before SMTP acceptance',async()=>{
    await pool.query(`CREATE FUNCTION reject_send_intent() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='finance.send_started' THEN RAISE EXCEPTION 'intent audit failure'; END IF; RETURN NEW; END $$; CREATE TRIGGER task7_reject_intent BEFORE INSERT ON audit_events FOR EACH ROW EXECUTE FUNCTION reject_send_intent();`);
