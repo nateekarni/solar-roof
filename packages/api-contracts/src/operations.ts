@@ -29,6 +29,32 @@ export interface OperationPage<T> {
  * externalSiteId/externalGatewayId/externalDeviceId are registered codes; null means unregistered. */
 export interface OperationRow { id: string; externalSiteId?: string | null; externalGatewayId?: string | null; externalDeviceId?: string | null; [key: string]: unknown; }
 import type { PaymentTransferRow } from './payments.js';
+/** Ready draft; no official number, immutable document, or delivery yet. */
+export type PendingIssuanceStatus = 'pending_issue_approval';
+
+export interface IssuanceLabel {
+  period: string;
+  customer: string;
+  site: string;
+}
+
+/** Internal routing references are accepted only in the request. */
+export interface IssuanceApprovalRequest {
+  billingCycleIds: string[];
+}
+
+/** Display-safe result; deliberately independent of OperationRow and its IDs. */
+export interface IssuanceApprovalResult {
+  label: IssuanceLabel;
+  status: 'issued' | 'already_issued' | 'failed';
+  documentNumber?: string;
+  message: string;
+}
+
+export interface IssuanceApprovalBatch {
+  results: IssuanceApprovalResult[];
+}
+
 export interface BillingRow extends OperationRow {
  payments?: PaymentTransferRow[];
  siteId: string; period: string; status: string;

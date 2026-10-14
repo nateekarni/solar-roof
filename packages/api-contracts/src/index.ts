@@ -2,6 +2,7 @@ export { normalizePaymentMetadata } from './payments.js';
 export type {FinancialInsights,DashboardSiteContext,MaintenanceInsights} from './dashboard-insights.js';
 export type { PaymentMetadata, PaymentSubmission, PaymentTransferRow, TransferPaymentMethod } from './payments.js';
 export type { OperationQuery, OperationPage, OperationRow, BillingRow, OperationAction, PersistedDocumentRow } from './operations.js';
+export type { PendingIssuanceStatus, IssuanceLabel, IssuanceApprovalRequest, IssuanceApprovalResult, IssuanceApprovalBatch } from './operations.js';
 export { operationFilters } from './operation-filters.js';
 export type { OperationFilter } from './operation-filters.js';
 
