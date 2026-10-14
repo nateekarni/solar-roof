@@ -4,12 +4,42 @@ import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { Pool, type PoolClient } from 'pg';
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { TeamService } from './team.service.js';
 import { AuthorizationService } from './authorization.service.js';
 import { SettingsService } from '../settings/settings.service.js';
 import { hasPermission,siteScope } from '../../common/auth/authorization.js';
 import { DatabaseService } from '../../database/database.service.js';
+
+function concurrentServices(clients:PoolClient[],barrier:Promise<void>,initialLocks:Set<number>,enteredGates?:Set<number>){
+ return clients.map((client,index)=>{
+  let firstUserQuery=true;
+  const wrapped=new Proxy(client,{get(target,key){
+   if(key==='query')return async(sql:string,values:unknown[]=[])=>{
+    const result=await target.query(sql,values);
+    if(sql.includes('pg_advisory_xact_lock'))enteredGates?.add(index);
+    if(firstUserQuery&&sql.startsWith('SELECT')&&sql.includes('FROM users')){
+     firstUserQuery=false;initialLocks.add(index);await barrier;
+    }
+    return result;
+   };
+   const member=Reflect.get(target,key);return typeof member==='function'?member.bind(target):member;
+  }});
+  // Execute the real transaction helper; control only the connection boundary.
+  const db={transaction:(work:Parameters<DatabaseService['transaction']>[0])=>DatabaseService.prototype.transaction.call({pool:{connect:async()=>wrapped}} as unknown as DatabaseService,work)} as unknown as DatabaseService;
+  return new TeamService(db);
+ });
+}
+
+async function observeOverlap(pool:Pool,pids:number[],initialLocks:Set<number>){
+ const deadline=Date.now()+3000;
+ while(Date.now()<deadline){
+  const activity=(await pool.query('SELECT pg_blocking_pids(pid) AS blockers FROM pg_stat_activity WHERE pid=ANY($1::int[])',[pids])).rows;
+  if(initialLocks.size===2||initialLocks.size===1&&activity.some(row=>row.blockers.some((pid:number)=>pids.includes(pid))))return true;
+  await new Promise(resolve=>setTimeout(resolve,10));
+ }
+ return false;
+}
 
 test('PostgreSQL domain presets overrides scope revision and revocation remain live and atomic',{skip:process.env.RBAC_SQL_TEST!=='true'},async()=>{
  const url=process.env.DATABASE_URL!;
@@ -89,7 +119,7 @@ for(const role of ['owner','admin'] as const)for(const reciprocal of [false,true
   assert.ok(['127.0.0.1','localhost'].includes(location.hostname));assert.equal(location.port,'15449');
   assert.match(location.pathname,/^\/[a-z0-9_]*(?:test|review)[a-z0-9_]*$/i);
   const schema='team_lock_test_'+randomUUID().replaceAll('-','');
-  const pool=new Pool({connectionString,options:`-c search_path=${schema},public -c statement_timeout=5000`,max:3});
+  const pool=new Pool({connectionString,application_name:schema,options:`-c search_path=${schema},public -c statement_timeout=5000`,max:3});
   const ids=['00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000002'];
   const domain=role==='owner'?'business':'technical';
   let releaseBarrier!:()=>void;
@@ -108,34 +138,13 @@ for(const role of ['owner','admin'] as const)for(const reciprocal of [false,true
    clients.push(await pool.connect(),await pool.connect());
    const pids=await Promise.all(clients.map(async client=>(await client.query('SELECT pg_backend_pid() AS pid')).rows[0].pid as number));
    const initialLocks=new Set<number>();
-   const services=clients.map((client,index)=>{
-    let firstUserQuery=true;
-    const wrapped=new Proxy(client,{get(target,key){
-     if(key==='query')return async(sql:string,values:unknown[]=[])=>{
-      const result=await target.query(sql,values);
-      if(firstUserQuery&&sql.startsWith('SELECT')&&sql.includes('FROM users')){
-       firstUserQuery=false;initialLocks.add(index);await barrier;
-      }
-      return result;
-     };
-     const member=Reflect.get(target,key);return typeof member==='function'?member.bind(target):member;
-    }});
-    // Execute the real transaction helper; only the connection boundary is controlled for the interleaving.
-    const db={transaction:(work:Parameters<DatabaseService['transaction']>[0])=>DatabaseService.prototype.transaction.call({pool:{connect:async()=>wrapped}} as unknown as DatabaseService,work)} as unknown as DatabaseService;
-    return new TeamService(db);
-   });
+   const services=concurrentServices(clients,barrier,initialLocks);
    pending=Promise.allSettled(services.map((service,index)=>service.updateGrant({id:ids[reciprocal?index:0]!,role},ids[reciprocal?1-index:0]!,domain,{
     revision:0,position:{name:`Manager ${index}`,rules:{}},overrides:{},scope:{mode:'all',siteIds:[]},
    })));
    // Hold the first completed authorization/lock query until the other request has either
    // acquired a compatible lock (the old SHARE upgrade bug) or is waiting for its exclusive lock.
-   let overlapping=false;
-   const deadline=Date.now()+3000;
-   while(Date.now()<deadline){
-    const activity=(await pool.query('SELECT pg_blocking_pids(pid) AS blockers FROM pg_stat_activity WHERE pid=ANY($1::int[])',[pids])).rows;
-    if(initialLocks.size===2||initialLocks.size===1&&activity.some(row=>row.blockers.some((pid:number)=>pids.includes(pid)))){overlapping=true;break;}
-    await new Promise(resolve=>setTimeout(resolve,10));
-   }
+   const overlapping=await observeOverlap(pool,pids,initialLocks);
    releaseBarrier();
    const outcomes=await pending;
    assert.equal(overlapping,true,'Requests must overlap while a participant row is locked');
@@ -161,3 +170,116 @@ for(const role of ['owner','admin'] as const)for(const reciprocal of [false,true
   }
  });
 }
+
+for(const role of ['owner','admin'] as const)for(const operation of ['revoke','deactivate','preset'] as const)for(const employeeFirst of [true,false])for(const invalidActor of [false,true]){
+ if(role==='admin'&&operation==='deactivate')continue;
+ if(invalidActor&&(role!=='owner'||operation!=='preset'||!employeeFirst))continue;
+ test(`PostgreSQL ${role} assignment versus ${operation}, employee UUID ${employeeFirst?'before':'after'} manager${invalidActor?', stale cross-domain actor':''}`,{skip:process.env.RBAC_SQL_TEST!=='true'},async()=>{
+  const connectionString=process.env.DATABASE_URL!;
+  const location=new URL(connectionString);
+  assert.ok(['127.0.0.1','localhost'].includes(location.hostname));assert.equal(location.port,'15449');
+  assert.match(location.pathname,/^\/[a-z0-9_]*(?:test|review)[a-z0-9_]*$/i);
+  const schema='team_mixed_test_'+randomUUID().replaceAll('-','');
+  const pool=new Pool({connectionString,application_name:schema,options:`-c search_path=${schema},public -c statement_timeout=5000`,max:3});
+  const low='00000000-0000-0000-0000-000000000001',high='00000000-0000-0000-0000-000000000002';
+  const actor={id:employeeFirst?high:low,role},employeeId=employeeFirst?low:high,positionId=randomUUID();
+  const domain=role==='owner'?'business':'technical';
+  let releaseBarrier!:()=>void;
+  const barrier=new Promise<void>(resolve=>{releaseBarrier=resolve;});
+  const initialLocks=new Set<number>(),clients:PoolClient[]=[];
+  let pending:Promise<PromiseSettledResult<any>[]>|undefined;
+  try{
+   await pool.query(`CREATE SCHEMA ${schema};
+    CREATE TABLE users(id uuid PRIMARY KEY,role text,status text,updated_at timestamptz);
+    CREATE TABLE sites(id uuid PRIMARY KEY);
+    CREATE TABLE site_account_assignments(user_id uuid,site_id uuid,revoked_at timestamptz);
+    CREATE TABLE auth_sessions(id uuid PRIMARY KEY,user_id uuid,revoked_at timestamptz,refresh_hash text);
+    CREATE TABLE audit_events(id uuid PRIMARY KEY,actor_id uuid,action text,entity_type text,entity_id uuid,correlation_id uuid,after_json jsonb)`);
+   await pool.query(await readFile(new URL('../../../../../infra/migrations/047_employee_domain_permissions.sql',import.meta.url),'utf8'));
+   await pool.query(await readFile(new URL('../../../../../infra/migrations/058_user_document_identity.sql',import.meta.url),'utf8'));
+   await pool.query("INSERT INTO users(id,role,status) VALUES($1,$3,'active'),($2,'operator','active')",[actor.id,employeeId,role]);
+   await pool.query("INSERT INTO employee_positions(id,name) VALUES($1,'Original')",[positionId]);
+   await pool.query("INSERT INTO employee_position_domains(position_id,domain,rules) VALUES($1,$2,'{}')",[positionId,domain]);
+   await pool.query("INSERT INTO employee_domain_grants(user_id,domain,position_id,scope_mode) VALUES($1,$2,$3,'all')",[employeeId,domain,positionId]);
+   await pool.query('UPDATE users SET company_position_id=$2 WHERE id=$1',[employeeId,positionId]);
+   await pool.query("INSERT INTO auth_sessions(id,user_id,refresh_hash) VALUES($1,$2,'original')",[randomUUID(),employeeId]);
+   clients.push(await pool.connect());clients.push(await pool.connect());
+   const pids=await Promise.all(clients.map(async client=>(await client.query('SELECT pg_backend_pid() AS pid')).rows[0].pid as number));
+   const [competitor,assignment]=concurrentServices(clients,barrier,initialLocks);
+   const competing=operation==='revoke'?competitor!.revokeGrant(actor,employeeId,domain,{revision:0}):operation==='deactivate'?competitor!.deactivate(actor,employeeId,{revision:0,impactConfirmed:true}):competitor!.savePosition(actor,domain,{revision:0,name:'Original',rules:{}},positionId);
+   // Ensure revocation/deactivation/preset update has its initial manager lock before assignment starts.
+   const deadline=Date.now()+3000;
+   while(!initialLocks.has(0)&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,10));
+   assert.ok(initialLocks.has(0));
+   pending=Promise.allSettled([competing,assignment!.updateGrant(invalidActor?{id:actor.id,role:'admin'}:actor,employeeId,invalidActor?'technical':domain,{revision:0,position:{name:'Replacement',rules:{}},overrides:{},scope:{mode:'all',siteIds:[]}})]);
+   const overlapping=await observeOverlap(pool,pids,initialLocks);
+   releaseBarrier();
+   const outcomes=await pending;
+   assert.equal(overlapping,true);
+   const successes=outcomes.filter(result=>result.status==='fulfilled'),failures=outcomes.filter(result=>result.status==='rejected');
+   assert.ok(failures.every(result=>invalidActor?result.reason instanceof ForbiddenException:result.reason instanceof ConflictException),`Expected ${invalidActor?'live role rejection':'reload conflict'}, received ${failures.map(result=>String(result.reason)).join(', ')}`);
+   // The losing assignment must observe the current target revision or reject its stale actor role.
+   assert.equal(successes.length,1);assert.equal(outcomes[0]!.status,'fulfilled');assert.equal(outcomes[1]!.status,'rejected');
+   const state=(await pool.query('SELECT company_position_id,permission_revision,status FROM users WHERE id=$1',[employeeId])).rows[0];
+   assert.deepEqual(state,{company_position_id:positionId,permission_revision:1,status:operation==='deactivate'?'inactive':'active'});
+   assert.equal((await pool.query('SELECT count(*)::int AS count FROM employee_positions')).rows[0].count,1);
+   assert.equal((await pool.query('SELECT count(*)::int AS count FROM employee_position_domains')).rows[0].count,1);
+   assert.equal((await pool.query('SELECT count(*)::int AS count FROM employee_domain_grants')).rows[0].count,operation==='revoke'?0:1);
+   assert.equal((await pool.query('SELECT count(*)::int AS count FROM audit_events')).rows[0].count,1);
+   assert.equal((await pool.query('SELECT revoked_at IS NOT NULL AS revoked FROM auth_sessions')).rows[0].revoked,operation==='deactivate');
+  }finally{
+   releaseBarrier();if(pending)await pending;
+   if(!pending)for(const client of clients)client.release();
+   await pool.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);await pool.end();
+  }
+ });
+}
+
+test('PostgreSQL separate domain preset edits overlap and lock shared employees consistently',{skip:process.env.RBAC_SQL_TEST!=='true'},async()=>{
+ const connectionString=process.env.DATABASE_URL!;
+ const location=new URL(connectionString);
+ assert.ok(['127.0.0.1','localhost'].includes(location.hostname));assert.equal(location.port,'15449');
+ assert.match(location.pathname,/^\/[a-z0-9_]*(?:test|review)[a-z0-9_]*$/i);
+ const schema='team_domains_test_'+randomUUID().replaceAll('-','');
+ const pool=new Pool({connectionString,application_name:schema,options:`-c search_path=${schema},public -c statement_timeout=5000`,max:3});
+ const employeeA='00000000-0000-0000-0000-000000000001',employeeB='00000000-0000-0000-0000-000000000002';
+ const owner={id:'00000000-0000-0000-0000-000000000003',role:'owner'},admin={id:'00000000-0000-0000-0000-000000000004',role:'admin'},positionId=randomUUID();
+ let releaseBarrier!:()=>void;
+ const barrier=new Promise<void>(resolve=>{releaseBarrier=resolve;});
+ const initialLocks=new Set<number>(),clients:PoolClient[]=[];
+ let pending:Promise<PromiseSettledResult<any>[]>|undefined;
+ try{
+  await pool.query(`CREATE SCHEMA ${schema};
+   CREATE TABLE users(id uuid PRIMARY KEY,role text,status text,updated_at timestamptz);
+   CREATE TABLE sites(id uuid PRIMARY KEY);
+   CREATE TABLE site_account_assignments(user_id uuid,site_id uuid,revoked_at timestamptz);
+   CREATE TABLE audit_events(id uuid PRIMARY KEY,actor_id uuid,action text,entity_type text,entity_id uuid,correlation_id uuid,after_json jsonb)`);
+  await pool.query(await readFile(new URL('../../../../../infra/migrations/047_employee_domain_permissions.sql',import.meta.url),'utf8'));
+  await pool.query(await readFile(new URL('../../../../../infra/migrations/058_user_document_identity.sql',import.meta.url),'utf8'));
+  await pool.query("INSERT INTO users(id,role,status) VALUES($1,'owner','active'),($2,'admin','active'),($3,'operator','active'),($4,'accountant','active')",[owner.id,admin.id,employeeA,employeeB]);
+  await pool.query("INSERT INTO employee_positions(id,name) VALUES($1,'Original')",[positionId]);
+  await pool.query("INSERT INTO employee_position_domains(position_id,domain,rules) VALUES($1,'business','{}'),($1,'technical','{}')",[positionId]);
+  await pool.query("INSERT INTO employee_domain_grants(user_id,domain,position_id,scope_mode) VALUES($1,'business',$3,'all'),($2,'business',$3,'all'),($2,'technical',$3,'all'),($1,'technical',$3,'all')",[employeeA,employeeB,positionId]);
+  clients.push(await pool.connect());clients.push(await pool.connect());
+  const pids=await Promise.all(clients.map(async client=>(await client.query('SELECT pg_backend_pid() AS pid')).rows[0].pid as number));
+  const enteredGates=new Set<number>();
+  const [business,technical]=concurrentServices(clients,barrier,initialLocks,enteredGates);
+  pending=Promise.allSettled([
+   business!.savePosition(owner,'business',{revision:0,name:'Original',rules:{'business.billing.view':true}},positionId),
+   technical!.savePosition(admin,'technical',{revision:0,name:'Original',rules:{'technical.gateways.view':true}},positionId),
+  ]);
+  const overlapping=await observeOverlap(pool,pids,initialLocks);
+  const bothDomainsEntered=enteredGates.size===2;
+  releaseBarrier();
+  const outcomes=await pending;
+  assert.equal(overlapping,true);assert.equal(bothDomainsEntered,true,'Business and technical gates must be independent');
+  assert.ok(outcomes.every(result=>result.status==='fulfilled'),outcomes.filter(result=>result.status==='rejected').map(result=>String(result.reason)).join(', '));
+  assert.deepEqual((await pool.query("SELECT permission_revision FROM users WHERE role IN ('operator','accountant') ORDER BY id")).rows,[{permission_revision:2},{permission_revision:2}]);
+  assert.deepEqual((await pool.query('SELECT domain,revision FROM employee_position_domains ORDER BY domain')).rows,[{domain:'business',revision:1},{domain:'technical',revision:1}]);
+  assert.equal((await pool.query('SELECT count(*)::int AS count FROM audit_events')).rows[0].count,2);
+ }finally{
+  releaseBarrier();if(pending)await pending;
+  if(!pending)for(const client of clients)client.release();
+  await pool.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);await pool.end();
+ }
+});

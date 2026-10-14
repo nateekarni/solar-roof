@@ -39,10 +39,22 @@ export class TeamService {
   const domain=domainFor(actor,rawDomain);
   return {domain,positions:(await this.db.query(`SELECT p.id,p.name,d.rules,d.revision FROM employee_positions p JOIN employee_position_domains d ON d.position_id=p.id WHERE d.domain=$1 ORDER BY p.name,p.id`,[domain])).rows};
  }
- private async authorizeCurrent(client:PoolClient,actor:TeamActor,domain:PermissionDomain){
-  const current=(await client.query('SELECT role,status FROM users WHERE id=$1 FOR SHARE',[actor.id])).rows[0];
+ private async authorizeCurrent(client:PoolClient,actor:TeamActor,domain:PermissionDomain,target?:{userId:string}|{positionId:string}){
+  // All team mutations in one domain enter this transaction-scoped gate before
+  // row locks, including preset edits that change a dynamic set of user revisions.
+  await client.query("SELECT pg_advisory_xact_lock(hashtext('solar.team.permissions'),hashtext($1))",[domain]);
+  const targetId=target&&'userId' in target?uuid(target.userId).toLowerCase():undefined;
+  // Use one ID order for every actor/target set, even when a stale actor role
+  // selects a different domain gate. Preset membership is stable under its gate.
+  const users=targetId!==undefined
+   ?(await client.query('SELECT id,role,status,permission_revision FROM users WHERE id IN ($1,$2) ORDER BY id FOR UPDATE',[actor.id,targetId])).rows
+   :target&&'positionId' in target
+    ?(await client.query('SELECT id,role,status,permission_revision FROM users WHERE id=$1 OR id IN (SELECT user_id FROM employee_domain_grants WHERE position_id=$2 AND domain=$3) ORDER BY id FOR UPDATE',[actor.id,uuid(target.positionId),domain])).rows
+    :(await client.query('SELECT id,role,status,permission_revision FROM users WHERE id=$1 FOR UPDATE',[actor.id])).rows;
+  const current=users.find(row=>row.id===actor.id.toLowerCase());
   if(!current||current.status!=='active')throw new ForbiddenException('Manager is inactive');
   domainFor({...actor,role:current.role},domain);
+  return targetId===undefined?undefined:users.find(row=>row.id===targetId);
  }
  private async audit(client:PoolClient,actor:TeamActor,domain:PermissionDomain,id:string,action:string,after?:unknown){
   await client.query(`INSERT INTO audit_events(id,actor_id,action,entity_type,entity_id,correlation_id,after_json) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb)`,[randomUUID(),actor.id,`${domain}.${action}`,'employee_permission',id,randomUUID(),after===undefined?null:JSON.stringify(after)]);
@@ -60,14 +72,7 @@ export class TeamService {
    positionName=draft.name.trim();presetRules=validateDomainRules(domain,draft.rules);
   }
   return this.db.transaction(async client=>{
-   // Lock both participants in ID order: self-saves never upgrade SHARE locks, and
-   // reciprocal manager assignments acquire the same row order.
-   const targetId=uuid(userId).toLowerCase();
-   const participants=(await client.query('SELECT id,role,status,permission_revision FROM users WHERE id IN ($1,$2) ORDER BY id FOR UPDATE',[actor.id,targetId])).rows;
-   const manager=participants.find(row=>row.id===actor.id.toLowerCase());
-   if(!manager||manager.status!=='active')throw new ForbiddenException('Manager is inactive');
-   domainFor({...actor,role:manager.role},domain);
-   const user=participants.find(row=>row.id===targetId);
+   const user=await this.authorizeCurrent(client,actor,domain,{userId});
    if(!user)throw new NotFoundException('Employee not found');
    const employee=['operator','accountant'].includes(user.role);
    if(!employee&&user.role!==(domain==='business'?'owner':'admin'))throw new ForbiddenException('Only employees and this domain manager may receive a company position');
@@ -97,8 +102,7 @@ export class TeamService {
  async revokeGrant(actor:TeamActor,userId:string,rawDomain:unknown,input:unknown){
   const domain=domainFor(actor,rawDomain),body=object(input,['revision']);const expected=revision(body.revision);
   return this.db.transaction(async client=>{
-   await this.authorizeCurrent(client,actor,domain);
-   const user=(await client.query('SELECT role,permission_revision FROM users WHERE id=$1 FOR UPDATE',[uuid(userId)])).rows[0];
+   const user=await this.authorizeCurrent(client,actor,domain,{userId});
    if(!user)throw new NotFoundException('Employee not found');
    if(!['operator','accountant'].includes(user.role))throw new ForbiddenException('Only employee grants can be revoked');
    if(user.permission_revision!==expected)throw new ConflictException('Permissions changed; reload');
@@ -112,7 +116,7 @@ export class TeamService {
   if(typeof body.name!=='string'||!body.name.trim()||body.name.trim().length>120)throw new BadRequestException('Position name required');
   const rules=validateDomainRules(domain,body.rules),expected=positionId?revision(body.revision):0;
   return this.db.transaction(async client=>{
-   await this.authorizeCurrent(client,actor,domain);
+   await this.authorizeCurrent(client,actor,domain,positionId?{positionId}:undefined);
    const id=positionId?uuid(positionId):randomUUID();
    if(positionId){
     const current=(await client.query('SELECT revision FROM employee_position_domains WHERE position_id=$1 AND domain=$2 FOR UPDATE',[id,domain])).rows[0];
@@ -147,8 +151,7 @@ export class TeamService {
   domainFor(actor,'business');const body=object(input,['revision','impactConfirmed']);const expected=revision(body.revision);
   if(body.impactConfirmed!==true)throw new BadRequestException('Review and confirm account-wide impact');
   return this.db.transaction(async client=>{
-   await this.authorizeCurrent(client,actor,'business');
-   const user=(await client.query('SELECT role,permission_revision FROM users WHERE id=$1 FOR UPDATE',[uuid(userId)])).rows[0];
+   const user=await this.authorizeCurrent(client,actor,'business',{userId});
    if(!user)throw new NotFoundException('Employee not found');
    if(!['operator','accountant'].includes(user.role))throw new ForbiddenException('Only employee accounts can be globally deactivated');
    if(user.permission_revision!==expected)throw new ConflictException('Permissions changed; preview again');

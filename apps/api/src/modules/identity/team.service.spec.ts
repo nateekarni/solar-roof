@@ -30,7 +30,7 @@ function grantFixture(options:{role?:string;revision?:number;presetExists?:boole
   statements.push({sql,values});
   if(sql.startsWith('SELECT id,role,status,permission_revision')){
    const manager={id:owner.id,role:options.actorRole??'owner',status:options.actorStatus??'active',permission_revision:options.revision??0};
-   return {rows:values[1]===owner.id?[manager]:[manager,{id:values[1],role:options.role??'operator',status:'active',permission_revision:options.revision??0}]};
+   return {rows:values[1]===undefined||values[1]===owner.id?[manager]:[manager,{id:values[1],role:options.role??'operator',status:'active',permission_revision:options.revision??0}]};
   }
   if(sql.startsWith('SELECT p.name'))return {rows:options.presetExists===false?[]:[{name:'กรรมการบริษัท'}]};
   return {rows:[]};
@@ -95,11 +95,25 @@ test('customer and opposite-domain manager accounts cannot receive employee assi
  }
 });
 
-test('participant locks recheck current manager status and role before assignments',async()=>{
+test('all team mutations recheck current manager status and role before writes',async()=>{
  for(const options of [{actorRole:'operator'},{actorStatus:'inactive'}]){
-  const {service,statements}=grantFixture(options);
-  await assert.rejects(()=>service.updateGrant(owner,employee,'business',{revision:0,position:{id:positionId},overrides:{},scope}),ForbiddenException);
-  assert.equal(statements.some(({sql})=>sql.startsWith('INSERT')||sql.startsWith('UPDATE')),false);
+  for(const operation of ['assign','revoke','deactivate','preset']){
+   const {service,statements}=grantFixture(options);
+   const save=()=>operation==='assign'?service.updateGrant(owner,employee,'business',{revision:0,position:{id:positionId},overrides:{},scope})
+    :operation==='revoke'?service.revokeGrant(owner,employee,'business',{revision:0})
+    :operation==='deactivate'?service.deactivate(owner,employee,{revision:0,impactConfirmed:true})
+    :service.savePosition(owner,'business',{revision:0,name:'Original',rules:{}},positionId);
+   await assert.rejects(save,ForbiddenException);
+   assert.equal(statements.some(({sql})=>sql.startsWith('INSERT')||sql.startsWith('UPDATE')),false);
+  }
+ }
+});
+
+test('stale target revisions reject revocation and deactivation before writes',async()=>{
+ for(const operation of ['revoke','deactivate']){
+  const {service,statements}=grantFixture({revision:1});
+  await assert.rejects(()=>operation==='revoke'?service.revokeGrant(owner,employee,'business',{revision:0}):service.deactivate(owner,employee,{revision:0,impactConfirmed:true}),ConflictException);
+  assert.equal(statements.some(({sql})=>sql.startsWith('INSERT')||sql.startsWith('UPDATE')||sql.startsWith('DELETE')),false);
  }
 });
 
