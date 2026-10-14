@@ -1,5 +1,6 @@
 "use client";
 import {BillRateEditor} from './bill-rate-editor';
+import {BillingBulkApproval} from './billing-bulk-approval';
 
 
 import * as React from "react";
@@ -284,6 +285,7 @@ export function BillingDetailModal({
         </DialogHeader>
 
         {/* 2-Column Split Content Layout */}
+        <BillingBulkApproval key={data.id} mode="single" rows={data.billingStatusView==='pending_issue_approval'?[data]:[]} approver={{displayName:user.displayName,position:user.companyPosition,hasSignature:user.hasSignature}} locale={locale} canApprove={financial.operationsActions?.includes('approve_invoice')??false} onCompleted={()=>{void fetchDetails(data.id);onUpdated?.();}}/>
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 pt-3">
           {/* ============================================================== */}
           {/* LEFT COLUMN: Billing Data & Tariff Computation (7 Cols)        */}

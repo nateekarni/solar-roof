@@ -66,6 +66,8 @@ export interface IssuanceApprovalBatch {
 
 export interface BillingRow extends OperationRow {
  payments?: PaymentTransferRow[];
+ /** Persisted calculation tax, shown before issuance without recalculating in the browser. */
+ simulatedTax?: string | null;
  siteId: string; period: string; status: string;
  billingStatusView: Exclude<BillingStatusView, 'all'>;
  invoiceId: string | null; receiptId: string | null;

@@ -4,7 +4,7 @@ import {Button} from '../../components/ui/button';
 import {DropdownMenuItem} from '../../components/ui/dropdown-menu';
 import {useLocale} from '../../providers/locale-provider';
 
-const englishLabels:Record<string,string>={detail:'View Billing Details',pay:'Pay with Slip',verify:'Verify Payment Slip',invoice:'View Invoice',receipt:'View Receipt'};
+const englishLabels:Record<string,string>={detail:'View Billing Details',approve_issuance:'Approve and issue',pay:'Pay with Slip',verify:'Verify Payment Slip',invoice:'View Invoice',receipt:'View Receipt'};
 export function OperationActionList({actions,onAction,menu=false}:{actions:OperationAction[];onAction:(id:string)=>void;menu?:boolean}) {
  const locale=useLocale();
  return actions.map(action=>{

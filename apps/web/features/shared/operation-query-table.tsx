@@ -27,6 +27,7 @@ export function OperationQueryTable({ initial, ...props }: Omit<OperationTablePr
   const [data,setData]=React.useState(initial),[summary,setSummary]=React.useState(props.summary);
   const [search,setSearch]=React.useState(searchParams.get('search')??'');
   const [loading,setLoading]=React.useState(false),[error,setError]=React.useState('');
+  const [approvalRevision,refreshAfterApproval]=React.useReducer(value=>value+1,0);
   const history=React.useRef<string[]>([]);
   const [,refreshHistory]=React.useReducer(value=>value+1,0);
   const revision=React.useRef(0);
@@ -65,7 +66,7 @@ export function OperationQueryTable({ initial, ...props }: Omit<OperationTablePr
       .catch((e:Error)=>{if(current===revision.current&&!controller.signal.aborted)setError(e.message);})
       .finally(()=>{if(current===revision.current&&!controller.signal.aborted)setLoading(false);});
     return()=>controller.abort();
-  },[props.resource,query,initial]);
+  },[props.resource,query,initial,approvalRevision]);
   const goToLastPage = async () => {
     const current = revision.current;
     setLoading(true); setError('');
@@ -95,7 +96,7 @@ export function OperationQueryTable({ initial, ...props }: Omit<OperationTablePr
   </div>{props.resource==='billing'&&<BillingStatusTabs value={billingStatusView} panelId={resultsPanelId} counts={data.facets?.billingStatusCounts} locale={th?'th':'en'} onValueChange={billingStatusView=>update({billingStatusView})}/>}</div>;
 return <div className="space-y-3" aria-busy={loading}>
     {error&&<p role="alert">{error}</p>}
-    <OperationTable {...props} {...(props.resource==='billing'?{selectionScope:JSON.stringify([query,search]),resultsPanel:{id:resultsPanelId,labelledBy:billingStatusTabId(resultsPanelId,billingStatusView)}}:{})} columns={data.columns} rows={error?[]:data.rows} summary={summary} toolbar={toolbar} serverManaged />
+    <OperationTable {...props} {...(props.resource==='billing'?{onBillingApprovalCompleted:refreshAfterApproval,selectionScope:JSON.stringify([query,search]),resultsPanel:{id:resultsPanelId,labelledBy:billingStatusTabId(resultsPanelId,billingStatusView)}}:{})} columns={data.columns} rows={error?[]:data.rows} summary={summary} toolbar={toolbar} serverManaged />
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3">
       <p role="status" className="text-sm text-muted-foreground">{loading?(th?'กำลังโหลด…':'Loading…'):(th?`${data.rows.length} รายการในหน้านี้`:`${data.rows.length} rows on this page`)}</p>
       <div className="flex flex-wrap items-center gap-3"><span className="text-xs text-muted-foreground">{th?'ต่อหน้า':'Rows per page'}</span><ChoiceSelect aria-label={th?'จำนวนต่อหน้า':'Rows per page'} className="h-10 w-16" value={searchParams.get('limit')??'25'} onChange={e=>update({limit:Number(e.target.value)})}>{[10,25,50,100].map(size=><option key={size} value={size}>{size}</option>)}</ChoiceSelect><span className="text-xs text-muted-foreground">{th?'หน้า':'Page'} {searchParams.has('cursor')?history.current.length+1:1}</span><div className="flex gap-1">

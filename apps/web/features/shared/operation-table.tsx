@@ -35,6 +35,7 @@ import { Card } from "../../components/ui/card";
 import { DataTable } from "../../components/ui/data-table";
 import { Checkbox } from "../../components/ui/checkbox";
 import {eligibleBillingRows,reduceSelection,type BillingSelectionControls} from '../billing/billing-selection';
+import {BillingBulkApproval} from '../billing/billing-bulk-approval';
 import {
   Dialog,
   DialogContent,
@@ -101,6 +102,7 @@ export interface OperationTableProps {
   toolbar?: React.ReactNode;
   resultsPanel?: {id:string;labelledBy:string};
   selectionScope?:string;
+  onBillingApprovalCompleted?:()=>void;
 }
 
 const COLUMN_TRANSLATIONS: Record<string, string> = {
@@ -157,6 +159,7 @@ export function OperationTable({
   toolbar,
   resultsPanel,
   selectionScope,
+  onBillingApprovalCompleted,
 }: OperationTableProps) {
   const t = useT();
   const locale = useLocale();
@@ -176,6 +179,10 @@ export function OperationTable({
   const billingSelection=React.useMemo(()=>({selected,toggle:toggleSelection,togglePage:togglePageSelection,locale}),[selected,toggleSelection,togglePageSelection,locale]);
   const user = useSessionUser();
   const financial = useFinancialCapabilities();
+  const [approvalRow,setApprovalRow]=React.useState<OperationRow|null>(null);
+  const [approvalOpen,setApprovalOpen]=React.useState(false);
+  const approvalCompleted=()=>{resetSelection();if(onBillingApprovalCompleted)onBillingApprovalCompleted();else router.refresh();};
+  const approver={displayName:user.displayName,position:user.companyPosition,hasSignature:user.hasSignature};
   const [queryControlsReady,setQueryControlsReady]=React.useState(false);
   const [permissionError,setPermissionError]=React.useState(false);
   const [openingDetail,setOpeningDetail]=React.useState(false);
@@ -277,6 +284,7 @@ export function OperationTable({
 
   const handleAction = (id:string,item:OperationRow) => {
     if(id==='detail')openResourceDetail(resource,item);
+    else if(id==='approve_issuance'){setApprovalRow(item);setApprovalOpen(true);}
     else if(id==='pay'){setSelectedPayCycle(item);setPayDialogOpen(true);}
     else if(id==='verify')void openResourceDetail(resource,item);
     else if(id==='invoice'||id==='receipt')openDocumentPreview(id,item);
@@ -590,6 +598,11 @@ export function OperationTable({
         />
       </div>} /></div>
 
+      {resource==='billing'&&<>
+        <BillingBulkApproval rows={eligibleBillingRows(rows).filter(row=>selected.has(row.id))} approver={approver} locale={locale} canApprove={financial.operationsActions?.includes('approve_invoice')??false} onCompleted={approvalCompleted}/>
+        <BillingBulkApproval rows={approvalRow?[approvalRow]:[]} approver={approver} locale={locale} mode="single" open={approvalOpen} onOpenChange={setApprovalOpen} canApprove={financial.operationsActions?.includes('approve_invoice')??false} onCompleted={approvalCompleted}/>
+      </>}
+
       {/* Interactive Document Preview Modal */}
       <DocumentPreviewModal
         open={previewOpen}
@@ -604,8 +617,7 @@ export function OperationTable({
         billingId={selectedBillingId}
         initialData={selectedBillingRow}
         onUpdated={() => {
-          resetSelection();
-          router.refresh();
+          approvalCompleted();
         }}
         onOpenInvoice={(detail) => {
           openDocumentPreview("invoice", detail);

@@ -6,6 +6,18 @@ import type { DatabaseService } from "../../database/database.service.js";
 import { Pool } from 'pg';
 import { randomUUID } from 'node:crypto';
 
+test('billing list and detail expose persisted tax for issuance review',async()=>{
+ const id='00000000-0000-4000-8000-000000000001';
+ const service=new OperationsService({query:async(sql:string)=>{
+  if(sql.startsWith('SELECT id,amount'))return {rows:[]};
+  if(sql.includes('GROUP BY q."billingStatusView"'))return {rows:[]};
+  assert.match(sql,/b\.simulated_tax::text AS "simulatedTax"/);
+  return {rows:[{id,simulatedTax:'70.00000000',amount:'1070.00000000'}]};
+ }} as unknown as DatabaseService);
+ assert.equal((await service.list('billing',{role:'owner'})).rows[0]?.simulatedTax,'70.00000000');
+ assert.equal((await service.detail('billing',id,{role:'owner'})).row.simulatedTax,'70.00000000');
+});
+
 test('billing returns complete zero facets without querying an empty customer scope',async()=>{
  const service=new OperationsService({query:async()=>{assert.fail('empty scope must not query');}} as unknown as DatabaseService);
  const page=await service.list('billing',{role:'customer_user'},{billingStatusView:'paid'});
@@ -30,7 +42,7 @@ test('billing status mapping and scoped facet counts execute against isolated Po
    CREATE TABLE customers(id uuid PRIMARY KEY,name text);
    CREATE TABLE sites(id uuid PRIMARY KEY,customer_id uuid,name text,external_site_id text);
    CREATE TABLE site_account_assignments(user_id uuid,site_id uuid,revoked_at timestamptz);
-   CREATE TABLE billing_cycles(id uuid PRIMARY KEY,site_id uuid,contract_id uuid,period_start date,period_end date,billing_kind text,due_date date,consumed_kwh numeric,rate numeric,amount numeric,status text,quality text,opening_energy numeric,closing_energy numeric);
+   CREATE TABLE billing_cycles(id uuid PRIMARY KEY,site_id uuid,contract_id uuid,period_start date,period_end date,billing_kind text,due_date date,consumed_kwh numeric,rate numeric,amount numeric,simulated_tax numeric,status text,quality text,opening_energy numeric,closing_energy numeric);
    CREATE TABLE payments(id uuid PRIMARY KEY,billing_cycle_id uuid,amount numeric,verified_amount numeric,status text,paid_at timestamptz,slip_url text,rejection_reason text);
    CREATE TABLE documents(id uuid PRIMARY KEY,billing_cycle_id uuid,document_type text,is_current boolean,status text,revision int,document_number text,issue_date date);
    CREATE TABLE operational_delivery_outbox(billing_cycle_id uuid,state text,dedupe_key text);

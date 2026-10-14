@@ -40,7 +40,7 @@ export class OperationsService {
         columns=["ชื่อไซต์","ลูกค้า","ภูมิภาค","กำลังติดตั้ง (MWp)","วันเริ่มบริการ","สถานะ"];break;
       case "billing":
         sql=`SELECT b.id,b.site_id AS "siteId",b.contract_id AS "contractId",to_char(b.period_start,'YYYY-MM-DD') AS "periodStart",to_char(b.period_end,'YYYY-MM-DD') AS "periodEnd",to_char(b.period_end,'YYYY-MM') AS period,s.name AS "customerName",si.external_site_id AS "externalSiteId",si.name AS "siteName",
-          b.billing_kind AS "billingKind",to_char(d.issue_date,'YYYY-MM-DD') AS "issueDate",to_char(b.due_date,'YYYY-MM-DD') AS "dueDate",b.consumed_kwh AS "consumedKwh",b.rate,b.amount,b.status,b.quality,b.opening_energy AS "openingEnergy",b.closing_energy AS "closingEnergy",
+          b.billing_kind AS "billingKind",to_char(d.issue_date,'YYYY-MM-DD') AS "issueDate",to_char(b.due_date,'YYYY-MM-DD') AS "dueDate",b.consumed_kwh AS "consumedKwh",b.rate,b.amount,b.simulated_tax::text AS "simulatedTax",b.status,b.quality,b.opening_energy AS "openingEnergy",b.closing_energy AS "closingEnergy",
           p.id AS "paymentId",p.status AS "paymentStatus",p.slip_url AS "slipUrl",p.slip_url AS "หลักฐานการชำระ",p.paid_at AS "paidAt",
           p.rejection_reason AS "rejectionReason",d.id AS "invoiceId",r.id AS "receiptId",d.document_number AS "invoiceNumber",r.document_number AS "receiptNumber",
           CASE WHEN ${approvedAmount}>=b.amount OR b.status IN('draft','cancelled','superseded') THEN 0 ELSE ${daysOverdue} END AS "daysOverdue",
