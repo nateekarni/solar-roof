@@ -73,6 +73,9 @@ jobs:
       - name: Verify browser download transfer
         timeout-minutes: 2
         run: pnpm --filter @solar/web exec node test/platform/browser-download.mjs
+      - name: Verify personal signature browser regressions
+        timeout-minutes: 2
+        run: pnpm --filter @solar/web exec node --test test/platform/own-signature.browser.test.mjs
       - name: Verify MQTT credentials and ACLs
         run: bash infra/docker/mosquitto/smoke.sh
       - name: Real integration and browser E2E in disposable stack
