@@ -1,0 +1,7 @@
+# Real SMTP capture for production-path acceptance; all published ports are loopback.
+services:
+  production-mailpit:
+    image: axllent/mailpit:v1.27
+    ports: ['127.0.0.1:11025:1025', '127.0.0.1:18026:8025']
+  redis:
+    ports: ['127.0.0.1:16432:6379']

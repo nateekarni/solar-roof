@@ -3,7 +3,7 @@ import {spawnSync} from 'node:child_process';
 import test from 'node:test';
 
 const shell=process.platform==='win32'?'C:/Program Files/Git/bin/bash.exe':'bash';
-const suites=['harness','session','invitation','csrf','financial-safety','operations','ingestion','rollup','reports','ui-contracts','ui-jobs','accessibility','archive','history','readiness'];
+const suites=['harness','session','invitation','csrf','financial-safety','financial-core','operations','ingestion','rollup','reports','ui-contracts','ui-jobs','accessibility','archive','history','readiness'];
 
 function aggregate(mock) {
   return spawnSync(shell,['-c',`real_bash=$(command -v bash)

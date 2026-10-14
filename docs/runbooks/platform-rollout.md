@@ -59,3 +59,10 @@
 4. คง named volumes และ schema ที่เพิ่มไว้ ไม่กดลบ volume และไม่รัน down migration ที่ลบข้อมูล
 5. ตรวจ login/สิทธิ์/ข้อมูลล่าสุด/เอกสาร/MQTT replay อีกครั้ง หากฐานเสียหายให้ใช้ขั้นตอนกู้ไป volume ใหม่ ไม่ restore ทับฐานปัจจุบัน
 6. จดเวลาตั้งแต่ประกาศเหตุจนผู้ใช้กลับมาใช้ได้ และวัดข้อมูลสูญหายก่อน Gateway replay เพื่อไม่ให้ replay กลบปัญหา backup
+## หลักฐาน production finance ก่อนเปิดงานอัตโนมัติ
+
+CI ต้องผ่าน suite `financial-core` (`finance-readiness` เป็นชื่อ alias สำหรับรันเฉพาะ suite) ทั้ง real integration และ browser acceptance ด้วย PostgreSQL/storage/Mailpit แบบ disposable และ flags เฉพาะ process ทดสอบ ก่อนเริ่ม lint/test ของ web ให้ build เพื่อสร้าง Next types ใน checkout ใหม่ หลักฐานประกอบด้วย Owner setup/confirmation, สองไซต์ที่พร้อมและไม่พร้อม, invoice/receipt hashes ตรง SMTP attachments, payment approval, frozen issuer/branding และ replay ที่ไม่เพิ่มเอกสาร/outbox/อีเมล
+
+ดูวิธีคงระบบ local สำหรับทดลองใน [Coolify billing runbook](coolify-billing-test-th.md) โหมด retained ใช้ฐาน review พอร์ต 15449 เท่านั้น และ API ไม่เปิด timer อัตโนมัติ เก็บ credentials ในไฟล์ runtime ที่ ignored ในเครื่อง ข้อมูล local นี้ไม่ใช่ approval สำหรับ production และไม่แทนการตรวจ delivery กับ SMTP provider จริง
+
+เมื่อ deploy production ให้เริ่ม `FINANCIAL_WRITES_ENABLED=false` และ `FINANCIAL_SCHEDULER_ENABLED=false`, ให้ Owner กรอกข้อมูลบริษัท/logo/signatory/bank และยืนยัน canonical configuration, ผู้ดูแลตั้ง SMTP แยกใน Coolify, เปิด writes แล้วรัน controlled cutover แบบ dry-run/apply/replay ของหนึ่งไซต์ ตรวจ sent outbox, audit, document numbers และ hashes ตรงกันก่อนเปิด scheduler และ redeploy ใช้ image digests ทั้งชุดจาก successful main workflow run เดียวกัน และย้อนกลับโดยปิด flags/redeploy พร้อมเก็บทุก original/job/approval/delivery row

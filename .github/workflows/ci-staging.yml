@@ -38,7 +38,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter './packages/**' --recursive build
-      - run: pnpm lint && pnpm test
+      # Next type generation must precede tests in a clean checkout. Acceptance
+      # also starts the built web app against its isolated production fixture.
+      - run: pnpm build && pnpm lint && pnpm test
       - run: node --test scripts/ci/*.test.mjs
       - run: python3 scripts/ci/recovery-sampler.test.py
       - run: pnpm --filter @solar/api exec tsx --test test/performance/capacity-policy.test.ts test/performance/page-budget.test.ts
@@ -112,6 +114,10 @@ jobs:
             test/artifacts/platform-capacity.json
             test/artifacts/platform-capacity-*.json
             test/artifacts/browser-server.log
+            test/artifacts/production-finance.json
+            test/artifacts/production-*.pdf
+            test/artifacts/production-finance-browser*.json
+            test/artifacts/production-finance-browser.png
             apps/web/test/artifacts/*.png
           retention-days: 7
       - name: Publish the tested image IDs

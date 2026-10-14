@@ -3,6 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 source scripts/ci/isolated-stack.sh
 compose+=(-f infra/ci/report-worker.yml)
+compose+=(-f infra/ci/production-finance.yml)
 stack_created=true
 "${compose[@]}" up -d --wait --wait-timeout 240
 # Same migrations and manual user command run twice; test confirms password is not reset.
@@ -16,6 +17,7 @@ export READINESS_WEB_URL='http://localhost:13000'
 export READINESS_ACCOUNTS_FILE="$(node -p "require('node:path').resolve('test/artifacts/accounts.json')")"
 node scripts/ci/coolify-deploy.mjs wait http://127.0.0.1:13001/ready/mqtt
 pnpm --filter @solar/api exec tsx test/readiness.integration.ts
+bash scripts/ci/production-finance-check.sh
 DASHBOARD_TEST_DATABASE_URL="$READINESS_DATABASE_URL" pnpm --filter @solar/api exec tsx --tsconfig tsconfig.json --test src/modules/dashboard/dashboard.postgres.spec.ts
 # Dependency outages must change readiness to 503 without killing API liveness.
 for dependency in postgres storage; do

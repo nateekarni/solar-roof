@@ -8,6 +8,8 @@ import {BillingController} from '../../src/modules/billing/billing.controller.js
 import {FinancialReadinessService} from '../../src/modules/financial-readiness/financial-readiness.service.js';
 import {FinancialApplicationService} from '../../src/modules/billing/financial-application.service.js';
 import {routeAllowed} from '../../src/common/auth/route-policy.js';
+import {DatabaseService} from '../../src/database/database.service.js';
+import {createHash} from 'node:crypto';
 const base=process.env.READINESS_API_URL!, web=process.env.READINESS_WEB_URL!;
 assert.equal(base,'http://127.0.0.1:13001'); assert.equal(web,'http://localhost:13000');
 test('financial HTTP entry points fail closed without creating or mutating rows, and capabilities respect current roles',async()=>{
@@ -57,21 +59,22 @@ test('financial HTTP entry points fail closed without creating or mutating rows,
     assert.equal((await request(`/v1/billing-cycles/${cycle}/${suffix}`,method,{status:'approved'})).status,allowed?503:403,`${role} ${suffix}`);
    }
    const mail=await request(`/v1/contracts/${contract}/send-email`,'POST',{});
-   assert.equal(mail.status,403,`${role} retired contract send-email`);
+   assert.equal(mail.status,['owner','accountant'].includes(role)?409:403,`${role} requires a saved original before contract delivery`);
    assert.deepEqual(await snapshot(),before,`${role} contract mail must preserve financial rows and outbox`);
    if(['owner','admin'].includes(role)) {
     const override=await request(`/v1/contracts/${contract}/send-email`,'POST',{recipientEmail:'ad-hoc@example.invalid'});
-    assert.equal(override.status,403);
+    assert.equal(override.status,role==='owner'?400:403);
     assert.deepEqual(await snapshot(),before,`${role} rejected address override must preserve financial rows and outbox`);
    }
    assert.equal((await request('/v1/documents','POST',{siteId:site})).status,['owner','accountant'].includes(role)?503:403);
-   assert.equal((await request('/v1/billing-cycles','POST',{siteId:site})).status,['owner','accountant'].includes(role)?503:403);
+   assert.equal((await request('/v1/billing-cycles','POST',{siteId:site})).status,['owner','accountant'].includes(role)?400:403,'An incomplete period is invalid before finance readiness is evaluated');
    assert.equal((await request('/v1/contracts','POST',{siteId:site})).status,403,'Capability and retired contract author route agree');
   }
   await db.query("UPDATE users SET role='customer_user' WHERE id=$1",[id]);
   await db.query('INSERT INTO site_account_assignments(id,user_id,site_id) VALUES($1,$2,$3)',[randomUUID(),id,site]);
   assert.equal((await request(`/v1/billing-cycles/${cycle}/pay`,'POST',{})).status,400,'Payment submission requires transfer evidence');
-  assert.equal((await request(`/v1/billing-cycles/${cycle}/pay`,'POST',{amount:123.45,evidenceKey:`financial-safety-${id}`,note:'Actual payment evidence'})).status,201);
+  assert.equal((await request(`/v1/billing-cycles/${cycle}/pay`,'POST',{amount:123.45,evidenceKey:`financial-safety-${id}`,note:'Actual payment evidence'})).status,409,'Legacy cycle without a frozen policy cannot accept new transfers');
+  assert.equal((await snapshot()).payments,0);
   assert.equal((await snapshot()).documents,1,'Evidence must not issue receipt');
   const records=await (await request('/v1/operations/documents')).json();assert.ok(records.rows.some((record:{id:string})=>record.id===doc),'Original document metadata remains readable in customer scope');
   await db.query('UPDATE users SET customer_id=NULL WHERE id=$1',[id]);
@@ -80,37 +83,33 @@ test('financial HTTP entry points fail closed without creating or mutating rows,
  } finally {await db.query('DELETE FROM audit_events WHERE actor_id=$1 OR entity_id=$2',[id,cycle]);await db.query('DELETE FROM payments WHERE billing_cycle_id=$1',[cycle]);await db.query('DELETE FROM financial_delivery_outbox WHERE document_id IN (SELECT id FROM documents WHERE site_id=$1)',[site]);await db.query('DELETE FROM document_artifacts WHERE document_id IN (SELECT id FROM documents WHERE site_id=$1)',[site]);await db.query('DELETE FROM documents WHERE site_id=$1',[site]);await db.query('DELETE FROM billing_cycles WHERE site_id=$1',[site]);await db.query('DELETE FROM site_account_assignments WHERE user_id=$1',[id]);await db.query('DELETE FROM auth_sessions WHERE user_id=$1',[id]);await db.query('DELETE FROM users WHERE id=$1',[id]);await db.query('DELETE FROM rate_versions WHERE contract_id IN (SELECT id FROM contracts WHERE site_id=$1)',[site]);await db.query('DELETE FROM contracts WHERE site_id=$1',[site]);await db.query('DELETE FROM notification_feed_events WHERE site_id=$1',[site]);await db.query('DELETE FROM sites WHERE id=$1',[site]);await db.query('DELETE FROM customers WHERE id=$1',[customer]);await db.end();}
 });
 
-test('contract email production gate blocks flag bypass before database or SMTP access for every role',async()=>{
+test('a writes flag cannot bypass readiness for a stored contract original',async()=>{
+ const target=assertIsolatedDatabase(process.env.READINESS_DATABASE_URL!);
+ const admin=new Pool({connectionString:target}),schema='financial_safety_'+randomUUID().replaceAll('-','');
+ await admin.query(`CREATE SCHEMA ${schema}`);
+ const pool=new Pool({connectionString:target,options:`-c search_path=${schema},public`});
  const saved={NODE_ENV:process.env.NODE_ENV,FINANCIAL_WRITES_ENABLED:process.env.FINANCIAL_WRITES_ENABLED};
- const accesses:string[]=[];
- const db={query:async()=>{accesses.push('query');throw new Error('Unexpected database query');},pool:{connect:async()=>{accesses.push('connect');throw new Error('Unexpected database connection');}}};
  process.env.NODE_ENV='production';process.env.FINANCIAL_WRITES_ENABLED='true';
- const readiness=new FinancialReadinessService(db as any);
- const financial=new FinancialApplicationService(db as any,readiness);
- const controller=new BillingController(db as any,readiness,financial,{} as any);
- const nodemailer=(await import('nodemailer')).default;
- const originalTransport=nodemailer.createTransport;
- nodemailer.createTransport=(()=>{accesses.push('smtp');throw new Error('Unexpected SMTP access');}) as typeof originalTransport;
  try {
-  for(const role of ['owner','admin','accountant','operator','customer_user']) {
-   const author=role==='owner';
-   assert.equal(routeAllowed(role,'POST','/v1/contracts/fixture/send-email'),false);
-   await assert.rejects(controller.sendContractEmail('fixture',{}, {user:{role}}),(error:any)=>{
-    assert.equal(error.getStatus(),author?503:403);
-    if(author)assert.equal(error.getResponse().code,'FINANCIAL_NOT_READY');
-    return true;
-   });
-   assert.deepEqual(accesses,[],`${role} must not query, enqueue or send`);
-  }
-  for(const role of ['owner','admin']) {
-   await assert.rejects(controller.sendContractEmail('fixture',{recipientEmail:'ad-hoc@example.invalid'},{user:{role}}),/override/i);
-   assert.deepEqual(accesses,[],`${role} override must not query, enqueue or send`);
-  }
-  assert.deepEqual(Object.keys((await readiness.capabilities('admin',true)).unavailable),[]);
-  assert.equal(routeAllowed('admin','PATCH','/v1/billing-cycles/fixture/verify-payment'),false);
-  for(const role of ['owner','accountant'])assert.equal(routeAllowed(role,'PATCH','/v1/billing-cycles/fixture/verify-payment'),true);
- } finally {
-  nodemailer.createTransport=originalTransport;
-  for(const [key,value] of Object.entries(saved)){if(value===undefined)delete process.env[key];else process.env[key]=value;}
+  for(const {tablename}of (await admin.query("SELECT tablename FROM pg_tables WHERE schemaname='public'")).rows){assert.match(tablename,/^[a-z_0-9]+$/);await pool.query(`CREATE TABLE ${schema}.${tablename} (LIKE public.${tablename} INCLUDING ALL)`);}
+  const owner=randomUUID(),customer=randomUUID(),site=randomUUID(),contract=randomUUID(),document=randomUUID();
+  await pool.query("INSERT INTO users(id,email,display_name,role,status) VALUES($1,'contract-owner@example.test','Owner','owner','active')",[owner]);
+  await pool.query("INSERT INTO customers(id,name,code,region) VALUES($1,'Contract customer',$2,'fixture')",[customer,customer]);
+  await pool.query("INSERT INTO sites(id,customer_id,name,capacity_mwp) VALUES($1,$2,'Contract site',0.1)",[site,customer]);
+  await pool.query("INSERT INTO contracts(id,site_id,version,start_date,payment_terms,signer_name) VALUES($1,$2,1,'2026-09-01','30 days','Authorized signer')",[contract,site]);
+  const bytes=Buffer.from('%PDF-frozen-approval-gate-fixture'),sha=createHash('sha256').update(bytes).digest('hex');
+  await pool.query("INSERT INTO documents(id,site_id,contract_id,document_type,document_number,status,snapshot,content_hash,file_key,template_version,issue_date) VALUES($1::uuid,$2,$3,'contract',$1::text,'issued',$4,$5,'local-artifact:approval-gate','ppa-th-sarabun-new-v5','2026-09-01')",[document,site,contract,JSON.stringify({policy:{scope:'PRODUCTION'},recipients:[{id:owner,email:'contract-owner@example.test'}]}),sha]);
+  await pool.query('INSERT INTO document_artifacts(document_id,pdf_bytes,sha256) VALUES($1,$2,$3)',[document,bytes,sha]);
+  const db={pool,query:pool.query.bind(pool),transaction:DatabaseService.prototype.transaction} as unknown as DatabaseService;
+  const readiness=new FinancialReadinessService(db),financial=new FinancialApplicationService(db,readiness),controller=new BillingController(db,readiness,financial,{} as any);
+  await assert.rejects(controller.sendContractEmail(contract,{}, {user:{id:owner,role:'owner'}}),(error:any)=>error.getStatus()===503&&error.getResponse().code==='FINANCIAL_NOT_READY');
+  assert.equal((await pool.query('SELECT count(*)::int n FROM financial_delivery_outbox')).rows[0].n,0);
+  assert.equal((await pool.query('SELECT count(*)::int n FROM financial_readiness_approvals')).rows[0].n,0);
+  assert.equal(createHash('sha256').update((await pool.query('SELECT pdf_bytes FROM document_artifacts WHERE document_id=$1',[document])).rows[0].pdf_bytes).digest('hex'),sha);
+  await assert.rejects(controller.sendContractEmail(contract,{recipientEmail:'ad-hoc@example.invalid'},{user:{id:owner,role:'owner'}}),/override/i);
+  for(const role of ['owner','accountant','admin','operator','customer_user'])assert.equal(routeAllowed(role,'POST','/v1/contracts/fixture/send-email'),['owner','accountant'].includes(role));
+ }finally{
+  for(const [key,value]of Object.entries(saved)){if(value===undefined)delete process.env[key];else process.env[key]=value;}
+  await pool.end();await admin.query(`DROP SCHEMA ${schema} CASCADE`);await admin.end();
  }
 });

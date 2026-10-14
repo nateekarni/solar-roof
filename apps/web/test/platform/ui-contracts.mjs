@@ -84,10 +84,11 @@ try {
   let paymentRequests=0;page.on('request',request=>{if(request.method()==='POST'&&request.url().endsWith('/pay'))paymentRequests++;});
   const paid=page.waitForResponse(r=>r.request().method()==='POST'&&r.url().endsWith('/pay'));
   await page.getByRole('dialog').locator('form').evaluate(form=>{form.requestSubmit();form.requestSubmit();});
-  const paymentResponse=await paid;assert.equal(paymentRequests,1,'Synchronous double submit must send one POST');assert.equal(paymentResponse.status(),201,await paymentResponse.text());
-  await page.getByText('ส่งหลักฐานการชำระเงินเรียบร้อยแล้ว อยู่ระหว่างการตรวจสอบโดยเจ้าหน้าที่',{exact:true}).waitFor();
-  assert.equal(paymentRequests,1,'Two synchronous submit events send exactly one evidence mutation');
-  await page.getByRole('dialog').waitFor({state:'hidden'});
+  const paymentResponse=await paid;assert.equal(paymentRequests,1,'Synchronous double submit must send one POST');assert.equal(paymentResponse.status(),409,await paymentResponse.text());
+  await page.getByRole('dialog').getByRole('alert').filter({hasText:'เกิดข้อผิดพลาดในการส่งหลักฐานการชำระเงิน'}).waitFor();
+  assert.equal(paymentRequests,1,'Two synchronous submit events send exactly one attempted evidence mutation');
+  assert.equal((await db.query('SELECT count(*)::int AS count FROM payments WHERE billing_cycle_id IN (SELECT id FROM billing_cycles WHERE site_id=$1)',[site])).rows[0].count,0,'Legacy cycles without a frozen financial policy reject payment without writing a row');
+  await page.getByRole('button',{name:'ยกเลิก',exact:true}).click();await page.getByRole('dialog').waitFor({state:'hidden'});
   // The database changes scope after the displayed action: server denies the real POST.
   await page.goto(web+'/billing?search=U1%20Browser&status=approved');await page.getByRole('button',{name:/เมนูการดำเนินการ|Open actions menu/}).first().click();await page.getByRole('menuitem',{name:'ชำระเงินและแนบสลิป',exact:true}).click();
   await page.locator('#slip-upload').setInputFiles({name:'evidence.png',mimeType:'image/png',buffer:Buffer.concat([Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jxioAAAAASUVORK5CYII=','base64'),Buffer.from(randomUUID())])});
@@ -103,7 +104,7 @@ try {
   assert.equal(await page.getByRole('button',{name:'ชำระเงินและแนบสลิป',exact:true}).count(),0);
   await db.query("UPDATE users SET role='accountant' WHERE id=$1",[user]);
   const expectedDeniedErrors=errors.filter(message=>message.includes('403 (Forbidden)'));assert.ok(expectedDeniedErrors.length>=1,'The deliberate denied HTTP request is reported by Chromium');
-  assert.deepEqual(errors.filter(message=>!message.includes('403 (Forbidden)')),[],timezoneId);errors.length=0;
+  assert.deepEqual(errors.filter(message=>!message.includes('403 (Forbidden)')&&!message.includes('409 (Conflict)')),[],timezoneId);errors.length=0;
   await db.query("UPDATE users SET role='admin' WHERE id=$1",[user]);
 
   assert.deepEqual(errors,[],`${timezoneId}: console and page errors must be empty`);await context.close();

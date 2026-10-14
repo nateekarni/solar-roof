@@ -35,7 +35,7 @@ try {
   await context.addCookies([{name:'access_token',value:tokens.accessToken,domain:'localhost',path:'/',httpOnly:true},{name:'locale',value:'en',domain:'localhost',path:'/'}]);
   const page=await context.newPage(),errors=[];
   page.on('pageerror',error=>errors.push(error.message));
-  page.on('console',message=>{if(message.type()==='error')errors.push(message.text());});
+  page.on('console',message=>{if(message.type()==='error')errors.push(`${message.text()} (${message.location().url})`);});
   const dashboardResponse=await page.goto(web+'/');
   assert.equal(dashboardResponse.status(),200,`Dashboard HTTP: ${page.url()} ${(await page.locator('body').innerText()).slice(0,800)}`);
   try {await page.locator('.dashboard-content .stats-grid:visible').waitFor();}

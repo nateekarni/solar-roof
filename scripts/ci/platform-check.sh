@@ -2,10 +2,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 suite="${1:?Usage: platform-check.sh <suite> [--prebuilt]}"
+[[ "$suite" != finance-readiness ]] || suite=financial-core
 [[ $# -le 2 && ( $# -eq 1 || "$2" == --prebuilt ) ]] || { echo 'Invalid arguments' >&2; exit 1; }
 if [[ "$suite" == recovery ]]; then exec bash scripts/ci/recovery-drill.sh --profile fixture; fi
 known='harness session invitation csrf financial-safety financial-core operations ingestion rollup reports ui-contracts ui-jobs accessibility archive history recovery readiness'
-implemented=(harness session invitation csrf financial-safety operations ingestion rollup reports ui-contracts ui-jobs accessibility archive history readiness)
+implemented=(harness session invitation csrf financial-safety financial-core operations ingestion rollup reports ui-contracts ui-jobs accessibility archive history readiness)
 if [[ "$suite" == all-fast ]]; then
   echo "Implemented: ${implemented[*]}"
   not_ready=()
@@ -31,12 +32,13 @@ else
   suites=("$suite")
 fi
 for item in "${suites[@]}"; do
-  case "$item" in ui-jobs|accessibility|history) ;; *) [[ -f "apps/api/test/platform/$item.test.ts" ]] || { echo "Suite not implemented: $item (API)" >&2; exit 1; } ;; esac
+  case "$item" in ui-jobs|accessibility|history|financial-core) ;; *) [[ -f "apps/api/test/platform/$item.test.ts" ]] || { echo "Suite not implemented: $item (API)" >&2; exit 1; } ;; esac
   case "$item" in invitation|csrf|financial-safety|operations|ui-contracts|ui-jobs|accessibility|history)
     [[ -f "apps/web/test/platform/$item.mjs" ]] || { echo "Suite not implemented: $item (browser)" >&2; exit 1; } ;; esac
   if [[ "$item" == recovery ]]; then [[ -f scripts/ci/recovery-drill.sh ]] || { echo 'Recovery drill not implemented' >&2; exit 1; }; fi
 done
 source scripts/ci/isolated-stack.sh
+if [[ " ${suites[*]} " == *' financial-core '* ]]; then compose+=(-f infra/ci/production-finance.yml); fi
 if [[ " ${suites[*]} " == *' reports '* || " ${suites[*]} " == *' ui-jobs '* || " ${suites[*]} " == *' accessibility '* ]]; then compose+=(-f infra/ci/report-worker.yml); fi
 if [[ " ${suites[*]} " == *' rollup '* ]]; then
   compose+=(-f infra/ci/energy-read-model.yml)
@@ -73,7 +75,11 @@ for item in "${suites[@]}"; do
   "${compose[@]}" restart api
   node scripts/ci/coolify-deploy.mjs wait "$READINESS_API_URL/ready"
   node scripts/ci/coolify-deploy.mjs wait "$READINESS_API_URL/ready/mqtt"
-  case "$item" in ui-jobs|accessibility|history) ;; *) pnpm --filter @solar/api exec tsx --tsconfig tsconfig.json --test "test/platform/$item.test.ts" ;; esac
+  case "$item" in
+    financial-core) bash scripts/ci/production-finance-check.sh ;;
+    ui-jobs|accessibility|history) ;;
+    *) pnpm --filter @solar/api exec tsx --tsconfig tsconfig.json --test "test/platform/$item.test.ts" ;;
+  esac
   case "$item" in invitation|csrf|financial-safety|operations|ui-contracts|ui-jobs|accessibility|history) pnpm --filter @solar/web exec node "test/platform/$item.mjs" ;; esac
   if [[ "$item" == history ]]; then
     export HISTORY_CI_API_ENABLED=false

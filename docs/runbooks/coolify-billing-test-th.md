@@ -121,3 +121,25 @@ pnpm exec tsx --tsconfig apps/api/tsconfig.json scripts/local-system/run-cutoff.
 ```
 
 local flow ยังผูก fixture/Mailpit และแสดง TEST ตามเดิม ไม่ใช้คำสั่งหรือ marker นี้เปิด production
+## ตรวจ acceptance ด้วย production code บน local เท่านั้น
+
+Task 9 ตรวจ Owner ตั้งค่าผ่าน browser จริง แล้วคำนวณ/ออก invoice/ส่ง Mailpit/รับชำระเต็มยอด/ออก receipt และ replay scheduler/cutover โดยใช้ schema แยกใน Docker-local review เท่านั้น ไม่สร้าง approval ใน seed หรือ migration และไม่ชี้ไป Coolify production
+
+```powershell
+pnpm build
+docker compose -f scripts/local-financial-review/compose.yml -p solar-financial-flow-review up -d --wait
+. ./scripts/local-financial-review/environment.ps1
+$env:PRODUCTION_FINANCE_DATABASE_URL=$env:DATABASE_URL
+$env:NODE_ENV='production'
+Remove-Item Env:LOCAL_FINANCIAL_FIXTURE_MARKER -ErrorAction SilentlyContinue
+$env:SMTP_FROM='billing@acceptance.example.test'
+$env:FINANCIAL_SCHEDULER_ENABLED='true'
+$env:PRODUCTION_FINANCE_BROWSER='true'
+# ถ้าไม่มี Chromium ของ Playwright ให้ชี้ browser ที่ติดตั้งอยู่ เช่น Edge บน Windows
+$env:PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH='C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'
+pnpm --filter @solar/api exec tsx --tsconfig tsconfig.json test/production-financial-workflow.integration.ts --retain
+```
+
+`--retain` อนุญาตเฉพาะ `127.0.0.1:15449/solar_financial_flow_review`; เปิดเว็บ `http://localhost:13049`, API `http://127.0.0.1:13059` และ Mailpit `http://localhost:18049` หลังตรวจสำเร็จ ระบบคงข้อมูลและ process ไว้ให้ลองเอง โดย API ที่คงไว้ตั้ง scheduler=false เพื่อให้เรียก cutover ด้วยคำสั่งอย่างควบคุม รายละเอียด schema, IDs, counts และ hashes อยู่ `test/artifacts/production-finance.json`; ข้อมูลบัญชีเฉพาะชุดนี้อยู่ `test/artifacts/production-finance-runtime.json` ในเครื่องเท่านั้น ห้ามนำไฟล์ runtime ไป commit หรืออัปโหลด
+
+เมื่อไม่ใช้ `--retain` สคริปต์หยุดเฉพาะ app process ที่สร้างเองก่อนลบ schema และ object ของรอบนั้น ไม่ลบ public fixture หรือ Mailpit ทั้งกล่อง ห้าม reset/down volumes เพื่อทำความสะอาด acceptance นี้ เก็บหลักฐาน local ไม่ใช่การยืนยัน SMTP provider ของ production; การเปิด Coolify ยังต้องผ่าน controlled apply และยืนยันปลายทางตามขั้นตอนด้านล่าง

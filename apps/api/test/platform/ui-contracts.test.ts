@@ -25,21 +25,13 @@ test('billing document identities are scoped persisted IDs; direct preview never
   const page=await (await req('/v1/operations/billing')).json(),row=page.rows.find((r:{id:string})=>r.id===cycle);
   assert.equal(row.invoiceId,invoice);assert.equal(row.receiptId,receipt);assert.equal(row.invoiceNumber,'U1-INV');assert.equal(row.receiptNumber,'U1-RCT');
   assert.equal((await (await req('/v1/operations/documents')).json()).rows.some((r:{id:string})=>r.id===invoice),false,'ID lies beyond first page');
-  // A database trigger widens the real race; disabling serialization creates multiple payment rows.
-  await db.query(`CREATE FUNCTION u1_payment_race() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.billing_cycle_id='${cycle}'::uuid THEN PERFORM pg_sleep(0.1); END IF; RETURN NEW; END $$`);
-  await db.query('CREATE TRIGGER u1_payment_race BEFORE INSERT ON payments FOR EACH ROW EXECUTE FUNCTION u1_payment_race()');
-  try {
-   const replies=await Promise.all(Array.from({length:4},()=>req('/v1/billing-cycles/'+cycle+'/pay','POST',{amount:10,paidAt:'2026-09-30T10:00:00Z',slipUrl:'data:image/png;base64,'+Buffer.from(user).toString('base64')})));
-   assert.deepEqual(replies.map(response=>response.status).sort(),[201,409,409,409],'Concurrent duplicate evidence is accepted exactly once');
-   assert.equal(Number((await db.query('SELECT count(*) FROM payments WHERE billing_cycle_id=$1',[cycle])).rows[0].count),1);
-  } finally {await db.query('DROP TRIGGER u1_payment_race ON payments');await db.query('DROP FUNCTION u1_payment_race()');}
-  const evidence=(await db.query('SELECT amount,paid_at,declared_amount FROM payments WHERE billing_cycle_id=$1',[cycle])).rows[0];assert.equal(evidence.amount,null);assert.equal(evidence.paid_at,null);assert.equal(Number(evidence.declared_amount),10);
-  await db.query(`CREATE FUNCTION u1_audit_failure() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.actor_id='${user}'::uuid AND NEW.action='billing_cycle.pay' THEN RAISE EXCEPTION 'U1 audit failure'; END IF; RETURN NEW; END $$`);
-  await db.query('CREATE TRIGGER u1_audit_failure BEFORE INSERT ON audit_events FOR EACH ROW EXECUTE FUNCTION u1_audit_failure()');
-  try {
-   assert.equal((await req('/v1/billing-cycles/'+cycle+'/pay','POST',{amount:20,slipUrl:'data:image/png;base64,'+Buffer.from('audit-'+user).toString('base64')})).status,500);
-   assert.equal(Number((await db.query('SELECT count(*) FROM payments WHERE billing_cycle_id=$1',[cycle])).rows[0].count),1,'Audit failure rolls back the new evidence row');
-  } finally {await db.query('DROP TRIGGER u1_audit_failure ON audit_events');await db.query('DROP FUNCTION u1_audit_failure()');}
+  // Legacy metadata remains readable, but cannot fabricate a frozen policy and
+  // accept new financial evidence. Approved production race/audit rollback
+  // coverage lives in production-financial-workflow.integration.ts.
+  const replies=await Promise.all(Array.from({length:4},()=>req('/v1/billing-cycles/'+cycle+'/pay','POST',{amount:10,paidAt:'2026-09-30T10:00:00Z',evidenceKey:'legacy-'+user})));
+  assert.deepEqual(replies.map(response=>response.status),[409,409,409,409]);
+  for(const response of replies)assert.match((await response.json()).message,/Frozen financial policy integrity/);
+  assert.equal(Number((await db.query('SELECT count(*) FROM payments WHERE billing_cycle_id=$1',[cycle])).rows[0].count),0,'Legacy metadata alone cannot authorize payment writes');
   await db.query('INSERT INTO site_account_assignments(id,user_id,site_id) VALUES($1,$2,$3)',[randomUUID(),user,site]);
   for(const role of ['owner','admin','operator','accountant','customer_user']) {
    await db.query('UPDATE users SET role=$1 WHERE id=$2',[role,user]);
