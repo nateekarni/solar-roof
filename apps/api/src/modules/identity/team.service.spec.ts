@@ -23,13 +23,15 @@ test('grant patches reject unknown fields, delegated management, and invalid sco
  await assert.rejects(()=>service.updateGrant(owner,'user','business',{revision:0,position:{id:positionId},overrides:{},scope:{mode:'selected',siteIds:['bad']}}),/scope/);
 });
 
-function grantFixture(options:{role?:string;revision?:number;presetExists?:boolean}={}){
+function grantFixture(options:{role?:string;revision?:number;presetExists?:boolean;actorRole?:string;actorStatus?:string}={}){
  const statements:{sql:string;values:unknown[]}[]=[];
  let transactions=0;
  const client={query:async(sql:string,values:unknown[]=[])=>{
   statements.push({sql,values});
-  if(sql.startsWith('SELECT role,status'))return {rows:[{role:'owner',status:'active'}]};
-  if(sql.startsWith('SELECT role,permission_revision'))return {rows:[{role:options.role??'operator',permission_revision:options.revision??0}]};
+  if(sql.startsWith('SELECT id,role,status,permission_revision')){
+   const manager={id:owner.id,role:options.actorRole??'owner',status:options.actorStatus??'active',permission_revision:options.revision??0};
+   return {rows:values[1]===owner.id?[manager]:[manager,{id:values[1],role:options.role??'operator',status:'active',permission_revision:options.revision??0}]};
+  }
   if(sql.startsWith('SELECT p.name'))return {rows:options.presetExists===false?[]:[{name:'กรรมการบริษัท'}]};
   return {rows:[]};
  }} as unknown as PoolClient;
@@ -88,6 +90,14 @@ test('stale revisions reject typed positions before creating any preset',async()
 test('customer and opposite-domain manager accounts cannot receive employee assignments',async()=>{
  for(const role of ['customer_user','admin']){
   const {service,statements}=grantFixture({role});
+  await assert.rejects(()=>service.updateGrant(owner,employee,'business',{revision:0,position:{id:positionId},overrides:{},scope}),ForbiddenException);
+  assert.equal(statements.some(({sql})=>sql.startsWith('INSERT')||sql.startsWith('UPDATE')),false);
+ }
+});
+
+test('participant locks recheck current manager status and role before assignments',async()=>{
+ for(const options of [{actorRole:'operator'},{actorStatus:'inactive'}]){
+  const {service,statements}=grantFixture(options);
   await assert.rejects(()=>service.updateGrant(owner,employee,'business',{revision:0,position:{id:positionId},overrides:{},scope}),ForbiddenException);
   assert.equal(statements.some(({sql})=>sql.startsWith('INSERT')||sql.startsWith('UPDATE')),false);
  }

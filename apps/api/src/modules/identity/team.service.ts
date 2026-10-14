@@ -60,8 +60,14 @@ export class TeamService {
    positionName=draft.name.trim();presetRules=validateDomainRules(domain,draft.rules);
   }
   return this.db.transaction(async client=>{
-   await this.authorizeCurrent(client,actor,domain);
-   const user=(await client.query('SELECT role,permission_revision FROM users WHERE id=$1 FOR UPDATE',[uuid(userId)])).rows[0];
+   // Lock both participants in ID order: self-saves never upgrade SHARE locks, and
+   // reciprocal manager assignments acquire the same row order.
+   const targetId=uuid(userId).toLowerCase();
+   const participants=(await client.query('SELECT id,role,status,permission_revision FROM users WHERE id IN ($1,$2) ORDER BY id FOR UPDATE',[actor.id,targetId])).rows;
+   const manager=participants.find(row=>row.id===actor.id.toLowerCase());
+   if(!manager||manager.status!=='active')throw new ForbiddenException('Manager is inactive');
+   domainFor({...actor,role:manager.role},domain);
+   const user=participants.find(row=>row.id===targetId);
    if(!user)throw new NotFoundException('Employee not found');
    const employee=['operator','accountant'].includes(user.role);
    if(!employee&&user.role!==(domain==='business'?'owner':'admin'))throw new ForbiddenException('Only employees and this domain manager may receive a company position');

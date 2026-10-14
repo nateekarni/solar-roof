@@ -3,12 +3,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
-import { Pool } from 'pg';
+import { Pool, type PoolClient } from 'pg';
+import { ConflictException } from '@nestjs/common';
 import { TeamService } from './team.service.js';
 import { AuthorizationService } from './authorization.service.js';
 import { SettingsService } from '../settings/settings.service.js';
 import { hasPermission,siteScope } from '../../common/auth/authorization.js';
-import type { DatabaseService } from '../../database/database.service.js';
+import { DatabaseService } from '../../database/database.service.js';
 
 test('PostgreSQL domain presets overrides scope revision and revocation remain live and atomic',{skip:process.env.RBAC_SQL_TEST!=='true'},async()=>{
  const url=process.env.DATABASE_URL!;
@@ -80,3 +81,83 @@ test('PostgreSQL domain presets overrides scope revision and revocation remain l
   assert.equal((await client.query("SELECT count(*)::int AS count FROM audit_events WHERE action='business.settings.updated'")).rows[0].count,1);
  }finally{await client.query('ROLLBACK');client.release();await pool.end();}
 });
+
+for(const role of ['owner','admin'] as const)for(const reciprocal of [false,true]){
+ test(`PostgreSQL concurrent ${role} ${reciprocal?'reciprocal assignments':'self-saves'} serialize user locks`,{skip:process.env.RBAC_SQL_TEST!=='true'},async()=>{
+  const connectionString=process.env.DATABASE_URL!;
+  const location=new URL(connectionString);
+  assert.ok(['127.0.0.1','localhost'].includes(location.hostname));assert.equal(location.port,'15449');
+  assert.match(location.pathname,/^\/[a-z0-9_]*(?:test|review)[a-z0-9_]*$/i);
+  const schema='team_lock_test_'+randomUUID().replaceAll('-','');
+  const pool=new Pool({connectionString,options:`-c search_path=${schema},public -c statement_timeout=5000`,max:3});
+  const ids=['00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000002'];
+  const domain=role==='owner'?'business':'technical';
+  let releaseBarrier!:()=>void;
+  const barrier=new Promise<void>(resolve=>{releaseBarrier=resolve;});
+  let pending:Promise<PromiseSettledResult<Awaited<ReturnType<TeamService['updateGrant']>>>[]>|undefined;
+  const clients:PoolClient[]=[];
+  try{
+   await pool.query(`CREATE SCHEMA ${schema};
+    CREATE TABLE users(id uuid PRIMARY KEY,role text,status text,updated_at timestamptz);
+    CREATE TABLE sites(id uuid PRIMARY KEY);
+    CREATE TABLE site_account_assignments(user_id uuid,site_id uuid,revoked_at timestamptz);
+    CREATE TABLE audit_events(id uuid PRIMARY KEY,actor_id uuid,action text,entity_type text,entity_id uuid,correlation_id uuid,after_json jsonb)`);
+   await pool.query(await readFile(new URL('../../../../../infra/migrations/047_employee_domain_permissions.sql',import.meta.url),'utf8'));
+   await pool.query(await readFile(new URL('../../../../../infra/migrations/058_user_document_identity.sql',import.meta.url),'utf8'));
+   await pool.query("INSERT INTO users(id,role,status) VALUES($1,$3,'active'),($2,$3,'active')",[ids[0],ids[1],role]);
+   clients.push(await pool.connect(),await pool.connect());
+   const pids=await Promise.all(clients.map(async client=>(await client.query('SELECT pg_backend_pid() AS pid')).rows[0].pid as number));
+   const initialLocks=new Set<number>();
+   const services=clients.map((client,index)=>{
+    let firstUserQuery=true;
+    const wrapped=new Proxy(client,{get(target,key){
+     if(key==='query')return async(sql:string,values:unknown[]=[])=>{
+      const result=await target.query(sql,values);
+      if(firstUserQuery&&sql.startsWith('SELECT')&&sql.includes('FROM users')){
+       firstUserQuery=false;initialLocks.add(index);await barrier;
+      }
+      return result;
+     };
+     const member=Reflect.get(target,key);return typeof member==='function'?member.bind(target):member;
+    }});
+    // Execute the real transaction helper; only the connection boundary is controlled for the interleaving.
+    const db={transaction:(work:Parameters<DatabaseService['transaction']>[0])=>DatabaseService.prototype.transaction.call({pool:{connect:async()=>wrapped}} as unknown as DatabaseService,work)} as unknown as DatabaseService;
+    return new TeamService(db);
+   });
+   pending=Promise.allSettled(services.map((service,index)=>service.updateGrant({id:ids[reciprocal?index:0]!,role},ids[reciprocal?1-index:0]!,domain,{
+    revision:0,position:{name:`Manager ${index}`,rules:{}},overrides:{},scope:{mode:'all',siteIds:[]},
+   })));
+   // Hold the first completed authorization/lock query until the other request has either
+   // acquired a compatible lock (the old SHARE upgrade bug) or is waiting for its exclusive lock.
+   let overlapping=false;
+   const deadline=Date.now()+3000;
+   while(Date.now()<deadline){
+    const activity=(await pool.query('SELECT pg_blocking_pids(pid) AS blockers FROM pg_stat_activity WHERE pid=ANY($1::int[])',[pids])).rows;
+    if(initialLocks.size===2||initialLocks.size===1&&activity.some(row=>row.blockers.some((pid:number)=>pids.includes(pid)))){overlapping=true;break;}
+    await new Promise(resolve=>setTimeout(resolve,10));
+   }
+   releaseBarrier();
+   const outcomes=await pending;
+   assert.equal(overlapping,true,'Requests must overlap while a participant row is locked');
+   const successes=outcomes.filter(result=>result.status==='fulfilled');
+   const failures=outcomes.filter(result=>result.status==='rejected');
+   assert.equal(successes.length,reciprocal?2:1);
+   assert.equal(failures.length,reciprocal?0:1);
+   if(!reciprocal)assert.ok(failures[0]!.reason instanceof ConflictException,`Expected reload conflict, received ${failures[0]!.reason}`);
+   const state=(await pool.query('SELECT id,role,status,company_position_id,permission_revision FROM users ORDER BY id')).rows;
+   assert.equal(state[0].permission_revision,1);assert.equal(state[1].permission_revision,reciprocal?1:0);
+   assert.ok(state[0].company_position_id);assert.equal(Boolean(state[1].company_position_id),reciprocal);
+   assert.ok(state.every(row=>row.role===role&&row.status==='active'));
+   assert.equal((await pool.query('SELECT count(*)::int AS count FROM employee_positions')).rows[0].count,reciprocal?2:1);
+   assert.equal((await pool.query('SELECT count(*)::int AS count FROM employee_position_domains')).rows[0].count,reciprocal?2:1);
+   assert.equal((await pool.query('SELECT count(*)::int AS count FROM employee_domain_grants')).rows[0].count,0);
+   assert.equal((await pool.query('SELECT count(*)::int AS count FROM audit_events')).rows[0].count,reciprocal?2:1);
+  }finally{
+   releaseBarrier();
+   if(pending)await pending;
+   // Both service transactions release their clients through DatabaseService.transaction.
+   if(!pending)for(const client of clients)client.release();
+   await pool.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);await pool.end();
+  }
+ });
+}
