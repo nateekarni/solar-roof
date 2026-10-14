@@ -36,6 +36,8 @@
 | POSTGRES_PASSWORD | secret สุ่มใหม่สำหรับ DB ใหม่เท่านั้น |
 | DATABASE_URL | postgresql://solar:รหัสที่_percent_encodeแล้ว@postgres:5432/solar_platform |
 | JWT_ACCESS_SECRET / JWT_REFRESH_SECRET | secret สุ่มต่างกันอย่างน้อย 32 ตัวอักษร |
+| TOTP_ENCRYPTION_KEY | random 32 bytes ในรูป 64 hex; ตั้งครั้งเดียวและเก็บคงที่หลังมีผู้ใช้เปิด 2FA |
+| MQTT_CREDENTIAL_SECRET | secret สุ่มแยกสำหรับเข้ารหัสรหัส Broker ที่ Admin บันทึก; เก็บคงที่ |
 | MINIO_ROOT_USER / MINIO_ROOT_PASSWORD | solar / secret สุ่มสำหรับ storage ใหม่ |
 | STORAGE_REGION / STORAGE_BUCKET | us-east-1 / solar-platform |
 | MQTT_ENABLED / MQTT_DEFAULT_BROKER_ENABLED | false / false |
@@ -45,11 +47,14 @@
 | PILOT_USERS_ENABLED | false; ใช้คำสั่งใน Terminal แทนการเปิด seed ค้างไว้ |
 | SMTP_* | ตั้งใน Coolify สำหรับ invitations/ส่งเอกสาร/scheduler; ไม่แสดง secrets ใน UI หรือหลักฐาน |
 | FINANCIAL_WRITES_ENABLED / FINANCIAL_SCHEDULER_ENABLED | false / false ตอน deploy ครั้งแรก; เปิด writes หลัง Owner confirmation และเปิด scheduler หลังส่งจริง/replay ผ่าน |
+| TECHNICAL_ALERTS_ENABLED / COMPARISON_WORKER_ENABLED | true / true; automation ทางเทคนิคและงานคำนวณเปรียบเทียบ แยกจาก Finance scheduler |
 | feature flags report/archive/retention/restore/monitoring/backup | เริ่ม false ตาม example จนตรวจระบบนั้นพร้อม |
 
 ไม่ต้องมี BOOTSTRAP_ADMIN_EMAIL/PASSWORD หรือ bootstrap resource แล้ว ถ้าอัปเดตของเดิมลบ variables เหล่านี้ออกจาก Coolify ได้ ไม่เปลี่ยนรหัส DB/MinIO ที่มีข้อมูลอยู่เพียงเพื่อให้เหมือน example
 
 WEB_URL=https://solar.fowir.com ถูกกำหนดใน API Compose; API_INTERNAL_URL=http://api:3001 ถูกกำหนดใน web Compose ไม่ใส่ localhost หรือ mqtt-solar เป็น API URL
+
+อย่าเปลี่ยน `JWT_REFRESH_SECRET`, `TOTP_ENCRYPTION_KEY` หรือ `MQTT_CREDENTIAL_SECRET` หลังเปิดใช้งานจริงโดยไม่มีแผน rotate: ค่าแรกทำให้ refresh token เดิมใช้ไม่ได้ ค่าที่สองทำให้ถอดรหัส authenticator เดิมไม่ได้ และค่าที่สามทำให้ถอดรหัส credential ของ registered broker เดิมไม่ได้
 
 เก็บค่าพวก PLATFORM_RELEASE_REVISION / PLATFORM_IMAGE_DIGESTS_JSON / PLATFORM_RELEASE_EVIDENCE_JSON ตาม release ที่ผ่านการตรวจ หากยังไม่มี evidence สำหรับ feature เพิ่มเติมให้คง feature flags false ไม่สร้างผลตรวจสมมติ
 

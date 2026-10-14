@@ -32,6 +32,15 @@ test('web and combined deployment start independently of user provisioning',()=>
  }
  const web=compose('infra/docker/docker-compose.web.yml');assert.equal(web.services.mqtt,undefined);assert.equal(web.services.certbot,undefined);
 });
+test('web and combined deployment pass security and automation controls into the API',()=>{
+ for(const [file,env] of [['infra/docker/docker-compose.web.yml','infra/docker/.env.web.example'],['infra/docker/docker-compose.staging.yml','infra/docker/.env.staging.example']]){
+  const api=compose(file,env).services.api.environment;
+  assert.equal(api.TOTP_ENCRYPTION_KEY,'REPLACE_WITH_64_HEX_CHARACTERS');
+  assert.equal(api.MQTT_CREDENTIAL_SECRET,'REPLACE_WITH_DIFFERENT_RANDOM_SECRET');
+  assert.equal(api.TECHNICAL_ALERTS_ENABLED,'true');
+  assert.equal(api.COMPARISON_WORKER_ENABLED,'true');
+ }
+});
 test('standalone MQTT is only broker/certificate with correct domain and persistent volumes',()=>{
  const config=compose('infra/docker/docker-compose.mqtt.yml','infra/docker/.env.mqtt.example');
  assert.deepEqual(Object.keys(config.services).sort(),['certbot','mqtt']);
