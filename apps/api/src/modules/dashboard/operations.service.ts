@@ -1,4 +1,4 @@
-import type {OperationPage,OperationRow} from "@solar/api-contracts";
+import type {BillingStatusView,OperationPage,OperationRow} from "@solar/api-contracts";
 import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { DatabaseService } from "../../database/database.service.js";
 import { operationPageSql, operationPredicate, parseOperationQuery } from "./operation-query.js";
@@ -9,6 +9,14 @@ const siteConnectionStatus=`CASE WHEN si.status IN ('inactive','archived') THEN 
 const approvedAmount="coalesce((SELECT sum(coalesce(verified_amount,amount)) FROM payments WHERE billing_cycle_id=b.id AND status='paid'),0)";
 const daysOverdue="greatest(0,(now() AT TIME ZONE 'Asia/Bangkok')::date-b.due_date)";
 const collectionStatus=`CASE WHEN b.status IN ('draft','cancelled','superseded') OR NOT EXISTS(SELECT 1 FROM documents invoice WHERE invoice.billing_cycle_id=b.id AND invoice.document_type='invoice' AND invoice.is_current AND invoice.status IN('issued','finalized')) THEN NULL WHEN ${approvedAmount}>=b.amount THEN 'paid' WHEN EXISTS(SELECT 1 FROM payments WHERE billing_cycle_id=b.id AND status='pending_verification') THEN 'pending_review' WHEN ${daysOverdue}>0 THEN 'overdue' ELSE 'awaiting_payment' END`;
+// Project once from the collection result so rows, tab filters, and counts cannot drift.
+const billingStatusView=`CASE
+ WHEN q.status='pending_issue_approval' THEN 'pending_issue_approval'
+ WHEN q."collectionStatus"='pending_review' THEN 'pending_verification'
+ WHEN q."collectionStatus"='overdue' THEN 'overdue'
+ WHEN q."collectionStatus"='paid' THEN 'paid'
+ WHEN q."collectionStatus"='awaiting_payment' THEN 'awaiting_payment'
+ ELSE 'unsuccessful' END`;
 
 @Injectable()
 export class OperationsService {
@@ -92,19 +100,30 @@ export class OperationsService {
     }
         // The outer query owns ordering and applies a bound to every resource.
     sql=sql.slice(0,sql.lastIndexOf(' ORDER BY '));
+    if(resource==='billing')sql=`SELECT q.*,${billingStatusView} AS "billingStatusView" FROM (${sql}) q`;
     return {sql,params,columns,scope};
   }
   async list(resource:string,user?:ScopePrincipal,raw:Record<string,unknown>={}):Promise<OperationPage<OperationRow>> {
     const query=parseOperationQuery(resource,raw);
     const {sql:source,params,columns,scope}=this.source(resource,user);
+    // Keep the scope-only parameters before pagination appends filters/cursor/limit.
+    const facetParams=[...params];
+    const billingStatusCounts:Record<BillingStatusView,number>|undefined=resource==='billing'?{all:0,pending_issue_approval:0,awaiting_payment:0,pending_verification:0,overdue:0,paid:0,unsuccessful:0}:undefined;
+    const facets=billingStatusCounts?{facets:{billingStatusCounts}}:{};
     const pageQuery=operationPageSql(resource,source,params,query,user,scope);
-    if(scope?.length===0) return {columns,rows:[],idKey:'id',page:{limit:query.limit,nextCursor:null,hasMore:false}};
+    if(scope?.length===0) return {columns,rows:[],idKey:'id',page:{limit:query.limit,nextCursor:null,hasMore:false},...facets};
     const result=await this.db.query<OperationRow>(pageQuery.sql,params);
     const hasMore=result.rows.length>query.limit;
     const rows=result.rows.slice(0,query.limit);
     const nextCursor=hasMore?pageQuery.cursor(rows.at(-1)!):null;
     for(const row of rows) delete row.__operationCursorValue;
-    return {columns,rows,idKey:'id',page:{limit:query.limit,nextCursor,hasMore}};
+    if(billingStatusCounts){
+      const {billingStatusView:_selectedStatus,...facetQuery}=query;
+      const filter=operationPredicate(resource,facetQuery,facetParams).join(' AND ')||'TRUE';
+      const counts=await this.db.query<{status:Exclude<BillingStatusView,'all'>;count:number}>(`SELECT q."billingStatusView" AS status,count(*)::int AS count FROM (${source}) q WHERE ${filter} GROUP BY q."billingStatusView"`,facetParams);
+      for(const row of counts.rows){billingStatusCounts[row.status]=Number(row.count);billingStatusCounts.all+=Number(row.count);}
+    }
+    return {columns,rows,idKey:'id',page:{limit:query.limit,nextCursor,hasMore},...facets};
   }
   async detail(resource:string,id:string,user?:ScopePrincipal) {
     if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) throw new NotFoundException('Record not found');
@@ -159,7 +178,7 @@ export class OperationsService {
       default:throw new NotFoundException('Unknown resource');
     }
     const filter=operationPredicate(resource,query,params).join(' AND ')||'TRUE';
-    const totals=resource==='billing'?",count(*) FILTER (WHERE q.status='paid')::int AS paid,coalesce(sum(q.amount),0) AS amount,coalesce(sum(q.amount) FILTER (WHERE q.status='paid'),0) AS paid_amount":resource==='documents'||resource==='receipts'?',coalesce(sum(q.amount),0) AS amount':resource==='sites'?",count(*) FILTER (WHERE q.status NOT IN ('inactive','archived'))::int AS active,coalesce(sum(q.\"capacityMwp\"),0) AS capacity":'';
+    const totals=resource==='billing'?",count(*) FILTER (WHERE q.\"billingStatusView\"='paid')::int AS paid,coalesce(sum(q.amount),0) AS amount,coalesce(sum(q.amount) FILTER (WHERE q.\"billingStatusView\"='paid'),0) AS paid_amount":resource==='documents'||resource==='receipts'?',coalesce(sum(q.amount),0) AS amount':resource==='sites'?",count(*) FILTER (WHERE q.status NOT IN ('inactive','archived'))::int AS active,coalesce(sum(q.\"capacityMwp\"),0) AS capacity":'';
     const {rows}=await this.db.query(`SELECT count(*)::int AS count${totals} FROM (${source}) q WHERE ${filter}`,params);
     const r=rows[0]!;
     const item=(label:string,value:unknown,unit:string)=>({label,value:Number(value),unit,note:'จากข้อมูลในระบบ'});

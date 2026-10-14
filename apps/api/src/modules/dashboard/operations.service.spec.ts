@@ -3,6 +3,86 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { OperationsService } from "./operations.service.js";
 import type { DatabaseService } from "../../database/database.service.js";
+import { Pool } from 'pg';
+import { randomUUID } from 'node:crypto';
+
+test('billing returns complete zero facets without querying an empty customer scope',async()=>{
+ const service=new OperationsService({query:async()=>{assert.fail('empty scope must not query');}} as unknown as DatabaseService);
+ const page=await service.list('billing',{role:'customer_user'},{billingStatusView:'paid'});
+ assert.deepEqual(page.facets,{billingStatusCounts:{all:0,pending_issue_approval:0,awaiting_payment:0,pending_verification:0,overdue:0,paid:0,unsuccessful:0}});
+});
+
+test('billing status mapping and scoped facet counts execute against isolated PostgreSQL',{
+ skip:!process.env.FINANCIAL_READINESS_TEST_DATABASE_URL,
+},async()=>{
+ const connectionString=process.env.FINANCIAL_READINESS_TEST_DATABASE_URL!;
+ const url=new URL(connectionString);
+ assert.equal(url.hostname,'127.0.0.1');assert.equal(url.port,'15449');assert.equal(url.pathname,'/solar_financial_flow_review');
+ assert.equal(url.search,'');assert.equal(url.hash,'');
+ const pool=new Pool({connectionString});const client=await pool.connect();
+ const schema='billing_views_'+randomUUID().replaceAll('-','');
+ const id=(number:number)=>'00000000-0000-4000-8000-'+String(number).padStart(12,'0');
+ try {
+  await client.query('BEGIN');
+  await client.query(`CREATE SCHEMA "${schema}"`);
+  await client.query(`SET LOCAL search_path TO "${schema}"`);
+  await client.query(`
+   CREATE TABLE customers(id uuid PRIMARY KEY,name text);
+   CREATE TABLE sites(id uuid PRIMARY KEY,customer_id uuid,name text,external_site_id text);
+   CREATE TABLE site_account_assignments(user_id uuid,site_id uuid,revoked_at timestamptz);
+   CREATE TABLE billing_cycles(id uuid PRIMARY KEY,site_id uuid,contract_id uuid,period_start date,period_end date,billing_kind text,due_date date,consumed_kwh numeric,rate numeric,amount numeric,status text,quality text,opening_energy numeric,closing_energy numeric);
+   CREATE TABLE payments(id uuid PRIMARY KEY,billing_cycle_id uuid,amount numeric,verified_amount numeric,status text,paid_at timestamptz,slip_url text,rejection_reason text);
+   CREATE TABLE documents(id uuid PRIMARY KEY,billing_cycle_id uuid,document_type text,is_current boolean,status text,revision int,document_number text,issue_date date);
+   CREATE TABLE operational_delivery_outbox(billing_cycle_id uuid,state text,dedupe_key text);
+   INSERT INTO customers VALUES('${id(100)}','Customer');
+   INSERT INTO sites VALUES('${id(101)}','${id(100)}','Selected site','SITE-A'),('${id(102)}','${id(100)}','Other site','SITE-B');
+   INSERT INTO site_account_assignments VALUES('${id(103)}','${id(101)}',NULL);
+   INSERT INTO billing_cycles(id,site_id,period_start,period_end,due_date,amount,status)
+    SELECT ('00000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,'${id(101)}','2026-09-01','2026-09-30',
+      (now() AT TIME ZONE 'Asia/Bangkok')::date+CASE WHEN n IN(1,3,4,5) THEN -1 ELSE 10 END,100,
+      CASE n WHEN 1 THEN 'pending_issue_approval' WHEN 6 THEN 'draft' WHEN 7 THEN 'cancelled' WHEN 8 THEN 'superseded' ELSE 'issued' END FROM generate_series(1,9) n;
+   INSERT INTO documents(id,billing_cycle_id,document_type,is_current,status,revision,document_number,issue_date)
+    SELECT ('00000000-0000-4000-8000-'||lpad((n+200)::text,12,'0'))::uuid,('00000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,'invoice',true,'issued',1,'INV-'||n,'2026-10-01' FROM generate_series(1,8) n;
+   INSERT INTO payments(id,billing_cycle_id,amount,status) VALUES('${id(301)}','${id(1)}',100,'pending_verification'),('${id(303)}','${id(3)}',100,'pending_verification'),('${id(304)}','${id(4)}',100,'pending_verification'),('${id(305)}','${id(5)}',100,'paid'),('${id(306)}','${id(5)}',20,'pending_verification');
+   UPDATE payments SET status='rejected' WHERE id='${id(304)}';
+   UPDATE payments SET amount=10,verified_amount=100 WHERE id='${id(305)}';
+   INSERT INTO payments(id,billing_cycle_id,amount,status) VALUES('${id(302)}','${id(2)}',40,'paid'),('${id(307)}','${id(4)}',20,'paid'),('${id(309)}','${id(9)}',100,'paid');
+   INSERT INTO documents VALUES('${id(209)}','${id(9)}','invoice',false,'issued',1,'OLD-INVOICE','2026-10-01');
+   INSERT INTO billing_cycles(id,site_id,period_start,period_end,due_date,amount,status) VALUES('${id(10)}','${id(102)}','2026-09-01','2026-09-30',current_date+10,100,'pending_issue_approval'),('${id(11)}','${id(101)}','2026-08-01','2026-08-31',current_date+10,100,'pending_issue_approval');
+  `);
+  const service=new OperationsService({query:(sql:string,params:unknown[])=>client.query(sql,params)} as unknown as DatabaseService);
+  const scope={siteId:id(101),from:'2026-09-01',to:'2026-09-30',search:'Selected site',sort:'amount',direction:'asc'};
+  const owner={role:'owner'};
+  const all=await service.list('billing',owner,{...scope,billingStatusView:'all'});
+  assert.deepEqual(Object.fromEntries(all.rows.map(row=>[row.id,row.billingStatusView])),{
+   [id(1)]:'pending_issue_approval',[id(2)]:'awaiting_payment',[id(3)]:'pending_verification',[id(4)]:'overdue',[id(5)]:'paid',[id(6)]:'unsuccessful',[id(7)]:'unsuccessful',[id(8)]:'unsuccessful',[id(9)]:'unsuccessful',
+  });
+  assert.deepEqual(all.facets,{billingStatusCounts:{all:9,pending_issue_approval:1,awaiting_payment:1,pending_verification:1,overdue:1,paid:1,unsuccessful:4}});
+  const siteOnly=await service.list('billing',owner,{siteId:id(101),from:'2026-09-01',to:'2026-09-30'});
+  const searchOnly=await service.list('billing',owner,{search:'Selected site',from:'2026-09-01',to:'2026-09-30'});
+  assert.deepEqual(siteOnly.facets,all.facets);assert.deepEqual(searchOnly.facets,all.facets);
+  for(const status of ['pending_issue_approval','awaiting_payment','pending_verification','overdue','paid','unsuccessful']) {
+   const page=await service.list('billing',owner,{...scope,billingStatusView:status});
+   assert.ok(page.rows.every(row=>row.billingStatusView===status));
+   assert.equal(page.rows.length,status==='unsuccessful'?4:1);assert.deepEqual(page.facets,all.facets);
+  }
+  const first=await service.list('billing',owner,{...scope,billingStatusView:'unsuccessful',limit:'1'});
+  assert.equal(first.page.hasMore,true);assert.ok(first.page.nextCursor);assert.deepEqual(first.facets,all.facets);
+  const second=await service.list('billing',owner,{...scope,billingStatusView:'unsuccessful',limit:'1',cursor:first.page.nextCursor!});
+  assert.notEqual(first.rows[0]?.id,second.rows[0]?.id);assert.deepEqual(second.facets,all.facets);
+  const none=await service.list('billing',owner,{...scope,search:'no matches'});
+  assert.equal(none.facets?.billingStatusCounts?.all,0);assert.equal(none.rows.length,0);
+  const collection=await service.list('billing',owner,{...scope,billingStatusView:'paid',collectionStatus:'overdue'});
+  assert.equal(collection.rows.length,0);assert.equal(collection.facets?.billingStatusCounts?.all,1);assert.equal(collection.facets?.billingStatusCounts?.overdue,1);
+  const customer=await service.list('billing',{id:id(103),role:'customer_user',assignedSiteIds:[id(101)]},{from:'2026-09-01',to:'2026-09-30'});
+  assert.deepEqual(customer.facets,all.facets);
+  await client.query('UPDATE site_account_assignments SET revoked_at=now()');
+  const revoked=await service.list('billing',{id:id(103),role:'customer_user',assignedSiteIds:[id(101)]});
+  assert.equal(revoked.facets?.billingStatusCounts?.all,0);
+  const summary=await service.summary('billing',owner,{...scope,billingStatusView:'paid'});
+  assert.equal(Array.isArray(summary),true);assert.equal(summary.length,4);assert.equal(summary[0]?.value,1);assert.equal(summary[1]?.value,1);assert.equal(summary[2]?.value,100);assert.equal(summary[3]?.value,100);
+ } finally {await client.query('ROLLBACK');client.release();await pool.end();}
+});
 
 test('receipt detail includes the related billing period rather than the receipt issue month',async()=>{
  const id='00000000-0000-4000-8000-000000000001';

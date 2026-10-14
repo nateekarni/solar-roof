@@ -1,3 +1,10 @@
+export type BillingStatusView = 'all' | 'pending_issue_approval' | 'awaiting_payment' | 'pending_verification' | 'overdue' | 'paid' | 'unsuccessful';
+
+export interface OperationFacets {
+  /** Full scoped result before pagination, excluding only the selected billing tab; all is the total. */
+  billingStatusCounts?: Record<BillingStatusView, number>;
+}
+
 export interface OperationQuery {
   limit: number;
   cursor?: string;
@@ -9,6 +16,7 @@ export interface OperationQuery {
   status?: string;
   siteId?: string;
   collectionStatus?: 'paid'|'pending_review'|'overdue'|'awaiting_payment'|undefined;
+  billingStatusView?: BillingStatusView;
   severity?: string;
   type?: string;
   role?: string;
@@ -23,6 +31,7 @@ export interface OperationPage<T> {
   rows: T[];
   idKey: string;
   page: { limit: number; nextCursor: string | null; hasMore: boolean };
+  facets?: OperationFacets;
 }
 
 /** id/siteId/gatewayId/deviceId are internal UUID references for navigation and relationships.
@@ -58,6 +67,7 @@ export interface IssuanceApprovalBatch {
 export interface BillingRow extends OperationRow {
  payments?: PaymentTransferRow[];
  siteId: string; period: string; status: string;
+ billingStatusView: Exclude<BillingStatusView, 'all'>;
  invoiceId: string | null; receiptId: string | null;
  invoiceNumber: string | null; receiptNumber: string | null;
 }

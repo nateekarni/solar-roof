@@ -10,7 +10,7 @@ const active=status([option('active','ใช้งาน','Active'),option('inac
 const documentStatus=status([option('draft','ฉบับร่าง','Draft'),option('issued','ออกแล้ว','Issued'),option('finalized','ยืนยันแล้ว','Finalized'),option('superseded','ถูกแทนที่ด้วยฉบับใหม่','Replaced by a new version'),option('cancelled','ยกเลิก','Cancelled')]);
 export const operationFilters:Record<string,readonly OperationFilter[]>={
  customers:[active],sites:[status([...active.options,option('online','ออนไลน์','Online'),option('offline','ออฟไลน์','Offline')])],
- billing:[status([option('draft','ฉบับร่าง','Draft'),option('pending_review','รอตรวจสอบ','Pending review'),option('approved','อนุมัติแล้ว','Approved'),option('issued','ออกบิลแล้ว','Issued'),option('unpaid','รอชำระ','Unpaid'),option('pending_payment','รอชำระ','Pending payment'),option('pending_verification','รอตรวจหลักฐาน','Pending verification'),option('overdue','เกินกำหนด','Overdue'),option('paid','ชำระแล้ว','Paid'),option('cancelled','ยกเลิก','Cancelled')])],
+ billing:[],
  contracts:[status([option('draft','ฉบับร่าง','Draft'),option('active','ใช้งาน','Active'),option('expired','หมดอายุ','Expired'),option('terminated','สิ้นสุด','Terminated'),option('cancelled','ยกเลิก','Cancelled')])],
  documents:[documentStatus,{key:'type',label:['ประเภท','Type'],options:[option('invoice','ใบวางบิล','Billing statement'),option('receipt','ใบเสร็จรับเงิน','Receipt'),option('billing_statement','สรุปยอดเรียกเก็บ','Billing summary'),option('contract','สัญญา','Contract')]}],
  receipts:[documentStatus],

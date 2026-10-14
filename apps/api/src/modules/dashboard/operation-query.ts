@@ -23,7 +23,7 @@ export function parseOperationQuery(resource: string, raw: Record<string, unknow
   const config = operationQueries[resource];
   if (!config) throw new NotFoundException('Unknown resource');
   for (const [key, value] of Object.entries(raw)) {
-    if (!['limit', 'cursor', 'search', 'sort', 'direction', 'from', 'to',...(['billing','receipts'].includes(resource)?['siteId','collectionStatus']:[]),...(operationFilters[resource]??[]).map(filter=>filter.key)].includes(key) || typeof value !== 'string') throw new BadRequestException('Invalid operation query');
+    if (!['limit', 'cursor', 'search', 'sort', 'direction', 'from', 'to',...(resource==='billing'?['billingStatusView']:[]),...(['billing','receipts'].includes(resource)?['siteId','collectionStatus']:[]),...(operationFilters[resource]??[]).map(filter=>filter.key)].includes(key) || typeof value !== 'string') throw new BadRequestException('Invalid operation query');
   }
   const limit = raw.limit === undefined ? 25 : Number(raw.limit);
   if (!Number.isInteger(limit) || limit < 1 || limit > 100 || (raw.limit !== undefined && !/^\d+$/.test(String(raw.limit)))) throw new BadRequestException('Limit must be 1–100');
@@ -42,6 +42,7 @@ export function parseOperationQuery(resource: string, raw: Record<string, unknow
   const filters:Partial<OperationQuery>={};
   if(raw.siteId!==undefined){if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(raw.siteId)))throw new BadRequestException('Invalid site filter');filters.siteId=String(raw.siteId);}
   if(raw.collectionStatus!==undefined){if(!['paid','pending_review','overdue','awaiting_payment'].includes(String(raw.collectionStatus)))throw new BadRequestException('Invalid collection filter');filters.collectionStatus=raw.collectionStatus as NonNullable<OperationQuery['collectionStatus']>;}
+  if(raw.billingStatusView!==undefined){if(!['all','pending_issue_approval','awaiting_payment','pending_verification','overdue','paid','unsuccessful'].includes(String(raw.billingStatusView)))throw new BadRequestException('Invalid billing status view');filters.billingStatusView=raw.billingStatusView as NonNullable<OperationQuery['billingStatusView']>;}
   for(const filter of operationFilters[resource]??[]){
     const value=raw[filter.key];
     if(value===undefined||value==='')continue;
@@ -52,7 +53,7 @@ export function parseOperationQuery(resource: string, raw: Record<string, unknow
 }
 
 function fingerprint(resource: string, query: OperationQuery, user: ScopePrincipal | undefined, scope: string[] | null) {
-  return createHash('sha256').update(JSON.stringify([resource, query.sort, query.direction, query.search ?? '', query.from ?? '', query.to ?? '',query.siteId,query.collectionStatus,(operationFilters[resource]??[]).map(filter=>query[filter.key]??''), user?.id, user?.role, scope])).digest('hex');
+  return createHash('sha256').update(JSON.stringify([resource, query.sort, query.direction, query.search ?? '', query.from ?? '', query.to ?? '',query.siteId,query.collectionStatus,...(resource==='billing'?[query.billingStatusView??'all']:[]),(operationFilters[resource]??[]).map(filter=>query[filter.key]??''), user?.id, user?.role, scope])).digest('hex');
 }
 
 export function operationPredicate(resource: string, query: OperationQuery, params: unknown[]) {
@@ -61,6 +62,7 @@ export function operationPredicate(resource: string, query: OperationQuery, para
   const bind = (value: unknown) => { params.push(value); return `$${params.length}`; };
   if(query.siteId)clauses.push(`q."siteId" = ${bind(query.siteId)}::uuid`);
   if(query.collectionStatus)clauses.push(`q."collectionStatus" = ${bind(query.collectionStatus)}`);
+  if(query.billingStatusView&&query.billingStatusView!=='all')clauses.push(`q."billingStatusView" = ${bind(query.billingStatusView)}`);
   for(const filter of operationFilters[resource]??[]){
     const value=query[filter.key];
     if(value)clauses.push(`q."${filter.key}"::text = ${bind(value)}`);
