@@ -207,20 +207,6 @@ export function UserDetailModal({
             </div>
           </div>
 
-          {/* User ID Meta */}
-          {user.id && (
-            <div className="p-2.5 rounded-lg bg-muted/40 border border-border/40 flex items-center justify-between text-xs">
-              <span className="text-muted-foreground font-mono">ID: {user.id}</span>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-10 text-muted-foreground hover:text-foreground shrink-0"
-                onClick={() => copyToClipboard(user.id!, "userId")}
-              >
-                {copiedKey === "userId" ? <Check className="size-3 text-success" /> : <Copy className="size-3" />}
-              </Button>
-            </div>
-          )}
         </div>
       </DialogContent>
     </Dialog>

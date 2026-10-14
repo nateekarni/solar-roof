@@ -128,6 +128,9 @@ test('production monthly jobs isolate blocked sites, retain safe notices and ret
    if(copy.includes(table))await pool.query(`INSERT INTO ${schema}.${table} SELECT * FROM public.${table}`);
   }
   await pool.query(await readFile(new URL('../../../../../infra/migrations/059_billing_issuance_approval.sql',import.meta.url),'utf8'));
+  // LIKE includes migrated identity columns; reset only the isolated test copy
+  // before exercising migration 058 against either old or current fixtures.
+  await pool.query('ALTER TABLE users DROP COLUMN IF EXISTS company_position_id, DROP COLUMN IF EXISTS signature_data');
   await pool.query(await readFile(new URL('../../../../../infra/migrations/058_user_document_identity.sql',import.meta.url),'utf8'));
   const owner=(await pool.query("SELECT id FROM users WHERE role='owner' AND status='active' ORDER BY id LIMIT 1")).rows[0];assert.ok(owner);
   const positionId=randomUUID();await pool.query("INSERT INTO employee_positions(id,name) VALUES($1,'Scheduler cutover approver')",[positionId]);

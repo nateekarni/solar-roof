@@ -59,6 +59,9 @@ test('production finance freezes configured policy and artifacts across calculat
    if(copy.includes(table))await pool.query(`INSERT INTO ${schema}.${table} SELECT * FROM public.${table}`);
   }
   await pool.query(await readFile(new URL('../../../../../infra/migrations/059_billing_issuance_approval.sql',import.meta.url),'utf8'));
+  // Restore only this isolated copy to the pre-058 shape so the real migration
+  // is exercised whether the dedicated fixture database is already migrated.
+  await pool.query('ALTER TABLE users DROP COLUMN IF EXISTS company_position_id, DROP COLUMN IF EXISTS signature_data');
   await pool.query(await readFile(new URL('../../../../../infra/migrations/058_user_document_identity.sql',import.meta.url),'utf8'));
   // LIKE copies indexes but not triggers: exercise the real immutable-original guard.
   await pool.query('CREATE TRIGGER preserve_original BEFORE UPDATE OR DELETE ON documents FOR EACH ROW EXECUTE FUNCTION public.preserve_local_issued_document()');
