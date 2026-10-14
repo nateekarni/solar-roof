@@ -72,7 +72,7 @@ export class FinancialApplicationService {
  }
  private async issue(client:PoolClient,cycle:any,type:'invoice'|'receipt',actorId?:string,approver?:FinancialApprover) {
   const existing=(await client.query('SELECT * FROM documents WHERE billing_cycle_id=$1 AND document_type=$2 AND is_current',[cycle.id,type])).rows;
-  if(existing.length){if(existing.length!==1||!existing[0].snapshot?.policy||!['issued','finalized'].includes(existing[0].status))throw new ConflictException('Legacy document requires explicit reconciliation');return existing[0];}
+  if(existing.length&&!cycle.supersedes_document_id){if(existing.length!==1||!existing[0].snapshot?.policy||!['issued','finalized'].includes(existing[0].status))throw new ConflictException('Legacy document requires explicit reconciliation');return existing[0];}
   const policy=validateFinancialPolicy(cycle);
   if(cycle.quality!=='complete'||!cycle.meter_snapshot)throw new ConflictException('Verified financial calculation required');
   const customer=(await client.query(`SELECT cfg.*,sc.id AS customer_id,sc.legal_name AS company_name,sc.tax_id,sc.tax_branch AS branch,sc.tax_address,sc.document_email AS billing_email,sc.phone AS billing_phone,s.name AS site_name,s.external_site_id,sc.name AS customer_name FROM site_billing_settings cfg JOIN sites s ON s.id=cfg.site_id JOIN customers sc ON sc.id=s.customer_id WHERE cfg.site_id=$1`,[cycle.site_id])).rows[0];
@@ -97,23 +97,36 @@ export class FinancialApplicationService {
   const snapshot={brandPrimary:BRAND_PRIMARY,...(invoiceNumber?{invoiceNumber}:{}),templateVersion:FINANCIAL_TEMPLATE_VERSION,policy:invoiceOriginal?.snapshot?.policy??(policy.scope==='TEST'?{...policy,...frozenFinancialTax(undefined,customer.tax_rate,customer.prices_include_tax)}:policy),policyHash:invoiceOriginal?.snapshot?.policyHash??cycle.policy_hash,cycle,customer:invoiceOriginal?.snapshot?.customer??customer,company:invoiceOriginal?.snapshot?.company??company,banks:invoiceOriginal?.snapshot?.banks??banks,payments,recipients:invoiceOriginal?.snapshot?.recipients??recipients,logo:logoDataUri,logoDataUri,language:'th',issueDate:day,dueDate:cycle.due_date?(typeof cycle.due_date==='string'?cycle.due_date.slice(0,10):cycle.due_date.toISOString().slice(0,10)):new Date(Date.parse(day)+customer.payment_term_days*86400000).toISOString().slice(0,10)};
   const document={id:randomUUID(),document_number:number,document_type:type,snapshot:{...snapshot,...(approver?{approver:{...approver}}:{})},amount:cycle.amount};
   const bytes=await this.render(document);const sha256=createHash('sha256').update(bytes).digest('hex');
-  const doc=(await client.query(`INSERT INTO documents(id,site_id,billing_cycle_id,document_type,document_number,status,issue_date,amount,snapshot,content_hash,file_key,template_version,revision,supersedes_document_id) VALUES($1,$2,$3,$4,$5,'issued',$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,[document.id,cycle.site_id,cycle.id,type,number,day,cycle.amount,JSON.stringify(document.snapshot),sha256,`local-artifact:${document.id}`,FINANCIAL_TEMPLATE_VERSION,cycle.document_revision??1,cycle.supersedes_document_id??null])).rows[0];
+  // A replacement is staged only inside approval. The old original remains
+  // current through rendering/artifact/outbox/audit failures; no staging commits.
+  const replacing=type==='invoice'&&!!cycle.supersedes_document_id;
+  const doc=(await client.query(`INSERT INTO documents(id,site_id,billing_cycle_id,document_type,document_number,status,issue_date,amount,snapshot,content_hash,file_key,template_version,revision,supersedes_document_id,is_current) VALUES($1,$2,$3,$4,$5,$14,$6,$7,$8,$9,$10,$11,$12,$13,$15) RETURNING *`,[document.id,cycle.site_id,cycle.id,type,number,day,cycle.amount,JSON.stringify(document.snapshot),sha256,`local-artifact:${document.id}`,FINANCIAL_TEMPLATE_VERSION,cycle.document_revision??1,cycle.supersedes_document_id??null,replacing?'draft':'issued',!replacing])).rows[0];
   if(type==='invoice')await client.query('UPDATE billing_cycles SET due_date=$2 WHERE id=$1 AND due_date IS NULL',[cycle.id,snapshot.dueDate]);
   await client.query('INSERT INTO document_artifacts(document_id,pdf_bytes,sha256) VALUES($1,$2,$3)',[doc.id,bytes,sha256]);
   await client.query('INSERT INTO financial_delivery_outbox(id,document_id,artifact_sha256) VALUES($1,$2,$3)',[randomUUID(),doc.id,sha256]);await this.audit(client,actorId,'finance.issue_'+type,cycle.id,{documentId:doc.id,contentHash:sha256,policyHash:cycle.policy_hash});return doc;
  }
  async reviseInvoiceInTransaction(client:PoolClient,cycle:any,rate:string,actorId?:string){
+  if(!actorId)throw new BadRequestException('Correction actor required');
+  // Every caller follows configuration -> cycle -> document lock order.
+  await client.query("SELECT pg_advisory_xact_lock(hashtext('production-financial-configuration'))");
+  cycle=(await client.query('SELECT * FROM billing_cycles WHERE id=$1 FOR UPDATE',[cycle.id])).rows[0];
+  if(!cycle||cycle.billing_kind==='manual'||cycle.status!=='approved')throw new ConflictException('Issued unpaid energy invoice required');
   const evidence=await this.readiness.assertEnabled('adjust',{billingCycleId:cycle.id},client);const old=(await client.query("SELECT * FROM documents WHERE billing_cycle_id=$1 AND document_type='invoice' AND is_current FOR UPDATE",[cycle.id])).rows[0];if(!old?.snapshot)throw new ConflictException('Current saved invoice required');
+  if(!['issued','finalized'].includes(old.status)||old.site_id!==cycle.site_id)throw new ConflictException('Current issued invoice required');
   const config=(await client.query('SELECT * FROM site_billing_settings WHERE site_id=$1',[cycle.site_id])).rows[0];if(!config?.tax_confirmed)throw new ConflictException('Confirmed site tax required');
   const policy=financialPolicySnapshot(config,evidence.scope),hash=evidence.scope==='TEST'?TEST_FINANCIAL_POLICY_HASH:financialPolicyHash(policy);
+  const pending=(await client.query("SELECT * FROM billing_replacement_drafts WHERE billing_cycle_id=$1 AND status='pending_issue_approval' FOR UPDATE",[cycle.id])).rows[0];
+  if(pending){
+   if(pending.supersedes_document_id===old.id&&scaledDecimal(pending.rate,4)===scaledDecimal(rate,4)&&pending.snapshot?.cycle?.policy_hash===hash&&pending.snapshot?.cycle?.billing_settings_version===config.version)return pending;
+   throw new ConflictException('A different replacement awaits issuance approval');
+  }
   if(scaledDecimal(cycle.rate,4)===scaledDecimal(rate,4)&&cycle.policy_hash===hash&&cycle.billing_settings_version===config.version)return old;
   const snapshots=(cycle.meter_snapshot??[]).map((line:any)=>({...line,...energyCharge(line.consumedKwh,rate)}));
   const gross=decimal(snapshots.reduce((sum:bigint,line:any)=>sum+scaledDecimal(line.subtotal,2),0n),2);
   const totals=policy.scope==='PRODUCTION'?financialTotals(gross,policy):configuredTotals(gross,config.tax_rate,config.prices_include_tax);
-  await client.query("UPDATE documents SET status='superseded',is_current=false WHERE id=$1",[old.id]);
-  const updated=(await client.query('UPDATE billing_cycles SET rate=$2,amount=$3,subtotal=$4,simulated_tax=$5,meter_snapshot=$6,billing_settings_version=$7,policy_snapshot=$8,policy_hash=$9,financial_scope=$10 WHERE id=$1 RETURNING *',[cycle.id,rate,totals.total,totals.subtotal,totals.tax,JSON.stringify(snapshots),config.version,JSON.stringify(policy),hash,policy.scope])).rows[0];
-  const document=await this.issue(client,{...updated,due_date:old.snapshot.dueDate,document_revision:old.revision+1,supersedes_document_id:old.id},'invoice',actorId);
-  await this.audit(client,actorId,'finance.adjust',cycle.id,{supersedesDocumentId:old.id,documentId:document.id,rate});return document;
+  const proposed={...cycle,rate,amount:totals.total,subtotal:totals.subtotal,simulated_tax:totals.tax,meter_snapshot:snapshots,billing_settings_version:config.version,policy_snapshot:policy,policy_hash:hash,financial_scope:policy.scope,due_date:old.snapshot.dueDate};
+  const draft=(await client.query(`INSERT INTO billing_replacement_drafts(id,billing_cycle_id,supersedes_document_id,rate,amount,snapshot,status,created_by) VALUES($1,$2,$3,$4,$5,$6,'pending_issue_approval',$7) RETURNING *`,[randomUUID(),cycle.id,old.id,rate,totals.total,JSON.stringify({cycle:proposed}),actorId])).rows[0];
+  await this.audit(client,actorId,'finance.replacement_prepared',cycle.id,{replacementDraftId:draft.id,supersedesDocumentId:old.id,rate});return draft;
  }
  async manualInvoice(input:{siteId:string;lines:ManualLine[];note?:string;dueDate?:string;idempotencyKey?:string},actorId?:string){
   if(input.dueDate&&!validDate(input.dueDate))throw new BadRequestException('Valid due date required');
@@ -134,9 +147,12 @@ export class FinancialApplicationService {
    if(cycle){if(financialPolicyHash({lines:cycle.manual_lines,note:cycle.billing_note,dueDate:input.dueDate?cycle.due:null})!==financialPolicyHash(payload))throw new ConflictException('Idempotency key already used for another manual invoice');}
    else cycle=(await client.query(`INSERT INTO billing_cycles(id,site_id,period_start,period_end,cutoff_time,status,quality,opening_energy,closing_energy,consumed_kwh,rate,amount,subtotal,simulated_tax,meter_snapshot,policy_hash,billing_settings_version,billing_kind,manual_lines,billing_note,due_date,policy_snapshot,financial_scope) VALUES($1,$2,$11,$11,now(),'pending_review','complete',0,0,0,0,$3,$4,$5,'[]',$6,$7,'manual',$8,$9,$10,$12,$13) RETURNING *`,[id,input.siteId,totals.total,totals.subtotal,totals.tax,hash,cfg.version,JSON.stringify(totals.lines),payload.note,payload.dueDate,day,JSON.stringify(policy),policy.scope])).rows[0];
    await this.readiness.assertEnabled('issue',{billingCycleId:cycle.id},client);
-   const document=await this.issue(client,cycle,'invoice',actorId);
-   await client.query("UPDATE billing_cycles SET status='approved' WHERE id=$1 AND status='pending_review'",[cycle.id]);return {cycle:{...cycle,status:cycle.status==='pending_review'?'approved':cycle.status},document};
-  });await this.send(result.cycle.id,actorId);return result;
+   if(cycle.status==='pending_review'){
+    cycle=(await client.query("UPDATE billing_cycles SET status='pending_issue_approval' WHERE id=$1 RETURNING *",[cycle.id])).rows[0];
+    await this.audit(client,actorId,'finance.invoice_prepared',cycle.id,{status:cycle.status,billingKind:'manual'});
+   }else if(!['pending_issue_approval','approved','pending_verification','paid'].includes(cycle.status))throw new ConflictException('Manual invoice cannot be prepared in its current state');
+   return {cycle};
+  });return result;
  }
  async prepareInvoice(id:string,actorId?:string){
   return this.db.transaction(async client=>{
@@ -168,6 +184,25 @@ export class FinancialApplicationService {
    const label=cycle?await authorizedIssuanceLabel(client,id,actor):undefined;
    if(!label)throw new NotFoundException('ไม่สามารถออกเอกสารได้');
    const existing=(await client.query("SELECT * FROM documents WHERE billing_cycle_id=$1 AND document_type='invoice' AND is_current",[id])).rows;
+   const replacement=(await client.query("SELECT * FROM billing_replacement_drafts WHERE billing_cycle_id=$1 AND status='pending_issue_approval' FOR UPDATE",[id])).rows[0];
+   if(replacement){
+    if(cycle.status!=='approved')throw new ConflictException('Current invoice cannot be replaced in its current state');
+    const prior=(await client.query("SELECT * FROM documents WHERE id=$1 FOR UPDATE",[replacement.supersedes_document_id])).rows[0];
+    const proposed=replacement.snapshot?.cycle;
+    if(!prior||!prior.is_current||!['issued','finalized'].includes(prior.status)||prior.document_type!=='invoice'||prior.billing_cycle_id!==id||prior.site_id!==cycle.site_id||existing.length!==1||existing[0].id!==prior.id||!proposed||proposed.id!==id||proposed.site_id!==cycle.site_id||scaledDecimal(proposed.rate,4)!==scaledDecimal(replacement.rate,4)||scaledDecimal(proposed.amount,2)!==scaledDecimal(replacement.amount,2))throw new ConflictException('Replacement no longer matches the current invoice');
+    const policy=validateFinancialPolicy(proposed);
+    const evidence=await this.readiness.assertEnabled('adjust',{billingCycleId:id},client);
+    if(policy.scope!==evidence.scope)throw new ConflictException('Financial scope differs from saved replacement');
+    const identity=await this.documentIdentity.resolve(client,actorId);
+    const approvedAt=(await client.query('SELECT now() AS value')).rows[0].value.toISOString();
+    const staged=await this.issue(client,{...proposed,document_revision:prior.revision+1,supersedes_document_id:prior.id},'invoice',actorId,{...identity,approvedAt});
+    await client.query("UPDATE documents SET status='superseded',is_current=false WHERE id=$1",[prior.id]);
+    const document=(await client.query("UPDATE documents SET status='issued',is_current=true WHERE id=$1 RETURNING *",[staged.id])).rows[0];
+    await client.query('UPDATE billing_cycles SET rate=$2,amount=$3,subtotal=$4,simulated_tax=$5,meter_snapshot=$6,billing_settings_version=$7,policy_snapshot=$8,policy_hash=$9,financial_scope=$10 WHERE id=$1',[id,proposed.rate,proposed.amount,proposed.subtotal,proposed.simulated_tax,JSON.stringify(proposed.meter_snapshot),proposed.billing_settings_version,JSON.stringify(proposed.policy_snapshot),proposed.policy_hash,proposed.financial_scope]);
+    await client.query("UPDATE billing_replacement_drafts SET status='issued' WHERE id=$1",[replacement.id]);
+    await this.audit(client,actorId,'finance.adjust',id,{replacementDraftId:replacement.id,supersedesDocumentId:prior.id,documentId:document.id,rate:proposed.rate});
+    return {created:true,label,document:{...document,documentNumber:document.document_number}};
+   }
    if(existing.length){
     if(existing.length!==1||!existing[0].snapshot?.policy||!['issued','finalized'].includes(existing[0].status))throw new ConflictException('Legacy document requires explicit reconciliation');
     return {created:false,label,document:{...existing[0],documentNumber:existing[0].document_number}};
@@ -183,8 +218,9 @@ export class FinancialApplicationService {
    return {created:true,label,document:{...document,documentNumber:document.document_number}};
   });
  }
- // Compatibility issuance path; caller migration follows in subsequent tasks.
- async issueInvoice(id:string,actorId?:string){return this.db.transaction(async client=>{await this.readiness.assertEnabled('issue',{billingCycleId:id},client);const cycle=(await client.query('SELECT * FROM billing_cycles WHERE id=$1 FOR UPDATE',[id])).rows[0];if(!cycle)throw new NotFoundException('Billing cycle not found');const prior=(await client.query("SELECT id FROM documents WHERE billing_cycle_id=$1 AND document_type='invoice' AND is_current",[id])).rows[0];const document=await this.issue(client,cycle,'invoice',actorId);await client.query("UPDATE billing_cycles SET status=CASE WHEN status IN('paid','pending_verification') THEN status ELSE 'approved' END WHERE id=$1",[id]);return {created:!prior,document:{...document,documentNumber:document.document_number}};});}
+ // Explicit administrative cutover compatibility; all public generation paths
+ // prepare drafts. This wrapper shares the same permission and identity gate.
+ async issueInvoice(id:string,actorId?:string){return this.approveInvoice(id,actorId??'');}
  async submitPayment(id:string,body:PaymentSubmission,actorId:string|undefined){
   if(!actorId)throw new BadRequestException('Actor required');
   const metadata=reviewedPaymentMetadata(body);
@@ -283,11 +319,17 @@ export class FinancialApplicationService {
   const jobs=(await this.db.query("SELECT *,to_char(period_start,'YYYY-MM-DD') AS starts,to_char(period_end,'YYYY-MM-DD') AS ends FROM financial_month_jobs WHERE state IN('pending','blocked') AND next_attempt_at<=now() ORDER BY period_start,site_id")).rows;
   for(const job of jobs){try{let cycles=(await this.db.query("SELECT bc.* FROM billing_cycles bc JOIN site_billing_settings cfg ON cfg.site_id=bc.site_id WHERE bc.site_id=$1 AND bc.billing_kind='energy' AND bc.period_start=greatest($2::date,cfg.service_start_date) AND bc.period_end=$3",[job.site_id,job.period_start,job.period_end])).rows;
     if(!cycles.length){const cfg=(await this.db.query("SELECT to_char(service_start_date,'YYYY-MM-DD') AS starts FROM site_billing_settings WHERE site_id=$1",[job.site_id])).rows[0];if(!cfg)throw new ConflictException('Site billing configuration required');cycles=(await this.calculate(job.site_id,[sqlCalendarPeriod(job).start,cfg.starts].sort().at(-1)!,sqlCalendarPeriod(job).end)).cycles;}
-    for(const cycle of cycles){await this.issueInvoice(cycle.id);const delivery=await this.send(cycle.id);
-     if(!('success' in delivery)||!delivery.success)throw new ConflictException({code:'MONTHLY_DELIVERY_PENDING'});
-     const outboxes=(await this.db.query(`SELECT o.state FROM documents d LEFT JOIN financial_delivery_outbox o ON o.document_id=d.id WHERE d.billing_cycle_id=$1 AND d.status='issued'`,[cycle.id])).rows;
-     if(!outboxes.length||outboxes.some(row=>row.state!=='sent'))throw new ConflictException({code:'MONTHLY_DELIVERY_PENDING'});
-    }await this.db.query("UPDATE financial_month_jobs SET state='done',completed_at=now(),last_error=NULL,last_attempt_at=now() WHERE id=$1",[job.id]);
+    for(const cycle of cycles){
+     // A job replay after human approval must not reopen an issued cycle.
+     if(['approved','pending_verification','paid'].includes(cycle.status)){
+      const current=(await this.db.query("SELECT id FROM documents WHERE billing_cycle_id=$1 AND document_type='invoice' AND is_current AND status IN('issued','finalized')",[cycle.id])).rows;
+      if(current.length!==1)throw new ConflictException('Current issued invoice required');
+      continue;
+     }
+     await this.prepareInvoice(cycle.id);
+    }
+    await this.db.query(`WITH notice AS (INSERT INTO financial_staff_notices(id,job_id,site_id,kind,detail) VALUES($1,$2,$3,'monthly_billing_awaiting_approval',$4) ON CONFLICT(job_id,kind) DO NOTHING RETURNING id) INSERT INTO notification_deliveries(id,user_id,title,channel,recipient,status) SELECT gen_random_uuid(),u.id,CASE WHEN ($4::jsonb->>'scope')='TEST' THEN 'TEST ' ELSE '' END||'Billing awaiting issuance approval: '||s.name,'system',u.email,'delivered' FROM notice CROSS JOIN users u JOIN sites s ON s.id=$3 WHERE u.status='active' AND u.role IN('owner','accountant') AND (u.customer_id IS NULL OR u.customer_id=s.customer_id) AND EXISTS(SELECT 1 FROM billing_cycles bc WHERE bc.site_id=$3 AND bc.status='pending_issue_approval' AND bc.period_end=$5::date)`,[randomUUID(),job.id,job.site_id,JSON.stringify({scope,status:'pending_issue_approval',...sqlCalendarPeriod(job)}),sqlCalendarPeriod(job).end]);
+    await this.db.query("UPDATE financial_month_jobs SET state='done',completed_at=now(),last_error=NULL,last_attempt_at=now() WHERE id=$1",[job.id]);
    }catch(error){
     const response=(error as {getResponse?:()=>unknown})?.getResponse?.() as {missing?:unknown;code?:unknown}|undefined;
     const missing=Array.isArray(response?.missing)?[...new Set(response.missing.filter((id):id is string=>typeof id==='string'&&/^(company|approval|environment|site|context|cycle|document)\.[a-z_]+$/.test(id)))]:[];

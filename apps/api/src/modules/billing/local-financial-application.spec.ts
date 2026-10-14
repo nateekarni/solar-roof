@@ -4,8 +4,20 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 const logoHash=(uri:string)=>createHash('sha256').update(Buffer.from(uri.split(',')[1]!, 'base64')).digest('hex');
+function issuanceDb(db:any):DatabaseService {
+ return {transaction:async(run:any)=>db.transaction(async(client:any)=>run({query:async(sql:string,params:unknown[]=[])=>{
+  if(sql.includes('SELECT id,role,status,permission_revision FROM users'))return {rows:[{id:'owner',role:'owner',status:'active',permission_revision:1}]};
+  if(sql.includes('FROM employee_domain_grants'))return {rows:[]};
+  if(sql.includes('SELECT to_char(b.period_end'))return {rows:[{period:'2026-09',customer:'Customer',site:'Site'}]};
+  if(sql.includes('p.name AS position')&&params[0]==='owner')return {rows:[{id:'owner',display_name:'Invoice approver',position:'Director',signature_data:null}]};
+  if(sql==='SELECT now() AS value')return {rows:[{value:new Date('2026-10-14T01:00:00Z')}]};
+  const result=await client.query(sql,params);
+  if(sql.includes('SELECT * FROM billing_cycles'))return {rows:result.rows.map((cycle:any)=>({...cycle,status:cycle.status==='paid'?'paid':cycle.status==='pending_verification'?'pending_verification':'pending_issue_approval'}))};
+  return result;
+ }}))} as DatabaseService;
+}
 test('site billing calculation rejects missing configuration without contract lookup',async()=>{let contracts=false;const db={transaction:async(run:any)=>run({query:async(sql:string)=>{if(sql.includes('FROM sites'))return {rows:[{id:'s'}]};if(sql.includes('FROM contracts'))contracts=true;return {rows:[]};}})};const service=new FinancialApplicationService(db as any,{assertEnabled:async()=>{}} as any);await assert.rejects(service.calculate('s','2026-09-01','2026-09-30'),/Site billing configuration/);assert.equal(contracts,false);});
-test('changed billing configuration blocks issuing a calculation with stale tax policy',async()=>{const cycle={id:'cycle',site_id:'site',quality:'complete',meter_snapshot:[],policy_hash:TEST_FINANCIAL_POLICY_HASH,billing_settings_version:1};const db={transaction:async(run:any)=>run({query:async(sql:string)=>{if(sql.includes('FROM billing_cycles'))return {rows:[cycle]};if(sql.includes('FROM site_billing_settings'))return {rows:[{version:2}]};return {rows:[]};}})};await assert.rejects(new FinancialApplicationService(db as any,{assertEnabled:async()=>{}} as any).issueInvoice('cycle'),/configuration changed/);});
+test('changed billing configuration blocks issuing a calculation with stale tax policy',async()=>{const cycle={id:'cycle',site_id:'site',quality:'complete',meter_snapshot:[],policy_hash:TEST_FINANCIAL_POLICY_HASH,billing_settings_version:1};const db={transaction:async(run:any)=>run({query:async(sql:string)=>{if(sql.includes('FROM billing_cycles'))return {rows:[cycle]};if(sql.includes('FROM site_billing_settings'))return {rows:[{version:2}]};return {rows:[]};}})};await assert.rejects(new FinancialApplicationService(issuanceDb(db),{assertEnabled:async()=>({scope:'TEST'})} as any).issueInvoice('cycle','owner'),/configuration changed/);});
 import { ConflictException } from '@nestjs/common';
 import { reviewedActualEnergyDifference } from './financial-application.service.js';
 test('exact cumulative counter reset requires typed conflict and review',()=>{
@@ -16,6 +28,7 @@ import {FinancialApplicationService} from './financial-application.service.js';
 import {TEST_FINANCIAL_POLICY_HASH} from './local-financial-policy.js';
 import type {DatabaseService} from '../../database/database.service.js';
 import type {FinancialReadinessService} from '../financial-readiness/financial-readiness.service.js';
+import {BillingController} from './billing.controller.js';
 
 function invoicePreparationHarness(overrides:Record<string,unknown>={}) {
  const cycle={id:'cycle',status:'pending_review',quality:'complete',meter_snapshot:[{consumedKwh:'25.000'}],policy_hash:TEST_FINANCIAL_POLICY_HASH,...overrides};
@@ -42,6 +55,22 @@ test('preparing a bill persists only approval status and one audit, with no numb
  assert.equal(result.cycle.status,'pending_issue_approval');assert.equal(result.created,true);assert.equal(cycle.status,'pending_issue_approval');
  assert.equal(audits.length,1);assert.equal(audits[0]![1],'actor');assert.equal(audits[0]![2],'finance.invoice_prepared');
  const replay=await service.prepareInvoice('cycle','actor');assert.equal(replay.created,false);assert.equal(replay.cycle.id,'cycle');assert.equal(audits.length,1);
+});
+
+test('legacy generate and approval-status buttons prepare drafts without issuing or delivery',async()=>{
+ for(const action of ['generate','status']){
+  const {service,cycle}=invoicePreparationHarness();
+  const controller=new BillingController({} as DatabaseService,{} as FinancialReadinessService,service,{} as any);
+  if(action==='generate')await controller.generateInvoiceForBillingCycle('cycle',{user:{id:'actor',role:'owner'}});
+  else await controller.updateBillingCycleStatus('cycle',{status:'approved'},{user:{id:'actor',role:'owner'}});
+  assert.equal(cycle.status,'pending_issue_approval');
+ }
+});
+
+test('legacy issuance wrapper cannot issue without an authenticated approver',async()=>{
+ const {service,cycle}=invoicePreparationHarness();
+ await assert.rejects(service.issueInvoice('cycle'),(error:any)=>error.getStatus?.()===400);
+ assert.equal(cycle.status,'pending_review');
 });
 
 test('preparation accepts only eligible draft states and leaves issued or settled cycles unchanged',async()=>{
@@ -94,8 +123,8 @@ test('future financial originals freeze protocol site identity and persist the r
  if(sql.includes("AS day"))return {rows:[{day:'2026-10-08'}]};if(sql.includes('document_number_series'))return {rows:[{last_value:1}]};
  if(sql.includes('AS starts'))return {rows:[{starts:'2026-09-01',ends:'2026-09-30'}]};
  if(sql.includes('INSERT INTO documents')){persisted=JSON.parse(params[7]);insertedVersion=params[10];return {rows:[{id:params[0],snapshot:persisted}]};}return {rows:[]};}})};
- const service=new FinancialApplicationService(db as unknown as DatabaseService,{assertEnabled:async()=>{}} as unknown as FinancialReadinessService);
- const result=await service.issueInvoice('cycle');assert.equal(result.document.snapshot.customer.external_site_id,'PROTOCOL-002');assert.equal(persisted.templateVersion,'sarabun-a4-v8');assert.equal(insertedVersion,'sarabun-a4-v8');assert.equal(persisted.logoDataUri,persisted.logo);assert.equal(persisted.brandPrimary,'#f29700');assert.equal(persisted.policyHash,TEST_FINANCIAL_POLICY_HASH);assert.equal(persisted.policy.logo,'/brand/solar-roof-document.png');assert.equal(logoHash(persisted.logo),createHash('sha256').update(readFileSync(new URL('../../../../web/public/brand/solar-roof-document-stacked.png',import.meta.url))).digest('hex'));
+ const service=new FinancialApplicationService(issuanceDb(db),{assertEnabled:async()=>({scope:'TEST'})} as unknown as FinancialReadinessService);
+ const result=await service.issueInvoice('cycle','owner');assert.equal(result.document.snapshot.customer.external_site_id,'PROTOCOL-002');assert.equal(persisted.templateVersion,'sarabun-a4-v8');assert.equal(insertedVersion,'sarabun-a4-v8');assert.equal(persisted.logoDataUri,persisted.logo);assert.equal(persisted.brandPrimary,'#f29700');assert.equal(persisted.policyHash,TEST_FINANCIAL_POLICY_HASH);assert.equal(persisted.policy.logo,'/brand/solar-roof-document.png');assert.equal(logoHash(persisted.logo),createHash('sha256').update(readFileSync(new URL('../../../../web/public/brand/solar-roof-document-stacked.png',import.meta.url))).digest('hex'));
 });
 
 // Missing persistence/normalization must fail here, independently of SQL column ordering.
@@ -189,7 +218,7 @@ test('uploaded invoice and receipt logos stay frozen with saved PDF hashes after
   if(sql==='SELECT now() AS value')return {rows:[{value:new Date('2026-10-14T01:00:00.000Z')}]};
   if(sql.includes('SELECT employee_can_access'))return {rows:[{allowed:true}]};
   if(sql.includes('SELECT * FROM billing_cycles'))return {rows:[cycle]};
-  if(sql.includes('SELECT * FROM documents'))return {rows:documents.filter(d=>d.document_type===(params[1]??'receipt'))};
+  if(sql.includes('SELECT * FROM documents'))return {rows:documents.filter(d=>d.document_type===(params[1]??(sql.includes("document_type='invoice'")?'invoice':'receipt')))};
   if(sql.includes('FROM site_billing_settings cfg JOIN sites'))return {rows:[{company_name:'Customer at issuance',tax_id:'1111111111111',tax_address:'Customer address',payment_term_days:30,tax_confirmed:true,tax_rate:'7.0000',prices_include_tax:false,recipient_user_ids:['recipient']}]};
   if(sql.includes('FROM company_profile'))return {rows:[company]};
   if(sql.includes('FROM company_bank_accounts'))return {rows:[{bank_name:'Receiving bank',account_name:'Account name',account_number:'1234'}]};
@@ -205,15 +234,15 @@ test('uploaded invoice and receipt logos stay frozen with saved PDF hashes after
   if(sql==='UPDATE billing_cycles SET status=$2 WHERE id=$1')cycle.status=params[1];
   return {rows:[]};
  }};
- const service=new FinancialApplicationService({transaction:async(run:any)=>run(client)} as unknown as DatabaseService,{assertEnabled:async()=>{}} as unknown as FinancialReadinessService);
- const invoice=(await service.issueInvoice('cycle')).document;
+ const service=new FinancialApplicationService(issuanceDb({transaction:async(run:any)=>run(client)}),{assertEnabled:async()=>({scope:'TEST'})} as unknown as FinancialReadinessService);
+ const invoice=(await service.issueInvoice('cycle','owner')).document;
  assert.equal(invoice.snapshot.logoDataUri,uploaded);assert.equal(invoice.snapshot.logo,uploaded);
  const invoiceSnapshot=JSON.stringify(invoice.snapshot),invoiceBytes=Buffer.from(artifacts.get(invoice.id)!.bytes),invoiceHash=invoice.content_hash;
  company.logo_url='';company.company_name='Company after replacement';cycle.status='pending_verification';
  const receipt=(await service.verifyPayment('cycle','approved',undefined,'accountant',{paymentId:'payment',verifiedAmount:'107.00',verifiedTransferAt:'2026-10-08T01:00:00Z'})).receipt;
  assert.equal(receipt.snapshot.logoDataUri,uploaded);assert.equal(receipt.snapshot.logo,uploaded);assert.equal(receipt.snapshot.company.company_name,'Issuer at issuance');
  const receiptSnapshot=JSON.stringify(receipt.snapshot),receiptBytes=Buffer.from(artifacts.get(receipt.id)!.bytes),receiptHash=receipt.content_hash;
- await service.issueInvoice('cycle');await service.verifyPayment('cycle','approved',undefined,'accountant',{paymentId:'payment',verifiedAmount:'107.00',verifiedTransferAt:'2026-10-08T01:00:00Z'});
+ await service.issueInvoice('cycle','owner');await service.verifyPayment('cycle','approved',undefined,'accountant',{paymentId:'payment',verifiedAmount:'107.00',verifiedTransferAt:'2026-10-08T01:00:00Z'});
  assert.equal(documents.length,2);assert.equal(artifacts.size,2);
  for(const [document,snapshot,bytes,hash] of [[invoice,invoiceSnapshot,invoiceBytes,invoiceHash],[receipt,receiptSnapshot,receiptBytes,receiptHash]] as const){
   assert.equal(JSON.stringify(document.snapshot),snapshot);assert.deepEqual(artifacts.get(document.id)!.bytes,bytes);assert.equal(artifacts.get(document.id)!.sha256,hash);assert.equal(createHash('sha256').update(bytes).digest('hex'),hash);assert.equal(bytes.subarray(0,5).toString(),'%PDF-');

@@ -60,6 +60,8 @@ test('production finance freezes configured policy and artifacts across calculat
   }
   await pool.query(await readFile(new URL('../../../../../infra/migrations/059_billing_issuance_approval.sql',import.meta.url),'utf8'));
   await pool.query(await readFile(new URL('../../../../../infra/migrations/058_user_document_identity.sql',import.meta.url),'utf8'));
+  // LIKE copies indexes but not triggers: exercise the real immutable-original guard.
+  await pool.query('CREATE TRIGGER preserve_original BEFORE UPDATE OR DELETE ON documents FOR EACH ROW EXECUTE FUNCTION public.preserve_local_issued_document()');
   // Authorization uses the real database function, with its unqualified tables resolving in this schema.
   const owner=(await pool.query("SELECT id FROM users WHERE role='owner' AND status='active' ORDER BY id LIMIT 1")).rows[0];assert.ok(owner);
   const fixture=(await pool.query(`SELECT s.id FROM sites s JOIN site_billing_settings cfg ON cfg.site_id=s.id WHERE EXISTS(SELECT 1 FROM billing_meters b WHERE b.site_id=s.id AND b.active) AND EXISTS(SELECT 1 FROM public.telemetry_raw tr WHERE tr.site_id=s.id AND tr.source_time='2026-09-01T00:00:00+07:00') ORDER BY s.id LIMIT 1`)).rows[0];assert.ok(fixture,'Existing dedicated review meter fixture required');const siteId=fixture.id;
@@ -236,10 +238,11 @@ test('production finance freezes configured policy and artifacts across calculat
   await t.test('a positioned approver without signature issues and renders an invoice',async()=>{
    const rollback=new Error('unsigned approval fixture rollback');
    await assert.rejects(db.transaction(async client=>{
-    await client.query("DELETE FROM financial_delivery_outbox WHERE document_id=$1",[invoice.id]);await client.query('DELETE FROM document_artifacts WHERE document_id=$1',[invoice.id]);await client.query('DELETE FROM documents WHERE id=$1',[invoice.id]);
-    await client.query("UPDATE billing_cycles SET status='pending_issue_approval' WHERE id=$1",[cycle.id]);await client.query('UPDATE users SET signature_data=NULL WHERE id=$1',[owner.id]);
+    await client.query('UPDATE users SET signature_data=NULL WHERE id=$1',[owner.id]);
     const transactionDb={transaction:async(run:any)=>run(client)} as DatabaseService;
-    const unsigned=(await new FinancialApplicationService(transactionDb,readiness).approveInvoice(cycle.id,owner.id)).document;
+    const application=new FinancialApplicationService(transactionDb,readiness);
+    const draft=await application.manualInvoice({siteId,lines:[{description:'Unsigned review',quantity:'1',unitPrice:'100'}],idempotencyKey:randomUUID()},owner.id);
+    const unsigned=(await application.approveInvoice(draft.cycle.id,owner.id)).document;
     assert.equal(unsigned.snapshot.approver.signatureDataUri,undefined);assert.deepEqual(financialDocumentSnapshot(unsigned).signatories.issuer,{name:'สมชาย ใจดี',title:'กรรมการบริษัท'});assert.equal((await renderFinancialDocumentPdf(unsigned)).subarray(0,5).toString(),'%PDF-');
     throw rollback;
    }),error=>error===rollback);
@@ -258,6 +261,7 @@ test('production finance freezes configured policy and artifacts across calculat
    assert.equal((await pool.query('SELECT status,is_current FROM documents WHERE id=$1',[invoice.id])).rows[0].is_current,true);
    await pool.query("UPDATE billing_replacement_drafts SET status='cancelled' WHERE id=$1",[draftId]);await insert(randomUUID());
    await pool.query("UPDATE billing_replacement_drafts SET status='issued' WHERE status='pending_issue_approval'");await insert(randomUUID());
+   await pool.query('DELETE FROM billing_replacement_drafts');
   });
   await t.test('delivery intent audit failure rolls back sending state before SMTP acceptance',async()=>{
    await pool.query(`CREATE FUNCTION reject_send_intent() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='finance.send_started' THEN RAISE EXCEPTION 'intent audit failure'; END IF; RETURN NEW; END $$; CREATE TRIGGER task7_reject_intent BEFORE INSERT ON audit_events FOR EACH ROW EXECUTE FUNCTION reject_send_intent();`);
@@ -297,8 +301,85 @@ test('production finance freezes configured policy and artifacts across calculat
     throw rollback;
    }),error=>error===rollback);
   });
-  await t.test('revision supersedes original and freezes policy with a new artifact',async()=>{
-   invoice=await db.transaction(async client=>service.reviseInvoiceInTransaction(client,(await client.query('SELECT * FROM billing_cycles WHERE id=$1 FOR UPDATE',[cycle.id])).rows[0],'5.0000',owner.id));
+  await t.test('public correction retry reuses one pending proposal and one tariff change without delivery',async()=>{
+   const rollback=new Error('public correction retry fixture rollback'),mailBefore=messages.length;
+   await assert.rejects(db.transaction(async client=>{
+    const transactionDb={query:client.query.bind(client),transaction:async(run:any)=>run(client)} as unknown as DatabaseService;
+    const application=new FinancialApplicationService(transactionDb,readiness),billing=new SiteBillingService(transactionDb,application);
+    const input={rate:'5.0000',reason:'Reviewed pending correction'},actor={id:owner.id,role:'owner'};
+    const first=await billing.reprice(cycle.id,input,actor);assert.equal(first.status,'pending_issue_approval');
+    const rateCount=(await client.query('SELECT count(*)::int n FROM rate_versions WHERE site_id=$1',[siteId])).rows[0].n;
+    const pending=(await client.query("SELECT * FROM billing_replacement_drafts WHERE billing_cycle_id=$1 AND status='pending_issue_approval'",[cycle.id])).rows;
+    await billing.reprice(cycle.id,input,actor);
+    assert.equal((await client.query('SELECT count(*)::int n FROM rate_versions WHERE site_id=$1',[siteId])).rows[0].n,rateCount);
+    assert.deepEqual((await client.query("SELECT * FROM billing_replacement_drafts WHERE billing_cycle_id=$1 AND status='pending_issue_approval'",[cycle.id])).rows,pending);
+    assert.equal((await client.query('SELECT is_current FROM documents WHERE id=$1',[invoice.id])).rows[0].is_current,true);assert.equal(messages.length,mailBefore);throw rollback;
+   }),error=>error===rollback);
+  });
+  await t.test('correction prepares one durable replacement and approval atomically supersedes original',async()=>{
+   const before=await approvalState();const original={...invoice};const mailBefore=messages.length;
+   const propose=()=>db.transaction(async client=>{await client.query("SELECT pg_advisory_xact_lock(hashtext('production-financial-configuration'))");return service.reviseInvoiceInTransaction(client,(await client.query('SELECT * FROM billing_cycles WHERE id=$1 FOR UPDATE',[cycle.id])).rows[0],'5.0000',owner.id);});
+   const [draft,replayDraft]=await Promise.all([propose(),propose()]);
+   assert.equal(draft.status,'pending_issue_approval');assert.equal(replayDraft.id,draft.id);
+   assert.equal(draft.supersedes_document_id,invoice.id);const prepared=await approvalState();
+   assert.deepEqual(prepared.cycle,before.cycle);assert.deepEqual(prepared.series,before.series);
+   for(const field of ['documents','artifacts','outboxes'] as const)assert.equal(prepared.counts[field],before.counts[field]);
+   assert.equal((await pool.query('SELECT is_current FROM documents WHERE id=$1',[invoice.id])).rows[0].is_current,true);
+   assert.equal(Number((await pool.query('SELECT amount FROM billing_cycles WHERE id=$1',[cycle.id])).rows[0].amount),4753.1);
+   const replacementState=async()=>({cycle:(await pool.query('SELECT * FROM billing_cycles WHERE id=$1',[cycle.id])).rows[0],drafts:(await pool.query('SELECT * FROM billing_replacement_drafts ORDER BY id')).rows,documents:(await pool.query('SELECT * FROM documents ORDER BY id')).rows,artifacts:(await pool.query('SELECT * FROM document_artifacts ORDER BY document_id')).rows,outboxes:(await pool.query('SELECT * FROM financial_delivery_outbox ORDER BY id')).rows,series:(await pool.query('SELECT * FROM document_number_series ORDER BY prefix')).rows,audits:(await pool.query('SELECT * FROM audit_events ORDER BY id')).rows});
+   const stable=await replacementState();
+   const cancelledRollback=new Error('cancelled proposal fixture rollback');
+   await assert.rejects(db.transaction(async client=>{
+    await client.query("UPDATE billing_replacement_drafts SET status='cancelled' WHERE id=$1",[draft.id]);
+    const application=new FinancialApplicationService({transaction:async(run:any)=>run(client)} as DatabaseService,readiness);
+    const result=await application.approveInvoice(cycle.id,owner.id);assert.equal(result.created,false);assert.equal(result.document.id,invoice.id);throw cancelledRollback;
+   }),error=>error===cancelledRollback);assert.deepEqual(await replacementState(),stable);
+   const foreignRollback=new Error('foreign prior fixture rollback');
+   await assert.rejects(db.transaction(async client=>{
+    const application=new FinancialApplicationService({transaction:async(run:any)=>run(client)} as DatabaseService,readiness);
+    const foreign=await application.manualInvoice({siteId,lines:[{description:'Foreign original',quantity:'1',unitPrice:'10'}],idempotencyKey:randomUUID()},owner.id);
+    const original=(await application.approveInvoice(foreign.cycle.id,owner.id)).document;
+    await client.query('UPDATE billing_replacement_drafts SET supersedes_document_id=$2 WHERE id=$1',[draft.id,original.id]);
+    await assert.rejects(application.approveInvoice(cycle.id,owner.id),/no longer matches/);throw foreignRollback;
+   }),error=>error===foreignRollback);assert.deepEqual(await replacementState(),stable);
+   await assert.rejects(db.transaction(async client=>service.reviseInvoiceInTransaction(client,cycle,'6.0000',owner.id)),/different replacement/);assert.deepEqual(await replacementState(),stable);
+   for(const [name,sql,values] of [
+    ['cancelled cycle',"UPDATE billing_cycles SET status='cancelled' WHERE id=$1",[cycle.id]],
+    ['cancelled prior',"UPDATE documents SET status='cancelled' WHERE id=$1",[invoice.id]],
+    ['stale prior',"UPDATE documents SET status='superseded',is_current=false WHERE id=$1",[invoice.id]],
+    ['mismatched cycle',"UPDATE billing_replacement_drafts SET snapshot=jsonb_set(snapshot,'{cycle,id}',to_jsonb($2::text)) WHERE id=$1",[draft.id,randomUUID()]],
+    ['mismatched site',"UPDATE billing_replacement_drafts SET snapshot=jsonb_set(snapshot,'{cycle,site_id}',to_jsonb($2::text)) WHERE id=$1",[draft.id,randomUUID()]],
+    ['stale configuration','UPDATE site_billing_settings SET version=version+1 WHERE site_id=$1',[siteId]],
+    ['missing approver position','UPDATE users SET company_position_id=NULL WHERE id=$1',[owner.id]],
+   ] as Array<[string,string,unknown[]]>){
+    const rollback=new Error('replacement validation fixture rollback');
+    await assert.rejects(db.transaction(async client=>{
+     await client.query(sql,values);const application=new FinancialApplicationService({transaction:async(run:any)=>run(client)} as DatabaseService,readiness);
+     await assert.rejects(application.approveInvoice(cycle.id,owner.id),(error:any)=>[409,503].includes(error.getStatus()),name);throw rollback;
+    }),error=>error===rollback);assert.deepEqual(await replacementState(),stable,name);
+   }
+   const failedRender=new FinancialApplicationService(db,readiness,new DocumentIdentityService(),async()=>{throw Error('replacement render unavailable');});
+   await assert.rejects(failedRender.approveInvoice(cycle.id,owner.id),/replacement render unavailable/);assert.deepEqual(await replacementState(),stable);
+   for(const [table,event] of [['documents','INSERT'],['document_artifacts','INSERT'],['financial_delivery_outbox','INSERT'],['audit_events','INSERT'],['documents','UPDATE'],['billing_cycles','UPDATE'],['billing_replacement_drafts','UPDATE']] as const){
+    await pool.query(`CREATE OR REPLACE FUNCTION reject_replacement_write() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'replacement write unavailable'; END $$; CREATE TRIGGER reject_replacement_write BEFORE ${event} ON ${table} FOR EACH ROW EXECUTE FUNCTION reject_replacement_write();`);
+    try{await assert.rejects(service.approveInvoice(cycle.id,owner.id),/replacement write unavailable/);assert.deepEqual(await replacementState(),stable,table+' '+event);}finally{await pool.query(`DROP TRIGGER reject_replacement_write ON ${table}`);}
+   }
+   for(const [table,event,condition] of [['documents','UPDATE','NEW.is_current'],['audit_events','INSERT',"NEW.action='finance.adjust'"]] as const){
+    await pool.query(`CREATE OR REPLACE FUNCTION reject_replacement_write() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF ${condition} THEN RAISE EXCEPTION 'replacement finalization unavailable'; END IF; RETURN NEW; END $$; CREATE TRIGGER reject_replacement_write BEFORE ${event} ON ${table} FOR EACH ROW EXECUTE FUNCTION reject_replacement_write();`);
+    try{await assert.rejects(service.approveInvoice(cycle.id,owner.id),/replacement finalization unavailable/);assert.deepEqual(await replacementState(),stable);}finally{await pool.query(`DROP TRIGGER reject_replacement_write ON ${table}`);}
+   }
+   // Correction replay racing with approval must reuse either the proposal or
+   // its issued original, never create a second pending replacement.
+   const racingCorrection=propose();
+   const approved=await Promise.all([service.approveInvoice(cycle.id,owner.id),service.approveInvoice(cycle.id,owner.id)]);
+   const racingResult=await racingCorrection;assert.ok([draft.id,approved[0].document.id].includes(racingResult.id));
+   assert.deepEqual(approved.map(result=>result.created).sort(),[false,true]);assert.equal(approved[0].document.id,approved[1].document.id);
+   invoice=approved[0].document;
+   assert.equal(invoice.supersedes_document_id,original.id);assert.equal(invoice.snapshot.approver.userId,owner.id);
+   assert.equal((await pool.query('SELECT status,is_current FROM documents WHERE id=$1',[original.id])).rows[0].status,'superseded');
+   assert.equal((await pool.query('SELECT status FROM billing_replacement_drafts WHERE id=$1',[draft.id])).rows[0].status,'issued');
+   assert.equal((await pool.query("SELECT count(*)::int n FROM billing_replacement_drafts WHERE billing_cycle_id=$1 AND status='pending_issue_approval'",[cycle.id])).rows[0].n,0);
+   assert.equal(messages.length,mailBefore);assert.equal((await pool.query('SELECT state FROM financial_delivery_outbox WHERE document_id=$1',[invoice.id])).rows[0].state,'pending');
    assert.equal(invoice.revision,2);assert.equal(Number(invoice.amount),5500);assert.equal(invoice.snapshot.policy.taxRate,'10.0000');
    assert.equal((await pool.query("SELECT count(*)::int AS n FROM documents WHERE billing_cycle_id=$1 AND document_type='invoice' AND is_current",[cycle.id])).rows[0].n,1);
    const replay=await db.transaction(async client=>service.reviseInvoiceInTransaction(client,(await client.query('SELECT * FROM billing_cycles WHERE id=$1 FOR UPDATE',[cycle.id])).rows[0],'5.0000',owner.id));assert.equal(replay.id,invoice.id);
@@ -378,18 +459,22 @@ test('production finance freezes configured policy and artifacts across calculat
    await pool.query('UPDATE site_billing_settings SET tax_rate=5.5,prices_include_tax=true,version=version+1 WHERE site_id=$1',[siteId]);
    const input={siteId,lines:[{description:'Maintenance',quantity:'1',unitPrice:'105.5000'}],idempotencyKey:'task7-manual-'+schema};
    const {idempotencyKey,...unkeyed}=input;await assert.rejects(manualController.manual(unkeyed,{user:{id:owner.id,role:'owner'}}),/idempotency key/i);
+   const before=await approvalState(),mailBefore=messages.length;
    const first=await manualController.manual(input,{user:{id:owner.id,role:'owner'}}),replay=await manualController.manual(input,{user:{id:owner.id,role:'owner'}});
-   assert.equal(first.cycle.status,'approved');
-   assert.equal(Number(first.cycle.subtotal),100);assert.equal(Number(first.cycle.simulated_tax),5.5);assert.equal(Number(first.cycle.amount),105.5);assert.equal(first.document.snapshot.policy.pricesIncludeTax,true);assert.equal(first.document.id,replay.document.id);
-   const second=await manualController.manual({...input,idempotencyKey:'second-identical-'+schema},{user:{id:owner.id,role:'owner'}});assert.notEqual(second.cycle.id,first.cycle.id);assert.notEqual(second.document.id,first.document.id);
+   assert.equal(first.cycle.status,'pending_issue_approval');assert.equal('document' in first,false);assert.equal(first.cycle.id,replay.cycle.id);
+   assert.equal(Number(first.cycle.subtotal),100);assert.equal(Number(first.cycle.simulated_tax),5.5);assert.equal(Number(first.cycle.amount),105.5);
+   for(const field of ['documents','artifacts','outboxes'] as const)assert.equal((await approvalState()).counts[field],before.counts[field]);assert.deepEqual((await approvalState()).series,before.series);assert.equal(messages.length,mailBefore);
+   const issued=(await service.approveInvoice(first.cycle.id,owner.id)).document;assert.equal(issued.snapshot.policy.pricesIncludeTax,true);
+   const second=await manualController.manual({...input,idempotencyKey:'second-identical-'+schema},{user:{id:owner.id,role:'owner'}});assert.notEqual(second.cycle.id,first.cycle.id);
+   const issuedSecond=(await service.approveInvoice(second.cycle.id,owner.id)).document;assert.notEqual(issuedSecond.id,issued.id);
    await assert.rejects(manualController.manual({...input,lines:[{description:'Different work',quantity:'1',unitPrice:'105.5000'}]},{user:{id:owner.id,role:'owner'}}),/already used/);
    await pool.query('UPDATE site_billing_settings SET tax_confirmed=false WHERE site_id=$1',[siteId]);
-   const before=(await pool.query('SELECT count(*)::int AS n FROM billing_cycles')).rows[0].n;
+   const cyclesBefore=(await pool.query('SELECT count(*)::int AS n FROM billing_cycles')).rows[0].n;
    await assert.rejects(service.manualInvoice({...input,idempotencyKey:'blocked-'+schema},owner.id),/tax|ready/i);
-   assert.equal((await pool.query('SELECT count(*)::int AS n FROM billing_cycles')).rows[0].n,before);
+   assert.equal((await pool.query('SELECT count(*)::int AS n FROM billing_cycles')).rows[0].n,cyclesBefore);
    await pool.query('UPDATE site_billing_settings SET tax_confirmed=true,recipient_user_ids=\'{}\' WHERE site_id=$1',[siteId]);
    await assert.rejects(service.manualInvoice({...input,idempotencyKey:'gate-blocked-'+schema},owner.id),error=>(error as any).getStatus()===503);
-   assert.equal((await pool.query('SELECT count(*)::int AS n FROM billing_cycles')).rows[0].n,before,'The new draft cycle rolls back with its failed transaction-aware readiness gate');
+   assert.equal((await pool.query('SELECT count(*)::int AS n FROM billing_cycles')).rows[0].n,cyclesBefore,'The new draft cycle rolls back with its failed transaction-aware readiness gate');
   });
   const count=(await pool.query('SELECT (SELECT count(*) FROM billing_cycles)::int AS cycles,(SELECT count(*) FROM documents)::int AS documents,(SELECT count(*) FROM document_artifacts)::int AS artifacts,(SELECT count(*) FROM financial_delivery_outbox)::int AS outboxes,(SELECT count(*) FROM audit_events WHERE actor_id=$1)::int AS audits',[owner.id])).rows[0];
   assert.equal(count.cycles,3);assert.equal(count.documents,6);assert.equal(count.artifacts,6);assert.equal(count.outboxes,6);assert.ok(count.audits>=7);t.diagnostic(JSON.stringify({schema,...count}));

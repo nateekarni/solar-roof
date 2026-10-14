@@ -1,16 +1,15 @@
-import {allocateDocumentNumber,type DocumentNumberClient} from '@solar/domain/document-number';
 import { Injectable, Logger } from "@nestjs/common";
 
 export interface InvoiceGenerationResult {
   billingCycleId: string;
-  documentNumber: string;
+  status: 'pending_issue_approval';
   amount: number;
   created: boolean;
 }
 
 export interface InvoiceDatabaseClient {
   query(sql: string, params?: unknown[]): Promise<{ rows: any[] }>;
-  transaction<T>(work:(client:DocumentNumberClient)=>Promise<T>):Promise<T>;
+  transaction<T>(work:(client:Pick<InvoiceDatabaseClient,'query'>)=>Promise<T>):Promise<T>;
 }
 
 @Injectable()
@@ -46,12 +45,11 @@ export class GenerateMonthlyInvoicesJob {
           const locked=(await client.query('SELECT * FROM billing_cycles WHERE id=$1 FOR UPDATE',[cycle.id])).rows[0];
           if(!locked)return undefined;
           if((await client.query("SELECT id FROM documents WHERE billing_cycle_id=$1 AND document_type='invoice'",[cycle.id])).rows.length)return undefined;
-          const {number,issueDate}=await allocateDocumentNumber(client,'invoice');
-          const inserted=await client.query(
-            `INSERT INTO documents(id,site_id,billing_cycle_id,document_type,document_number,status,issue_date,amount,file_key)
-             VALUES(gen_random_uuid(),$1,$2,'invoice',$3,'draft',$4,$5,$6) RETURNING document_number,amount`,
-            [locked.site_id,cycle.id,number,issueDate,locked.amount,`invoices/${issueDate.slice(0,4)}/${number}.pdf`]);
-          return inserted.rows.length?{billingCycleId:cycle.id,documentNumber:number,amount:Number(locked.amount),created:true}:undefined;
+          const lines=locked.billing_kind==='manual'?locked.manual_lines:locked.meter_snapshot;
+          if(locked.quality!=='complete'||!Array.isArray(lines)||!lines.length||!['draft','pending_review','rejected','pending_issue_approval'].includes(locked.status))return undefined;
+          const created=locked.status!=='pending_issue_approval';
+          if(created)await client.query("UPDATE billing_cycles SET status='pending_issue_approval' WHERE id=$1",[cycle.id]);
+          return {billingCycleId:cycle.id,status:'pending_issue_approval' as const,amount:Number(locked.amount),created};
         });
         if(result)results.push(result);
       } catch (err: any) {

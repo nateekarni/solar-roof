@@ -20,7 +20,7 @@ test('explicit contract issuance is writable only by Owner or Accountant with bi
 
 // Catches a production endpoint falling back to legacy SQL that omits snapshots/PDF artifacts.
 test('production invoice endpoint fails closed for a legacy calculation without frozen policy',async()=>{
- const db={transaction:async(run:any)=>run({query:async(sql:string)=>({rows:sql.includes('FROM billing_cycles')?[{id:'cycle',quality:'complete',meter_snapshot:[]}]:sql.includes(' AS day')?[{day:'2026-10-14'}]:sql.includes('document_number_series')?[{last_value:1}]:sql.includes('INSERT INTO documents')?[{id:'legacy'}]:[]})})};
+ const db={transaction:async(run:any)=>run({query:async(sql:string)=>({rows:sql.includes('FROM billing_cycles')?[{id:'cycle',status:'pending_review',quality:'complete',meter_snapshot:[{consumedKwh:'25.000'}]}]:sql.includes(' AS day')?[{day:'2026-10-14'}]:sql.includes('document_number_series')?[{last_value:1}]:sql.includes('INSERT INTO documents')?[{id:'legacy'}]:[]})})};
  const readiness={assertEnabled:async()=>({scope:'PRODUCTION'}),isLocalTestReady:async()=>false};
  const controller=new BillingController(db as any,readiness as any,new FinancialApplicationService(db as any,readiness as any),{} as any);
  await assert.rejects(controller.generateInvoiceForBillingCycle('cycle'),/policy/i);

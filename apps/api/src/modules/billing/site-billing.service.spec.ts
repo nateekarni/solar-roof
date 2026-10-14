@@ -3,6 +3,13 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {SiteBillingService} from './site-billing.service.js';
 const owner={id:'owner',role:'owner'};
+test('rate correction prepares approval without automatic delivery',async()=>{
+ const cycle={id:'bill',site_id:'a',status:'approved',starts:'2026-10-01',billing_kind:'energy',rate:'3.5'};
+ const c={query:async(sql:string)=>({rows:sql.includes('FROM billing_cycles')?[cycle]:sql.includes('FROM sites')?[{customer_id:'c'}]:[]})};
+ const financial={reviseInvoiceInTransaction:async()=>({id:'replacement',status:'pending_issue_approval'}),send:async()=>{throw Error('Correction delivered before approval');}};
+ const result=await new SiteBillingService({transaction:async(fn:any)=>fn(c)} as any,financial as any).reprice('bill',{rate:'3.7',reason:'Correction'},owner);
+ assert.equal(result.status,'pending_issue_approval');
+});
 test('invoice rate correction warns before retiring an already scheduled future tariff',async()=>{let mutation=false;const c={query:async(sql:string)=>{if(sql.includes('FROM billing_cycles'))return {rows:[{id:'bill',site_id:'a',status:'approved',starts:'2026-10-01',billing_kind:'energy'}]};if(sql.includes('FROM sites'))return {rows:[{customer_id:'c'}]};if(sql.includes('FROM rate_versions'))return {rows:[{id:'december',startDate:'2026-12-01',rate:'4'}]};if(sql.startsWith('UPDATE')||sql.startsWith('INSERT'))mutation=true;return {rows:[]};}};await assert.rejects(new SiteBillingService({transaction:async(fn:any)=>fn(c)} as any,{} as any).reprice('bill',{rate:'3.7',reason:'Correction'},owner),(error:any)=>error.getResponse().code==='FUTURE_RATE_REPLACEMENT_REQUIRED');assert.equal(mutation,false);});
 test('bulk matched preview compares database decimals and includes future rates/documents',async()=>{
  let params:any[]=[];const db={query:async(sql:string,p:any[])=>{params=p;assert.match(sql,/r.rate=\$4/);return {rows:[{siteId:'a',rate:'3.5000',futureRates:[{rate:'3.7'}],documents:['INV-1']}]};}};

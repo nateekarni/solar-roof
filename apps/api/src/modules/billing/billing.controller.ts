@@ -276,7 +276,7 @@ export class BillingController {
   @Roles("owner", "accountant")
   @Post("billing-cycles/:id/generate-invoice")
   async generateInvoiceForBillingCycle(@Param("id") id: string, @Req() req?: {user?:ScopedActor}) {
-    return this.financial.issueInvoice(id,req?.user?.id);
+    return this.financial.prepareInvoice(id,req?.user?.id);
   }
 
   @Get("billing-cycles/:id")
@@ -368,7 +368,7 @@ export class BillingController {
     @Req() req?: {user?:ScopedActor}
   ) {
     if(!['pending_review','approved','rejected'].includes(body.status))throw new BadRequestException('Invalid billing cycle status');
-    if(body.status==='approved')return {success:true,invoice:await this.financial.issueInvoice(id,req?.user?.id)};
+    if(body.status==='approved')return {success:true,...await this.financial.prepareInvoice(id,req?.user?.id)};
     return this.db.transaction(async client=>{
       await this.readiness.assertEnabled('issue',{billingCycleId:id},client);
       const before=(await client.query('SELECT * FROM billing_cycles WHERE id=$1 FOR UPDATE',[id])).rows[0];if(!before)throw new NotFoundException('Billing cycle not found');

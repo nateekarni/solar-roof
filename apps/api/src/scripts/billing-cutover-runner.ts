@@ -37,6 +37,9 @@ export async function runBillingCutover(input:CutoverInput,db:DatabaseService,re
   if(!previous)await lock.query(`INSERT INTO audit_events(id,actor_id,action,entity_type,entity_id,after_json,reason,correlation_id) VALUES($1,$2,'finance.cutover_started','site',$3,$4,'Controlled production billing cutover',$5)`,[eventId,input.ownerId,input.siteId,JSON.stringify(context),digest]);
   const {cycles}=await financial.calculate(input.siteId,input.periodStart,input.periodEnd,input.ownerId);
   const cycle=cycles[0];if(!cycle)throw new Error('Billing cycle was not created');
+  // This explicit one-off Owner --apply operation includes issuance approval;
+  // runtime schedulers and generation buttons only prepare the same draft.
+  if(['draft','pending_review','rejected'].includes(cycle.status))await financial.prepareInvoice(cycle.id,input.ownerId);
   const {document}=await financial.issueInvoice(cycle.id,input.ownerId);
   const delivery=await financial.send(cycle.id,input.ownerId);if(!('success' in delivery)||!delivery.success)throw new Error('Delivery is pending; replay the same operation after reconciliation');
   const outboxes=(await db.query('SELECT state FROM financial_delivery_outbox WHERE document_id=$1',[document.id])).rows;
