@@ -80,33 +80,41 @@ export function OwnSignatureCard({profile, busy, onChoose, onRemove, locale = 't
 function OwnSignatureAccount({userId}: {userId: string}) {
   const locale = useLocale(), th = locale === 'th';
   const [profile, setProfile] = useState<Profile | null>(null), [error, setError] = useState(''), [busy, setBusy] = useState(false), [saved, setSaved] = useState(false), [attempt, setAttempt] = useState(0);
-  const active = useRef(false), saving = useRef(false), controller = useRef<AbortController | null>(null);
+  const active = useRef(false), saving = useRef(false), controller = useRef<AbortController | null>(null), readVersion = useRef(0);
   useEffect(() => {
     active.current = true;
     const abort = new AbortController();
     controller.current = abort;
+    return () => {active.current = false; readVersion.current++; abort.abort();};
+  }, [userId]);
+  useEffect(() => {
+    const abort = new AbortController(), version = ++readVersion.current;
     setError('');
     apiClient.get<Profile>('/v1/me/profile', {signal: abort.signal}).then(value => {
-      if (!active.current || abort.signal.aborted || authStore.getState().user?.id !== userId) return;
+      if (!active.current || abort.signal.aborted || saving.current || version !== readVersion.current || authStore.getState().user?.id !== userId) return;
       setProfile(value);
       authStore.updateDocumentIdentity(userId, {companyPosition: value.companyPosition, hasSignature: value.hasSignature ?? Boolean(value.signatureDataUri)});
     }).catch(reason => {
-      if (active.current && !abort.signal.aborted) setError(reason instanceof Error ? reason.message : (th ? 'โหลดข้อมูลลายเซ็นไม่สำเร็จ' : 'Unable to load signature'));
+      if (active.current && !abort.signal.aborted && !saving.current && version === readVersion.current) setError(reason instanceof Error ? reason.message : (th ? 'โหลดข้อมูลลายเซ็นไม่สำเร็จ' : 'Unable to load signature'));
     });
-    return () => {active.current = false; abort.abort();};
+    return () => abort.abort();
   }, [userId, attempt, th]);
 
   const save = async (file: File | null) => {
     if (!profile || saving.current || authStore.getState().user?.id !== userId) return;
     saving.current = true;
+    // Reads begun before or during a mutation cannot replace its saved result.
+    readVersion.current++;
+    const signal = controller.current?.signal;
     setBusy(true); setError(''); setSaved(false);
     try {
       const image = file ? await readSignatureFile(file, locale) : null;
-      if (!active.current || controller.current?.signal.aborted) return;
-      const updated = await saveOwnSignature(profile, image, userId, controller.current?.signal);
+      if (!active.current || signal?.aborted) return;
+      const updated = await saveOwnSignature(profile, image, userId, signal);
+      readVersion.current++;
       if (active.current && authStore.getState().user?.id === userId) {setProfile(updated); setSaved(true);}
     } catch (reason) {
-      if (active.current && !controller.current?.signal.aborted) setError(reason instanceof Error ? reason.message : (th ? 'บันทึกลายเซ็นไม่สำเร็จ' : 'Unable to save signature'));
+      if (active.current && !signal?.aborted) setError(reason instanceof Error ? reason.message : (th ? 'บันทึกลายเซ็นไม่สำเร็จ' : 'Unable to save signature'));
     } finally {
       saving.current = false;
       if (active.current) setBusy(false);
