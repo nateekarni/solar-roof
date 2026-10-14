@@ -29,6 +29,8 @@
 
 เปิด [infra/docker/.env.web.example](../../infra/docker/.env.web.example) จาก release ใหม่แล้วนำค่าไปกรอก Coolify Environment Variables (available at runtime) ไม่ upload .env จาก localhost
 
+คำอธิบายหน้าที่ สถานะ secret ค่าเริ่มต้น และเงื่อนไขเปิดของตัวแปรทุกตัวอยู่ใน [คู่มือ Environment Variables สำหรับ Coolify](coolify-environment-reference-th.md)
+
 | ค่า | ตั้งเป็น |
 |---|---|
 | API_IMAGE / WEB_IMAGE / WORKER_IMAGE / POSTGRES_IMAGE | digest จริงจาก CI run เดียวกัน |
