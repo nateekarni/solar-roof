@@ -2,8 +2,15 @@ import { BadRequestException, ConflictException, ForbiddenException, Inject, Inj
 import { randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { DatabaseService } from '../../database/database.service.js';
-import { PERMISSION_CATALOG, validateDomainRules, validateScope, type PermissionDomain } from '../../common/auth/authorization.js';
+import { PERMISSION_CATALOG, validateDomainRules, validateScope, type PermissionDomain, type SiteAccessScope } from '../../common/auth/authorization.js';
 export interface TeamActor {id:string;role:string}
+export interface TeamGrantDraft {
+ revision:number;
+ position:{id:string}|{name:string;rules:Record<string,boolean|null>};
+ overrides:Record<string,boolean|null>;
+ scope:SiteAccessScope;
+}
+export interface TeamGrantResult {success:true;revision:number;position:{id:string;name:string}}
 function domainFor(actor:TeamActor,domain:unknown):PermissionDomain {
  if((domain!=='business'&&domain!=='technical')||actor.role!==(domain==='business'?'owner':'admin'))throw new ForbiddenException('Managers may administer only their own permission domain');
  return domain;
@@ -21,9 +28,11 @@ export class TeamService {
  async employees(actor:TeamActor,rawDomain:unknown){
   const domain=domainFor(actor,rawDomain);
   const result=await this.db.query(`SELECT u.id,u.email,u.display_name AS "displayName",u.avatar_data AS "avatarData",u.role,u.status,u.permission_revision AS revision,
+   u.company_position_id AS "companyPositionId",p.name AS "companyPosition",
    CASE WHEN g.user_id IS NULL THEN NULL ELSE jsonb_build_object('positionId',g.position_id,'overrides',g.overrides,'scope',jsonb_build_object('mode',g.scope_mode,'siteIds',g.site_ids)) END AS grant
    FROM users u LEFT JOIN employee_domain_grants g ON g.user_id=u.id AND g.domain=$1
-   WHERE u.role IN ('operator','accountant') ORDER BY u.display_name,u.id`,[domain]);
+   LEFT JOIN employee_positions p ON p.id=u.company_position_id
+   WHERE u.role IN ('operator','accountant',$2) ORDER BY u.display_name,u.id`,[domain,domain==='business'?'owner':'admin']);
   return {domain,employees:result.rows};
  }
  async positions(actor:TeamActor,rawDomain:unknown){
@@ -35,26 +44,48 @@ export class TeamService {
   if(!current||current.status!=='active')throw new ForbiddenException('Manager is inactive');
   domainFor({...actor,role:current.role},domain);
  }
- private async audit(client:PoolClient,actor:TeamActor,domain:PermissionDomain,id:string,action:string){
-  await client.query(`INSERT INTO audit_events(id,actor_id,action,entity_type,entity_id,correlation_id) VALUES($1,$2,$3,$4,$5,$6)`,[randomUUID(),actor.id,`${domain}.${action}`,'employee_permission',id,randomUUID()]);
+ private async audit(client:PoolClient,actor:TeamActor,domain:PermissionDomain,id:string,action:string,after?:unknown){
+  await client.query(`INSERT INTO audit_events(id,actor_id,action,entity_type,entity_id,correlation_id,after_json) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb)`,[randomUUID(),actor.id,`${domain}.${action}`,'employee_permission',id,randomUUID(),after===undefined?null:JSON.stringify(after)]);
  }
- async updateGrant(actor:TeamActor,userId:string,rawDomain:unknown,input:unknown){
-  const domain=domainFor(actor,rawDomain),body=object(input,['revision','positionId','overrides','scope']);
-  const expected=revision(body.revision),rules=validateDomainRules(domain,body.overrides),scope=validateScope(body.scope);
-  const positionId=body.positionId===null?null:uuid(body.positionId);
+ async updateGrant(actor:TeamActor,userId:string,rawDomain:unknown,input:unknown):Promise<TeamGrantResult>{
+  const domain=domainFor(actor,rawDomain),body=object(input,['revision','position','overrides','scope']);
+  const expected=revision(body.revision),overrides=validateDomainRules(domain,body.overrides),scope=validateScope(body.scope);
+  const draft=object(body.position,['id','name','rules']);
+  let selectedId:string|undefined,positionName:string|undefined,presetRules:Record<string,boolean|null>|undefined;
+  if(Object.hasOwn(draft,'id')){
+   if(Object.keys(draft).length!==1)throw new BadRequestException('Select a position or create a named preset');
+   selectedId=uuid(draft.id);
+  }else{
+   if(typeof draft.name!=='string'||!draft.name.trim()||draft.name.trim().length>120)throw new BadRequestException('Position name required');
+   positionName=draft.name.trim();presetRules=validateDomainRules(domain,draft.rules);
+  }
   return this.db.transaction(async client=>{
    await this.authorizeCurrent(client,actor,domain);
    const user=(await client.query('SELECT role,permission_revision FROM users WHERE id=$1 FOR UPDATE',[uuid(userId)])).rows[0];
    if(!user)throw new NotFoundException('Employee not found');
-   if(!['operator','accountant'].includes(user.role))throw new ForbiddenException('Platform manager and customer rights cannot be changed through employee grants');
+   const employee=['operator','accountant'].includes(user.role);
+   if(!employee&&user.role!==(domain==='business'?'owner':'admin'))throw new ForbiddenException('Only employees and this domain manager may receive a company position');
    if(user.permission_revision!==expected)throw new ConflictException('Permissions changed; reload before saving');
-   if(positionId&&!(await client.query('SELECT position_id FROM employee_position_domains WHERE position_id=$1 AND domain=$2 FOR SHARE',[positionId,domain])).rows[0])throw new BadRequestException('Position has no rules in this domain');
    if(scope.siteIds.length){const sites=await client.query('SELECT id FROM sites WHERE id=ANY($1::uuid[]) FOR SHARE',[scope.siteIds]);if(sites.rows.length!==scope.siteIds.length)throw new BadRequestException('Unknown site scope');}
-   await client.query(`INSERT INTO employee_domain_grants(user_id,domain,position_id,overrides,scope_mode,site_ids,updated_by)
-    VALUES($1,$2,$3,$4::jsonb,$5,$6::uuid[],$7) ON CONFLICT(user_id,domain) DO UPDATE SET position_id=excluded.position_id,overrides=excluded.overrides,scope_mode=excluded.scope_mode,site_ids=excluded.site_ids,updated_by=excluded.updated_by,updated_at=now()`,[userId,domain,positionId,JSON.stringify(rules),scope.mode,scope.siteIds,actor.id]);
+   const positionId=selectedId??randomUUID();
+   let name:string;
+   if(selectedId){
+    const preset=(await client.query('SELECT p.name FROM employee_positions p JOIN employee_position_domains d ON d.position_id=p.id AND d.domain=$2 WHERE p.id=$1 FOR SHARE',[positionId,domain])).rows[0];
+    if(!preset)throw new BadRequestException('Position has no permission preset in this domain');
+    name=preset.name;
+   }else{
+    name=positionName!;
+    await client.query('INSERT INTO employee_positions(id,name) VALUES($1,$2)',[positionId,name]);
+    await client.query('INSERT INTO employee_position_domains(position_id,domain,rules) VALUES($1,$2,$3::jsonb)',[positionId,domain,JSON.stringify(presetRules)]);
+   }
+   await client.query('UPDATE users SET company_position_id=$2,updated_at=now() WHERE id=$1',[userId,positionId]);
+   // Manager authority remains role-derived; presets and overrides apply only to employees.
+   if(employee)await client.query(`INSERT INTO employee_domain_grants(user_id,domain,position_id,overrides,scope_mode,site_ids,updated_by)
+    VALUES($1,$2,$3,$4::jsonb,$5,$6::uuid[],$7) ON CONFLICT(user_id,domain) DO UPDATE SET position_id=excluded.position_id,overrides=excluded.overrides,scope_mode=excluded.scope_mode,site_ids=excluded.site_ids,updated_by=excluded.updated_by,updated_at=now()`,[userId,domain,positionId,JSON.stringify(overrides),scope.mode,scope.siteIds,actor.id]);
    await client.query('UPDATE users SET permission_revision=permission_revision+1,updated_at=now() WHERE id=$1',[userId]);
-   await this.audit(client,actor,domain,userId,'permissions.updated');
-   return {success:true,revision:expected+1};
+   const position={id:positionId,name};
+   await this.audit(client,actor,domain,userId,'permissions.updated',{position});
+   return {success:true,revision:expected+1,position};
   });
  }
  async revokeGrant(actor:TeamActor,userId:string,rawDomain:unknown,input:unknown){
