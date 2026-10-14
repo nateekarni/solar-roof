@@ -1,6 +1,6 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
-import type { OperationQuery } from '@solar/api-contracts';
+import type { BillingStatusView, OperationQuery } from '@solar/api-contracts';
 import {operationFilters} from '@solar/api-contracts';
 import type { ScopePrincipal } from '../../common/auth/resource-scope.js';
 
@@ -19,11 +19,18 @@ export const operationQueries: Record<string, { sorts: string[]; search: string[
   audit: { sorts: ["time", "action", "entityType", "entityId", "actor", "reason"], search: ['action', 'entityType', 'entityId', 'actor', 'reason', 'correlationId'], date: 'time', direction: 'desc' },
 };
 
+// Legacy issuance states span multiple derived tabs, so reopen those links on all.
+// Collection aliases normalize to one tab; an explicit billingStatusView wins.
+const legacyBillingStatusViews:Readonly<Record<string,BillingStatusView>>={
+  '':'all',draft:'unsuccessful',pending_review:'all',approved:'all',issued:'all',
+  unpaid:'awaiting_payment',pending_payment:'awaiting_payment',pending_verification:'pending_verification',overdue:'overdue',paid:'paid',cancelled:'unsuccessful',
+};
+
 export function parseOperationQuery(resource: string, raw: Record<string, unknown> = {}): OperationQuery {
   const config = operationQueries[resource];
   if (!config) throw new NotFoundException('Unknown resource');
   for (const [key, value] of Object.entries(raw)) {
-    if (!['limit', 'cursor', 'search', 'sort', 'direction', 'from', 'to',...(resource==='billing'?['billingStatusView']:[]),...(['billing','receipts'].includes(resource)?['siteId','collectionStatus']:[]),...(operationFilters[resource]??[]).map(filter=>filter.key)].includes(key) || typeof value !== 'string') throw new BadRequestException('Invalid operation query');
+    if (!['limit', 'cursor', 'search', 'sort', 'direction', 'from', 'to',...(resource==='billing'?['billingStatusView','status']:[]),...(['billing','receipts'].includes(resource)?['siteId','collectionStatus']:[]),...(operationFilters[resource]??[]).map(filter=>filter.key)].includes(key) || typeof value !== 'string') throw new BadRequestException('Invalid operation query');
   }
   const limit = raw.limit === undefined ? 25 : Number(raw.limit);
   if (!Number.isInteger(limit) || limit < 1 || limit > 100 || (raw.limit !== undefined && !/^\d+$/.test(String(raw.limit)))) throw new BadRequestException('Limit must be 1–100');
@@ -40,6 +47,7 @@ export function parseOperationQuery(resource: string, raw: Record<string, unknow
   const cursor = raw.cursor as string | undefined;
   if (cursor !== undefined && (cursor.length > 2048 || !/^[A-Za-z0-9_-]+$/.test(cursor))) throw new BadRequestException('Invalid cursor');
   const filters:Partial<OperationQuery>={};
+  if(resource==='billing'&&raw.status!==undefined){const legacy=String(raw.status);if(!Object.hasOwn(legacyBillingStatusViews,legacy))throw new BadRequestException('Invalid legacy billing status');filters.billingStatusView=legacyBillingStatusViews[legacy]!;}
   if(raw.siteId!==undefined){if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(raw.siteId)))throw new BadRequestException('Invalid site filter');filters.siteId=String(raw.siteId);}
   if(raw.collectionStatus!==undefined){if(!['paid','pending_review','overdue','awaiting_payment'].includes(String(raw.collectionStatus)))throw new BadRequestException('Invalid collection filter');filters.collectionStatus=raw.collectionStatus as NonNullable<OperationQuery['collectionStatus']>;}
   if(raw.billingStatusView!==undefined){if(!['all','pending_issue_approval','awaiting_payment','pending_verification','overdue','paid','unsuccessful'].includes(String(raw.billingStatusView)))throw new BadRequestException('Invalid billing status view');filters.billingStatusView=raw.billingStatusView as NonNullable<OperationQuery['billingStatusView']>;}

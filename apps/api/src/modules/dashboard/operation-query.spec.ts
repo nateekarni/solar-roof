@@ -9,7 +9,36 @@ test('billing status views validate the tab vocabulary and reject raw or unrelat
  assert.throws(()=>parseOperationQuery('billing',{billingStatusView:'raw_database_value'}),/Invalid/);
  assert.throws(()=>parseOperationQuery('billing',{billingStatusView:''}),/Invalid/);
  assert.throws(()=>parseOperationQuery('receipts',{billingStatusView:'paid'}),/Invalid/);
- assert.throws(()=>parseOperationQuery('billing',{status:'issued'}),/Invalid/);
+ assert.throws(()=>parseOperationQuery('billing',{status:'unknown_legacy_status'}),/Invalid/);
+});
+
+test('legacy billing status links normalize to tabs without retaining the raw predicate',()=>{
+ for(const [status,expected] of [
+  ['','all'],['draft','unsuccessful'],['pending_review','all'],['approved','all'],['issued','all'],['unpaid','awaiting_payment'],['pending_payment','awaiting_payment'],['pending_verification','pending_verification'],['overdue','overdue'],['paid','paid'],['cancelled','unsuccessful'],
+ ] as const) {
+  const query=parseOperationQuery('billing',{status});
+  assert.equal(query.billingStatusView,expected,status);assert.equal(query.status,undefined);
+  const params:unknown[]=[];
+  const clauses=operationPredicate('billing',query,params);
+  assert.deepEqual(clauses,expected==='all'?[]:['q."billingStatusView" = $1']);
+  assert.deepEqual(params,expected==='all'?[]:[expected]);
+ }
+});
+
+test('explicit billing tab wins over a valid legacy status and both inputs stay validated',()=>{
+ for(const [status,billingStatusView] of [['paid','paid'],['paid','overdue'],['paid','all'],['','paid']] as const) {
+  assert.equal(parseOperationQuery('billing',{status,billingStatusView}).billingStatusView,billingStatusView);
+ }
+ assert.throws(()=>parseOperationQuery('billing',{status:'unknown',billingStatusView:'paid'}),/Invalid/);
+ assert.throws(()=>parseOperationQuery('billing',{status:'__proto__'}),/Invalid/);
+ assert.throws(()=>parseOperationQuery('billing',{status:'paid',billingStatusView:'unknown'}),/Invalid/);
+});
+
+test('legacy and canonical billing aliases share cursor scope',()=>{
+ const query=parseOperationQuery('billing',{status:'pending_payment'});
+ const page=operationPageSql('billing','SELECT id,period',[],query,{role:'owner'},null);
+ const cursor=page.cursor({id:'00000000-0000-4000-8000-000000000001',__operationCursorValue:'2026-09'});
+ assert.doesNotThrow(()=>operationPageSql('billing','SELECT id,period',[],parseOperationQuery('billing',{billingStatusView:'awaiting_payment',cursor}),{role:'owner'},null));
 });
 
 test('billing tab filters bind the derived status while all adds no status predicate',()=>{

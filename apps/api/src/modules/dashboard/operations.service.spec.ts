@@ -81,6 +81,17 @@ test('billing status mapping and scoped facet counts execute against isolated Po
   assert.equal(revoked.facets?.billingStatusCounts?.all,0);
   const summary=await service.summary('billing',owner,{...scope,billingStatusView:'paid'});
   assert.equal(Array.isArray(summary),true);assert.equal(summary.length,4);assert.equal(summary[0]?.value,1);assert.equal(summary[1]?.value,1);assert.equal(summary[2]?.value,100);assert.equal(summary[3]?.value,100);
+  // Exercise the existing browser request helper without extending API compilation into the web source tree.
+  const requestHelperPath='../../../../web/features/shared/operation-request-query.ts';
+  const {operationRequestQueries}=await import(requestHelperPath);
+  for(const [status,expectedCount,expectedView] of [['issued',9,'all'],['',9,'all'],['paid',1,'paid'],['pending_payment',1,'awaiting_payment'],['cancelled',4,'unsuccessful']] as const) {
+   const requests=operationRequestQueries({status,siteId:id(101),from:'2026-09-01',to:'2026-09-30'});
+   const page=await service.list('billing',owner,Object.fromEntries(new URLSearchParams(requests.rows)));
+   const totals=await service.summary('billing',owner,Object.fromEntries(new URLSearchParams(requests.summary)));
+   assert.equal(page.rows.length,expectedCount);assert.equal(Array.isArray(totals),true);assert.equal(totals.length,4);assert.equal(totals[0]?.value,expectedCount);
+   if(expectedView!=='all')assert.ok(page.rows.every(row=>row.billingStatusView===expectedView));
+   assert.deepEqual(page.facets,all.facets);
+  }
  } finally {await client.query('ROLLBACK');client.release();await pool.end();}
 });
 
