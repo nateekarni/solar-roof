@@ -2,18 +2,37 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { SettingsService } from './settings.service.js';
 import { settingsDatabase, testCompany } from './company-settings.test-fixtures.js';
-test('company signatory defaults persist and unrelated edits preserve them',async()=>{
- const service=new SettingsService(settingsDatabase({...testCompany,signatoryName:'',signatoryTitle:''}).db);
- const updated=await service.updateCompanyProfile({signatoryName:'Provider Person',signatoryTitle:'Director'},'owner-a');
- assert.equal(updated.signatoryName,'Provider Person');assert.equal(updated.signatoryTitle,'Director');
- const later=await service.updateCompanyProfile({companyName:'Changed issuer'},'owner-a');assert.equal(later.signatoryName,'Provider Person');assert.equal(later.signatoryTitle,'Director');
- const cleared=await service.updateCompanyProfile({signatoryName:'',signatoryTitle:''},'owner-a');assert.equal(cleared.signatoryName,'');
+test('company settings exposes identity and logo without legacy signer fields', async () => {
+  const response = await new SettingsService(settingsDatabase().db).getCompanyProfile();
+  assert.equal(response.companyName, 'Issuer');
+  assert.equal(response.logoUrl, '');
+  for (const key of ['signatoryName', 'signatoryTitle', 'signatureDataUri']) {
+    assert.equal(key in response, false, `${key} must not be exposed by company settings`);
+  }
 });
-test('signature upload is persisted as image bytes, preserved on unrelated updates and explicitly removable',async()=>{
- const service=new SettingsService(settingsDatabase().db);
- const image='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=';
- assert.equal((await service.updateCompanyProfile({signatureDataUri:image},'owner-a')).signatureDataUri,image);
- assert.equal((await service.updateCompanyProfile({companyName:'Updated'},'owner-a')).signatureDataUri,image);
- assert.equal((await service.updateCompanyProfile({signatureDataUri:''},'owner-a')).signatureDataUri,'');
- await assert.rejects(()=>service.updateCompanyProfile({signatureDataUri:'https://example.test/latest-signature.png'},'owner-a'),/Signature must/);
+
+test('empty company settings does not expose legacy signer defaults', async () => {
+  const {id: _id, ...emptyCompany} = testCompany;
+  const response = await new SettingsService(settingsDatabase(emptyCompany).db).getCompanyProfile();
+  assert.equal(response.companyName, '');
+  for (const key of ['signatoryName', 'signatoryTitle', 'signatureDataUri']) assert.equal(key in response, false);
+});
+
+test('legacy signer input cannot overwrite stored historical company identity', async () => {
+  const fixture = settingsDatabase({...testCompany, signatureDataUri: 'historical signature'});
+  const input = {companyName: 'Updated issuer', signatoryName: 'New signer', signatoryTitle: 'New title', signatureDataUri: ''};
+  const response = await new SettingsService(fixture.db).updateCompanyProfile(input, 'owner-a');
+  assert.equal(response.companyName, 'Updated issuer');
+  assert.equal(fixture.state.company.signatoryName, 'Director');
+  assert.equal(fixture.state.company.signatoryTitle, 'Owner');
+  assert.equal(fixture.state.company.signatureDataUri, 'historical signature');
+  for (const key of ['signatoryName', 'signatoryTitle', 'signatureDataUri']) assert.equal(key in response, false);
+});
+
+test('company logo upload is persisted, preserved on unrelated edits and removable', async () => {
+  const service = new SettingsService(settingsDatabase().db);
+  const image = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=';
+  assert.equal((await service.updateCompanyProfile({logoUrl: image}, 'owner-a')).logoUrl, image);
+  assert.equal((await service.updateCompanyProfile({companyName: 'Updated'}, 'owner-a')).logoUrl, image);
+  assert.equal((await service.updateCompanyProfile({logoUrl: ''}, 'owner-a')).logoUrl, '');
 });

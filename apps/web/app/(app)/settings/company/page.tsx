@@ -5,14 +5,10 @@ import { AddButton } from "../../../../components/ui/add-button";
 import * as React from "react";
 import Link from "next/link";
 import {
-  Building2,
   ChevronLeft,
   CreditCard,
-  Edit2,
   Loader2,
   Save,
-  Sliders,
-  Trash2,
   MoreHorizontal,
 } from "lucide-react";
 import { useLocale } from "../../../../providers/locale-provider";
@@ -20,14 +16,13 @@ import { apiClient } from "../../../../lib/api-client";
 import type { FinancialReadinessStatus } from "@solar/api-contracts";
 import { useAuth } from "../../../../stores/auth-store";
 import { companyBrandingUpdated } from "../../../../components/brand/branding-logo";
-import { CompanyLogoField } from "../../../../features/settings/company-logo-field";
+import { CompanyProfileCard, type CompanyProfile } from "../../../../features/settings/company-profile-card";
 import { FinanceReadinessCard } from "../../../../features/settings/finance-readiness-card";
 import { AppLoading } from "../../../../components/feedback/app-loading";
 import { notify } from "../../../../components/feedback/notifications";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../../../components/ui/card";
 import { Label } from "../../../../components/ui/label";
 import { Input } from "../../../../components/ui/input";
-import { Textarea } from "../../../../components/ui/textarea";
 import { Switch } from "../../../../components/ui/switch";
 import { Badge } from "../../../../components/ui/badge";
 import {
@@ -49,19 +44,6 @@ import {
   DialogTitle,
 } from "../../../../components/ui/dialog";
 
-interface CompanyProfile {
-  id?: string;
-  companyName: string;
-  taxId: string;
-  branch: string;
-  address: string;
-  phone: string;
-  email: string;
-  logoUrl?: string;
-  signatoryName?: string;
-  signatoryTitle?: string;
-  signatureDataUri?: string;
-}
 
 interface CompanyBankAccount {
   id?: string;
@@ -278,123 +260,7 @@ export default function CompanyBankingPage() {
         {readinessError && <div className="space-y-2"><p role="alert">{readinessError}</p><Button type="button" variant="outline" onClick={() => void fetchReadiness()}>{locale === 'th' ? 'ลองอีกครั้ง' : 'Try again'}</Button></div>}
         {readiness && <FinanceReadinessCard status={readiness} locale={locale} isOwner={isOwner} confirming={confirming} pendingChanges={savingCompany || savingBank || deletingBank || editingCompany || bankModalOpen} onConfirm={() => void handleConfirm()} onEditCompany={() => setEditingCompany(true)}/>}
         {/* Section 1: Company Profile (FlowAccount Standard) */}
-        <Card className="panel border-border/80 shadow-xs">
-          <CardHeader className="p-0 pb-2 flex flex-row items-start justify-between gap-3">
-            <div>
-              <CardTitle className="text-sm font-semibold flex items-center gap-2 text-foreground">
-                <span>{locale === "th" ? "ข้อมูลบริษัท / นิติบุคคล" : "Company Billing Profile"}</span>
-              </CardTitle>
-              <CardDescription className="text-xs mt-0.5">
-                {locale === "th"
-                  ? "ข้อมูลบริษัทที่แสดงในใบวางบิลและใบเสร็จรับเงิน/ใบกำกับภาษี"
-                  : "Header information shown on invoices, tax receipts, and PPA contracts (FlowAccount standard)"}
-              </CardDescription>
-            </div>
-            {!editingCompany && isOwner && <Button type="button" variant="outline" size="sm" disabled={loadingCompany || !!loadError || confirming} onClick={() => setEditingCompany(true)} className="h-10 shrink-0 gap-1.5 text-xs"><Edit2 className="size-3.5" /><span>{locale === "th" ? "แก้ไข" : "Edit"}</span></Button>}
-          </CardHeader>
-          <CardContent className="p-0 pt-4">
-            {!editingCompany ? <div className="space-y-4"><dl className="grid grid-cols-1 gap-4 md:grid-cols-2">{([
-                ['companyName', 'ชื่อบริษัท / นิติบุคคล', 'Company name'], ['taxId', 'เลขประจำตัวผู้เสียภาษี', 'Tax ID'], ['branch', 'สาขา', 'Branch'], ['phone', 'เบอร์โทรศัพท์', 'Phone'], ['email', 'อีเมลสำหรับการเงิน', 'Billing email'], ['address', 'ที่อยู่จดทะเบียนภาษี', 'Tax address'], ['signatoryName', 'ชื่อผู้ลงนามฝ่ายผู้ให้บริการ', 'Default provider signatory'], ['signatoryTitle', 'ตำแหน่งผู้ลงนาม', 'Default signatory title']
-              ] as const).map(([key, th, en]) => <div key={key} className={key === "address" ? "space-y-1 md:col-span-2" : "space-y-1"}><dt className="text-sm text-muted-foreground">{locale === 'th' ? th : en}</dt><dd className="text-sm font-medium whitespace-pre-wrap break-words">{company[key] || '—'}</dd></div>)}</dl></div> : <form onSubmit={handleSaveCompany} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                {(['logoUrl','signatureDataUri'] as const).map(key=><CompanyLogoField key={key} id={`company-${key}`} purpose={key === 'logoUrl' ? 'logo' : 'signature'} value={company[key] ?? ''} locale={locale} disabled={savingCompany} onChange={value => setCompany(current => ({...current,[key]:value}))}/>)}
-                {(['signatoryName','signatoryTitle'] as const).map(key=><div className="space-y-2" key={key}>
-                  <Label htmlFor={`company-${key}`}>{key==='signatoryName'?(locale==='th'?'ชื่อผู้ลงนามฝ่ายผู้ให้บริการ':'Default provider signatory'):(locale==='th'?'ตำแหน่งผู้ลงนาม':'Default signatory title')}</Label>
-                  <Input id={`company-${key}`} value={company[key]??''} onChange={event=>setCompany({...company,[key]:event.target.value})}/>
-                </div>)}
-                <div className="space-y-2">
-                  <Label htmlFor="company-companyName" className="text-xs font-medium text-foreground">
-                    {locale === "th" ? "ชื่อบริษัท / นิติบุคคล *" : "Company Name *"}
-                  </Label>
-                  <Input id="company-companyName"
-                    value={company.companyName}
-                    onChange={(e) => setCompany({ ...company, companyName: e.target.value })}
-                    required
-                    className="h-10 text-xs"
-                    placeholder={locale === "th" ? "เช่น บริษัท โซลาร์ รูฟท็อป เอนเนอร์ยี่ จำกัด" : "e.g. Solar Rooftop Energy Co., Ltd."}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="company-taxId" className="text-xs font-medium text-foreground">
-                    {locale === "th" ? "เลขประจำตัวผู้เสียภาษี 13 หลัก *" : "Tax ID (13 Digits) *"}
-                  </Label>
-                  <Input id="company-taxId"
-                    value={company.taxId}
-                    onChange={(e) => setCompany({ ...company, taxId: e.target.value })}
-                    required
-                    maxLength={13}
-                    className="h-10 text-xs font-mono"
-                    placeholder="0105562089412"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="company-branch" className="text-xs font-medium text-foreground">
-                    {locale === "th" ? "สาขา" : "Branch"}
-                  </Label>
-                  <Input id="company-branch"
-                    value={company.branch}
-                    onChange={(e) => setCompany({ ...company, branch: e.target.value })}
-                    className="h-10 text-xs"
-                    placeholder={locale === "th" ? "สำนักงานใหญ่ (00000)" : "Head office (00000)"}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="company-phone" className="text-xs font-medium text-foreground">
-                    {locale === "th" ? "เบอร์โทรศัพท์ติดต่อ" : "Phone Number"}
-                  </Label>
-                  <Input id="company-phone"
-                    value={company.phone}
-                    onChange={(e) => setCompany({ ...company, phone: e.target.value })}
-                    className="h-10 text-xs"
-                    placeholder="02-555-9000"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="company-email" className="text-xs font-medium text-foreground">
-                    {locale === "th" ? "อีเมลสำหรับการเงินและใบวางบิล *" : "Billing Email *"}
-                  </Label>
-                  <Input id="company-email"
-                    type="email"
-                    value={company.email}
-                    onChange={(e) => setCompany({ ...company, email: e.target.value })}
-                    required
-                    className="h-10 text-xs"
-                    placeholder="billing@solarrooftop.co.th"
-                  />
-                </div>
-
-                <div className="space-y-2 md:col-span-2">
-                  <Label htmlFor="company-address" className="text-xs font-medium text-foreground">
-                    {locale === "th" ? "ที่อยู่จดทะเบียนภาษี *" : "Tax Address *"}
-                  </Label>
-                  <Textarea id="company-address"
-                    value={company.address}
-                    onChange={(e) => setCompany({ ...company, address: e.target.value })}
-                    required
-                    className="text-xs min-h-[60px]"
-                    placeholder={locale === "th" ? "88 อาคารโซลาร์ทาวเวอร์ ชั้น 18 ถนนสุขุมวิท แขวงคลองเตย เขตคลองเตย กรุงเทพฯ 10110" : "88 Solar Tower, 18th floor, Sukhumvit Road, Bangkok 10110"}
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <Button type="button" variant="outline" disabled={savingCompany} onClick={() => { setCompany(savedCompany); setEditingCompany(false); }}>{locale === "th" ? "ยกเลิก" : "Cancel"}</Button>
-                <Button
-                  type="submit"
-                  disabled={savingCompany}
-                  className="h-10 text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90 gap-1.5"
-                >
-                  {savingCompany ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}
-                  <span>{locale === "th" ? "บันทึกข้อมูลบริษัท" : "Save Company Profile"}</span>
-                </Button>
-              </div>
-            </form>}
-          </CardContent>
-        </Card>
+        <CompanyProfileCard company={company} locale={locale} editingCompany={editingCompany} canEdit={isOwner} disabled={loadingCompany || !!loadError || confirming} savingCompany={savingCompany} setCompany={setCompany} onEdit={() => setEditingCompany(true)} onCancel={() => {setCompany(savedCompany); setEditingCompany(false);}} onSave={handleSaveCompany}/>
 
         {/* Section 2: Bank Accounts for Payments (FlowAccount Standard) */}
         <Card id="company-bank-accounts" className="gap-0 border-border/80 shadow-xs">

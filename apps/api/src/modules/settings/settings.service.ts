@@ -34,6 +34,17 @@ export interface CompanyProfile {
   updatedAt?: string;
 }
 
+/** Public settings contain company facts and branding, not personal document identity. */
+export type CompanySettingsProfile = Omit<CompanyProfile, 'signatoryName' | 'signatoryTitle' | 'signatureDataUri'>;
+
+function companySettingsProfile(profile: CompanyProfile): CompanySettingsProfile {
+  const {id, companyName, taxId, branch, address, phone, email, logoUrl, updatedAt} = profile;
+  return {companyName, taxId, branch, address, phone, email,
+    ...(id !== undefined ? {id} : {}),
+    ...(logoUrl !== undefined ? {logoUrl} : {}),
+    ...(updatedAt !== undefined ? {updatedAt} : {})};
+}
+
 export interface CompanyBankAccount {
   id: string;
   bankName: string;
@@ -104,7 +115,11 @@ export class SettingsService {
     return this.getSettings();
   }
 
-  async getCompanyProfile(client: Pick<DatabaseService, 'query'> = this.db, lock = false): Promise<CompanyProfile> {
+  async getCompanyProfile(client: Pick<DatabaseService, 'query'> = this.db, lock = false): Promise<CompanySettingsProfile> {
+    return companySettingsProfile(await this.getStoredCompanyProfile(client, lock));
+  }
+
+  private async getStoredCompanyProfile(client: Pick<DatabaseService, 'query'> = this.db, lock = false): Promise<CompanyProfile> {
     const res = await client.query<CompanyProfile>(
       `SELECT id, company_name AS "companyName", tax_id AS "taxId", branch, address, phone, email, logo_url AS "logoUrl", signatory_name AS "signatoryName", signatory_title AS "signatoryTitle", signature_data_uri AS "signatureDataUri", updated_at AS "updatedAt"
        FROM company_profile
@@ -126,12 +141,11 @@ export class SettingsService {
     return res.rows[0];
   }
 
-  async updateCompanyProfile(input: Partial<CompanyProfile>, actorId: string): Promise<CompanyProfile> {
+  async updateCompanyProfile(input: Partial<CompanySettingsProfile>, actorId: string): Promise<CompanySettingsProfile> {
     const logo = input.logoUrl === undefined ? undefined : decodeCompanyImage(input.logoUrl, 'Logo')?.dataUri ?? '';
-    const signature = input.signatureDataUri === undefined ? undefined : decodeCompanyImage(input.signatureDataUri, 'Signature')?.dataUri ?? '';
     return this.db.transaction(async client => {
       await this.lockFinancialConfiguration(client);
-      const current = await this.getCompanyProfile(client, true);
+      const current = await this.getStoredCompanyProfile(client, true);
       const banks = await this.listBankAccounts(client, true);
       const before = canonicalGlobalFinancialConfiguration(current, banks);
       const next = {...current,
@@ -142,18 +156,15 @@ export class SettingsService {
         phone: input.phone ?? current.phone,
         email: input.email ?? current.email,
         logoUrl: logo ?? current.logoUrl ?? '',
-        signatoryName: input.signatoryName?.trim() ?? current.signatoryName ?? '',
-        signatoryTitle: input.signatoryTitle?.trim() ?? current.signatoryTitle ?? '',
-        signatureDataUri: signature ?? current.signatureDataUri ?? '',
       };
-      const values = [next.companyName,next.taxId,next.branch,next.address,next.phone,next.email,next.logoUrl,next.signatoryName,next.signatoryTitle,next.signatureDataUri];
-      if(current.id) await client.query(`UPDATE company_profile SET company_name=$1,tax_id=$2,branch=$3,address=$4,phone=$5,email=$6,logo_url=$7,signatory_name=$8,signatory_title=$9,signature_data_uri=$10,updated_at=now() WHERE id=$11`,[...values,current.id]);
-      else await client.query(`INSERT INTO company_profile(company_name,tax_id,branch,address,phone,email,logo_url,signatory_name,signatory_title,signature_data_uri,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now())`,values);
-      const saved = await this.getCompanyProfile(client);
+      const values = [next.companyName,next.taxId,next.branch,next.address,next.phone,next.email,next.logoUrl];
+      if(current.id) await client.query(`UPDATE company_profile SET company_name=$1,tax_id=$2,branch=$3,address=$4,phone=$5,email=$6,logo_url=$7,updated_at=now() WHERE id=$8`,[...values,current.id]);
+      else await client.query(`INSERT INTO company_profile(company_name,tax_id,branch,address,phone,email,logo_url,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,now())`,values);
+      const saved = await this.getStoredCompanyProfile(client);
       const after=canonicalGlobalFinancialConfiguration(saved,banks);
       await this.auditFinancialMutation(client, actorId, 'company.profile.updated', saved.id!,financialAuditEvidence(before),financialAuditEvidence(after));
       await this.revokeChangedApproval(client,actorId,before,after);
-      return saved;
+      return companySettingsProfile(saved);
     });
   }
 
@@ -171,7 +182,7 @@ export class SettingsService {
   async saveBankAccount(data: Partial<CompanyBankAccount>, actorId: string): Promise<CompanyBankAccount> {
     return this.db.transaction(async client => {
       await this.lockFinancialConfiguration(client);
-      const company = await this.getCompanyProfile(client, true);
+      const company = await this.getStoredCompanyProfile(client, true);
       const banks = await this.listBankAccounts(client, true);
       const before = canonicalGlobalFinancialConfiguration(company,banks);
       const current = data.id ? banks.find(bank => bank.id === data.id) : undefined;
@@ -196,7 +207,7 @@ export class SettingsService {
   async deleteBankAccount(id: string, actorId: string): Promise<boolean> {
     return this.db.transaction(async client => {
       await this.lockFinancialConfiguration(client);
-      const company = await this.getCompanyProfile(client,true);
+      const company = await this.getStoredCompanyProfile(client,true);
       const banks = await this.listBankAccounts(client,true);
       if(!banks.some(bank=>bank.id===id)) throw new NotFoundException('Bank account not found');
       const before = canonicalGlobalFinancialConfiguration(company,banks);

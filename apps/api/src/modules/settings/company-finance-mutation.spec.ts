@@ -73,11 +73,10 @@ test('deleting default promotes oldest remaining bank and deleting final bank le
   await s.deleteBankAccount('bank-b','owner-a');await s.deleteBankAccount('bank-c','owner-a');assert.deepEqual(f.state.banks,[]);
   assert.equal(f.state.audits[0]?.action,'company.bank.deleted');assert.equal(f.state.approval.revokedBy,'owner-a');assert.ok(f.statements.every(q=>q.transaction));
 });
-test('new logo and signature writes reject legacy and mismatched bytes while unrelated saves preserve legacy values',async()=>{
+test('new logo writes reject legacy paths while unrelated saves preserve legacy logos',async()=>{
   const f=settingsDatabase({...testCompany,logoUrl:'/brand/solar-roof-mark.png'});const s=new SettingsService(f.db);
   await s.updateCompanyProfile({companyName:'New'},'owner-a');assert.equal(f.state.company.logoUrl,'/brand/solar-roof-mark.png');
   await assert.rejects(()=>s.updateCompanyProfile({logoUrl:'/brand/new.png'},'owner-a'),/Logo must/);
-  await assert.rejects(()=>s.updateCompanyProfile({signatureDataUri:'data:image/png;base64,AA=='},'owner-a'),/Signature must/);
 });
 
 test('default deletion promotes the oldest account using PostgreSQL Date timestamps',async()=>{

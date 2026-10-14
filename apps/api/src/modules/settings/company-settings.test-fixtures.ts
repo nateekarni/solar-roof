@@ -22,7 +22,8 @@ export function settingsDatabase(company = {...testCompany}, banks: ConfiguredBa
       return sql.includes('is_configured AS "isConfigured"')?{...fields,isConfigured}:fields;
     }).sort((a,b)=>a.id.localeCompare(b.id))};
     if(sql.includes('UPDATE company_profile')||sql.includes('INSERT INTO company_profile')) {
-      state.company={id:state.company.id??'company-new',companyName:p[0],taxId:p[1],branch:p[2],address:p[3],phone:p[4],email:p[5],logoUrl:p[6],signatoryName:p[7],signatoryTitle:p[8],signatureDataUri:p[9]};
+      state.company={...state.company,id:state.company.id??'company-new',companyName:p[0],taxId:p[1],branch:p[2],address:p[3],phone:p[4],email:p[5],logoUrl:p[6]};
+      if(sql.includes('signatory_name=')) Object.assign(state.company,{signatoryName:p[7],signatoryTitle:p[8],signatureDataUri:p[9]});
       return {rows:[{...state.company}]};
     }
     if(sql.includes('UPDATE company_bank_accounts SET is_default = false')) {state.banks.forEach(b=>b.isDefault=false);return {rows:[]};}
