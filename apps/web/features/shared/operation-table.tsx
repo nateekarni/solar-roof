@@ -7,7 +7,7 @@ import * as React from "react";
 import type {OperationRow} from "@solar/api-contracts";
 import {getOperationActions} from "./operation-actions";
 import {OperationActionList} from "./operation-action-list";
-import type { ColumnDef } from "@tanstack/react-table";
+import type { CellContext, ColumnDef, HeaderContext } from "@tanstack/react-table";
 import {
   ArrowUpDown,
   ArrowUp,
@@ -34,7 +34,7 @@ import { Badge } from "../../components/ui/badge";
 import { Card } from "../../components/ui/card";
 import { DataTable } from "../../components/ui/data-table";
 import { Checkbox } from "../../components/ui/checkbox";
-import {eligibleBillingRows,reduceSelection} from '../billing/billing-selection';
+import {eligibleBillingRows,reduceSelection,type BillingSelectionControls} from '../billing/billing-selection';
 import {
   Dialog,
   DialogContent,
@@ -63,6 +63,25 @@ import { SiteDeleteDialog } from "../sites/site-delete-dialog";
 import { SiteTelemetryDialog } from "../sites/site-telemetry-dialog";
 import { renderStatusBadge, renderReceiptStatusBadge, renderBillingStatusBadge, STATUS_MAP } from "../../lib/status-badge";
 import { formatAppDate, formatAppDateTime, isIsoDateLike } from "../../lib/date-format";
+
+const BillingSelectionContext=React.createContext<(BillingSelectionControls&{locale:'th'|'en'})|null>(null);
+
+// flexRender treats these functions as React component types. Keep their identities
+// stable and read current selection from context so keyboard focus survives toggles.
+function BillingSelectionHeader({table}:HeaderContext<OperationRow,unknown>){
+  const selection=React.useContext(BillingSelectionContext);
+  if(!selection)return null;
+  const ids=eligibleBillingRows(table.getRowModel().rows.map(row=>row.original)).map(row=>row.id);
+  const count=ids.filter(id=>selection.selected.has(id)).length;
+  return <Checkbox aria-label={selection.locale==='th'?'เลือกใบวางบิลที่รออนุมัติทั้งหมดในหน้านี้':'Select all eligible bills on this page'} disabled={ids.length===0} checked={count>0&&count===ids.length?true:count>0?'indeterminate':false} onCheckedChange={()=>selection.togglePage(ids)}/>;
+}
+
+function BillingSelectionCell({row}:CellContext<OperationRow,unknown>){
+  const selection=React.useContext(BillingSelectionContext);
+  if(!selection||eligibleBillingRows([row.original]).length===0)return null;
+  const item=row.original;
+  return <Checkbox aria-label={selection.locale==='th'?`เลือก ${item.period??'—'} ${item.customerName??'—'} ${item.siteName??'—'}`:`Select ${item.period??'—'} ${item.customerName??'—'} ${item.siteName??'—'}`} checked={selection.selected.has(item.id)} onCheckedChange={()=>selection.toggle(item.id)}/>;
+}
 
 type SummaryItem = {
   label: string;
@@ -154,6 +173,7 @@ export function OperationTable({
     const eligibleIds=new Set(eligibleBillingRows(rows).map(row=>row.id));
     dispatchSelection({type:'togglePage',ids:ids.filter(id=>eligibleIds.has(id))});
   },[rows]);
+  const billingSelection=React.useMemo(()=>({selected,toggle:toggleSelection,togglePage:togglePageSelection,locale}),[selected,toggleSelection,togglePageSelection,locale]);
   const user = useSessionUser();
   const financial = useFinancialCapabilities();
   const [queryControlsReady,setQueryControlsReady]=React.useState(false);
@@ -474,12 +494,8 @@ export function OperationTable({
       id:'selection',
       enableSorting:false,
       enableHiding:false,
-      header:({table})=>{
-        const ids=eligibleBillingRows(table.getRowModel().rows.map(row=>row.original)).map(row=>row.id);
-        const count=ids.filter(id=>selected.has(id)).length;
-        return <Checkbox aria-label={locale==='th'?'เลือกใบวางบิลที่รออนุมัติทั้งหมดในหน้านี้':'Select all eligible bills on this page'} disabled={ids.length===0} checked={count>0&&count===ids.length?true:count>0?'indeterminate':false} onCheckedChange={()=>togglePageSelection(ids)}/>;
-      },
-      cell:({row})=>eligibleBillingRows([row.original]).length>0?<Checkbox aria-label={locale==='th'?`เลือก ${row.original.period??'—'} ${row.original.customerName??'—'} ${row.original.siteName??'—'}`:`Select ${row.original.period??'—'} ${row.original.customerName??'—'} ${row.original.siteName??'—'}`} checked={selected.has(row.original.id)} onCheckedChange={()=>toggleSelection(row.original.id)}/>:null,
+      header:BillingSelectionHeader,
+      cell:BillingSelectionCell,
     });
 
     // Append Action column (header empty string / visually hidden label)
@@ -518,7 +534,7 @@ export function OperationTable({
     });
 
     return cols;
-  }, [rows, rawColumns, idKey, locale, resource, openResourceDetail, query.sort, query.direction, queryControlsReady, serverManaged, setQuery,selected,toggleSelection,togglePageSelection]);
+  }, [rows, rawColumns, idKey, locale, resource, openResourceDetail, query.sort, query.direction, queryControlsReady, serverManaged, setQuery]);
 
   const searchPlaceholder =
     locale === "th"
@@ -526,7 +542,7 @@ export function OperationTable({
       : `Search ${title}...`;
 
   return (
-    <>
+    <BillingSelectionContext.Provider value={billingSelection}>
       {openingDetail&&<p role="status">{locale==='th'?'กำลังเปิดรายละเอียดและเตรียมลำดับรายการ…':'Opening details and preparing record order…'}</p>}
       {navigationError&&<p role="alert">{locale==='th'?'เปิดรายละเอียดไม่สำเร็จ กรุณาลองเลือกรายการอีกครั้ง':'Unable to open details. Please select the record again.'}</p>}
       {permissionError && <p role="alert">สิทธิ์ของคุณเปลี่ยนแล้ว ระบบกำลังตรวจสอบสิทธิ์ล่าสุด กรุณาเลือกการดำเนินการที่ยังอนุญาต</p>}
@@ -650,6 +666,6 @@ export function OperationTable({
         onSuccess={() => router.refresh()}
       />
 
-    </>
+    </BillingSelectionContext.Provider>
   );
 }
