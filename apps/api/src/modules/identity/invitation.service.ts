@@ -6,7 +6,20 @@ import {DatabaseService} from '../../database/database.service.js';
 import {AuthService} from './auth.service.js';
 import {customerScope, type ScopePrincipal} from '../../common/auth/route-policy.js';
 export type InvitationStatus='pending_delivery'|'sent'|'delivery_failed';
-export interface InviteInput {email:string;displayName:string;role:string;customerId?:string|null;siteId?:string;companyPosition?:string|null}
+export interface InviteInput {
+  email: string;
+  displayName: string;
+  role?: string;
+  customerId?: string | null;
+  siteId?: string;
+  companyPosition?: string | null;
+  permissions?: Record<string, boolean | null>;
+  overrides?: Record<string, boolean | null>;
+  scope?: {
+    mode?: 'all' | 'selected';
+    siteIds?: string[];
+  };
+}
 export function canGrantInvitation(actor:ScopePrincipal & {status?:string}, role:string, customerId:string|null):boolean {
   if(actor.status!=='active'||!['owner','admin'].includes(actor.role??'')||!['operator','accountant','customer_user'].includes(role))return false;
   if(role==='customer_user')return actor.role==='owner'&&Boolean(customerId);
@@ -40,7 +53,7 @@ export class InvitationService {
   async invite(input:InviteInput,actor:ScopePrincipal & {id:string}):Promise<{invitationId:string|null;status:InvitationStatus|'existing';userId:string}> {
     const email=typeof input.email==='string'?input.email.trim().toLowerCase():'';
     const displayName=typeof input.displayName==='string'?input.displayName.trim():'';
-    const role=input.role ?? 'customer_user';let customerId=input.customerId || null;
+    const role=input.role ?? (input.customerId ? 'customer_user' : 'operator');let customerId=input.customerId || null;
     if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||email.length>254||!displayName||displayName.length>200)throw new BadRequestException('Valid email and displayName are required');
     if(customerId&&!/^[a-f0-9-]{36}$/i.test(customerId))throw new BadRequestException('Invalid customerId');
     const token=randomBytes(32).toString('base64url'),invitationId=randomUUID(),userId=randomUUID();
@@ -68,7 +81,22 @@ export class InvitationService {
         if(companyPositionId){
           await client.query('UPDATE users SET company_position_id=COALESCE(company_position_id,$2) WHERE id=$1',[existing.id,companyPositionId]);
         }
-        await client.query(`INSERT INTO employee_domain_grants(user_id,domain,updated_by) VALUES($1,$2,$3) ON CONFLICT(user_id,domain) DO NOTHING`,[existing.id,current.role==='owner'?'business':'technical',actor.id]);
+        const domain = current.role === 'owner' ? 'business' : 'technical';
+        const overrides = JSON.stringify(input.permissions ?? input.overrides ?? {});
+        const scopeMode = input.scope?.mode ?? 'selected';
+        const siteIds = scopeMode === 'all' ? [] : (input.scope?.siteIds ?? []);
+        await client.query(
+          `INSERT INTO employee_domain_grants(user_id,domain,position_id,overrides,scope_mode,site_ids,updated_by)
+           VALUES($1,$2,$3,$4::jsonb,$5,$6::uuid[],$7)
+           ON CONFLICT(user_id,domain) DO UPDATE SET
+             position_id=COALESCE(excluded.position_id, employee_domain_grants.position_id),
+             overrides=excluded.overrides,
+             scope_mode=excluded.scope_mode,
+             site_ids=excluded.site_ids,
+             updated_by=excluded.updated_by,
+             updated_at=now()`,
+          [existing.id, domain, companyPositionId, overrides, scopeMode, siteIds, actor.id]
+        );
         return;
       }
       if(customerId&&!(await client.query('SELECT id FROM customers WHERE id=$1',[customerId])).rows[0])throw new BadRequestException('Customer not found');
@@ -76,7 +104,24 @@ export class InvitationService {
       const inserted=await client.query(`INSERT INTO users(id,email,display_name,role,status,customer_id,password_hash,company_position_id)
         VALUES($1,$2,$3,$4,'invited',$5,NULL,$6) ON CONFLICT(email) DO NOTHING RETURNING id`,[userId,email,displayName,role,customerId,companyPositionId]);
       if(!inserted.rows[0])throw new ConflictException('User already exists; use resend for an outstanding invitation');
-      if(role!=='customer_user')await client.query(`INSERT INTO employee_domain_grants(user_id,domain,updated_by) VALUES($1,$2,$3)`,[userId,current.role==='owner'?'business':'technical',actor.id]);
+      if(role!=='customer_user') {
+        const domain = current.role === 'owner' ? 'business' : 'technical';
+        const overrides = JSON.stringify(input.permissions ?? input.overrides ?? {});
+        const scopeMode = input.scope?.mode ?? 'selected';
+        const siteIds = scopeMode === 'all' ? [] : (input.scope?.siteIds ?? []);
+        await client.query(
+          `INSERT INTO employee_domain_grants(user_id,domain,position_id,overrides,scope_mode,site_ids,updated_by)
+           VALUES($1,$2,$3,$4::jsonb,$5,$6::uuid[],$7)
+           ON CONFLICT (user_id,domain) DO UPDATE SET
+             position_id=COALESCE(excluded.position_id, employee_domain_grants.position_id),
+             overrides=excluded.overrides,
+             scope_mode=excluded.scope_mode,
+             site_ids=excluded.site_ids,
+             updated_by=excluded.updated_by,
+             updated_at=now()`,
+          [userId, domain, companyPositionId, overrides, scopeMode, siteIds, actor.id]
+        );
+      }
       if(input.siteId) {
         const site=(await client.query('SELECT customer_id FROM sites WHERE id=$1 AND customer_id=$2 FOR SHARE',[input.siteId,customerId])).rows[0];
         if(role!=='customer_user'||!site)throw new BadRequestException('Invalid site assignment');

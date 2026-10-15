@@ -61,6 +61,21 @@ test('persistent invitation lifecycle uses local SMTP, atomic activation and cur
       const i=await invite('customer_user',ownerToken,otherCustomer);assert.equal((await post(`/v1/users/invitations/${i.invitationId}/resend`,{},adminToken)).status,403);
       const employee=await invite('operator',adminToken,null);assert.equal((await activate(employee.token)).status,200);
     });
+    await t.test('staff invitation persists permissions and scope into employee_domain_grants',async()=>{
+      const email=`staff-perm-${randomUUID()}@example.test`;emails.push(email);
+      const permSite=await newSite(customer);
+      const r=await post('/v1/users/invite',{email,displayName:'Staff With Grants',companyPosition:'Auditor',permissions:{'business.billing.view':true},scope:{mode:'selected',siteIds:[permSite]}},ownerToken);
+      assert.equal(r.status,201);
+      const res=await r.json();
+      assert.ok(res.userId);
+      const grant=(await db.query('SELECT * FROM employee_domain_grants WHERE user_id=$1',[res.userId])).rows[0];
+      assert.ok(grant);
+      assert.equal(grant.domain,'business');
+      assert.deepEqual(grant.overrides,{'business.billing.view':true});
+      assert.equal(grant.scope_mode,'selected');
+      assert.deepEqual(grant.site_ids,[permSite]);
+    });
+
     await t.test('activation rejects changed recipient role/status/customer and revoked issuer authority',async()=>{
       for(const mutation of ["role='admin'","status='disabled'",`customer_id='${otherCustomer}'`]){const i=await invite();await db.query(`UPDATE users SET ${mutation} WHERE email=$1`,[i.email]);assert.equal((await activate(i.token)).status,401);}
       const i=await invite();await db.query("UPDATE users SET role='admin' WHERE id=$1",[owner]);try{assert.equal((await activate(i.token)).status,401);}finally{await db.query("UPDATE users SET role='owner' WHERE id=$1",[owner]);}

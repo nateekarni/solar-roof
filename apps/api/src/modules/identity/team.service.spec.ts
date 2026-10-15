@@ -23,14 +23,14 @@ test('grant patches reject unknown fields, delegated management, and invalid sco
  await assert.rejects(()=>service.updateGrant(owner,'user','business',{revision:0,position:{id:positionId},overrides:{},scope:{mode:'selected',siteIds:['bad']}}),/scope/);
 });
 
-function grantFixture(options:{role?:string;revision?:number;presetExists?:boolean;actorRole?:string;actorStatus?:string;duplicateName?:boolean}={}){
+function grantFixture(options:{role?:string;revision?:number;presetExists?:boolean;actorRole?:string;actorStatus?:string;targetStatus?:string;duplicateName?:boolean}={}){
  const statements:{sql:string;values:unknown[]}[]=[];
  let transactions=0;
  const client={query:async(sql:string,values:unknown[]=[])=>{
   statements.push({sql,values});
   if(sql.startsWith('SELECT id,role,status,permission_revision')){
    const manager={id:owner.id,role:options.actorRole??'owner',status:options.actorStatus??'active',permission_revision:options.revision??0};
-   return {rows:values[1]===undefined||values[1]===owner.id?[manager]:[manager,{id:values[1],role:options.role??'operator',status:'active',permission_revision:options.revision??0}]};
+   return {rows:values[1]===undefined||values[1]===owner.id?[manager]:[manager,{id:values[1],role:options.role??'operator',status:options.targetStatus??'active',permission_revision:options.revision??0}]};
   }
   if(sql.startsWith('SELECT p.name'))return {rows:options.presetExists===false?[]:[{name:'กรรมการบริษัท'}]};
   if(sql.startsWith('INSERT INTO employee_positions'))return {rows:options.duplicateName?[]:[{id:values[0],name:values[1]}]};
@@ -163,3 +163,55 @@ test('employee listing includes its domain manager and canonical position fields
   assert.match(statement,/WHERE u.role IN \('operator','accountant',\$2\)/);
  }
 });
+
+test('reactivate restores inactive employee to active status', async () => {
+ const {service,statements}=grantFixture({targetStatus:'inactive'});
+ const result=await (service as any).reactivate(owner,employee,{});
+ assert.equal(result.success,true);
+ assert.equal(result.revision,1);
+ assert.deepEqual(statements.find(({sql})=>sql.startsWith("UPDATE users SET status='active'"))?.values,[employee]);
+ const audit=statements.find(({sql})=>sql.startsWith('INSERT INTO audit_events'))!;
+ assert.equal(audit.values[2],'business.employee.reactivated');
+ assert.equal(audit.values[4],employee);
+});
+
+test('admin can deactivate and reactivate employee accounts', async () => {
+ const adminActor={id:owner.id,role:'admin'};
+ // Admin deactivates
+ const deactFixture=grantFixture({actorRole:'admin'});
+ const deactResult=await deactFixture.service.deactivate(adminActor,employee,{revision:0,impactConfirmed:true});
+ assert.equal(deactResult.success,true);
+ assert.equal(deactResult.revision,1);
+ assert.deepEqual(deactFixture.statements.find(({sql})=>sql.startsWith("UPDATE users SET status='inactive'"))?.values,[employee]);
+ assert.deepEqual(deactFixture.statements.find(({sql})=>sql.startsWith('UPDATE user_invitations SET consumed_at=now()'))?.values,[employee]);
+ const deactAudit=deactFixture.statements.find(({sql})=>sql.startsWith('INSERT INTO audit_events'))!;
+ assert.equal(deactAudit.values[2],'technical.employee.deactivated');
+
+ // Admin reactivates
+ const reactFixture=grantFixture({actorRole:'admin',targetStatus:'inactive'});
+ const reactResult=await (reactFixture.service as any).reactivate(adminActor,employee,{});
+ assert.equal(reactResult.success,true);
+ assert.equal(reactResult.revision,1);
+ assert.deepEqual(reactFixture.statements.find(({sql})=>sql.startsWith("UPDATE users SET status='active'"))?.values,[employee]);
+ const reactAudit=reactFixture.statements.find(({sql})=>sql.startsWith('INSERT INTO audit_events'))!;
+ assert.equal(reactAudit.values[2],'technical.employee.reactivated');
+
+ // Operator cannot deactivate or reactivate
+ const operatorActor={id:owner.id,role:'operator'};
+ const opFixture=grantFixture({actorRole:'operator'});
+ await assert.rejects(()=>opFixture.service.deactivate(operatorActor,employee,{revision:0,impactConfirmed:true}),ForbiddenException);
+ await assert.rejects(()=>(opFixture.service as any).reactivate(operatorActor,employee,{}),ForbiddenException);
+});
+
+test('saveEmployee updates displayName when provided', async () => {
+ const {service,statements}=grantFixture();
+ const result=await (service as any).saveEmployee(owner,employee,'business',{revision:0,position:{id:positionId},overrides,scope,displayName:'  สมชาย สายตรวจ  '});
+ assert.equal(result.success,true);
+ assert.deepEqual(statements.find(({sql})=>sql.includes('display_name'))?.values,[employee,'สมชาย สายตรวจ']);
+
+ // Omitting displayName does not run display_name update
+ const noNameFixture=grantFixture();
+ await (noNameFixture.service as any).saveEmployee(owner,employee,'business',{revision:0,position:{id:positionId},overrides,scope});
+ assert.equal(noNameFixture.statements.some(({sql})=>sql.includes('display_name')),false);
+});
+

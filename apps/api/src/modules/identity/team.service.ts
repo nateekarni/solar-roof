@@ -9,6 +9,7 @@ export interface TeamGrantDraft {
  position:{id:string}|{name:string;rules:Record<string,boolean|null>};
  overrides:Record<string,boolean|null>;
  scope:SiteAccessScope;
+ displayName?:string;
 }
 export interface TeamGrantResult {success:true;revision:number;position:{id:string;name:string};positionReused?:true}
 function domainFor(actor:TeamActor,domain:unknown):PermissionDomain {
@@ -69,7 +70,7 @@ export class TeamService {
   return {id:position.id as string,name:position.name as string,reused:!inserted};
  }
  async updateGrant(actor:TeamActor,userId:string,rawDomain:unknown,input:unknown):Promise<TeamGrantResult>{
-  const domain=domainFor(actor,rawDomain),body=object(input,['revision','position','overrides','scope']);
+  const domain=domainFor(actor,rawDomain),body=object(input,['revision','position','overrides','scope','displayName']);
   const expected=revision(body.revision),overrides=validateDomainRules(domain,body.overrides),scope=validateScope(body.scope);
   const draft=object(body.position,['id','name','rules']);
   let selectedId:string|undefined,positionName:string|undefined,presetRules:Record<string,boolean|null>|undefined;
@@ -96,6 +97,9 @@ export class TeamService {
    }else{
     const created=await this.createPosition(client,domain,positionName!,presetRules!);positionId=created.id;name=created.name;positionReused=created.reused;
    }
+   if(typeof body.displayName==='string'&&body.displayName.trim()){
+    await client.query('UPDATE users SET display_name=$2,updated_at=now() WHERE id=$1',[userId,body.displayName.trim()]);
+   }
    await client.query('UPDATE users SET company_position_id=$2,updated_at=now() WHERE id=$1',[userId,positionId]);
    // Manager authority remains role-derived; presets and overrides apply only to employees.
    if(employee)await client.query(`INSERT INTO employee_domain_grants(user_id,domain,position_id,overrides,scope_mode,site_ids,updated_by)
@@ -105,6 +109,9 @@ export class TeamService {
    await this.audit(client,actor,domain,userId,'permissions.updated',{position});
    return {success:true,revision:expected+1,position,...(positionReused?{positionReused:true as const}:{})};
   });
+ }
+ async saveEmployee(actor:TeamActor,userId:string,rawDomain:unknown,input:unknown):Promise<TeamGrantResult>{
+  return this.updateGrant(actor,userId,rawDomain,input);
  }
  async revokeGrant(actor:TeamActor,userId:string,rawDomain:unknown,input:unknown){
   const domain=domainFor(actor,rawDomain),body=object(input,['revision']);const expected=revision(body.revision);
@@ -146,7 +153,7 @@ export class TeamService {
   return {domain,employees:result.rows.map(row=>({id:row.id,displayName:row.displayName,changes:PERMISSION_CATALOG.filter(key=>key.startsWith(`${domain}.`)&&row.overrides[key]==null&&Boolean(row.previous[key])!==Boolean(rules[key])).map(permission=>({permission,before:row.previous[permission]===true,after:rules[permission]===true}))}))};
  }
  async deactivationImpact(actor:TeamActor,userId:string){
-  domainFor(actor,'business');
+  if(!['owner','admin'].includes(actor.role))throw new ForbiddenException('Only managers may view deactivation impact');
   const user=(await this.db.query('SELECT id,email,display_name AS "displayName",role,status,permission_revision AS revision FROM users WHERE id=$1',[uuid(userId)])).rows[0];
   if(!user)throw new NotFoundException('Employee not found');
   if(!['operator','accountant'].includes(user.role))throw new ForbiddenException('Only employee accounts can be globally deactivated');
@@ -154,16 +161,30 @@ export class TeamService {
   return {user,domains:grants,activeSessions:Number((await this.db.query('SELECT count(*) AS count FROM auth_sessions WHERE user_id=$1 AND revoked_at IS NULL',[userId])).rows[0]?.count??0)};
  }
  async deactivate(actor:TeamActor,userId:string,input:unknown){
-  domainFor(actor,'business');const body=object(input,['revision','impactConfirmed']);const expected=revision(body.revision);
+  if(!['owner','admin'].includes(actor.role))throw new ForbiddenException('Only managers may deactivate employee accounts');
+  const domain:PermissionDomain=actor.role==='owner'?'business':'technical';
+  const body=object(input,['revision','impactConfirmed']);const expected=revision(body.revision);
   if(body.impactConfirmed!==true)throw new BadRequestException('Review and confirm account-wide impact');
   return this.db.transaction(async client=>{
-   const user=await this.authorizeCurrent(client,actor,'business',{userId});
+   const user=await this.authorizeCurrent(client,actor,domain,{userId});
    if(!user)throw new NotFoundException('Employee not found');
    if(!['operator','accountant'].includes(user.role))throw new ForbiddenException('Only employee accounts can be globally deactivated');
    if(user.permission_revision!==expected)throw new ConflictException('Permissions changed; preview again');
    await client.query("UPDATE users SET status='inactive',permission_revision=permission_revision+1,updated_at=now() WHERE id=$1",[userId]);
    await client.query('UPDATE auth_sessions SET revoked_at=now(),refresh_hash=NULL WHERE user_id=$1 AND revoked_at IS NULL',[userId]);
-   await this.audit(client,actor,'business',userId,'employee.deactivated');return {success:true,revision:expected+1};
+   await client.query("UPDATE user_invitations SET consumed_at=now(), delivery_status='cancelled' WHERE user_id=$1 AND consumed_at IS NULL",[userId]);
+   await this.audit(client,actor,domain,userId,'employee.deactivated');return {success:true,revision:expected+1};
+  });
+ }
+ async reactivate(actor:TeamActor,userId:string,_input?:unknown){
+  if(!['owner','admin'].includes(actor.role))throw new ForbiddenException('Only managers may reactivate employee accounts');
+  const domain:PermissionDomain=actor.role==='owner'?'business':'technical';
+  return this.db.transaction(async client=>{
+   const user=await this.authorizeCurrent(client,actor,domain,{userId});
+   if(!user)throw new NotFoundException('Employee not found');
+   if(!['operator','accountant'].includes(user.role))throw new ForbiddenException('Only employee accounts can be reactivated');
+   await client.query("UPDATE users SET status='active',permission_revision=permission_revision+1,updated_at=now() WHERE id=$1",[userId]);
+   await this.audit(client,actor,domain,userId,'employee.reactivated');return {success:true,revision:user.permission_revision+1};
   });
  }
 }
