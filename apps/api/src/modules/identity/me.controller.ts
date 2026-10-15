@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   BadRequestException,
   Body,
@@ -47,18 +48,71 @@ export class MeController {
       !body ||
       typeof body !== "object" ||
       Array.isArray(body) ||
-      Object.keys(body).some((key) => key !== "displayName")
+      !Object.keys(body).length ||
+      Object.keys(body).some((key) => key !== "displayName" && key !== "companyPosition")
     )
       throw new BadRequestException("Invalid profile fields");
-    const name = (body as { displayName?: unknown }).displayName;
-    if (typeof name !== "string" || !name.trim() || name.trim().length > 120)
-      throw new BadRequestException("Invalid display name");
-    const result = await this.db.query(
-      'UPDATE users SET display_name=$1,updated_at=NOW() WHERE id = $2 RETURNING display_name AS "displayName"',
-      [name.trim(), userId],
-    );
-    if (!result.rows.length) throw new UnauthorizedException("User not found");
-    return result.rows[0];
+
+    const payload = body as { displayName?: unknown; companyPosition?: unknown };
+
+    let newDisplayName: string | undefined = undefined;
+    if ("displayName" in payload) {
+      const name = payload.displayName;
+      if (typeof name !== "string" || !name.trim() || name.trim().length > 120)
+        throw new BadRequestException("Invalid display name");
+      newDisplayName = name.trim();
+    }
+
+    let hasPositionUpdate = false;
+    let newCompanyPositionId: string | null = null;
+    let newCompanyPositionName: string | null = null;
+
+    if ("companyPosition" in payload) {
+      hasPositionUpdate = true;
+      const rawPos = payload.companyPosition;
+      if (rawPos === null || (typeof rawPos === "string" && !rawPos.trim())) {
+        newCompanyPositionId = null;
+        newCompanyPositionName = null;
+      } else if (typeof rawPos === "string") {
+        const trimmedPos = rawPos.trim();
+        if (trimmedPos.length > 120) throw new BadRequestException("Invalid position");
+        const inserted = (await this.db.query(
+          "INSERT INTO employee_positions(id,name) VALUES($1,$2) ON CONFLICT (employee_position_name_key(name)) DO NOTHING RETURNING id,name",
+          [randomUUID(), trimmedPos],
+        )).rows[0];
+        const position = inserted ?? (await this.db.query(
+          "SELECT id,name FROM employee_positions WHERE employee_position_name_key(name)=employee_position_name_key($1) FOR SHARE",
+          [trimmedPos],
+        )).rows[0];
+        newCompanyPositionId = position?.id ?? null;
+        newCompanyPositionName = position?.name ?? trimmedPos;
+      } else {
+        throw new BadRequestException("Invalid position");
+      }
+    }
+
+    if (newDisplayName !== undefined && hasPositionUpdate) {
+      const result = await this.db.query(
+        `UPDATE users SET display_name = $1, company_position_id = $2, updated_at = NOW() WHERE id = $3 RETURNING display_name AS "displayName"`,
+        [newDisplayName, newCompanyPositionId, userId],
+      );
+      if (!result.rows.length) throw new UnauthorizedException("User not found");
+      return { displayName: result.rows[0].displayName, companyPosition: newCompanyPositionName };
+    } else if (newDisplayName !== undefined) {
+      const result = await this.db.query(
+        `UPDATE users SET display_name = $1, updated_at = NOW() WHERE id = $2 RETURNING display_name AS "displayName"`,
+        [newDisplayName, userId],
+      );
+      if (!result.rows.length) throw new UnauthorizedException("User not found");
+      return { displayName: result.rows[0].displayName };
+    } else if (hasPositionUpdate) {
+      const result = await this.db.query(
+        `UPDATE users SET company_position_id = $1, updated_at = NOW() WHERE id = $2 RETURNING display_name AS "displayName"`,
+        [newCompanyPositionId, userId],
+      );
+      if (!result.rows.length) throw new UnauthorizedException("User not found");
+      return { displayName: result.rows[0].displayName, companyPosition: newCompanyPositionName };
+    }
   }
 
   @Get("profile")

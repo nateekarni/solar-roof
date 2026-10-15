@@ -6,7 +6,7 @@ import {DatabaseService} from '../../database/database.service.js';
 import {AuthService} from './auth.service.js';
 import {customerScope, type ScopePrincipal} from '../../common/auth/route-policy.js';
 export type InvitationStatus='pending_delivery'|'sent'|'delivery_failed';
-export interface InviteInput {email:string;displayName:string;role:string;customerId?:string|null;siteId?:string}
+export interface InviteInput {email:string;displayName:string;role:string;customerId?:string|null;siteId?:string;companyPosition?:string|null}
 export function canGrantInvitation(actor:ScopePrincipal & {status?:string}, role:string, customerId:string|null):boolean {
   if(actor.status!=='active'||!['owner','admin'].includes(actor.role??'')||!['operator','accountant','customer_user'].includes(role))return false;
   if(role==='customer_user')return actor.role==='owner'&&Boolean(customerId);
@@ -49,16 +49,32 @@ export class InvitationService {
       const current=await this.actor(client,actor.id);
       if(!customerId&&current?.customerId&&role==='customer_user')customerId=current.customerId;
       this.authorize(current,role,customerId);
+      let companyPositionId: string | null = null;
+      if (typeof input.companyPosition === 'string' && input.companyPosition.trim()) {
+        const posName = input.companyPosition.trim().slice(0, 120);
+        const inserted = (await client.query(
+          'INSERT INTO employee_positions(id,name) VALUES($1,$2) ON CONFLICT (employee_position_name_key(name)) DO NOTHING RETURNING id',
+          [randomUUID(), posName]
+        )).rows[0];
+        const position = inserted ?? (await client.query(
+          'SELECT id FROM employee_positions WHERE employee_position_name_key(name)=employee_position_name_key($1) FOR SHARE',
+          [posName]
+        )).rows[0];
+        companyPositionId = position?.id ?? null;
+      }
       const existing=(await client.query('SELECT id,role FROM users WHERE email=$1 FOR UPDATE',[email])).rows[0];
       if(existing&&['operator','accountant'].includes(role)&&['operator','accountant'].includes(existing.role)){
         existingUserId=existing.id;
+        if(companyPositionId){
+          await client.query('UPDATE users SET company_position_id=COALESCE(company_position_id,$2) WHERE id=$1',[existing.id,companyPositionId]);
+        }
         await client.query(`INSERT INTO employee_domain_grants(user_id,domain,updated_by) VALUES($1,$2,$3) ON CONFLICT(user_id,domain) DO NOTHING`,[existing.id,current.role==='owner'?'business':'technical',actor.id]);
         return;
       }
       if(customerId&&!(await client.query('SELECT id FROM customers WHERE id=$1',[customerId])).rows[0])throw new BadRequestException('Customer not found');
       await this.limit(client,`delivery:${actor.id}:${email}`,3600);
-      const inserted=await client.query(`INSERT INTO users(id,email,display_name,role,status,customer_id,password_hash)
-        VALUES($1,$2,$3,$4,'invited',$5,NULL) ON CONFLICT(email) DO NOTHING RETURNING id`,[userId,email,displayName,role,customerId]);
+      const inserted=await client.query(`INSERT INTO users(id,email,display_name,role,status,customer_id,password_hash,company_position_id)
+        VALUES($1,$2,$3,$4,'invited',$5,NULL,$6) ON CONFLICT(email) DO NOTHING RETURNING id`,[userId,email,displayName,role,customerId,companyPositionId]);
       if(!inserted.rows[0])throw new ConflictException('User already exists; use resend for an outstanding invitation');
       if(role!=='customer_user')await client.query(`INSERT INTO employee_domain_grants(user_id,domain,updated_by) VALUES($1,$2,$3)`,[userId,current.role==='owner'?'business':'technical',actor.id]);
       if(input.siteId) {

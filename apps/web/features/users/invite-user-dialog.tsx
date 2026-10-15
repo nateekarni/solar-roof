@@ -33,6 +33,7 @@ const userSchema = z.object({
   email: z.string().min(1, "กรุณาระบุอีเมล").email("รูปแบบอีเมลไม่ถูกต้อง"),
   displayName: z.string().min(2, "ชื่อผู้ใช้งานต้องมีอย่างน้อย 2 ตัวอักษร"),
   role: z.enum(["owner", "admin", "customer_user"]),
+  companyPosition: z.string().max(120).optional(),
   customerId: z.string().optional(),
 });
 
@@ -79,7 +80,7 @@ export function InviteUserDialog({
     defaultValues: {
       email: "",
       displayName: "",
-
+      companyPosition: "",
     },
   });
 
@@ -121,7 +122,10 @@ export function InviteUserDialog({
   const onSubmit = async (values: UserFormValues) => {
     setLoading(true);
     try {
-      const res = await apiClient.post<any>("/v1/users/invite", values);
+      const res = await apiClient.post<any>("/v1/users/invite", {
+        ...values,
+        companyPosition: values.companyPosition?.trim() || undefined,
+      });
       setInvitedResult({
         email: values.email,
         invitationId: res.invitationId,
@@ -222,8 +226,23 @@ export function InviteUserDialog({
             </div>
 
             <div className="space-y-2">
+              <Label htmlFor="u-position" className="text-xs font-medium">
+                {locale === "th" ? "ตำแหน่ง (Position)" : "Company Position"}
+              </Label>
+              <Input
+                id="u-position"
+                placeholder={locale === "th" ? "เช่น กรรมการผู้จัดการ, เจ้าหน้าที่บัญชี" : "e.g. Managing Director, Accountant"}
+                className="text-xs h-10"
+                {...register("companyPosition")}
+              />
+              {errors.companyPosition && (
+                <p className="text-[11px] text-destructive">{errors.companyPosition.message}</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
               <Label htmlFor="u-role" required className="text-xs font-medium">
-                {locale === "th" ? "บทบาท (Role)" : "Role"}
+                {locale === "th" ? "ชุดสิทธิ์เริ่มต้น (Permission Preset)" : "Permission Preset"}
               </Label>
               <Select
 

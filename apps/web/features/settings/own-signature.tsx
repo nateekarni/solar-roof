@@ -1,6 +1,6 @@
 "use client";
 
-import {useEffect, useId, useRef, useState} from 'react';
+import React, {useEffect, useId, useRef, useState} from 'react';
 import {FormErrorSummary} from '../../components/feedback/form-feedback';
 import {Button} from '../../components/ui/button';
 import {apiClient} from '../../lib/api-client';
@@ -53,13 +53,9 @@ export function OwnSignatureCard({profile, busy, onChoose, onRemove, locale = 't
   const hasSignature = profile.hasSignature ?? Boolean(profile.signatureDataUri);
   return <section aria-labelledby={`${id}-title`} aria-busy={busy} className="space-y-4">
     <header className="space-y-1">
-      <h2 id={`${id}-title`} className="font-semibold">{th ? 'ข้อมูลสำหรับเอกสาร' : 'Document identity'}</h2>
-      <p className="text-sm text-muted-foreground">{th ? 'ตำแหน่งและลายเซ็นของคุณสำหรับเอกสารในอนาคตที่ออกโดยระบบ' : 'Your company position and signature for future documents issued by the system'}</p>
+      <h2 id={`${id}-title`} className="font-semibold">{th ? 'ลายเซ็นสำหรับเอกสาร' : 'Document signature'}</h2>
+      <p className="text-sm text-muted-foreground">{th ? 'ลายเซ็นของคุณสำหรับเอกสารในอนาคตที่ออกโดยระบบ' : 'Your signature for future documents issued by the system'}</p>
     </header>
-    <dl className="grid gap-2 text-sm sm:grid-cols-[140px_1fr]">
-      <dt className="text-muted-foreground">{th ? 'ตำแหน่งในบริษัท' : 'Company position'}</dt><dd>{profile.companyPosition || (th ? 'ยังไม่ได้กำหนดตำแหน่ง' : 'Position not assigned')}</dd>
-    </dl>
-    <p className="text-xs text-muted-foreground">{th ? 'ติดต่อผู้ดูแลระบบเพื่อแก้ไขตำแหน่งในบริษัท' : 'Contact an administrator to change your company position.'}</p>
     {profile.signatureDataUri ? <div className="flex min-h-28 items-center justify-center rounded-lg border bg-white p-4"><img src={profile.signatureDataUri} alt={th ? 'ลายเซ็นของฉัน' : 'My signature'} className="max-h-32 max-w-full object-contain"/></div> : <p className="rounded-lg border border-dashed bg-muted/30 p-4 text-sm text-muted-foreground">{th ? 'ยังไม่มีลายเซ็น (ไม่บังคับ)' : 'No signature saved (optional)'}</p>}
     <p id={`${id}-help`} className="text-xs text-muted-foreground">{th ? 'เลือกไฟล์ PNG หรือ JPEG ขนาดไม่เกิน 256 KiB ลายเซ็นเป็นข้อมูลที่ไม่บังคับ การเปลี่ยนหรือลบมีผลกับเอกสารในอนาคต' : 'Choose a PNG or JPEG up to 256 KiB. A signature is optional. Changes or removal apply to future documents.'}</p>
     <input ref={fileInput} className="sr-only" type="file" accept="image/png,image/jpeg" aria-label={th ? 'อัปโหลดลายเซ็น' : 'Upload signature'} aria-describedby={`${id}-help`} disabled={busy} onChange={event => {

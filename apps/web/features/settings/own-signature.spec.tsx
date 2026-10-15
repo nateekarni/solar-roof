@@ -68,17 +68,17 @@ test('file reading accepts the size boundary and exposes reader failures without
   }
 });
 
-test('document identity shows actual position and future document purpose without a synthetic user label', () => {
+test('document signature card shows future document purpose without a synthetic user label', () => {
   const html = renderToStaticMarkup(<OwnSignatureCard profile={profile} busy={false} onChoose={()=>{}} onRemove={()=>{}}/>);
-  assert.match(html, /ตำแหน่ง.*กรรมการบริษัท/s);
+  assert.match(html, /ลายเซ็นสำหรับเอกสาร/);
   assert.match(html, /เอกสารในอนาคต/);
   assert.doesNotMatch(html, /user-[0-9a-f-]+/);
   assert.match(html, /<button[^>]*disabled=""[^>]*>ลบลายเซ็น/);
 });
 
-test('a saved signature has a readable preview, replacement action and fallback position', () => {
+test('a saved signature has a readable preview, replacement action and clean signature focus', () => {
   const html = renderToStaticMarkup(<OwnSignatureCard profile={{...profile, companyPosition: null, hasSignature: true, signatureDataUri: signature}} busy={false} locale="en" onChoose={()=>{}} onRemove={()=>{}}/>);
-  assert.match(html, /Position not assigned/);
+  assert.match(html, /Document signature/);
   assert.match(html, /alt="My signature"/);
   assert.match(html, /Replace signature/);
   assert.match(html, /accept="image\/png,image\/jpeg"/);

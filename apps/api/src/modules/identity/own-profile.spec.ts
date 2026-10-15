@@ -58,3 +58,54 @@ test('preference changes reject unknown fields and unsupported language/theme be
  }
  assert.equal(writes,0);
 });
+
+test('own profile updates company position and normalizes position name', async () => {
+  const calls: Array<{sql: string; params: unknown[]}> = [];
+  const db = {
+    query: async (sql: string, params: unknown[]) => {
+      calls.push({sql, params});
+      if (sql.includes('INSERT INTO employee_positions')) {
+        return {rows: [{id: 'pos-123', name: params[1]}]};
+      }
+      if (sql.includes('UPDATE users')) {
+        return {rows: [{displayName: 'User Name'}]};
+      }
+      return {rows: []};
+    },
+  } as unknown as DatabaseService;
+  const controller = new MeController(db);
+  const req = {user: {id: 'current', role: 'owner'}};
+
+  // Update both name and position
+  const res1 = await controller.updateProfile(req as never, {displayName: 'User Name', companyPosition: 'กรรมการผู้จัดการ'});
+  assert.deepEqual(res1, {displayName: 'User Name', companyPosition: 'กรรมการผู้จัดการ'});
+  assert.match(calls[0]!.sql, /INSERT INTO employee_positions/);
+  assert.equal(calls[0]!.params[1], 'กรรมการผู้จัดการ');
+  assert.match(calls[1]!.sql, /UPDATE users SET display_name = \$1, company_position_id = \$2/);
+  assert.deepEqual(calls[1]!.params, ['User Name', 'pos-123', 'current']);
+
+  // Clear position with null
+  calls.length = 0;
+  const res2 = await controller.updateProfile(req as never, {displayName: 'User Name', companyPosition: null});
+  assert.deepEqual(res2, {displayName: 'User Name', companyPosition: null});
+  assert.match(calls[0]!.sql, /UPDATE users SET display_name = \$1, company_position_id = \$2/);
+  assert.deepEqual(calls[0]!.params, ['User Name', null, 'current']);
+
+  // Clear position with empty string
+  calls.length = 0;
+  const res3 = await controller.updateProfile(req as never, {displayName: 'User Name', companyPosition: '   '});
+  assert.deepEqual(res3, {displayName: 'User Name', companyPosition: null});
+  assert.deepEqual(calls[0]!.params, ['User Name', null, 'current']);
+
+  // Update only companyPosition
+  calls.length = 0;
+  const res4 = await controller.updateProfile(req as never, {companyPosition: 'ผู้จัดการฝ่ายบัญชี'});
+  assert.deepEqual(res4, {displayName: 'User Name', companyPosition: 'ผู้จัดการฝ่ายบัญชี'});
+  assert.match(calls[1]!.sql, /UPDATE users SET company_position_id = \$1/);
+  assert.deepEqual(calls[1]!.params, ['pos-123', 'current']);
+
+  // Reject invalid position type or excessive length
+  await assert.rejects(() => controller.updateProfile(req as never, {companyPosition: 123 as never}), /Invalid position/);
+  await assert.rejects(() => controller.updateProfile(req as never, {companyPosition: 'x'.repeat(121)}), /Invalid position/);
+  await assert.rejects(() => controller.updateProfile(req as never, {companyPosition: 'Manager', extra: 'bad'}), /Invalid profile fields/);
+});
