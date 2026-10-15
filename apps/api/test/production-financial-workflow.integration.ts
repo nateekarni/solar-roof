@@ -95,7 +95,7 @@ const password=process.env.PRODUCTION_FINANCE_PASSWORD??('Acceptance-local-only-
   apps=await startAcceptanceApps(target.toString(),password,schema,ids.site,retain,ids.blockedSite);apps.browser('setup');
  }else{
   const image=await readFile(new URL('../../web/public/brand/solar-roof-mark.png',import.meta.url));
-  await settings.updateCompanyProfile({companyName:'Siam Solar Operations Co., Ltd.',taxId:'0105558123456',branch:'Head office',address:'88 Wireless Road, Bangkok 10330',phone:'021234567',email:'billing@acceptance.example.test',logoUrl:`data:image/png;base64,${image.toString('base64')}`,signatureDataUri:`data:image/png;base64,${image.toString('base64')}`,signatoryName:'Natee Energy',signatoryTitle:'Finance Director'},ids.owner);
+  await settings.updateCompanyProfile({companyName:'Siam Solar Operations Co., Ltd.',taxId:'0105558123456',branch:'Head office',address:'88 Wireless Road, Bangkok 10330',phone:'021234567',email:'billing@acceptance.example.test',logoUrl:`data:image/png;base64,${image.toString('base64')}`},ids.owner);
   await settings.saveBankAccount({bankName:'Bangkok Bank',bankCode:'BBL',accountName:'Siam Solar Operations Co., Ltd.',accountNumber:'1234567890',branchName:'Head office',promptpayId:'',isDefault:true},ids.owner);
   await assert.rejects(financial.calculate(ids.site,'2026-09-01','2026-09-30',ids.owner),(error:any)=>error.getStatus()===503&&error.getResponse().missing.includes('approval.confirmation'));
  }
