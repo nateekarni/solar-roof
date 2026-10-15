@@ -33,7 +33,7 @@ export function FinancialDocumentList({documents,selected,onSelect,disabled,loca
  return <section className="min-w-0 space-y-4 rounded-xl border bg-card p-4 sm:p-6" aria-label={th?'เอกสารและหลักฐาน':'Documents and evidence'}>
  <header className="flex items-center justify-between"><h2 className="font-semibold">{th?'เอกสารและหลักฐาน':'Documents and evidence'}</h2><span className="text-sm text-muted-foreground">{documents.length} {th?'รายการ':'items'}</span></header>
  <ul className="space-y-2">{documents.map((document,index)=>{
-  const payment=document.payment,expanded=selected===document.id,previewId='financial-document-'+index;
+  const payment=document.payment,expanded=selected===document.id,previewId='financial-document-'+(payment?index:document.id);
   const renderItem=({download,preview}:{download:ReactNode;preview:ReactNode})=><li key={document.id} className={`min-w-0 rounded-lg border ${expanded?'border-primary':' '}`}>
    <div className={`flex flex-wrap items-center gap-2 p-3 ${expanded?'bg-primary/5':''}`}>
     <button type="button" disabled={disabled} aria-expanded={expanded} aria-controls={previewId} onClick={()=>onSelect(expanded?null:document.id)} className="flex min-h-10 min-w-0 flex-1 items-center gap-3 text-left disabled:opacity-60">

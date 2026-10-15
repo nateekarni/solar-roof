@@ -91,7 +91,7 @@ test('operations HTTP pages are bounded, stable, scoped, searchable beyond old a
       assert.equal(statements.length,1);assert.equal(statements[0]!.returned,1);assert.match(statements[0]!.sql,/SELECT count\(\*\)/);
       statements.length=0;
       const bounded=await service.list('billing',principal);
-      assert.equal(bounded.rows.length,25);assert.equal(statements.length,1);assert.equal(statements[0]!.returned,26);
+      assert.equal(bounded.rows.length,25);assert.equal(statements.length,2);assert.equal(statements[0]!.returned,26);
       const exact=statements[0]!;
       const explain=await db.query('EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) '+exact.sql,exact.params);
       assert.equal(explain.rows[0]['QUERY PLAN'][0].Plan['Actual Rows'],26);

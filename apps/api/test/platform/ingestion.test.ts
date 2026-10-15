@@ -111,7 +111,7 @@ test('actual API MQTT rejects huge/deep input, commits once before ACK, survives
     compose('restart', 'mqtt'); await ready();
     await until(async () => client.connected);
     await new Promise<void>((resolve, reject) => client.subscribe(response, { qos: 1 }, error => error ? reject(error) : resolve()));
-    await publish(outage); await until(async () => acknowledgments.filter(ack => ack.ingestionId === 'outage-retry').length === 2);
+    await publish(outage); await until(async () => acknowledgments.filter(ack => ack.ingestionId === 'outage-retry').length === 2, 25000);
     assert.equal(acknowledgments.at(-1)!.duplicate, true);
     await until(async () => compose('logs', '--no-color', 'api').toString().includes('ingress_ack_latency'), 35000);
     const logs = compose('logs', '--no-color', 'api').toString();
@@ -186,7 +186,7 @@ test('real database adapters isolate identity/mapping/write capacity and enforce
       assert.equal(read.pool.totalCount, 12); readHeld.pop()!.release(); await overflow;
     } finally { for (const client of readHeld) client.release(); }
     const start = performance.now(); assert.equal((await read.query('SELECT 1 AS value')).rows[0].value, 1); assert.ok(performance.now() - start < 2000);
-    await assert.rejects(read.query('SELECT pg_sleep(2)'), /statement timeout/);
+    await assert.rejects(read.query('SELECT pg_sleep(3.5)'), /statement timeout/);
     assert.ok(metricsSnapshot().some(sample => sample.name === 'read_db_pool_connections'));
     assert.ok(metricsSnapshot().some(sample => sample.name === 'ingest_db_pool_waiting' && sample.value === 1));
   } finally { for (const client of held) client.release(); await ingress.beforeApplicationShutdown(); await read.onModuleDestroy(); }

@@ -32,7 +32,7 @@ test('financial HTTP entry points fail closed without creating or mutating rows,
   const writes=Object.entries(schema.paths).flatMap(([path,methods])=>Object.keys(methods as object).filter(method=>['post','patch','put','delete'].includes(method)).map(method=>`${method.toUpperCase()} ${path}`)).filter(route=>/\/v1\/(billing-cycles|contracts|documents)(\/|$)/.test(route)).sort();
   assert.deepEqual(writes,[
    'PATCH /v1/billing-cycles/{id}/adjust','PATCH /v1/billing-cycles/{id}/rate','PATCH /v1/billing-cycles/{id}/status','PATCH /v1/billing-cycles/{id}/verify-payment',
-   'POST /v1/billing-cycles','POST /v1/billing-cycles/{id}/generate-invoice','POST /v1/billing-cycles/{id}/pay','POST /v1/billing-cycles/{id}/send-email','POST /v1/contracts','POST /v1/contracts/{id}/send-email','POST /v1/documents',
+   'POST /v1/billing-cycles','POST /v1/billing-cycles/approve-issuance','POST /v1/billing-cycles/{id}/approve-issuance','POST /v1/billing-cycles/{id}/generate-invoice','POST /v1/billing-cycles/{id}/pay','POST /v1/billing-cycles/{id}/send-email','POST /v1/contracts','POST /v1/contracts/{id}/send-email','POST /v1/documents',
   ],'Every exposed financial mutation is covered or explicitly retained as contract/evidence input');
   const before=await snapshot();
   assert.equal((await request('/v1/contracts','POST',{siteId:site})).status,403,'Retired contract authoring must remain inaccessible');
