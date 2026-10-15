@@ -26,14 +26,14 @@ export function BillingStatusTabs({value,counts,locale='th',panelId,onValueChang
          key={view}
          value={String(index)}
          {...(panelId?{id:billingStatusTabId(panelId,view),'aria-controls':panelId}:{})}
-         className="shrink-0 flex-none px-3.5 py-1.5 rounded-lg border border-border bg-card text-muted-foreground hover:bg-muted/50 hover:text-foreground data-[state=active]:border-primary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:font-semibold data-active:border-primary data-active:bg-primary data-active:text-primary-foreground data-active:font-semibold transition-colors shadow-none"
+         className="shrink-0 flex-none px-3.5 py-1.5 rounded-lg border border-border bg-card text-muted-foreground hover:bg-muted/50 hover:text-foreground data-[state=active]:border-primary data-[state=active]:bg-primary data-[state=active]:text-neutral-950 data-[state=active]:font-bold data-active:border-primary data-active:bg-primary data-active:text-neutral-950 data-active:font-bold transition-colors shadow-none"
        >
         {view==='all'?(locale==='th'?'ทั้งหมด':'All'):STATUS_MAP[view]![locale]}
         <Badge
           variant="secondary"
           className={cn(
-            "ml-1.5 text-[10px] h-5 px-1.5 rounded-full font-medium transition-colors border-0",
-            isActive ? "bg-primary-foreground/20 text-primary-foreground" : "bg-muted text-muted-foreground"
+            "ml-1 text-[10px] h-5 px-1.5 rounded-full font-bold transition-colors",
+            isActive ? "bg-neutral-950 text-white border-0" : "bg-muted text-foreground border border-border/70"
           )}
         >
           {counts?.[view]??0}

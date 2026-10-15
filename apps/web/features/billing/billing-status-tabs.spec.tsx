@@ -18,6 +18,10 @@ test('billing tabs expose translated names and scoped counts with the selected v
  assert.match(html,/aria-selected="true"[^>]*>รอตรวจหลักฐาน/);
  assert.match(html,/37/);
  assert.match(html,/overflow-x-auto/);
+ assert.match(html,/data-\[state=active\]:text-neutral-950/);
+ assert.match(html,/bg-neutral-950 text-white/);
+ assert.match(html,/bg-muted text-foreground border border-border\/70/);
+ assert.match(html,/ml-1/);
  assert.doesNotMatch(html,/pending_issue_approval|pending_verification/);
 });
 

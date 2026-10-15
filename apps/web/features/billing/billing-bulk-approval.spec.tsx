@@ -2,7 +2,7 @@ import * as React from 'react';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {renderToStaticMarkup} from 'react-dom/server';
-import {BillingApprovalConfirmation,BillingApprovalResults,submitBillingApproval} from './billing-bulk-approval';
+import {BillingApprovalConfirmation,BillingApprovalResults,BillingBulkApproval,exportSelectedRowsAsCsv,submitBillingApproval} from './billing-bulk-approval';
 import type {IssuanceApprovalResult} from '@solar/api-contracts';
 
 const rows=[{id:'b5ca6e69-688d-4d43-8b8f-99f2b0df26ca',reviewToken:'a'.repeat(64),billingStatusView:'pending_issue_approval',period:'2026-09',customerName:'บริษัท ตัวอย่าง',siteName:'สำนักงานใหญ่',amount:'1070',simulatedTax:'70',dueDate:'2026-10-15'}];
@@ -89,3 +89,34 @@ test('empty, oversized and ineligible requests never submit',async()=>{
  for(const value of [[],Array.from({length:101},(_,index)=>({...rows[0]!,id:String(index)})),[{...rows[0]!,billingStatusView:'paid'}]])await assert.rejects(submitBillingApproval(value,'bulk',testPassword,post));
  assert.equal(calls,0);
 });
+
+test('floating selection bar renders capsule container with context-aware actions for pending rows',()=>{
+ const html=renderToStaticMarkup(<BillingBulkApproval rows={rows} approver={approver} locale="th" canApprove={true} onCompleted={()=>{}} onClearSelection={()=>{}}/>);
+ assert.match(html,/fixed bottom-6 left-1\/2 -translate-x-1\/2 z-50/);
+ assert.match(html,/เลือกแล้ว 1 รายการ/);
+ assert.match(html,/รออนุมัติ 1 รายการ/);
+ assert.match(html,/อนุมัติและออกเอกสาร \(1 รายการ\)/);
+ assert.match(html,/นำออกข้อมูลที่เลือก \(1\)/);
+ assert.match(html,/ล้างการเลือก/);
+});
+
+test('floating selection bar adapts when only non-pending rows are selected',()=>{
+ const paidRows=[{...rows[0]!,billingStatusView:'paid'}];
+ const html=renderToStaticMarkup(<BillingBulkApproval rows={paidRows} approver={approver} locale="th" canApprove={true} onCompleted={()=>{}} onClearSelection={()=>{}}/>);
+ assert.match(html,/fixed bottom-6 left-1\/2 -translate-x-1\/2 z-50/);
+ assert.match(html,/เลือกแล้ว 1 รายการ/);
+ assert.match(html,/ไม่มีรายการรออนุมัติ/);
+ assert.doesNotMatch(html,/อนุมัติและออกเอกสาร/);
+ assert.match(html,/นำออกข้อมูลที่เลือก \(1\)/);
+ assert.match(html,/ล้างการเลือก/);
+});
+
+test('floating selection bar adapts to English locale',()=>{
+ const html=renderToStaticMarkup(<BillingBulkApproval rows={rows} approver={approver} locale="en" canApprove={true} onCompleted={()=>{}} onClearSelection={()=>{}}/>);
+ assert.match(html,/1 selected/);
+ assert.match(html,/1 pending approval/);
+ assert.match(html,/Approve and issue \(1\)/);
+ assert.match(html,/Export selected \(1\)/);
+ assert.match(html,/Clear selection/);
+});
+
