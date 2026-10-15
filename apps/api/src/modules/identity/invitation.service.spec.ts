@@ -97,4 +97,36 @@ test('existing employee invitation updates domain grants with provided overrides
   assert.equal(grantUpdate.values[3], JSON.stringify(permissions));
   assert.equal(grantUpdate.values[4], 'all');
   assert.deepEqual(grantUpdate.values[5], []);
+
+  const revisionUpdate = statements.find(({ sql }) => sql.includes('permission_revision=permission_revision+1'))!;
+  assert.ok(revisionUpdate);
+  assert.deepEqual(revisionUpdate.values, [existingUserId]);
 });
+
+test('re-inviting existing employee without grants preserves existing overrides and scope', async () => {
+  const existingUserId = '00000000-0000-0000-0000-000000000055';
+  const { service, statements } = inviteFixture({
+    existingUser: { id: existingUserId, role: 'operator' },
+  });
+  const result = await service.invite(
+    {
+      email: 'existing@example.test',
+      displayName: 'Existing Staff',
+      companyPosition: 'Senior Engineer',
+    },
+    ownerActor,
+  );
+  assert.equal(result.status, 'existing');
+  assert.equal(result.userId, existingUserId);
+
+  // Does not write empty overrides or reset scope in the query
+  const grantUpdate = statements.find(({ sql }) => sql.includes('INSERT INTO employee_domain_grants'))!;
+  assert.ok(grantUpdate);
+  assert.equal(grantUpdate.sql.includes('overrides'), false);
+  assert.equal(grantUpdate.sql.includes('scope_mode'), false);
+
+  const revisionUpdate = statements.find(({ sql }) => sql.includes('permission_revision=permission_revision+1'))!;
+  assert.ok(revisionUpdate);
+  assert.deepEqual(revisionUpdate.values, [existingUserId]);
+});
+

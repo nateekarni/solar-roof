@@ -183,7 +183,7 @@ test('admin can deactivate and reactivate employee accounts', async () => {
  assert.equal(deactResult.success,true);
  assert.equal(deactResult.revision,1);
  assert.deepEqual(deactFixture.statements.find(({sql})=>sql.startsWith("UPDATE users SET status='inactive'"))?.values,[employee]);
- assert.deepEqual(deactFixture.statements.find(({sql})=>sql.startsWith('UPDATE user_invitations SET consumed_at=now()'))?.values,[employee]);
+ assert.deepEqual(deactFixture.statements.find(({sql})=>sql.startsWith('UPDATE user_invitations SET revoked_at=now()'))?.values,[employee]);
  const deactAudit=deactFixture.statements.find(({sql})=>sql.startsWith('INSERT INTO audit_events'))!;
  assert.equal(deactAudit.values[2],'technical.employee.deactivated');
 

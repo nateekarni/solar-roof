@@ -98,7 +98,7 @@ export class TeamService {
     const created=await this.createPosition(client,domain,positionName!,presetRules!);positionId=created.id;name=created.name;positionReused=created.reused;
    }
    if(typeof body.displayName==='string'&&body.displayName.trim()){
-    await client.query('UPDATE users SET display_name=$2,updated_at=now() WHERE id=$1',[userId,body.displayName.trim()]);
+    await client.query('UPDATE users SET display_name=$2,updated_at=now() WHERE id=$1',[userId,body.displayName.trim().slice(0, 200)]);
    }
    await client.query('UPDATE users SET company_position_id=$2,updated_at=now() WHERE id=$1',[userId,positionId]);
    // Manager authority remains role-derived; presets and overrides apply only to employees.
@@ -172,7 +172,7 @@ export class TeamService {
    if(user.permission_revision!==expected)throw new ConflictException('Permissions changed; preview again');
    await client.query("UPDATE users SET status='inactive',permission_revision=permission_revision+1,updated_at=now() WHERE id=$1",[userId]);
    await client.query('UPDATE auth_sessions SET revoked_at=now(),refresh_hash=NULL WHERE user_id=$1 AND revoked_at IS NULL',[userId]);
-   await client.query("UPDATE user_invitations SET consumed_at=now(), delivery_status='cancelled' WHERE user_id=$1 AND consumed_at IS NULL",[userId]);
+   await client.query("UPDATE user_invitations SET revoked_at=now(), consumed_at=now() WHERE user_id=$1 AND consumed_at IS NULL",[userId]);
    await this.audit(client,actor,domain,userId,'employee.deactivated');return {success:true,revision:expected+1};
   });
  }

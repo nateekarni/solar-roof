@@ -82,21 +82,37 @@ export class InvitationService {
           await client.query('UPDATE users SET company_position_id=COALESCE(company_position_id,$2) WHERE id=$1',[existing.id,companyPositionId]);
         }
         const domain = current.role === 'owner' ? 'business' : 'technical';
-        const overrides = JSON.stringify(input.permissions ?? input.overrides ?? {});
-        const scopeMode = input.scope?.mode ?? 'selected';
-        const siteIds = scopeMode === 'all' ? [] : (input.scope?.siteIds ?? []);
-        await client.query(
-          `INSERT INTO employee_domain_grants(user_id,domain,position_id,overrides,scope_mode,site_ids,updated_by)
-           VALUES($1,$2,$3,$4::jsonb,$5,$6::uuid[],$7)
-           ON CONFLICT(user_id,domain) DO UPDATE SET
-             position_id=COALESCE(excluded.position_id, employee_domain_grants.position_id),
-             overrides=excluded.overrides,
-             scope_mode=excluded.scope_mode,
-             site_ids=excluded.site_ids,
-             updated_by=excluded.updated_by,
-             updated_at=now()`,
-          [existing.id, domain, companyPositionId, overrides, scopeMode, siteIds, actor.id]
-        );
+        const hasPermissions = input.permissions !== undefined || input.overrides !== undefined;
+        const hasScope = input.scope !== undefined;
+        const hasCustomGrants = hasPermissions || hasScope;
+        if(hasCustomGrants) {
+          const overrides = JSON.stringify(input.permissions ?? input.overrides ?? {});
+          const scopeMode = input.scope?.mode ?? 'selected';
+          const siteIds = scopeMode === 'all' ? [] : (input.scope?.siteIds ?? []);
+          await client.query(
+            `INSERT INTO employee_domain_grants(user_id,domain,position_id,overrides,scope_mode,site_ids,updated_by)
+             VALUES($1,$2,$3,$4::jsonb,$5,$6::uuid[],$7)
+             ON CONFLICT(user_id,domain) DO UPDATE SET
+               position_id=COALESCE(excluded.position_id, employee_domain_grants.position_id),
+               overrides=CASE WHEN $8 THEN excluded.overrides ELSE employee_domain_grants.overrides END,
+               scope_mode=CASE WHEN $9 THEN excluded.scope_mode ELSE employee_domain_grants.scope_mode END,
+               site_ids=CASE WHEN $9 THEN excluded.site_ids ELSE employee_domain_grants.site_ids END,
+               updated_by=excluded.updated_by,
+               updated_at=now()`,
+            [existing.id, domain, companyPositionId, overrides, scopeMode, siteIds, actor.id, hasPermissions, hasScope]
+          );
+        } else {
+          await client.query(
+            `INSERT INTO employee_domain_grants(user_id,domain,position_id,updated_by)
+             VALUES($1,$2,$3,$4)
+             ON CONFLICT(user_id,domain) DO UPDATE SET
+               position_id=COALESCE(excluded.position_id, employee_domain_grants.position_id),
+               updated_by=excluded.updated_by,
+               updated_at=now()`,
+            [existing.id, domain, companyPositionId, actor.id]
+          );
+        }
+        await client.query('UPDATE users SET permission_revision=permission_revision+1, updated_at=now() WHERE id=$1',[existing.id]);
         return;
       }
       if(customerId&&!(await client.query('SELECT id FROM customers WHERE id=$1',[customerId])).rows[0])throw new BadRequestException('Customer not found');
