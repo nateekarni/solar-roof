@@ -101,7 +101,7 @@ export async function OperationPage({
   return (
     <div className="content min-w-0 max-w-full">
       {isRealtime && <OperationAutoRefresh intervalMs={10_000} />}
-      <div className={businessFinancial ? "ops-content min-w-0 space-y-4 [&_button]:min-h-11 [&_input]:min-h-11" : "ops-content space-y-4"}>
+      <div className={businessFinancial ? "ops-content min-w-0 space-y-4 [&_button:not([role=checkbox])]:min-h-11 [&_input]:min-h-11" : "ops-content space-y-4"}>
         <OperationPageHeader
           resource={resource}
           eyebrow={displayEyebrow}

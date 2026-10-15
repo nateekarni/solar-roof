@@ -49,7 +49,7 @@ function TabsList({
     <TabsPrimitive.List
       data-slot="tabs-list"
       data-variant={variant}
-      className={cn(tabsListVariants({ variant }), className, "min-h-11 group-data-horizontal/tabs:h-auto bg-tabs-background text-tabs-foreground")}
+      className={cn(tabsListVariants({ variant }), "min-h-11 group-data-horizontal/tabs:h-auto text-tabs-foreground", className)}
       {...props}
     />
   )

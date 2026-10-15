@@ -75,13 +75,13 @@ function BillingSelectionHeader({table}:HeaderContext<OperationRow,unknown>){
   const ids=table.getRowModel().rows.map(row=>row.original.id);
   const count=ids.filter(id=>selection.selected.has(id)).length;
   return (
-    <div className="flex items-center justify-center">
+    <div className="flex items-center justify-center size-4 min-h-4 min-w-4 shrink-0 mx-auto">
       <Checkbox
         aria-label={selection.locale==='th'?'เลือกทั้งหมดในหน้านี้':'Select all on this page'}
         disabled={ids.length===0}
         checked={count>0&&count===ids.length?true:count>0?'indeterminate':false}
         onCheckedChange={()=>selection.togglePage(ids)}
-        className="size-4 aspect-square shrink-0"
+        className="size-4 aspect-square shrink-0 !min-h-4 !min-w-4 !max-h-4 !max-w-4"
       />
     </div>
   );
@@ -92,12 +92,12 @@ function BillingSelectionCell({row}:CellContext<OperationRow,unknown>){
   if(!selection)return null;
   const item=row.original;
   return (
-    <div className="flex items-center justify-center">
+    <div className="flex items-center justify-center size-4 min-h-4 min-w-4 shrink-0 mx-auto">
       <Checkbox
         aria-label={selection.locale==='th'?`เลือก ${item.period??'—'} ${item.customerName??'—'} ${item.siteName??'—'}`:`Select ${item.period??'—'} ${item.customerName??'—'} ${item.siteName??'—'}`}
         checked={selection.selected.has(item.id)}
         onCheckedChange={()=>selection.toggle(item.id)}
-        className="size-4 aspect-square shrink-0"
+        className="size-4 aspect-square shrink-0 !min-h-4 !min-w-4 !max-h-4 !max-w-4"
       />
     </div>
   );

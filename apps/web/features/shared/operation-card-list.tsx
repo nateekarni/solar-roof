@@ -31,8 +31,8 @@ export function OperationCardList({resource,columns:rawColumns,rows,idKey='id',o
  const getStatusBadge=(value:string)=>resource==='receipts'?renderReceiptStatusBadge(value,locale):renderStatusBadge(value,locale);
  return <div className="space-y-3">
       {billingSelection&&<div className="flex items-center gap-3 min-h-11 px-3">
-       <Checkbox aria-label={locale==='th'?'เลือกทั้งหมดในหน้านี้':'Select all on this page'} disabled={pageIds.length===0} checked={selectedCount>0&&selectedCount===pageIds.length?true:selectedCount>0?'indeterminate':false} onCheckedChange={()=>billingSelection.togglePage(pageIds)}/>
-       <span className="text-sm">{locale==='th'?'เลือกทั้งหมดในหน้านี้':'Select all on this page'}</span>
+        <Checkbox className="size-4 aspect-square shrink-0 !min-h-4 !min-w-4 !max-h-4 !max-w-4" aria-label={locale==='th'?'เลือกทั้งหมดในหน้านี้':'Select all on this page'} disabled={pageIds.length===0} checked={selectedCount>0&&selectedCount===pageIds.length?true:selectedCount>0?'indeterminate':false} onCheckedChange={()=>billingSelection.togglePage(pageIds)}/>
+        <span className="text-sm">{locale==='th'?'เลือกทั้งหมดในหน้านี้':'Select all on this page'}</span>
       </div>}
       {/* Cards List */}
       {rows.length === 0 ? (
@@ -71,7 +71,7 @@ export function OperationCardList({resource,columns:rawColumns,rows,idKey='id',o
                 {/* Card Header: Title + Status */}
                 <div className="flex items-start justify-between gap-2">
                   {billingSelection&&<div className="flex items-center justify-center min-h-11 min-w-11" onClick={event=>event.stopPropagation()}>
-                   <Checkbox className="size-4 aspect-square shrink-0" aria-label={locale==='th'?`เลือก ${row.period??'—'} ${row.customerName??'—'} ${row.siteName??'—'}`:`Select ${row.period??'—'} ${row.customerName??'—'} ${row.siteName??'—'}`} checked={billingSelection.selected.has(row.id)} onCheckedChange={()=>billingSelection.toggle(row.id)}/>
+                   <Checkbox className="size-4 aspect-square shrink-0 !min-h-4 !min-w-4 !max-h-4 !max-w-4" aria-label={locale==='th'?`เลือก ${row.period??'—'} ${row.customerName??'—'} ${row.siteName??'—'}`:`Select ${row.period??'—'} ${row.customerName??'—'} ${row.siteName??'—'}`} checked={billingSelection.selected.has(row.id)} onCheckedChange={()=>billingSelection.toggle(row.id)}/>
                   </div>}
                   <div className="min-w-0 flex-1">
                     <p className="text-xs font-semibold text-muted-foreground/70 uppercase tracking-wider text-[10px]">
