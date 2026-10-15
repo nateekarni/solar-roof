@@ -19,6 +19,16 @@ export default function Error({
     console.error("Application Error:", error);
   }, [error]);
 
+  const isMinifiedReactError = Boolean(
+    error.message &&
+      (error.message.includes("Minified React error") ||
+        error.message.includes("react.dev/errors")),
+  );
+  const displayMessage =
+    isMinifiedReactError || !error.message
+      ? t("errors.apiError")
+      : error.message;
+
   return (
     <main className="content flex min-h-[60vh] items-center justify-center">
       <Card className="max-w-md border-border bg-card p-6 shadow-md text-center">
@@ -31,11 +41,16 @@ export default function Error({
               {t("errors.loadFailed")}
             </h2>
             <p className="text-xs text-muted-foreground">
-              {error.message || t("errors.apiError")}
+              {displayMessage}
             </p>
           </div>
           <Button
-            onClick={() => reset()}
+            onClick={() => {
+              reset();
+              if (typeof window !== "undefined") {
+                window.location.reload();
+              }
+            }}
             className="mt-2 gap-2 text-xs font-semibold"
           >
             <RotateCcw className="size-3.5" />

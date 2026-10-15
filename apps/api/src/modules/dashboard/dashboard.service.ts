@@ -2,7 +2,7 @@ import { generationEnergy, generationDays, generationHours, GENERATION_SAMPLES_S
 import { energyCompleteness } from './energy-completeness.js';
 import { dashboardRange } from './dashboard-range.js';
 import { EnergyReadService } from './energy-read.service.js';
-import { BadRequestException, ForbiddenException, Inject, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Inject, Injectable, Logger } from '@nestjs/common';
 import { customerScope } from '../../common/auth/resource-scope.js';
 import { DatabaseService } from '../../database/database.service.js';
 import {hasPermission,siteScope,type Authorization} from '../../common/auth/authorization.js';
@@ -151,7 +151,23 @@ return await this.db.query<{site_id:string;generation_kw:string|null;generation_
     const ids=sites.map(s=>s.id);
     const businessScope=siteScope(user,'business');const financialIds=user.role==='customer_user'||businessScope===null?ids:ids.filter(id=>businessScope.includes(id));
     const [energy,power,billing,alerts]=await Promise.all([
-      generationEnergy(this.db,ids,start,end),this.generationPower(ids),
+      generationEnergy(this.db,ids,start,end).catch((err: Error) => {
+        new Logger(DashboardService.name).warn(`Generation energy telemetry deferred due to error: ${err.message}`);
+        return {
+          rows: ids.map(site_id => ({
+            site_id,
+            day: start,
+            value: null,
+            observedValue: null,
+            quality: 'preparing' as const,
+            watermark: null,
+            refreshedAt: null,
+            reason: 'telemetry_processing_deferred'
+          })),
+          sourceFingerprints: new Map<string, string | null>()
+        };
+      }),
+      this.generationPower(ids),
       (user.role!=='customer_user'&&!hasPermission(user,'business.billing.view') ? Promise.resolve({rows:[] as {site_id:string;day:string;amount:string;consumed_kwh:string;paid:boolean}[]}) : this.db.query<{site_id:string;day:string;amount:string;consumed_kwh:string;paid:boolean}>(`SELECT b.site_id,b.period_start::text AS day,b.amount::text,b.consumed_kwh::text,
         coalesce((SELECT sum(coalesce(p.verified_amount,p.amount)) FROM payments p WHERE p.billing_cycle_id=b.id AND p.status='paid'),0)>=b.amount paid
         FROM billing_cycles b WHERE b.site_id=ANY($1::uuid[]) AND b.status NOT IN('draft','cancelled','superseded') AND EXISTS(SELECT 1 FROM documents d WHERE d.billing_cycle_id=b.id AND d.document_type='invoice' AND d.is_current AND d.status IN('issued','finalized')) AND b.period_start >= $2::date AND b.period_start <= $3::date ORDER BY b.period_end`,[financialIds,start,end])),
@@ -200,7 +216,23 @@ return await this.db.query<{site_id:string;generation_kw:string|null;generation_
     const scope=siteScope(user,'business');
     const financialIds=user.role==='customer_user'||hasPermission(user,'business.billing.view')?ids.filter(id=>user.role==='customer_user'||scope===null||scope.includes(id)):[];
     const [energy,contexts,bills]=await Promise.all([
-      generationEnergy(this.db,ids,start,end),this.contexts(user,ids),
+      generationEnergy(this.db,ids,start,end).catch((err: Error) => {
+        new Logger(DashboardService.name).warn(`Comparison generation energy deferred due to error: ${err.message}`);
+        return {
+          rows: ids.map(site_id => ({
+            site_id,
+            day: start,
+            value: null,
+            observedValue: null,
+            quality: 'preparing' as const,
+            watermark: null,
+            refreshedAt: null,
+            reason: 'telemetry_processing_deferred'
+          })),
+          sourceFingerprints: new Map<string, string | null>()
+        };
+      }),
+      this.contexts(user,ids),
       financialIds.length?this.db.query<InsightBill>(`SELECT b.id,b.site_id AS "siteId",s.name AS "siteName",b.amount::text,
         coalesce(p.approved,0)::text AS approved,coalesce(p.pending,0)::int AS "pendingReview",to_char(b.due_date,'YYYY-MM-DD') AS "dueDate",to_char(b.period_start,'YYYY-MM-DD') AS "periodStart",b.status
         FROM billing_cycles b JOIN sites s ON s.id=b.site_id

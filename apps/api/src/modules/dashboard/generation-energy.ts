@@ -1,20 +1,19 @@
 import type { DatabaseService } from '../../database/database.service.js';
 import { createHash } from 'node:crypto';
 interface GenerationSample {site_id:string;device_id:string;profile_revision_id?:string;polled_at:string;value:string}
-export const GENERATION_SAMPLES_SQL=`SELECT d.site_id,d.id AS device_id,ps.profile_revision_id,ps.polled_at::text,(CASE WHEN ps.unit='kWh' THEN ps.value*1000 ELSE ps.value END)::text AS value
+export const GENERATION_SAMPLES_SQL=`SELECT ps.site_id,ps.device_id,ps.profile_revision_id,ps.polled_at::text,(CASE WHEN ps.unit='kWh' THEN ps.value*1000 ELSE ps.value END)::text AS value
  FROM devices d JOIN payload_profile_revisions p ON p.id=d.payload_profile_revision_id
  CROSS JOIN LATERAL (SELECT f->>'targetUnit' AS target_unit FROM jsonb_array_elements(p.config->'fields') f WHERE f->>'tag'='solar.total_yield' AND f->>'targetUnit' IN ('Wh','kWh')) yield_field
- LEFT JOIN payload_samples ps ON ps.device_id=d.id AND ps.site_id=d.site_id
+ JOIN payload_samples ps ON ps.device_id=d.id AND ps.site_id=d.site_id
  AND ps.profile_revision_id=d.payload_profile_revision_id AND ps.tag='solar.total_yield'
  AND ps.unit=yield_field.target_unit AND ps.quality='good' AND ps.communication='online'
  AND ps.value>=0 AND ps.value<'Infinity'::float8
  AND ps.polled_at>=($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
  AND ps.polled_at<=(($3::date+1)::timestamp AT TIME ZONE 'Asia/Bangkok') AND ps.polled_at<=now()
- WHERE d.site_id=ANY($1::uuid[]) AND ps.polled_at IS NOT NULL
+ WHERE d.site_id=ANY($1::uuid[])
  AND (EXISTS(SELECT 1 FROM gateway_dashboard_sources chosen WHERE chosen.gateway_id=d.gateway_id AND chosen.metric='energy' AND chosen.device_id=d.id AND chosen.tag='solar.total_yield')
  OR (NOT EXISTS(SELECT 1 FROM gateway_dashboard_sources chosen WHERE chosen.gateway_id=d.gateway_id AND chosen.metric='energy') AND p.config->>'deviceType'='solar-logger'))
-
- ORDER BY d.site_id,d.id,ps.polled_at,ps.received_at,ps.id`;
+ ORDER BY ps.site_id,ps.device_id,ps.polled_at,ps.received_at,ps.id`;
 /** Counter differences use observed Bangkok day boundaries; no interpolated samples. */
 export function generationDays(ids:string[],from:string,to:string,samples:GenerationSample[],now=Date.now()) {
  const first=Date.parse(`${from}T00:00:00+07:00`),last=Date.parse(`${to}T00:00:00+07:00`);

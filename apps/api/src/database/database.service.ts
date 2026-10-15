@@ -18,7 +18,7 @@ export class DatabaseService implements OnModuleDestroy {
     ...(options.Client ? { Client: options.Client } : {}),
     connectionString: process.env.DATABASE_URL,
     max: options.max ?? configured('API_READ_POOL_MAX', 12, 12),
-    statement_timeout: options.statementTimeout ?? configured('API_READ_STATEMENT_TIMEOUT_MS', 1500, 1500),
+    statement_timeout: options.statementTimeout ?? configured('API_READ_STATEMENT_TIMEOUT_MS', 2500, 5000),
     application_name: options.applicationName ?? 'solar-api-read',
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 5000,
