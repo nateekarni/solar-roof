@@ -19,21 +19,22 @@ export function parseNotificationSite(site:unknown):string|null {
 }
 // Every consumer (rows, count and read writes) uses this same accessible relation.
 export const notificationVisibleSql=`WITH visible AS (
- SELECT e.id,e.title,e.detail,e.destination,e.created_at,'workflow'::text AS kind,NULL::text AS severity
+ SELECT e.id,e.title,e.detail,e.destination,e.created_at,'workflow'::text AS kind,NULL::text AS severity,s.name AS site_name
  FROM notification_feed_events e JOIN sites s ON s.id=e.site_id
  WHERE ($2::uuid[] IS NULL OR s.customer_id=ANY($2::uuid[])) AND (NOT EXISTS(SELECT 1 FROM users scope_user WHERE scope_user.id=$1::uuid AND scope_user.role='customer_user') OR EXISTS(SELECT 1 FROM site_account_assignments assignment WHERE assignment.user_id=$1::uuid AND assignment.site_id=s.id AND assignment.revoked_at IS NULL)) AND ($3::uuid IS NULL OR s.id=$3)
  AND (NOT EXISTS(SELECT 1 FROM operational_event_recipients er WHERE er.notification_id=e.id) OR EXISTS(SELECT 1 FROM operational_event_recipients er WHERE er.notification_id=e.id AND er.user_id=$1))
  AND EXISTS(SELECT 1 FROM unnest($7::text[]) permitted(root) WHERE e.destination=permitted.root OR starts_with(e.destination,permitted.root||'/'))
  AND employee_can_access($1::uuid,'business',CASE WHEN starts_with(e.destination,'/records/receipts') THEN 'business.receipts.view' WHEN starts_with(e.destination,'/records/documents') THEN 'business.documents.view' ELSE 'business.billing.view' END,s.id)
  UNION ALL
- SELECT 'alert:'||a.id::text,a.title,a.detail,'/alerts',a.occurred_at,'alert',a.severity
+ SELECT 'alert:'||a.id::text,a.title,a.detail,'/alerts',a.occurred_at,'alert',a.severity,s.name AS site_name
  FROM alerts a JOIN sites s ON s.id=a.site_id
  WHERE $4::boolean AND (NOT EXISTS(SELECT 1 FROM users scope_user WHERE scope_user.id=$1::uuid AND scope_user.role='customer_user') OR EXISTS(SELECT 1 FROM site_account_assignments assignment WHERE assignment.user_id=$1::uuid AND assignment.site_id=s.id AND assignment.revoked_at IS NULL)) AND ($2::uuid[] IS NULL OR s.customer_id=ANY($2::uuid[])) AND ($3::uuid IS NULL OR s.id=$3)
  AND (NOT EXISTS(SELECT 1 FROM operational_delivery_outbox o WHERE o.alert_id=a.id) OR EXISTS(SELECT 1 FROM operational_event_recipients er WHERE er.notification_id='alert:'||a.id::text AND er.user_id=$1))
  AND employee_can_access($1::uuid,'technical','technical.alerts.view',s.id)
  UNION ALL
- SELECT 'workflow:'||n.id::text,n.title,n.status,'/notifications',n.created_at,'workflow',NULL
+ SELECT 'workflow:'||n.id::text,n.title,n.status,'/notifications',n.created_at,'workflow',NULL,s.name AS site_name
  FROM notification_deliveries n JOIN platform_jobs j ON j.id=n.job_id
+ LEFT JOIN sites s ON (j.payload->>'siteId' IS NOT NULL AND s.id::text=j.payload->>'siteId')
  WHERE $5::boolean AND ($2::uuid[] IS NULL OR cardinality($2::uuid[])>0) AND n.user_id=$1::uuid AND j.created_by=$1::uuid
  AND ($2::uuid[] IS NULL OR (j.scope IS NOT NULL AND j.scope<@$2::uuid[]))
  AND (j.payload->>'type' IS DISTINCT FROM 'audit' OR $6::boolean)
@@ -57,7 +58,7 @@ export class NotificationFeedService {
   const [result,finance]=await Promise.all([this.db.query(notificationVisibleSql+` SELECT
    (SELECT count(*)::int FROM accessible WHERE read_at IS NULL) AS "unreadCount",
    coalesce((SELECT jsonb_agg(CASE WHEN row.severity IS NULL THEN to_jsonb(row)-'severity' ELSE to_jsonb(row) END ORDER BY row."createdAt" DESC,row.id) FROM (
-    SELECT id,title,detail,destination,created_at AS "createdAt",read_at AS "readAt",kind,severity FROM accessible ORDER BY created_at DESC,id LIMIT 100
+    SELECT id,title,detail,destination,created_at AS "createdAt",read_at AS "readAt",kind,severity,site_name AS "siteName" FROM accessible ORDER BY created_at DESC,id LIMIT 100
    ) row),'[]'::jsonb) AS rows`,params),this.financeItem(user)]);
   const feed=result.rows[0]??{rows:[],unreadCount:0};
   if(!finance)return feed;

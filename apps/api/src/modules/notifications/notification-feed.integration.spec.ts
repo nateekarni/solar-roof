@@ -29,7 +29,7 @@ test('PostgreSQL enforces scope, per-user reads and transactional lifecycle even
    CREATE TABLE site_account_assignments(user_id uuid,site_id uuid,revoked_at timestamptz);
    CREATE TABLE operational_event_recipients(notification_id text,user_id uuid);
    CREATE TABLE operational_delivery_outbox(alert_id uuid);
-   CREATE TABLE sites(id uuid PRIMARY KEY,customer_id uuid NOT NULL);
+   CREATE TABLE sites(id uuid PRIMARY KEY,customer_id uuid NOT NULL,name text DEFAULT '');
    CREATE TABLE contracts(id uuid PRIMARY KEY,site_id uuid,version integer,status text);
    CREATE TABLE billing_cycles(id uuid PRIMARY KEY,site_id uuid);
    CREATE TABLE documents(id uuid PRIMARY KEY,site_id uuid,document_type text,status text,document_number text,created_at timestamptz DEFAULT now());

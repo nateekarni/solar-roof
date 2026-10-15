@@ -13,13 +13,120 @@ import {Alert,AlertDescription} from '../ui/alert';
 import {ResponsivePopover} from '../ui/responsive-popover';
 import {accessibleFeedRows,markFeedRead,type NotificationFeed,type NotificationFeedItem} from './notification-feed-state';
 
+function formatNotificationCopy(row: NotificationFeedItem, th: boolean) {
+ if (row.metadata?.type === 'finance-readiness') {
+  return {
+   title: th ? 'ตั้งค่าการเงินให้ครบ' : 'Complete finance setup',
+   detail: th ? `เหลือรายการที่ Owner ต้องดำเนินการ ${row.metadata.missingCount} รายการ` : `${row.metadata.missingCount} Owner setup items remaining`,
+   siteName: null,
+  };
+ }
+
+ let title = row.title;
+ let detail = row.detail;
+
+ // Payment approved / confirmed
+ if (row.detail === 'paid' || (row.title === 'ตรวจสอบการชำระเงินแล้ว' && row.detail.toLowerCase().includes('paid'))) {
+  title = th ? 'ยืนยันการชำระเงินแล้ว' : 'Payment Confirmed';
+  detail = th ? 'บันทึกการชำระเงินเรียบร้อยแล้ว' : 'Payment verified successfully';
+ }
+ // Payment rejected
+ else if (row.detail.startsWith('ปฏิเสธหลักฐาน') || row.detail.includes('Evidence rejected')) {
+  title = th ? 'ปฏิเสธหลักฐานการชำระเงิน' : 'Payment Evidence Rejected';
+  const rawReason = row.detail.replace(/^(?:ปฏิเสธหลักฐาน\s*\/\s*Evidence rejected:\s*|Evidence rejected:\s*)/i, '').trim();
+  detail = rawReason || (th ? 'หลักฐานการชำระเงินไม่ถูกต้อง' : 'Invalid payment evidence');
+ }
+ // Document issuance: Invoice
+ else if (row.title === 'ออกใบแจ้งหนี้แล้ว' || row.title === 'Issued invoice') {
+  title = th ? 'ออกใบวางบิลแล้ว' : 'Invoice Issued';
+ }
+ // Document issuance: Receipt
+ else if (row.title === 'ออกใบเสร็จแล้ว' || row.title === 'Issued receipt') {
+  title = th ? 'ออกใบเสร็จรับเงินแล้ว' : 'Receipt Issued';
+ }
+ // Payment reminder
+ else if (row.title.includes('Payment reminder') || row.title.includes('แจ้งเตือนชำระเงิน')) {
+  title = th ? 'แจ้งเตือนครบกำหนดชำระเงิน' : 'Payment Due Reminder';
+  const match = row.detail.match(/\b(\d{4}-\d{2}-\d{2})\b/);
+  const dateStr = match?.[1];
+  if (dateStr) {
+   const dateObj = new Date(dateStr);
+   if (!isNaN(dateObj.getTime())) {
+    const formattedDue = new Intl.DateTimeFormat(th ? 'th-TH' : 'en-GB', { dateStyle: 'medium', timeZone: 'Asia/Bangkok' }).format(dateObj);
+    detail = th ? `ครบกำหนดชำระวันที่ ${formattedDue}` : `Due date: ${formattedDue}`;
+   }
+  } else {
+   detail = row.detail.replace(/ครบกำหนด\s*\/\s*Due:\s*/i, th ? 'ครบกำหนด: ' : 'Due: ');
+  }
+ }
+ // Contract lifecycle
+ else if (row.title === 'สร้างสัญญาแล้ว') {
+  title = th ? 'สร้างสัญญาใหม่แล้ว' : 'Contract Created';
+ } else if (row.title === 'ปรับปรุงสัญญาแล้ว') {
+  title = th ? 'อัปเดตสัญญาแล้ว' : 'Contract Updated';
+ }
+
+ return {
+  title,
+  detail,
+  siteName: row.siteName || null,
+ };
+}
+
 export function NotificationFeedRow({row,th,onRead,onNavigate}:{row:NotificationFeedItem;th:boolean;onRead:(id:string)=>void;onNavigate?:()=>void}) {
- const finance=row.metadata?.type==='finance-readiness';
- const title=finance?(th?'ตั้งค่าการเงินให้ครบ':'Complete finance setup'):row.title;
- const detail=finance?(th?`เหลือรายการที่ Owner ต้องดำเนินการ ${row.metadata!.missingCount} รายการ`:`${row.metadata!.missingCount} Owner setup items remaining`):row.detail;
- const content=<><span className="mt-0.5 shrink-0 text-muted-foreground">{row.kind==='alert'?<AlertTriangle className="size-4"/>:<Bell className="size-4"/>}</span><span className="flex min-w-0 flex-1 flex-col gap-1"><span className="text-sm font-medium">{title}</span><span className="text-xs text-muted-foreground">{detail}</span><time dateTime={row.createdAt} className="text-xs text-muted-foreground">{new Intl.DateTimeFormat(th?'th-TH':'en-GB',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Bangkok'}).format(new Date(row.createdAt))}</time></span>{!row.readAt&&<span className="mt-1.5 size-2 shrink-0 rounded-full bg-primary"><span className="sr-only">{th?'ยังไม่อ่าน':'Unread'}</span></span>}</>;
- const activate=()=>{if(!row.readAt)onRead(row.id);if(row.destination)onNavigate?.();};
- return row.destination?<Button asChild variant="ghost" className="h-auto! justify-start rounded-none border-b p-3 text-left whitespace-normal"><Link href={row.destination} onClick={activate}>{content}</Link></Button>:<Button type="button" variant="ghost" className="h-auto! justify-start rounded-none border-b p-3 text-left whitespace-normal" onClick={activate}>{content}</Button>;
+ const {title, detail, siteName} = formatNotificationCopy(row, th);
+ const formattedDate = new Intl.DateTimeFormat(th ? 'th-TH' : 'en-GB', {
+  dateStyle: 'medium',
+  timeStyle: 'short',
+  timeZone: 'Asia/Bangkok',
+ }).format(new Date(row.createdAt));
+
+ const content = (
+  <div className="flex w-full min-w-0 items-start gap-2.5">
+   <span className="mt-0.5 shrink-0 text-muted-foreground">
+    {row.kind === 'alert' ? <AlertTriangle className="size-4" /> : <Bell className="size-4" />}
+   </span>
+   <div className="flex min-w-0 flex-1 flex-col gap-1">
+    <div className="flex items-center justify-between gap-2">
+     <span className="text-sm font-medium truncate">{title}</span>
+     <div className="flex items-center gap-1.5 shrink-0">
+      <time dateTime={row.createdAt} className="text-xs text-muted-foreground whitespace-nowrap">
+       {formattedDate}
+      </time>
+      {!row.readAt && (
+       <span className="size-2 rounded-full bg-primary shrink-0">
+        <span className="sr-only">{th ? 'ยังไม่อ่าน' : 'Unread'}</span>
+       </span>
+      )}
+     </div>
+    </div>
+    <div className="text-xs text-muted-foreground line-clamp-2">
+     <span>{detail}</span>
+     {siteName && (
+      <>
+       <span className="mx-1 text-muted-foreground/60">•</span>
+       <strong className="font-semibold text-foreground">{siteName}</strong>
+      </>
+     )}
+    </div>
+   </div>
+  </div>
+ );
+
+ const activate = () => {
+  if (!row.readAt) onRead(row.id);
+  if (row.destination) onNavigate?.();
+ };
+
+ return row.destination ? (
+  <Button asChild variant="ghost" className="h-auto! w-full justify-start rounded-none border-b p-3 text-left whitespace-normal">
+   <Link href={row.destination} onClick={activate}>{content}</Link>
+  </Button>
+ ) : (
+  <Button type="button" variant="ghost" className="h-auto! w-full justify-start rounded-none border-b p-3 text-left whitespace-normal" onClick={activate}>
+   {content}
+  </Button>
+ );
 }
 
 export function NotificationBell({siteId}:{siteId?:string|undefined}) {

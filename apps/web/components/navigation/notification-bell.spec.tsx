@@ -43,3 +43,38 @@ test('opening a previously read workflow still closes the bell without writing a
  const unread=NotificationFeedRow({row:{...row,readAt:null},th:false,onRead:id=>{assert.equal(id,'workflow:read');reads++;},onNavigate:()=>{navigations++;}}).props.children;
  unread.props.onClick();assert.equal(reads,1);assert.equal(navigations,2);
 });
+
+test('normalizes financial notification wording and renders bold site name alongside right-aligned timestamp',()=>{
+ const paidRow:NotificationFeedItem={id:'payment:1',title:'ตรวจสอบการชำระเงินแล้ว',detail:'paid',siteName:'ศูนย์กระจายสินค้า ลาดกระบัง',destination:'/records/billing/1',createdAt:'2026-10-14T06:35:00.000Z',readAt:null,kind:'workflow'};
+ const paidHtml=renderToStaticMarkup(<NotificationFeedRow row={paidRow} th={true} onRead={()=>{}}/>);
+ assert.ok(paidHtml.includes('ยืนยันการชำระเงินแล้ว'));
+ assert.ok(paidHtml.includes('บันทึกการชำระเงินเรียบร้อยแล้ว'));
+ assert.match(paidHtml,/<strong class="font-semibold text-foreground">ศูนย์กระจายสินค้า ลาดกระบัง<\/strong>/);
+ assert.match(paidHtml,/<time dateTime="2026-10-14T06:35:00.000Z" class="text-xs text-muted-foreground whitespace-nowrap">/);
+ assert.ok(paidHtml.includes('ยังไม่อ่าน'));
+
+ const rejectedRow:NotificationFeedItem={id:'payment:2',title:'ตรวจสอบการชำระเงินแล้ว',detail:'ปฏิเสธหลักฐาน / Evidence rejected: Synthetic unreadable evidence scenario',siteName:'คลังสินค้า คลองหลวง',destination:'/records/billing/2',createdAt:'2026-10-14T06:35:00.000Z',readAt:null,kind:'workflow'};
+ const rejectedHtml=renderToStaticMarkup(<NotificationFeedRow row={rejectedRow} th={true} onRead={()=>{}}/>);
+ assert.ok(rejectedHtml.includes('ปฏิเสธหลักฐานการชำระเงิน'));
+ assert.ok(rejectedHtml.includes('Synthetic unreadable evidence scenario'));
+ assert.doesNotMatch(rejectedHtml,/Evidence rejected:/);
+ assert.match(rejectedHtml,/<strong class="font-semibold text-foreground">คลังสินค้า คลองหลวง<\/strong>/);
+
+ const receiptRow:NotificationFeedItem={id:'doc:1',title:'ออกใบเสร็จแล้ว',detail:'RCP261000002',siteName:'โรงงานบรรจุภัณฑ์ บางพลี',destination:'/records/receipts/1',createdAt:'2026-10-14T06:35:00.000Z',readAt:'2026-10-14T07:00:00.000Z',kind:'workflow'};
+ const receiptHtml=renderToStaticMarkup(<NotificationFeedRow row={receiptRow} th={true} onRead={()=>{}}/>);
+ assert.ok(receiptHtml.includes('ออกใบเสร็จรับเงินแล้ว'));
+ assert.ok(receiptHtml.includes('RCP261000002'));
+ assert.match(receiptHtml,/<strong class="font-semibold text-foreground">โรงงานบรรจุภัณฑ์ บางพลี<\/strong>/);
+
+ const invoiceRow:NotificationFeedItem={id:'doc:2',title:'ออกใบแจ้งหนี้แล้ว',detail:'INV261000030',siteName:'ศูนย์บริการ ศรีราชา',destination:'/records/documents/2',createdAt:'2026-10-14T06:35:00.000Z',readAt:null,kind:'workflow'};
+ const invoiceHtml=renderToStaticMarkup(<NotificationFeedRow row={invoiceRow} th={true} onRead={()=>{}}/>);
+ assert.ok(invoiceHtml.includes('ออกใบวางบิลแล้ว'));
+ assert.ok(invoiceHtml.includes('INV261000030'));
+ assert.match(invoiceHtml,/<strong class="font-semibold text-foreground">ศูนย์บริการ ศรีราชา<\/strong>/);
+
+ const reminderRow:NotificationFeedItem={id:'workflow:remind',title:'แจ้งเตือนชำระเงิน / Payment reminder',detail:'ครบกำหนด / Due: 2026-11-13',siteName:'โรงงานอาหาร ปลวกแดง',destination:'/records/billing/3',createdAt:'2026-10-14T06:35:00.000Z',readAt:null,kind:'workflow'};
+ const reminderHtml=renderToStaticMarkup(<NotificationFeedRow row={reminderRow} th={true} onRead={()=>{}}/>);
+ assert.ok(reminderHtml.includes('แจ้งเตือนครบกำหนดชำระเงิน'));
+ assert.ok(reminderHtml.includes('ครบกำหนดชำระวันที่ 13 พ.ย. 2569'));
+ assert.match(reminderHtml,/<strong class="font-semibold text-foreground">โรงงานอาหาร ปลวกแดง<\/strong>/);
+});
