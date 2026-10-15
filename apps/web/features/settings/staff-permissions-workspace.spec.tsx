@@ -222,3 +222,239 @@ test('apiClient.post sends invite payload to /v1/users/invite', async () => {
  }
 });
 
+test('row action menu renders "แก้ไขข้อมูล" and "ยกเลิกใช้งาน" for active employees', () => {
+ assert.equal(typeof (workspace as any).EmployeeRowActions, 'function');
+ const activeEmployee = {
+  id: 'emp-1',
+  email: 'active@example.com',
+  displayName: 'สมชาย รักงาน',
+  role: 'operator',
+  status: 'active',
+  revision: 1,
+  companyPositionId: null,
+  companyPosition: null,
+  grant: null,
+ };
+ const html = renderToStaticMarkup(
+  React.createElement((workspace as any).EmployeeRowActions, {
+   employee: activeEmployee,
+   inline: true,
+   onEdit: () => {},
+   onDeactivate: () => {},
+   onReactivate: () => {},
+   onCancelInvite: () => {},
+  })
+ );
+ assert.match(html, /แก้ไขข้อมูล/);
+ assert.match(html, /ยกเลิกใช้งาน/);
+ assert.doesNotMatch(html, /จัดการสิทธิ์/);
+ assert.doesNotMatch(html, /เปิดใช้งานอีกครั้ง/);
+ assert.doesNotMatch(html, /ยกเลิกคำเชิญ/);
+});
+
+test('row action menu renders "เปิดใช้งานอีกครั้ง" for inactive employees', () => {
+ const inactiveEmployee = {
+  id: 'emp-2',
+  email: 'inactive@example.com',
+  displayName: 'สมศรี พักงาน',
+  role: 'operator',
+  status: 'inactive',
+  revision: 1,
+  companyPositionId: null,
+  companyPosition: null,
+  grant: null,
+ };
+ const html = renderToStaticMarkup(
+  React.createElement((workspace as any).EmployeeRowActions, {
+   employee: inactiveEmployee,
+   inline: true,
+   onEdit: () => {},
+   onDeactivate: () => {},
+   onReactivate: () => {},
+   onCancelInvite: () => {},
+  })
+ );
+ assert.match(html, /แก้ไขข้อมูล/);
+ assert.match(html, /เปิดใช้งานอีกครั้ง/);
+ assert.doesNotMatch(html, /ยกเลิกใช้งาน/);
+ assert.doesNotMatch(html, /ยกเลิกคำเชิญ/);
+});
+
+test('row action menu renders "ยกเลิกคำเชิญ" for invited employees', () => {
+ const invitedEmployee = {
+  id: 'emp-3',
+  email: 'invited@example.com',
+  displayName: 'สมศักดิ์ รอเริ่มงาน',
+  role: 'operator',
+  status: 'invited',
+  revision: 1,
+  companyPositionId: null,
+  companyPosition: null,
+  grant: null,
+ };
+ const html = renderToStaticMarkup(
+  React.createElement((workspace as any).EmployeeRowActions, {
+   employee: invitedEmployee,
+   inline: true,
+   onEdit: () => {},
+   onDeactivate: () => {},
+   onReactivate: () => {},
+   onCancelInvite: () => {},
+  })
+ );
+ assert.match(html, /แก้ไขข้อมูล/);
+ assert.match(html, /ยกเลิกคำเชิญ/);
+ assert.doesNotMatch(html, /ยกเลิกใช้งาน/);
+ assert.doesNotMatch(html, /เปิดใช้งานอีกครั้ง/);
+});
+
+test('EmployeeEditor renders editable name input and title "แก้ไขข้อมูลพนักงาน"', () => {
+ assert.equal(typeof (workspace as any).EmployeeEditor, 'function');
+ const employee = {
+  id: 'emp-1',
+  email: 'worker@example.com',
+  displayName: 'วิศวกร ทดสอบ',
+  role: 'operator',
+  status: 'active',
+  revision: 1,
+  companyPositionId: null,
+  companyPosition: 'วิศวกรไฟฟ้า',
+  grant: null,
+ };
+ const html = renderToStaticMarkup(
+  React.createElement((workspace as any).EmployeeEditor, {
+   employee,
+   domain: 'business',
+   positions: [{ id: 'pos-1', name: 'วิศวกรไฟฟ้า', rules: {}, revision: 1 }],
+   permissions: ['business.sites.view'],
+   sites: [{ id: 'site-1', name: 'ไซต์ 1' }],
+   onSaved: () => {},
+   onClose: () => {},
+   canDeactivate: true,
+   inline: true,
+  })
+ );
+ assert.match(html, /แก้ไขข้อมูลพนักงาน/);
+ assert.match(html, /id="edit-staff-name"/);
+ assert.match(html, /value="วิศวกร ทดสอบ"/);
+ assert.match(html, /id="edit-staff-position"/);
+});
+
+test('employeePositionDraft includes displayName in output payload', () => {
+ assert.equal(typeof (model as any).employeePositionDraft, 'function');
+ const payload = (model as any).employeePositionDraft({
+  revision: 2,
+  choice: { kind: 'existing', id: 'pos-1' },
+  domain: 'business',
+  permissions: ['business.sites.view'],
+  rules: { 'business.sites.view': true },
+  overrides: { 'business.sites.view': true },
+  scope: { mode: 'all', siteIds: [] },
+  displayName: '  นาย อัปเดต ชื่อ  ',
+ });
+ assert.equal(payload.displayName, 'นาย อัปเดต ชื่อ');
+ assert.equal(payload.revision, 2);
+});
+
+test('Submitting EmployeeEditor sends updated displayName and patch payload', async () => {
+ const originalPatch = apiClient.patch;
+ let calledEndpoint = '';
+ let calledBody: any = null;
+ (apiClient as any).patch = async (endpoint: string, body?: unknown) => {
+  calledEndpoint = endpoint;
+  calledBody = body;
+  return { success: true, revision: 2, position: { id: 'p1', name: 'หัวหน้างาน' } } as any;
+ };
+
+ try {
+  const draft = (model as any).employeePositionDraft({
+   revision: 1,
+   choice: { kind: 'existing', id: 'p1' },
+   domain: 'business',
+   permissions: ['business.sites.view'],
+   rules: { 'business.sites.view': true },
+   overrides: { 'business.sites.view': true },
+   scope: { mode: 'selected', siteIds: ['s1'] },
+   displayName: 'สมชาย รักงานใหม่',
+  });
+
+  await apiClient.patch('/v1/team/employees/emp-1/business', draft);
+
+  assert.equal(calledEndpoint, '/v1/team/employees/emp-1/business');
+  assert.equal(calledBody.displayName, 'สมชาย รักงานใหม่');
+  assert.equal(calledBody.revision, 1);
+ } finally {
+  apiClient.patch = originalPatch;
+ }
+});
+
+test('DeactivateConfirmDialog renders impact summary and calls deactivate endpoint on confirm', async () => {
+ assert.equal(typeof (workspace as any).DeactivateConfirmDialog, 'function');
+ const employee = {
+  id: 'emp-10',
+  email: 'target@example.com',
+  displayName: 'เป้าหมาย การทดสอบ',
+  role: 'operator',
+  status: 'active',
+  revision: 3,
+  companyPositionId: null,
+  companyPosition: null,
+  grant: null,
+ };
+ const html = renderToStaticMarkup(
+  React.createElement((workspace as any).DeactivateConfirmDialog, {
+   employee,
+   impact: { activeSessions: 2, domains: [] },
+   onConfirm: async () => {},
+   onClose: () => {},
+   inline: true,
+  })
+ );
+ assert.match(html, /ยืนยันยกเลิกใช้งาน/);
+ assert.match(html, /เป้าหมาย การทดสอบ/);
+ assert.match(html, /2/);
+});
+
+test('CancelInviteConfirmDialog renders confirmation and calls deactivate endpoint on confirm', async () => {
+ assert.equal(typeof (workspace as any).CancelInviteConfirmDialog, 'function');
+ const employee = {
+  id: 'emp-11',
+  email: 'invited-user@example.com',
+  displayName: 'ผู้รับเชิญ ทดสอบ',
+  role: 'operator',
+  status: 'invited',
+  revision: 1,
+  companyPositionId: null,
+  companyPosition: null,
+  grant: null,
+ };
+ const html = renderToStaticMarkup(
+  React.createElement((workspace as any).CancelInviteConfirmDialog, {
+   employee,
+   onConfirm: async () => {},
+   onClose: () => {},
+   inline: true,
+  })
+ );
+ assert.match(html, /ยกเลิกคำเชิญ/);
+ assert.match(html, /ผู้รับเชิญ ทดสอบ/);
+ assert.match(html, /invited-user@example.com/);
+});
+
+test('StaffInvitation form has noValidate to allow cross-tab validation', () => {
+ const html = renderToStaticMarkup(
+  React.createElement((workspace as any).StaffInvitation, {
+   inline: true,
+   domain: 'business',
+   positions: [],
+   permissions: [],
+   sites: [],
+   onSaved: () => {},
+   onClose: () => {},
+  })
+ );
+ assert.match(html, /<form[^>]+noValidate/i);
+});
+
+
+
