@@ -111,7 +111,7 @@ SMTP readiness, Finance flags, Owner confirmation และ site readiness เ�
 | `INGEST_SHUTDOWN_TIMEOUT_MS` | `10000` | เวลารอ drain queue ตอน shutdown |
 | `API_READ_POOL_MAX` | `4` | จำนวน DB connections สูงสุดของ API read pool |
 | `INGEST_DB_POOL_MAX` | `2` | จำนวน DB connections สูงสุดของ ingestion pool |
-| `API_READ_STATEMENT_TIMEOUT_MS` | `1500` | statement timeout ของ API read query |
+| `API_READ_STATEMENT_TIMEOUT_MS` | `2500` | statement timeout ของ API read query |
 | `INGEST_DB_STATEMENT_TIMEOUT_MS` | `5000` | statement timeout ของ ingestion query |
 
 ค่าชุดนี้เป็น baseline สำหรับ pilot 2 vCPU / RAM 4 GiB เปลี่ยนเมื่อมีผล capacity test รองรับ

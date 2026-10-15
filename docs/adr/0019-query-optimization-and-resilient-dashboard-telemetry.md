@@ -1,6 +1,6 @@
 # ADR 0019: Query Optimization and Resilient Dashboard Telemetry
 
-Status: Accepted, 2026-10-15.
+Status: Accepted, 2026-10-15 (supersedes statement timeout SLA and query plan in ADR 0018).
 
 ## Context
 1. **Recurring Minified React Error #441 (Dashboard HTTP 500)**:
@@ -31,9 +31,9 @@ Status: Accepted, 2026-10-15.
    - Catch telemetry query failures in `generationEnergy` inside `DashboardService.getSummary` and `comparison` to return a safe `quality: 'preparing'` degradation.
    - Prevents total HTTP 500 crashes; the Dashboard renders navigation, map, site lists, financial insights, and billings, with `SummaryStatus` notifying the user that summaries are updating.
 
-4. **Friendly Error Boundary & Reload Action (`apps/web/app/(app)/error.tsx`)**:
+4. **Friendly Error Boundary (`apps/web/app/(app)/error.tsx`)**:
    - Intercept minified React error strings or `react.dev/errors` URLs and replace them with `t("errors.apiError")` (`"ไม่สามารถเชื่อมต่อกับระบบ API หรือฐานข้อมูลได้ กรุณาลองใหม่อีกครั้ง"`).
-   - Enhance the retry button to perform both `reset()` and window reload to ensure a fresh server render.
+   - Provide retry action via Next.js `reset()` to re-render the Server Component tree cleanly.
 
 ## Consequences
 - Dashboard loads reliably even on full-month 10-site queries.

@@ -31,6 +31,23 @@ const ENERGY_CTE = `WITH samples AS (
  AND previous IS NOT NULL AND total_energy_kwh >= previous
 )`;
 
+function deferredEnergyFallback(ids: string[], day: string, context: string, err: unknown) {
+  new Logger(DashboardService.name).warn(`${context} generation energy telemetry deferred due to error: ${err instanceof Error ? err.message : String(err)}`);
+  return {
+    rows: ids.map(site_id => ({
+      site_id,
+      day,
+      value: null,
+      observedValue: null,
+      quality: 'preparing' as const,
+      watermark: null,
+      refreshedAt: null,
+      reason: 'telemetry_processing_deferred'
+    })),
+    sourceFingerprints: new Map<string, string | null>()
+  };
+}
+
 @Injectable()
 export class DashboardService {
   constructor(@Inject(DatabaseService) private readonly db:DatabaseService, @Inject(EnergyReadService) private readonly energyRead:EnergyReadService = new EnergyReadService(db)) {}
@@ -151,22 +168,7 @@ return await this.db.query<{site_id:string;generation_kw:string|null;generation_
     const ids=sites.map(s=>s.id);
     const businessScope=siteScope(user,'business');const financialIds=user.role==='customer_user'||businessScope===null?ids:ids.filter(id=>businessScope.includes(id));
     const [energy,power,billing,alerts]=await Promise.all([
-      generationEnergy(this.db,ids,start,end).catch((err: Error) => {
-        new Logger(DashboardService.name).warn(`Generation energy telemetry deferred due to error: ${err.message}`);
-        return {
-          rows: ids.map(site_id => ({
-            site_id,
-            day: start,
-            value: null,
-            observedValue: null,
-            quality: 'preparing' as const,
-            watermark: null,
-            refreshedAt: null,
-            reason: 'telemetry_processing_deferred'
-          })),
-          sourceFingerprints: new Map<string, string | null>()
-        };
-      }),
+      generationEnergy(this.db,ids,start,end).catch((err: Error) => deferredEnergyFallback(ids, start, 'Summary', err)),
       this.generationPower(ids),
       (user.role!=='customer_user'&&!hasPermission(user,'business.billing.view') ? Promise.resolve({rows:[] as {site_id:string;day:string;amount:string;consumed_kwh:string;paid:boolean}[]}) : this.db.query<{site_id:string;day:string;amount:string;consumed_kwh:string;paid:boolean}>(`SELECT b.site_id,b.period_start::text AS day,b.amount::text,b.consumed_kwh::text,
         coalesce((SELECT sum(coalesce(p.verified_amount,p.amount)) FROM payments p WHERE p.billing_cycle_id=b.id AND p.status='paid'),0)>=b.amount paid
@@ -216,22 +218,7 @@ return await this.db.query<{site_id:string;generation_kw:string|null;generation_
     const scope=siteScope(user,'business');
     const financialIds=user.role==='customer_user'||hasPermission(user,'business.billing.view')?ids.filter(id=>user.role==='customer_user'||scope===null||scope.includes(id)):[];
     const [energy,contexts,bills]=await Promise.all([
-      generationEnergy(this.db,ids,start,end).catch((err: Error) => {
-        new Logger(DashboardService.name).warn(`Comparison generation energy deferred due to error: ${err.message}`);
-        return {
-          rows: ids.map(site_id => ({
-            site_id,
-            day: start,
-            value: null,
-            observedValue: null,
-            quality: 'preparing' as const,
-            watermark: null,
-            refreshedAt: null,
-            reason: 'telemetry_processing_deferred'
-          })),
-          sourceFingerprints: new Map<string, string | null>()
-        };
-      }),
+      generationEnergy(this.db,ids,start,end).catch((err: Error) => deferredEnergyFallback(ids, start, 'Comparison', err)),
       this.contexts(user,ids),
       financialIds.length?this.db.query<InsightBill>(`SELECT b.id,b.site_id AS "siteId",s.name AS "siteName",b.amount::text,
         coalesce(p.approved,0)::text AS approved,coalesce(p.pending,0)::int AS "pendingReview",to_char(b.due_date,'YYYY-MM-DD') AS "dueDate",to_char(b.period_start,'YYYY-MM-DD') AS "periodStart",b.status

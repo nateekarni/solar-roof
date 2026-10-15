@@ -45,12 +45,7 @@ export default function Error({
             </p>
           </div>
           <Button
-            onClick={() => {
-              reset();
-              if (typeof window !== "undefined") {
-                window.location.reload();
-              }
-            }}
+            onClick={() => reset()}
             className="mt-2 gap-2 text-xs font-semibold"
           >
             <RotateCcw className="size-3.5" />

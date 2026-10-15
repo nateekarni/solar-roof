@@ -91,31 +91,33 @@ export class MeController {
       }
     }
 
-    if (newDisplayName !== undefined && hasPositionUpdate) {
-      const result = await this.db.query<{ displayName: string }>(
-        `UPDATE users SET display_name = $1, company_position_id = $2, updated_at = NOW() WHERE id = $3 RETURNING display_name AS "displayName"`,
-        [newDisplayName, newCompanyPositionId, userId],
-      );
-      const row = result.rows[0];
-      if (!row) throw new UnauthorizedException("User not found");
-      return { displayName: row.displayName, companyPosition: newCompanyPositionName };
-    } else if (newDisplayName !== undefined) {
-      const result = await this.db.query<{ displayName: string }>(
-        `UPDATE users SET display_name = $1, updated_at = NOW() WHERE id = $2 RETURNING display_name AS "displayName"`,
-        [newDisplayName, userId],
-      );
-      const row = result.rows[0];
-      if (!row) throw new UnauthorizedException("User not found");
-      return { displayName: row.displayName };
-    } else if (hasPositionUpdate) {
-      const result = await this.db.query<{ displayName: string }>(
-        `UPDATE users SET company_position_id = $1, updated_at = NOW() WHERE id = $2 RETURNING display_name AS "displayName"`,
-        [newCompanyPositionId, userId],
-      );
-      const row = result.rows[0];
-      if (!row) throw new UnauthorizedException("User not found");
-      return { displayName: row.displayName, companyPosition: newCompanyPositionName };
+    const updates: string[] = [];
+    const values: unknown[] = [];
+
+    if (newDisplayName !== undefined) {
+      values.push(newDisplayName);
+      updates.push(`display_name = $${values.length}`);
     }
+
+    if (hasPositionUpdate) {
+      values.push(newCompanyPositionId);
+      updates.push(`company_position_id = $${values.length}`);
+    }
+
+    updates.push("updated_at = NOW()");
+    values.push(userId);
+
+    const result = await this.db.query<{ displayName: string }>(
+      `UPDATE users SET ${updates.join(", ")} WHERE id = $${values.length} RETURNING display_name AS "displayName"`,
+      values,
+    );
+    const row = result.rows[0];
+    if (!row) throw new UnauthorizedException("User not found");
+
+    return {
+      displayName: row.displayName,
+      ...(hasPositionUpdate ? { companyPosition: newCompanyPositionName } : {}),
+    };
   }
 
   @Get("profile")

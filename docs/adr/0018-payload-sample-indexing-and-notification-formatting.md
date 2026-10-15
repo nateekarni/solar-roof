@@ -1,6 +1,7 @@
 # ADR 0018: Payload Sample Indexing and Notification Formatting
 
 Status: Accepted, 2026-10-15.
+*(Note: Query plan optimization and timeout ceiling were subsequently updated in [ADR 0019](0019-query-optimization-and-resilient-dashboard-telemetry.md) which supersedes the 1,500 ms SLA with an optimized query plan and 2,500 ms default statement timeout).*
 
 ## Context
 1. **Dashboard Query Timeout**:
