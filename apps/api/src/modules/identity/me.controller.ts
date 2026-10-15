@@ -92,26 +92,29 @@ export class MeController {
     }
 
     if (newDisplayName !== undefined && hasPositionUpdate) {
-      const result = await this.db.query(
+      const result = await this.db.query<{ displayName: string }>(
         `UPDATE users SET display_name = $1, company_position_id = $2, updated_at = NOW() WHERE id = $3 RETURNING display_name AS "displayName"`,
         [newDisplayName, newCompanyPositionId, userId],
       );
-      if (!result.rows.length) throw new UnauthorizedException("User not found");
-      return { displayName: result.rows[0].displayName, companyPosition: newCompanyPositionName };
+      const row = result.rows[0];
+      if (!row) throw new UnauthorizedException("User not found");
+      return { displayName: row.displayName, companyPosition: newCompanyPositionName };
     } else if (newDisplayName !== undefined) {
-      const result = await this.db.query(
+      const result = await this.db.query<{ displayName: string }>(
         `UPDATE users SET display_name = $1, updated_at = NOW() WHERE id = $2 RETURNING display_name AS "displayName"`,
         [newDisplayName, userId],
       );
-      if (!result.rows.length) throw new UnauthorizedException("User not found");
-      return { displayName: result.rows[0].displayName };
+      const row = result.rows[0];
+      if (!row) throw new UnauthorizedException("User not found");
+      return { displayName: row.displayName };
     } else if (hasPositionUpdate) {
-      const result = await this.db.query(
+      const result = await this.db.query<{ displayName: string }>(
         `UPDATE users SET company_position_id = $1, updated_at = NOW() WHERE id = $2 RETURNING display_name AS "displayName"`,
         [newCompanyPositionId, userId],
       );
-      if (!result.rows.length) throw new UnauthorizedException("User not found");
-      return { displayName: result.rows[0].displayName, companyPosition: newCompanyPositionName };
+      const row = result.rows[0];
+      if (!row) throw new UnauthorizedException("User not found");
+      return { displayName: row.displayName, companyPosition: newCompanyPositionName };
     }
   }
 
