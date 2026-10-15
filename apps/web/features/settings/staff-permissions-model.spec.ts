@@ -38,3 +38,49 @@ test('an inherited employee follows a preset while allow and deny remain explici
 test('a domain save excludes rules managed by the other domain',()=>{assert.deepEqual(domainOverrides('business',{'business.sites.view':true,'technical.gateways.view':false}),{'business.sites.view':true});});
 
 test('position filters distinguish assigned and unused presets while combining search',()=>{const positions=[{id:'p',name:'Engineer'},{id:'q',name:'Engineer lead'}];const employees=[{grant:{positionId:'p'}},{grant:null}];assert.deepEqual(filterPositions(positions,employees,'ENGINEER','assigned'),[positions[0]]);assert.deepEqual(filterPositions(positions,employees,'lead','unused'),[positions[1]]);});
+
+test('RESOURCE_VALID_ACTIONS contains valid actions for business and technical resources',()=>{
+ assert.deepEqual(model.RESOURCE_VALID_ACTIONS.dashboard,['view']);
+ assert.deepEqual(model.RESOURCE_VALID_ACTIONS.billing,['view','edit','approve','download']);
+ assert.deepEqual(model.RESOURCE_VALID_ACTIONS.gateways,['view','edit']);
+ assert.deepEqual(model.RESOURCE_VALID_ACTIONS.audit,['view','download']);
+ assert.equal(model.isActionValidForResource('dashboard','view'),true);
+ assert.equal(model.isActionValidForResource('dashboard','edit'),false);
+ assert.equal(model.isActionValidForResource('billing','approve'),true);
+});
+
+test('applyPositionPreset copies position rules to concrete booleans for all domain permissions',()=>{
+ const permissions=['business.billing.view','business.billing.approve','business.billing.edit'];
+ const presetRules={'business.billing.view':true};
+ const result=model.applyPositionPreset('business',permissions,presetRules);
+ assert.deepEqual(result,{
+  'business.billing.view':true,
+  'business.billing.approve':false,
+  'business.billing.edit':false,
+ });
+});
+
+test('positionRulesChanged detects changes in active grants and ignores omitted vs false',()=>{
+ assert.equal(model.positionRulesChanged({},{}),false);
+ assert.equal(model.positionRulesChanged({},{'business.billing.view':true}),true);
+ assert.equal(model.positionRulesChanged({},{'business.billing.view':false}),false);
+ assert.equal(model.positionRulesChanged({'business.billing.view':true},{'business.billing.view':true}),false);
+ assert.equal(model.positionRulesChanged({'business.billing.view':true},{'business.billing.view':false}),true);
+ assert.equal(model.positionRulesChanged({'business.billing.view':true},{'business.billing.view':true,'business.billing.edit':false}),false);
+});
+
+test('staffStatusLabel maps lifecycle states to localized Thai and English labels',()=>{
+ assert.equal(model.staffStatusLabel('active','th'),'ใช้งาน');
+ assert.equal(model.staffStatusLabel('active','en'),'Active');
+ assert.equal(model.staffStatusLabel('inactive','th'),'ยกเลิกแล้ว');
+ assert.equal(model.staffStatusLabel('inactive','en'),'Inactive');
+ assert.equal(model.staffStatusLabel('pending','th'),'รอยืนยัน');
+ assert.equal(model.staffStatusLabel('pending','en'),'Pending');
+ assert.equal(model.staffStatusLabel('invited','th'),'เชิญแล้ว');
+ assert.equal(model.staffStatusLabel('invited','en'),'Invited');
+ assert.equal(model.staffStatusLabel('cancelled','th'),'ยกเลิกแล้ว');
+ assert.equal(model.staffStatusLabel('cancelled','en'),'Cancelled');
+ assert.equal(model.staffStatusLabel('expired','th'),'คำเชิญหมดอายุ');
+ assert.equal(model.staffStatusLabel('expired','en'),'Expired');
+});
+

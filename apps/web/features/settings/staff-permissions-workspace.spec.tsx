@@ -27,10 +27,14 @@ test('invitation dismissal blocks in-flight requests and honors unsaved-work con
 test('staff status labels localize every employee lifecycle state',()=>{
  assert.equal(typeof model.staffStatusLabel,'function');
  assert.equal(model.staffStatusLabel('active','th'),'ใช้งาน');
- assert.equal(model.staffStatusLabel('inactive','th'),'ปิดใช้งาน');
+ assert.equal(model.staffStatusLabel('inactive','th'),'ยกเลิกแล้ว');
  assert.equal(model.staffStatusLabel('pending','th'),'รอยืนยัน');
  assert.equal(model.staffStatusLabel('invited','th'),'เชิญแล้ว');
+ assert.equal(model.staffStatusLabel('cancelled','th'),'ยกเลิกแล้ว');
+ assert.equal(model.staffStatusLabel('expired','th'),'คำเชิญหมดอายุ');
  assert.equal(model.staffStatusLabel('inactive','en'),'Inactive');
+ assert.equal(model.staffStatusLabel('cancelled','en'),'Cancelled');
+ assert.equal(model.staffStatusLabel('expired','en'),'Expired');
  assert.equal(model.staffStatusLabel('new-status','en'),'new-status');
 });
 

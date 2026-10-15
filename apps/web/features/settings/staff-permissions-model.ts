@@ -29,6 +29,65 @@ export function staffDraftChanged(initial:StaffDraft,current:StaffDraft):boolean
  return normalize(initial)!==normalize(current);
 }
 
+export function positionRulesChanged(initial:Record<string,RuleValue>,current:Record<string,RuleValue>):boolean{
+ const allKeys=new Set([...Object.keys(initial),...Object.keys(current)]);
+ for(const key of allKeys){
+  if((initial[key]===true)!==(current[key]===true))return true;
+ }
+ return false;
+}
+
 export function canDismissStaffDialog(busy:boolean,dirty:boolean,confirmDiscard:()=>boolean):boolean{return !busy&&(!dirty||confirmDiscard());}
 
-export function staffStatusLabel(status:string,locale:string):string{const labels:Record<string,readonly [string,string]>={active:['ใช้งาน','Active'],inactive:['ปิดใช้งาน','Inactive'],pending:['รอยืนยัน','Pending'],invited:['เชิญแล้ว','Invited']};return labels[status]?.[locale==='th'?0:1]??status;}
+export function staffStatusLabel(status:string,locale:string):string{
+ const labels:Record<string,readonly [string,string]>={
+  active:['ใช้งาน','Active'],
+  inactive:['ยกเลิกแล้ว','Inactive'],
+  pending:['รอยืนยัน','Pending'],
+  invited:['เชิญแล้ว','Invited'],
+  cancelled:['ยกเลิกแล้ว','Cancelled'],
+  expired:['คำเชิญหมดอายุ','Expired'],
+ };
+ return labels[status]?.[locale==='th'?0:1]??status;
+}
+
+export const RESOURCE_VALID_ACTIONS: Record<string, readonly ('view' | 'edit' | 'approve' | 'download')[]> = {
+  // Business domain
+  dashboard: ['view'],
+  sites: ['view', 'edit'],
+  customers: ['view', 'edit'],
+  billing: ['view', 'edit', 'approve', 'download'],
+  receipts: ['view', 'edit', 'approve', 'download'],
+  documents: ['view', 'edit', 'download'],
+  tariffs: ['view', 'edit'],
+  settings: ['view', 'edit'],
+  audit: ['view', 'download'],
+
+  // Technical domain
+  gateways: ['view', 'edit'],
+  devices: ['view', 'edit'],
+  fields: ['view', 'edit'],
+  profiles: ['view', 'edit'],
+  registers: ['view', 'edit'],
+  reception: ['view', 'edit'],
+  brokers: ['view', 'edit'],
+  alerts: ['view', 'edit'],
+  telemetry: ['view', 'download'],
+};
+
+export function isActionValidForResource(resource: string, action: string): boolean {
+  const actions = RESOURCE_VALID_ACTIONS[resource];
+  return actions ? actions.includes(action as ('view' | 'edit' | 'approve' | 'download')) : false;
+}
+
+export function applyPositionPreset(
+  domain: string,
+  permissions: readonly string[],
+  presetRules: Record<string, RuleValue>
+): Record<string, boolean> {
+  const result: Record<string, boolean> = {};
+  for (const p of permissions.filter((perm) => perm.startsWith(domain + '.'))) {
+    result[p] = presetRules[p] === true;
+  }
+  return result;
+}
