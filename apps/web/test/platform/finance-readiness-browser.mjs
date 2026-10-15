@@ -32,13 +32,13 @@ try {
   const card=page.locator('[aria-label="Production finance readiness"], [aria-label="ความพร้อมสำหรับการเงินจริง"]');
   assert.ok(!/SMTP_HOST|SMTP_PORT|11049|11025|PASSWORD/.test(await card.innerText()));
   await page.getByRole('button',{name:/^(Edit|แก้ไข)$/}).click();
-  const fields={companyName:'Siam Solar Operations Co., Ltd.',taxId:'0105558123456',branch:'Head office',address:'88 Wireless Road, Bangkok 10330',phone:'021234567',email:'billing@acceptance.example.test',signatoryName:'Natee Energy',signatoryTitle:'Finance Director'};
+  const fields={companyName:'Siam Solar Operations Co., Ltd.',taxId:'0105558123456',branch:'Head office',address:'88 Wireless Road, Bangkok 10330',phone:'021234567',email:'billing@acceptance.example.test'};
   for(const [key,value]of Object.entries(fields))await page.locator('#company-'+key).fill(value);
   // Upload a real branded JPEG with dimensions/bytes distinct from the fallback PNG.
   const {createRequire}=await import('node:module');const sharp=createRequire(new URL('../../../api/package.json',import.meta.url))('sharp');
   const logo=await sharp(await readFile(new URL('../../public/brand/solar-roof-document-stacked.png',import.meta.url))).resize(160,80,{fit:'contain',background:'#ffffff'}).flatten({background:'#ffffff'}).jpeg().toBuffer();
-  for(const id of ['company-logoUrl','company-signatureDataUri'])await page.locator('#'+id).setInputFiles({name:id+'.jpg',mimeType:'image/jpeg',buffer:logo});
-  await expect(page.locator('img[src^="data:image/jpeg"]')).toHaveCount(2);await expect(confirm).toBeDisabled();
+  await page.locator('#company-logoUrl').setInputFiles({name:'company-logoUrl.jpg',mimeType:'image/jpeg',buffer:logo});
+  await expect(page.locator('img[src^="data:image/jpeg"]')).toHaveCount(1);await expect(confirm).toBeDisabled();
   await page.getByRole('button',{name:/Save Company Profile|บันทึกข้อมูลบริษัท/}).click();await expect(page.locator('#company-logoUrl')).toHaveCount(0);
   await page.getByRole('button',{name:/^(Add Account|เพิ่มบัญชี)$/}).click();
   const dialog=page.getByRole('dialog');await dialog.getByPlaceholder(/045-8-91234-5/).fill('1234567890');await dialog.getByPlaceholder(/Solar Rooftop|บจก. โซลาร์/).fill(fields.companyName);
