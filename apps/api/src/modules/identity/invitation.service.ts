@@ -5,6 +5,7 @@ import nodemailer from 'nodemailer';
 import {DatabaseService} from '../../database/database.service.js';
 import {AuthService} from './auth.service.js';
 import {customerScope, type ScopePrincipal} from '../../common/auth/route-policy.js';
+import {validateDomainRules, validateScope} from '../../common/auth/authorization.js';
 export type InvitationStatus='pending_delivery'|'sent'|'delivery_failed';
 export interface InviteInput {
   email: string;
@@ -75,20 +76,29 @@ export class InvitationService {
         )).rows[0];
         companyPositionId = position?.id ?? null;
       }
-      const existing=(await client.query('SELECT id,role FROM users WHERE email=$1 FOR UPDATE',[email])).rows[0];
-      if(existing&&['operator','accountant'].includes(role)&&['operator','accountant'].includes(existing.role)){
-        existingUserId=existing.id;
-        if(companyPositionId){
-          await client.query('UPDATE users SET company_position_id=COALESCE(company_position_id,$2) WHERE id=$1',[existing.id,companyPositionId]);
+      const domain = current.role === 'owner' ? 'business' : 'technical';
+      let overridesMap: Record<string, boolean | null> | undefined;
+      if (input.permissions !== undefined || input.overrides !== undefined) {
+        overridesMap = validateDomainRules(domain, input.permissions ?? input.overrides);
+      }
+      let validatedScope: { mode: 'all' | 'selected'; siteIds: string[] } | undefined;
+      if (input.scope !== undefined) {
+        validatedScope = validateScope(input.scope);
+        if (validatedScope.siteIds.length > 0) {
+          const sites = await client.query('SELECT id FROM sites WHERE id=ANY($1::uuid[]) FOR SHARE', [validatedScope.siteIds]);
+          if (sites.rows.length !== validatedScope.siteIds.length) throw new BadRequestException('Unknown site scope');
         }
-        const domain = current.role === 'owner' ? 'business' : 'technical';
-        const hasPermissions = input.permissions !== undefined || input.overrides !== undefined;
-        const hasScope = input.scope !== undefined;
-        const hasCustomGrants = hasPermissions || hasScope;
+      }
+      const existing=(await client.query('SELECT id,role,status,password_hash FROM users WHERE email=$1 FOR UPDATE',[email])).rows[0];
+      if(existing&&['operator','accountant'].includes(role)&&['operator','accountant'].includes(existing.role)){
+        if(companyPositionId){
+          await client.query('UPDATE users SET company_position_id=$2 WHERE id=$1',[existing.id,companyPositionId]);
+        }
+        const hasCustomGrants = overridesMap !== undefined || validatedScope !== undefined;
         if(hasCustomGrants) {
-          const overrides = JSON.stringify(input.permissions ?? input.overrides ?? {});
-          const scopeMode = input.scope?.mode ?? 'selected';
-          const siteIds = scopeMode === 'all' ? [] : (input.scope?.siteIds ?? []);
+          const overrides = JSON.stringify(overridesMap ?? {});
+          const scopeMode = validatedScope?.mode ?? 'selected';
+          const siteIds = scopeMode === 'all' ? [] : (validatedScope?.siteIds ?? []);
           await client.query(
             `INSERT INTO employee_domain_grants(user_id,domain,position_id,overrides,scope_mode,site_ids,updated_by)
              VALUES($1,$2,$3,$4::jsonb,$5,$6::uuid[],$7)
@@ -99,7 +109,7 @@ export class InvitationService {
                site_ids=CASE WHEN $9 THEN excluded.site_ids ELSE employee_domain_grants.site_ids END,
                updated_by=excluded.updated_by,
                updated_at=now()`,
-            [existing.id, domain, companyPositionId, overrides, scopeMode, siteIds, actor.id, hasPermissions, hasScope]
+            [existing.id, domain, companyPositionId, overrides, scopeMode, siteIds, actor.id, overridesMap !== undefined, validatedScope !== undefined]
           );
         } else {
           await client.query(
@@ -113,6 +123,17 @@ export class InvitationService {
           );
         }
         await client.query('UPDATE users SET permission_revision=permission_revision+1, updated_at=now() WHERE id=$1',[existing.id]);
+        if(existing.password_hash !== null) {
+          existingUserId=existing.id;
+          return;
+        }
+        // Account has no password (e.g. invite was cancelled or expired): re-issue fresh invitation!
+        await client.query("UPDATE users SET status='invited', display_name=$2, updated_at=now() WHERE id=$1", [existing.id, displayName]);
+        await client.query("UPDATE user_invitations SET revoked_at=now(), consumed_at=now() WHERE user_id=$1 AND consumed_at IS NULL AND revoked_at IS NULL", [existing.id]);
+        await client.query(`INSERT INTO user_invitations(id,user_id,issuer_id,email,role,customer_id,token_hash,expires_at,delivery_status)
+          VALUES($1,$2,$3,$4,$5,$6,$7,now()+interval '24 hours','pending_delivery')`,[invitationId,existing.id,actor.id,email,role,customerId,digest(token)]);
+        await client.query("INSERT INTO audit_events(id,actor_id,action,entity_type,entity_id,correlation_id,occurred_at) VALUES($1,$2,'user.reinvited','user',$3,$4,now())",[randomUUID(),actor.id,existing.id,invitationId]);
+        userId = existing.id;
         return;
       }
       if(customerId&&!(await client.query('SELECT id FROM customers WHERE id=$1',[customerId])).rows[0])throw new BadRequestException('Customer not found');
@@ -121,10 +142,9 @@ export class InvitationService {
         VALUES($1,$2,$3,$4,'invited',$5,NULL,$6) ON CONFLICT(email) DO NOTHING RETURNING id`,[userId,email,displayName,role,customerId,companyPositionId]);
       if(!inserted.rows[0])throw new ConflictException('User already exists; use resend for an outstanding invitation');
       if(role!=='customer_user') {
-        const domain = current.role === 'owner' ? 'business' : 'technical';
-        const overrides = JSON.stringify(input.permissions ?? input.overrides ?? {});
-        const scopeMode = input.scope?.mode ?? 'selected';
-        const siteIds = scopeMode === 'all' ? [] : (input.scope?.siteIds ?? []);
+        const overrides = JSON.stringify(overridesMap ?? {});
+        const scopeMode = validatedScope?.mode ?? 'selected';
+        const siteIds = scopeMode === 'all' ? [] : (validatedScope?.siteIds ?? []);
         await client.query(
           `INSERT INTO employee_domain_grants(user_id,domain,position_id,overrides,scope_mode,site_ids,updated_by)
            VALUES($1,$2,$3,$4::jsonb,$5,$6::uuid[],$7)

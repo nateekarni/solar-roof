@@ -19,8 +19,11 @@ function inviteFixture(options: { existingUser?: { id: string; role: string }; a
       if (sql.includes('INSERT INTO employee_positions')) {
         return { rows: [{ id: '00000000-0000-0000-0000-000000000010', name: values[1] }] };
       }
-      if (sql.includes('SELECT id,role FROM users WHERE email=$1')) {
-        return { rows: options.existingUser ? [options.existingUser] : [] };
+      if (sql.includes('FROM users WHERE email=$1')) {
+        return { rows: options.existingUser ? [{ ...options.existingUser, password_hash: 'hashed', status: 'active' }] : [] };
+      }
+      if (sql.includes('SELECT id FROM sites WHERE id=ANY')) {
+        return { rows: [{ id: values[0][0] }] };
       }
       if (sql.includes('INSERT INTO invitation_rate_limits')) {
         return { rows: [{ attempts: 1, window_started_at: 'now' }] };

@@ -67,11 +67,12 @@ export function FreeformPositionCombobox({
   const effectivePlaceholder = placeholder ?? (th ? 'ค้นหาหรือพิมพ์ตำแหน่ง…' : 'Search or type a position…');
 
   const term = (value || '').trim().normalize('NFC').toLocaleLowerCase();
-  const matching = term
+  const filtered = term
     ? positions.filter((pos) =>
         pos.name.trim().normalize('NFC').toLocaleLowerCase().includes(term)
       )
     : positions;
+  const matching = filtered.length > 0 ? filtered : positions;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>

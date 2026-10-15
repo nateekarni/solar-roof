@@ -28,7 +28,17 @@ export class TeamService {
  catalog(actor:TeamActor,rawDomain:unknown){const domain=domainFor(actor,rawDomain);return {domain,permissions:PERMISSION_CATALOG.filter(key=>key.startsWith(`${domain}.`))};}
  async employees(actor:TeamActor,rawDomain:unknown){
   const domain=domainFor(actor,rawDomain);
-  const result=await this.db.query(`SELECT u.id,u.email,u.display_name AS "displayName",u.avatar_data AS "avatarData",u.role,u.status,u.permission_revision AS revision,
+  const result=await this.db.query(`SELECT u.id,u.email,u.display_name AS "displayName",u.avatar_data AS "avatarData",u.role,
+   CASE
+     WHEN u.status = 'inactive' AND u.password_hash IS NULL THEN 'cancelled'
+     WHEN u.status = 'inactive' THEN 'inactive'
+     WHEN u.status = 'invited' AND EXISTS (
+       SELECT 1 FROM user_invitations ui WHERE ui.user_id = u.id AND ui.expires_at < now() AND ui.consumed_at IS NULL AND ui.revoked_at IS NULL
+     ) THEN 'expired'
+     ELSE u.status
+   END AS status,
+   (u.password_hash IS NOT NULL) AS "hasPassword",
+   u.permission_revision AS revision,
    u.company_position_id AS "companyPositionId",p.name AS "companyPosition",
    CASE WHEN g.user_id IS NULL THEN NULL ELSE jsonb_build_object('positionId',g.position_id,'overrides',g.overrides,'scope',jsonb_build_object('mode',g.scope_mode,'siteIds',g.site_ids)) END AS grant
    FROM users u LEFT JOIN employee_domain_grants g ON g.user_id=u.id AND g.domain=$1
@@ -70,16 +80,23 @@ export class TeamService {
   return {id:position.id as string,name:position.name as string,reused:!inserted};
  }
  async updateGrant(actor:TeamActor,userId:string,rawDomain:unknown,input:unknown):Promise<TeamGrantResult>{
-  const domain=domainFor(actor,rawDomain),body=object(input,['revision','position','overrides','scope','displayName']);
+  const domain=domainFor(actor,rawDomain),body=object(input,['revision','position','overrides','scope','displayName','companyPosition']);
   const expected=revision(body.revision),overrides=validateDomainRules(domain,body.overrides),scope=validateScope(body.scope);
-  const draft=object(body.position,['id','name','rules']);
   let selectedId:string|undefined,positionName:string|undefined,presetRules:Record<string,boolean|null>|undefined;
-  if(Object.hasOwn(draft,'id')){
-   if(Object.keys(draft).length!==1)throw new BadRequestException('Select a position or create a named preset');
-   selectedId=uuid(draft.id);
+  if(body.position){
+   const draft=object(body.position,['id','name','rules']);
+   if(Object.hasOwn(draft,'id')){
+    if(Object.keys(draft).length!==1)throw new BadRequestException('Select a position or create a named preset');
+    selectedId=uuid(draft.id);
+   }else{
+    if(typeof draft.name!=='string'||!draft.name.trim()||draft.name.trim().length>120)throw new BadRequestException('Position name required');
+    positionName=draft.name.trim().normalize('NFC');
+    presetRules=validateDomainRules(domain,draft.rules);
+   }
+  }else if(typeof body.companyPosition==='string'&&body.companyPosition.trim()){
+   positionName=body.companyPosition.trim().normalize('NFC').slice(0, 120);
   }else{
-   if(typeof draft.name!=='string'||!draft.name.trim()||draft.name.trim().length>120)throw new BadRequestException('Position name required');
-   positionName=draft.name.trim().normalize('NFC');presetRules=validateDomainRules(domain,draft.rules);
+   throw new BadRequestException('Select a position or create a named preset');
   }
   return this.db.transaction(async client=>{
    const user=await this.authorizeCurrent(client,actor,domain,{userId});
@@ -88,24 +105,34 @@ export class TeamService {
    if(!employee&&user.role!==(domain==='business'?'owner':'admin'))throw new ForbiddenException('Only employees and this domain manager may receive a company position');
    if(user.permission_revision!==expected)throw new ConflictException({code:'EMPLOYEE_REVISION_CONFLICT',message:'Permissions changed; reload before saving'});
    if(scope.siteIds.length){const sites=await client.query('SELECT id FROM sites WHERE id=ANY($1::uuid[]) FOR SHARE',[scope.siteIds]);if(sites.rows.length!==scope.siteIds.length)throw new BadRequestException('Unknown site scope');}
-   let positionId=selectedId!,positionReused=false;
-   let name:string;
+   let positionId:string|null=selectedId??null,domainPresetId:string|null=selectedId??null,positionReused=false;
+   let name:string='';
    if(selectedId){
-    const preset=(await client.query('SELECT p.name FROM employee_positions p JOIN employee_position_domains d ON d.position_id=p.id AND d.domain=$2 WHERE p.id=$1 FOR SHARE',[positionId,domain])).rows[0];
+    const preset=(await client.query('SELECT p.name FROM employee_positions p JOIN employee_position_domains d ON d.position_id=p.id AND d.domain=$2 WHERE p.id=$1 FOR SHARE',[selectedId,domain])).rows[0];
     if(!preset)throw new BadRequestException('Position has no permission preset in this domain');
     name=preset.name;
-   }else{
-    const created=await this.createPosition(client,domain,positionName!,presetRules!);positionId=created.id;name=created.name;positionReused=created.reused;
+   }else if(positionName){
+    if(presetRules){
+     const created=await this.createPosition(client,domain,positionName!,presetRules!);positionId=created.id;domainPresetId=created.id;name=created.name;positionReused=created.reused;
+    }else{
+     const inserted=(await client.query('INSERT INTO employee_positions(id,name) VALUES($1,$2) ON CONFLICT (employee_position_name_key(name)) DO NOTHING RETURNING id,name',[randomUUID(),positionName])).rows[0];
+     const pos=inserted??(await client.query('SELECT id,name FROM employee_positions WHERE employee_position_name_key(name)=employee_position_name_key($1) FOR SHARE',[positionName])).rows[0];
+     positionId=pos?.id??null;name=pos?.name??positionName;
+    }
    }
    if(typeof body.displayName==='string'&&body.displayName.trim()){
     await client.query('UPDATE users SET display_name=$2,updated_at=now() WHERE id=$1',[userId,body.displayName.trim().slice(0, 200)]);
    }
-   await client.query('UPDATE users SET company_position_id=$2,updated_at=now() WHERE id=$1',[userId,positionId]);
+   if(positionId){
+    await client.query('UPDATE users SET company_position_id=$2,updated_at=now() WHERE id=$1',[userId,positionId]);
+   }
    // Manager authority remains role-derived; presets and overrides apply only to employees.
-   if(employee)await client.query(`INSERT INTO employee_domain_grants(user_id,domain,position_id,overrides,scope_mode,site_ids,updated_by)
-    VALUES($1,$2,$3,$4::jsonb,$5,$6::uuid[],$7) ON CONFLICT(user_id,domain) DO UPDATE SET position_id=excluded.position_id,overrides=excluded.overrides,scope_mode=excluded.scope_mode,site_ids=excluded.site_ids,updated_by=excluded.updated_by,updated_at=now()`,[userId,domain,positionId,JSON.stringify(overrides),scope.mode,scope.siteIds,actor.id]);
+   if(employee){
+    await client.query(`INSERT INTO employee_domain_grants(user_id,domain,position_id,overrides,scope_mode,site_ids,updated_by)
+     VALUES($1,$2,$3,$4::jsonb,$5,$6::uuid[],$7) ON CONFLICT(user_id,domain) DO UPDATE SET position_id=COALESCE(excluded.position_id, employee_domain_grants.position_id),overrides=excluded.overrides,scope_mode=excluded.scope_mode,site_ids=excluded.site_ids,updated_by=excluded.updated_by,updated_at=now()`,[userId,domain,domainPresetId,JSON.stringify(overrides),scope.mode,scope.siteIds,actor.id]);
+   }
    await client.query('UPDATE users SET permission_revision=permission_revision+1,updated_at=now() WHERE id=$1',[userId]);
-   const position={id:positionId,name};
+   const position={id:positionId||user.company_position_id,name};
    await this.audit(client,actor,domain,userId,'permissions.updated',{position});
    return {success:true,revision:expected+1,position,...(positionReused?{positionReused:true as const}:{})};
   });
@@ -176,13 +203,20 @@ export class TeamService {
    await this.audit(client,actor,domain,userId,'employee.deactivated');return {success:true,revision:expected+1};
   });
  }
- async reactivate(actor:TeamActor,userId:string,_input?:unknown){
+ async reactivate(actor:TeamActor,userId:string,input?:unknown){
   if(!['owner','admin'].includes(actor.role))throw new ForbiddenException('Only managers may reactivate employee accounts');
   const domain:PermissionDomain=actor.role==='owner'?'business':'technical';
+  const body = input && typeof input === 'object' ? input as Record<string, any> : {};
   return this.db.transaction(async client=>{
    const user=await this.authorizeCurrent(client,actor,domain,{userId});
    if(!user)throw new NotFoundException('Employee not found');
    if(!['operator','accountant'].includes(user.role))throw new ForbiddenException('Only employee accounts can be reactivated');
+   const uRow = (await client.query('SELECT status, password_hash FROM users WHERE id=$1', [userId])).rows[0];
+   if(uRow?.password_hash === null)throw new BadRequestException('Cannot reactivate an account without a password; send an invitation instead');
+   if(uRow?.status === 'active')throw new BadRequestException('Employee is already active');
+   if(body.revision !== undefined && user.permission_revision !== revision(body.revision)) {
+     throw new ConflictException({code:'EMPLOYEE_REVISION_CONFLICT',message:'Permissions changed; reload before saving'});
+   }
    await client.query("UPDATE users SET status='active',permission_revision=permission_revision+1,updated_at=now() WHERE id=$1",[userId]);
    await this.audit(client,actor,domain,userId,'employee.reactivated');return {success:true,revision:user.permission_revision+1};
   });

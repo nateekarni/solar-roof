@@ -10,12 +10,19 @@ export function positionOptions(query:string,positions:readonly {id:string;name:
 export function employeePositionLabel(employee:{companyPosition?:string|null;grant:{positionId:string|null}|null},positions:readonly {id:string;name:string}[]):string{
  return employee.companyPosition||positions.find(position=>position.id===employee.grant?.positionId)?.name||'—';
 }
-export function employeePositionDraft({revision,choice,domain,permissions,rules,overrides,scope,permissionsConfigured=false,builtInManager=false,displayName}:{revision:number;choice:PositionChoice|null;domain:string;permissions:string[];rules:Record<string,RuleValue>;overrides:Record<string,RuleValue>;scope:{mode:'all'|'selected';siteIds:string[]};permissionsConfigured?:boolean;builtInManager?:boolean;displayName?:string}){
- if(!choice)throw new Error('Position required');
- if(choice.kind==='new'&&(!choice.name.trim()||choice.name.trim().length>120))throw new Error('Position name required');
- if(choice.kind==='new'&&!permissionsConfigured&&!builtInManager)throw new Error('Configure position permissions');
+export function employeePositionDraft({revision,choice,domain,permissions,rules,overrides,scope,permissionsConfigured=false,builtInManager=false,displayName,companyPosition}:{revision:number;choice:PositionChoice|null;domain:string;permissions:string[];rules:Record<string,RuleValue>;overrides:Record<string,RuleValue>;scope:{mode:'all'|'selected';siteIds:string[]};permissionsConfigured?:boolean;builtInManager?:boolean;displayName?:string;companyPosition?:string}){
+ if(!choice&&!companyPosition)throw new Error('Position required');
+ if(choice?.kind==='new'&&(!choice.name.trim()||choice.name.trim().length>120))throw new Error('Position name required');
+ if(choice?.kind==='new'&&!permissionsConfigured&&!builtInManager&&!companyPosition)throw new Error('Configure position permissions');
  const domainRules=Object.fromEntries(permissions.filter(permission=>permission.startsWith(domain+'.')).map(permission=>[permission,effectiveRule(permission,rules,overrides)]));
- return {revision,position:choice.kind==='existing'?{id:choice.id}:{name:choice.name.trim(),rules:builtInManager?{}:domainRules},overrides:builtInManager?{}:domainOverrides(domain,overrides),scope:builtInManager?{mode:'all' as const,siteIds:[]}:{...scope,siteIds:scope.mode==='all'?[]:scope.siteIds},...(displayName!==undefined?{displayName:displayName.trim()}:{})};
+ return {
+  revision,
+  ...(choice?.kind==='existing'?{position:{id:choice.id}}:{}),
+  ...(companyPosition?{companyPosition:companyPosition.trim()}:choice?.kind==='new'?{position:{name:choice.name.trim(),rules:builtInManager?{}:domainRules}}:{}),
+  overrides:builtInManager?{}:domainOverrides(domain,overrides),
+  scope:builtInManager?{mode:'all' as const,siteIds:[]}:{...scope,siteIds:scope.mode==='all'?[]:scope.siteIds},
+  ...(displayName!==undefined?{displayName:displayName.trim()}:{})
+ };
 }
 export function filterEmployees<T extends {displayName:string;email:string;status:string;companyPositionId?:string|null;grant:{positionId:string|null}|null}>(employees:T[],search:string,status:string,position:string):T[]{const term=search.trim().toLocaleLowerCase();return employees.filter(employee=>(!term||`${employee.displayName} ${employee.email}`.toLocaleLowerCase().includes(term))&&(position==='all'||(position==='unassigned'?!employee.companyPositionId&&!employee.grant?.positionId:employee.companyPositionId===position||employee.grant?.positionId===position))&&(status==='all'||employee.status===status));}
 export function effectiveRule(permission:string,rules:Record<string,RuleValue>,overrides:Record<string,RuleValue>){return overrides[permission]??rules[permission]??false;}

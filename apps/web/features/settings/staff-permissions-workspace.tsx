@@ -485,16 +485,16 @@ export function EmployeeEditor({employee,domain,positions,permissions,sites,onSa
   if(busy||conflict)return;
   setError('');
   if(!name.trim()){setEditorTab('profile');setError(th?'กรุณากรอกชื่อพนักงาน':'Employee name is required');return;}
-  if(!choice){setError(th?'กรุณาเลือกหรือสร้างตำแหน่ง':'Choose or create a position');return;}
-  if(choice.kind==='new'&&!builtInManager&&!permissionsConfigured){setEditorTab('permissions');setError(th?'กรุณากำหนดและยืนยันสิทธิ์สำหรับตำแหน่งใหม่':'Configure and confirm permissions for the new position');return;}
+  if(!choice&&!positionText.trim()){setError(th?'กรุณาเลือกหรือระบุตำแหน่ง':'Choose or enter a position');return;}
   setBusy(true);
   try{
     const snapshotOverrides:Record<string,RuleValue>={};
     for(const p of permissions.filter(perm=>perm.startsWith(domain+'.'))){
       snapshotOverrides[p]=overrides[p]===true;
     }
-    const result=await apiClient.patch<{success:true;revision:number;position:{id:string;name:string}}>(`/v1/team/employees/${employee.id}/${domain}`,employeePositionDraft({revision:baseRevision,choice,domain,permissions,rules,overrides:snapshotOverrides,scope,permissionsConfigured,builtInManager,displayName:name.trim()}));
-    setChoice({kind:'existing',id:result.position.id,name:result.position.name});
+    const effectiveChoice: PositionChoice | null = choice ?? (positionText.trim() ? { kind: 'new', name: positionText.trim() } : null);
+    const result=await apiClient.patch<{success:true;revision:number;position:{id:string;name:string}}>(`/v1/team/employees/${employee.id}/${domain}`,employeePositionDraft({revision:baseRevision,choice:effectiveChoice,domain,permissions,rules,overrides:snapshotOverrides,scope,permissionsConfigured,builtInManager,displayName:name.trim(),companyPosition:positionText.trim()}));
+    if (result.position) setChoice({kind:'existing',id:result.position.id,name:result.position.name});
     onSaved();
   }catch(e){
     const failure=e as Error&{status?:number;code?:string;details?:{position?:{id?:string}}};
@@ -623,7 +623,7 @@ export function EmployeeEditor({employee,domain,positions,permissions,sites,onSa
     {error&&<p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{error}</p>}
     <div className="flex justify-end gap-2 border-t pt-4">
      <Button type="button" variant="outline" disabled={busy} onClick={close}>{th?'ยกเลิก':'Cancel'}</Button>
-     <Button type="submit" disabled={busy||!!conflict}>{th?'บันทึกสิทธิ์':'Save permissions'}</Button>
+     <Button type="submit" disabled={busy||!!conflict}>{th?'บันทึกข้อมูล':'Save details'}</Button>
     </div>
    </form>
   </>
