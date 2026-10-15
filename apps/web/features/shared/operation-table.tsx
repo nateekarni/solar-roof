@@ -72,14 +72,14 @@ const BillingSelectionContext=React.createContext<(BillingSelectionControls&{loc
 function BillingSelectionHeader({table}:HeaderContext<OperationRow,unknown>){
   const selection=React.useContext(BillingSelectionContext);
   if(!selection)return null;
-  const ids=eligibleBillingRows(table.getRowModel().rows.map(row=>row.original)).map(row=>row.id);
+  const ids=table.getRowModel().rows.map(row=>row.original.id);
   const count=ids.filter(id=>selection.selected.has(id)).length;
-  return <Checkbox aria-label={selection.locale==='th'?'เลือกใบวางบิลที่รออนุมัติทั้งหมดในหน้านี้':'Select all eligible bills on this page'} disabled={ids.length===0} checked={count>0&&count===ids.length?true:count>0?'indeterminate':false} onCheckedChange={()=>selection.togglePage(ids)}/>;
+  return <Checkbox aria-label={selection.locale==='th'?'เลือกทั้งหมดในหน้านี้':'Select all on this page'} disabled={ids.length===0} checked={count>0&&count===ids.length?true:count>0?'indeterminate':false} onCheckedChange={()=>selection.togglePage(ids)}/>;
 }
 
 function BillingSelectionCell({row}:CellContext<OperationRow,unknown>){
   const selection=React.useContext(BillingSelectionContext);
-  if(!selection||eligibleBillingRows([row.original]).length===0)return null;
+  if(!selection)return null;
   const item=row.original;
   return <Checkbox aria-label={selection.locale==='th'?`เลือก ${item.period??'—'} ${item.customerName??'—'} ${item.siteName??'—'}`:`Select ${item.period??'—'} ${item.customerName??'—'} ${item.siteName??'—'}`} checked={selection.selected.has(item.id)} onCheckedChange={()=>selection.toggle(item.id)}/>;
 }
@@ -170,12 +170,11 @@ export function OperationTable({
   const resetSelection=React.useCallback(()=>dispatchSelection({type:'reset'}),[]);
   React.useEffect(resetSelection,[queryKey,selectionScope,rows,resource,resetSelection]);
   const toggleSelection=React.useCallback((id:string)=>{
-    if(eligibleBillingRows(rows).some(row=>row.id===id))dispatchSelection({type:'toggle',id});
-  },[rows]);
+    dispatchSelection({type:'toggle',id});
+  },[]);
   const togglePageSelection=React.useCallback((ids:readonly string[])=>{
-    const eligibleIds=new Set(eligibleBillingRows(rows).map(row=>row.id));
-    dispatchSelection({type:'togglePage',ids:ids.filter(id=>eligibleIds.has(id))});
-  },[rows]);
+    dispatchSelection({type:'togglePage',ids});
+  },[]);
   const billingSelection=React.useMemo(()=>({selected,toggle:toggleSelection,togglePage:togglePageSelection,locale}),[selected,toggleSelection,togglePageSelection,locale]);
   const user = useSessionUser();
   const financial = useFinancialCapabilities();
@@ -599,7 +598,7 @@ export function OperationTable({
       </div>} /></div>
 
       {resource==='billing'&&<>
-        <BillingBulkApproval rows={eligibleBillingRows(rows).filter(row=>selected.has(row.id))} approver={approver} locale={locale} canApprove={financial.operationsActions?.includes('approve_invoice')??false} onCompleted={approvalCompleted}/>
+        <BillingBulkApproval rows={rows.filter(row=>selected.has(row.id))} approver={approver} locale={locale} canApprove={financial.operationsActions?.includes('approve_invoice')??false} onCompleted={approvalCompleted} onClearSelection={resetSelection}/>
         <BillingBulkApproval rows={approvalRow?[approvalRow]:[]} approver={approver} locale={locale} mode="single" open={approvalOpen} onOpenChange={setApprovalOpen} canApprove={financial.operationsActions?.includes('approve_invoice')??false} onCompleted={approvalCompleted}/>
       </>}
 

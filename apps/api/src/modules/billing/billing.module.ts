@@ -15,8 +15,10 @@ import { ContractService } from "./contract.service.js";
 import { RateService } from "./rate.service.js";
 import { DocumentIdentityService } from '../identity/document-identity.js';
 
+import { IdentityModule } from '../identity/identity.module.js';
+
 @Module({
-  imports: [DatabaseModule, FinancialReadinessModule],
+  imports: [DatabaseModule, FinancialReadinessModule, IdentityModule],
   controllers: [SiteBillingController, BillingController, BillingSourceBindingController],
   providers: [DocumentIdentityService, SiteBillingService, ContractPdfService, BillingSourceBindingService, FinancialApplicationService, FinancialScheduler, ContractService, RateService, BillingCalculationService, BillingCycleService],
   exports: [ContractService, RateService, BillingCalculationService, BillingCycleService],

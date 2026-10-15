@@ -11,6 +11,7 @@ import {
   BadRequestException, ConflictException,
   ServiceUnavailableException,
   ForbiddenException,
+  Optional,
   Query,
   Body,
   Controller,
@@ -30,11 +31,19 @@ import { Roles } from "../../common/roles.decorator.js";
 
 import { FinancialReadinessService } from "../financial-readiness/financial-readiness.service.js";
 import { FinancialApplicationService } from './financial-application.service.js';
-import { approveIssuanceResult, previewIssuanceResult, validateIssuanceBatch, validateReviewToken, type IssuanceApprovalResult } from './issuance-approval.js';
+import { approveIssuanceResult, previewIssuanceResult, validateIssuanceBatch, validateReviewToken, verifyIssuanceApproverPassword, type IssuanceApprovalResult } from './issuance-approval.js';
+import { AuthService } from '../identity/auth.service.js';
 
 @Controller("v1")
 export class BillingController {
-  constructor(@Inject(DatabaseService) private readonly db: DatabaseService, @Inject(FinancialReadinessService) private readonly readiness: FinancialReadinessService, @Inject(FinancialApplicationService) private readonly financial: FinancialApplicationService, @Inject(ContractPdfService) private readonly contractPdfs: ContractPdfService, @Inject(SiteBillingService) private readonly siteBilling?:SiteBillingService) {}
+  constructor(
+    @Inject(DatabaseService) private readonly db: DatabaseService,
+    @Inject(FinancialReadinessService) private readonly readiness: FinancialReadinessService,
+    @Inject(FinancialApplicationService) private readonly financial: FinancialApplicationService,
+    @Inject(ContractPdfService) private readonly contractPdfs: ContractPdfService,
+    @Optional() @Inject(SiteBillingService) private readonly siteBilling?: SiteBillingService,
+    @Optional() @Inject(AuthService) private readonly authService?: AuthService
+  ) {}
 
   private issuanceActor(req: { user?: ScopedActor }): ScopedActor & { id: string } {
     const actor = req?.user;
@@ -49,6 +58,7 @@ export class BillingController {
   async approveMany(@Body() body: unknown, @Req() req: { user?: ScopedActor }) {
     const actor = this.issuanceActor(req);
     const ids = validateIssuanceBatch(body);
+    await verifyIssuanceApproverPassword(this.db, this.authService, actor.id, (body as { password?: unknown })?.password);
     const results: IssuanceApprovalResult[] = [];
     const batchId = randomUUID();
     const tokens=(body as {reviewTokens?:Record<string,string>}).reviewTokens;
@@ -60,10 +70,11 @@ export class BillingController {
   @Post('billing-cycles/:id/approve-issuance')
   async approveIssuance(@Param('id') id: string, @Body() body: unknown, @Req() req: { user?: ScopedActor }) {
     const actor = this.issuanceActor(req);
-    if (body !== undefined && (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(key=>key!=='reviewToken'))) {
+    if (body !== undefined && (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(key=>!['reviewToken','password'].includes(key)))) {
       throw new BadRequestException('ข้อมูลอนุมัติไม่ถูกต้อง');
     }
     validateIssuanceBatch({ billingCycleIds: [id] });
+    await verifyIssuanceApproverPassword(this.db, this.authService, actor.id, (body as { password?: unknown })?.password);
     const token=body&&Object.hasOwn(body,'reviewToken')?validateReviewToken((body as {reviewToken:unknown}).reviewToken):undefined;
     return approveIssuanceResult(this.db, this.financial, id, actor,undefined,token);
   }

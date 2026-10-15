@@ -37,6 +37,32 @@ export function BillingIssuanceApprover({approver,locale}:{approver:IssuanceAppr
  </div>;
 }
 
-export function BillingIssuanceReview({bill,approver,locale,onApprove,busy=false,disabled=false}:{bill:IssuanceBill;approver:IssuanceApprover;locale:'th'|'en';onApprove:()=>void;busy?:boolean;disabled?:boolean}){
- return <div className="space-y-3"><BillingIssuanceBill bill={bill} locale={locale}/><BillingIssuanceApprover approver={approver} locale={locale}/><Button disabled={disabled||busy||!approver.position?.trim()} onClick={onApprove}>{busy?(locale==='th'?'กำลังออกเอกสาร…':'Issuing…'):(locale==='th'?'อนุมัติและออกเอกสาร':'Approve and issue')}</Button></div>;
+export function BillingIssuanceReview({bill,approver,locale,onApprove,busy=false,disabled=false,password,onPasswordChange,passwordError}:{bill:IssuanceBill;approver:IssuanceApprover;locale:'th'|'en';onApprove:()=>void;busy?:boolean;disabled?:boolean;password?:string;onPasswordChange?:(value:string)=>void;passwordError?:string}){
+ const th=locale==='th';
+ return <div className="space-y-3">
+  <BillingIssuanceBill bill={bill} locale={locale}/>
+  <BillingIssuanceApprover approver={approver} locale={locale}/>
+  <div className="space-y-1.5 rounded-lg border p-3 bg-muted/20">
+   <label htmlFor="issuance-password" className="text-sm font-medium">
+    {th?'รหัสผ่านเพื่อยืนยันการลงนามและออกเอกสาร':'Password to confirm signing and issuance'}
+   </label>
+   <input
+    id="issuance-password"
+    type="password"
+    value={password??''}
+    onChange={e=>onPasswordChange?.(e.target.value)}
+    placeholder={th?'กรอกรหัสผ่านของคุณ':'Enter your password'}
+    disabled={busy||disabled}
+    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+    autoComplete="current-password"
+   />
+   <p className="text-xs text-muted-foreground">
+    {th?'การระบุรหัสผ่านถือเป็นการยืนยันความถูกต้องและยินยอมให้นำชื่อ ตำแหน่ง และลายเซ็นไปประทับลงในเอกสารฉบับจริงเพื่อจัดส่งให้ลูกค้า':'Entering your password confirms document accuracy and authorizes affixing your name, position, and signature to the official statement sent to the customer.'}
+   </p>
+   {passwordError&&<p role="alert" className="text-sm font-medium text-destructive">{passwordError}</p>}
+  </div>
+  <Button disabled={disabled||busy||!approver.position?.trim()||!(password??'').trim()} onClick={onApprove}>
+   {busy?(th?'กำลังออกเอกสาร…':'Issuing…'):(th?'อนุมัติและออกเอกสาร':'Approve and issue')}
+  </Button>
+ </div>;
 }

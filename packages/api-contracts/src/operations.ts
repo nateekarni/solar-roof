@@ -50,7 +50,13 @@ export interface IssuanceLabel {
 /** Internal routing references are accepted only in the request. */
 export interface IssuanceApprovalRequest {
   billingCycleIds: string[];
-  reviewTokens?:Record<string,string>;
+  reviewTokens?: Record<string, string>;
+  password?: string;
+}
+
+export interface ApproveIssuanceRequest {
+  reviewToken?: string;
+  password?: string;
 }
 
 /** Display-safe result; deliberately independent of OperationRow and its IDs. */

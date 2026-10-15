@@ -20,8 +20,8 @@ export interface OperationCardListProps {
 export function OperationCardList({resource,columns:rawColumns,rows,idKey='id',onOpenDetail,renderActions,onOpenSlip,selection}:OperationCardListProps) {
  const locale=useLocale();
  const billingSelection=resource==='billing'?selection:undefined;
- const eligibleIds=eligibleBillingRows(rows).map(row=>row.id);
- const selectedCount=eligibleIds.filter(id=>billingSelection?.selected.has(id)).length;
+ const pageIds=rows.map(row=>row.id);
+ const selectedCount=pageIds.filter(id=>billingSelection?.selected.has(id)).length;
  const keys=rows[0]?operationKeys(resource,rows[0],idKey):[];
  const titleKey=keys[0]||'title',statusKey=keys.find(k=>k.includes('status')||k.includes('severity'));
  const secondaryKeys=keys.filter(k=>k!==titleKey&&k!==statusKey);
@@ -30,7 +30,7 @@ export function OperationCardList({resource,columns:rawColumns,rows,idKey='id',o
  const getStatusBadge=(value:string)=>resource==='receipts'?renderReceiptStatusBadge(value,locale):renderStatusBadge(value,locale);
  return <div className="space-y-3">
       {billingSelection&&<div className="flex items-center gap-3 min-h-11 px-3">
-       <Checkbox aria-label={locale==='th'?'เลือกใบวางบิลที่รออนุมัติทั้งหมดในหน้านี้':'Select all eligible bills on this page'} disabled={eligibleIds.length===0} checked={selectedCount>0&&selectedCount===eligibleIds.length?true:selectedCount>0?'indeterminate':false} onCheckedChange={()=>billingSelection.togglePage(eligibleIds)}/>
+       <Checkbox aria-label={locale==='th'?'เลือกทั้งหมดในหน้านี้':'Select all on this page'} disabled={pageIds.length===0} checked={selectedCount>0&&selectedCount===pageIds.length?true:selectedCount>0?'indeterminate':false} onCheckedChange={()=>billingSelection.togglePage(pageIds)}/>
        <span className="text-sm">{locale==='th'?'เลือกทั้งหมดในหน้านี้':'Select all on this page'}</span>
       </div>}
       {/* Cards List */}
@@ -69,7 +69,7 @@ export function OperationCardList({resource,columns:rawColumns,rows,idKey='id',o
               >
                 {/* Card Header: Title + Status */}
                 <div className="flex items-start justify-between gap-2">
-                  {billingSelection&&eligibleBillingRows([row]).length>0&&<div className="flex items-center justify-center min-h-11 min-w-11" onClick={event=>event.stopPropagation()}>
+                  {billingSelection&&<div className="flex items-center justify-center min-h-11 min-w-11" onClick={event=>event.stopPropagation()}>
                    <Checkbox aria-label={locale==='th'?`เลือก ${row.period??'—'} ${row.customerName??'—'} ${row.siteName??'—'}`:`Select ${row.period??'—'} ${row.customerName??'—'} ${row.siteName??'—'}`} checked={billingSelection.selected.has(row.id)} onCheckedChange={()=>billingSelection.toggle(row.id)}/>
                   </div>}
                   <div className="min-w-0 flex-1">

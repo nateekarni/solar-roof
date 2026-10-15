@@ -14,6 +14,7 @@ import type { ExecutionContext } from '@nestjs/common';
 import { PlatformAccessGuard } from '../../common/auth/platform-access.guard.js';
 import { RolesGuard } from '../../common/roles.guard.js';
 import { lockIssuanceActor, authorizedIssuanceLabel } from './issuance-approval.js';
+import { AuthService } from '../identity/auth.service.js';
 
 const first='11111111-1111-4111-8111-111111111111';
 const second='22222222-2222-4222-8222-222222222222';
@@ -24,6 +25,9 @@ const siteId='66666666-6666-4666-8666-666666666666';
 const otherSite='77777777-7777-4777-8777-777777777777';
 const actor={id:actorId,role:'operator',authorization:effectiveAuthorization('operator',1,[{domain:'business',preset:{'business.billing.approve':true},overrides:{},scope:{mode:'selected',siteIds:[siteId]}}])};
 const unavailable={label:{period:'—',customer:'รายการที่ไม่สามารถเข้าถึงได้',site:'—'},status:'failed',message:'ไม่สามารถออกเอกสารได้'};
+const authService=new AuthService('','');
+const validPassword='correct-password-123';
+const validHash=authService.hashPassword(validPassword);
 
 // Database/issuance doubles stand at the external boundary. Controller validation,
 // scope filtering, orchestration, and display projection all remain real.
@@ -36,11 +40,11 @@ function harness(){
  const issued=new Map<string,string>([[second,'INV260800001']]);
  const attempts:string[]=[];let failFirst=false;let failLookup=false;let liveRole='operator';let liveSites:string[]|null=[siteId];
  const query=async(sql:string,params:unknown[]=[])=>{
-  if(failLookup)throw new Error(`database failure ${first}`);
   if(sql.includes('pg_advisory_xact_lock'))return {rows:[]};
-  if(sql.includes('FROM users WHERE id=$1 FOR SHARE'))return {rows:[{id:actorId,role:liveRole,status:'active',permission_revision:1}]};
+  if(sql.includes('FROM users WHERE id=$1 FOR SHARE')||sql.includes('FROM users WHERE id=$1'))return {rows:[{id:actorId,role:liveRole,status:'active',permission_revision:1,password_hash:validHash}]};
   if(sql.includes('FROM employee_domain_grants'))return {rows:[{domain:'business',preset:{'business.billing.approve':true},overrides:{},scope_mode:liveSites===null?'all':'selected',site_ids:liveSites??[]}]};
   if(sql.includes('INSERT INTO audit_events'))return {rows:[]};
+  if(failLookup)throw new Error(`database failure ${first}`);
   assert.match(sql,/s\.id\s*=\s*ANY\(\$2::uuid\[\]\)/i);
   const row=records.get(String(params[0]));const scope=params[1] as string[]|null;
   return {rows:row&&(scope===null||scope.includes(row.siteId))?[{...row.label,id:params[0],siteId:row.siteId}]:[]};
@@ -56,7 +60,7 @@ function harness(){
   const number=prior??'INV260900001';issued.set(id,number);
   return {created:!prior,label,document:{id:'internal-document',documentNumber:number,snapshot:{secret:true}}};
  }};
- const controller=new BillingController(db as unknown as DatabaseService,{} as FinancialReadinessService,financial as unknown as FinancialApplicationService,{} as ContractPdfService);
+ const controller=new BillingController(db as unknown as DatabaseService,{} as FinancialReadinessService,financial as unknown as FinancialApplicationService,{} as ContractPdfService,undefined,authService);
  return {controller,attempts,issued,setFail:()=>{failFirst=true;},setLookupFail:()=>{failLookup=true;},setScope:(sites:string[]|null)=>{liveSites=sites;},setRole:(role:string)=>{liveRole=role;}};
 }
 
@@ -81,23 +85,23 @@ test('preview failures return scoped display-safe per-item outcomes without issu
 test('single approval returns only authorized labels and saved number on issue and replay',async()=>{
  const {controller}=harness();
  const expected={label:{period:'2026-09',customer:'บริษัท ก',site:'โรงงาน ก'},status:'issued',documentNumber:'INV260900001',message:'ออกใบวางบิลแล้ว'};
- assert.deepEqual(await (controller as any).approveIssuance(first,{}, {user:actor}),expected);
- assert.deepEqual(await (controller as any).approveIssuance(first,{}, {user:actor}),{...expected,status:'already_issued',message:'ออกใบวางบิลแล้วก่อนหน้านี้'});
+ assert.deepEqual(await (controller as any).approveIssuance(first,{password:validPassword}, {user:actor}),expected);
+ assert.deepEqual(await (controller as any).approveIssuance(first,{password:validPassword}, {user:actor}),{...expected,status:'already_issued',message:'ออกใบวางบิลแล้วก่อนหน้านี้'});
 });
 
 test('both controller entry points reject missing actors, role-only staff, and edit-only grants before accessing records',async()=>{
  const editOnly={...actor,authorization:effectiveAuthorization('operator',1,[{domain:'business',preset:{'business.billing.edit':true},overrides:{},scope:{mode:'all',siteIds:[]}}])};
  for(const user of [undefined,{role:'owner'},{id:actorId,role:'accountant'},editOnly]){
   const {controller,attempts}=harness();
-  await assert.rejects(()=>(controller as any).approveMany({billingCycleIds:[first]},{user}),ForbiddenException);
-  await assert.rejects(()=>(controller as any).approveIssuance(first,{}, {user}),ForbiddenException);
+  await assert.rejects(()=>(controller as any).approveMany({billingCycleIds:[first],password:validPassword},{user}),ForbiddenException);
+  await assert.rejects(()=>(controller as any).approveIssuance(first,{password:validPassword}, {user}),ForbiddenException);
   assert.deepEqual(attempts,[]);
  }
 });
 
 test('bulk approval preserves ordered partial success and deduplicates calls',async()=>{
  const {controller,attempts,setFail}=harness();setFail();
- const result=await (controller as any).approveMany({billingCycleIds:[second,first,third,missing,second]},{user:actor});
+ const result=await (controller as any).approveMany({billingCycleIds:[second,first,third,missing,second],password:validPassword},{user:actor});
  assert.deepEqual(result,{results:[
   {label:{period:'2026-08',customer:'บริษัท ข',site:'โรงงาน ข'},status:'already_issued',documentNumber:'INV260800001',message:'ออกใบวางบิลแล้วก่อนหน้านี้'},
   {label:{period:'2026-09',customer:'บริษัท ก',site:'โรงงาน ก'},status:'failed',message:'ไม่สามารถออกเอกสารได้'},unavailable,unavailable,
@@ -108,14 +112,14 @@ test('bulk approval preserves ordered partial success and deduplicates calls',as
 
 test('a failed item does not prevent a later independent issuance',async()=>{
  const {controller,setFail,issued}=harness();setFail();issued.delete(second);
- const {results}=await (controller as any).approveMany({billingCycleIds:[first,second]},{user:actor});
+ const {results}=await (controller as any).approveMany({billingCycleIds:[first,second],password:validPassword},{user:actor});
  assert.deepEqual(results.map((result:any)=>result.status),['failed','issued']);assert.equal(issued.get(second),'INV260900001');
 });
 
 test('missing and inaccessible single rows produce identical generic results without issuing',async()=>{
  const {controller,attempts}=harness();
- assert.deepEqual(await (controller as any).approveIssuance(third,{}, {user:actor}),unavailable);
- assert.deepEqual(await (controller as any).approveIssuance(missing,{}, {user:actor}),unavailable);
+ assert.deepEqual(await (controller as any).approveIssuance(third,{password:validPassword}, {user:actor}),unavailable);
+ assert.deepEqual(await (controller as any).approveIssuance(missing,{password:validPassword}, {user:actor}),unavailable);
  assert.deepEqual(attempts,[]);
 });
 
@@ -123,47 +127,47 @@ test('an empty business scope hides every row and owner scope permits all sites'
  const {controller,attempts,setScope,setRole}=harness();
  const noSites={...actor,authorization:{...actor.authorization,scopes:{...actor.authorization.scopes,business:{mode:'selected' as const,siteIds:[]}}}};
  setScope([]);
- assert.deepEqual(await (controller as any).approveIssuance(first,{}, {user:noSites}),unavailable);
+ assert.deepEqual(await (controller as any).approveIssuance(first,{password:validPassword}, {user:noSites}),unavailable);
  setRole('owner');setScope(null);
- assert.equal((await (controller as any).approveIssuance(third,{}, {user:{id:actorId,role:'owner'}})).status,'issued');
+ assert.equal((await (controller as any).approveIssuance(third,{password:validPassword}, {user:{id:actorId,role:'owner'}})).status,'issued');
  assert.deepEqual(attempts,[third]);
 });
 
 test('malformed single IDs or payload overrides and invalid batches fail before issuance',async()=>{
  const {controller,attempts}=harness();
- for(const body of [{billingCycleIds:[]},{billingCycleIds:Array(101).fill(first)},{billingCycleIds:['not-uuid']},{billingCycleIds:[first],actorId:'spoofed'}])await assert.rejects(()=>(controller as any).approveMany(body,{user:actor}),BadRequestException);
- await assert.rejects(()=>(controller as any).approveIssuance('not-uuid',{}, {user:actor}),BadRequestException);
- await assert.rejects(()=>(controller as any).approveIssuance(first,{actorId:'spoofed'}, {user:actor}),BadRequestException);
+ for(const body of [{billingCycleIds:[],password:validPassword},{billingCycleIds:Array(101).fill(first),password:validPassword},{billingCycleIds:['not-uuid'],password:validPassword},{billingCycleIds:[first],actorId:'spoofed',password:validPassword}])await assert.rejects(()=>(controller as any).approveMany(body,{user:actor}),BadRequestException);
+ await assert.rejects(()=>(controller as any).approveIssuance('not-uuid',{password:validPassword}, {user:actor}),BadRequestException);
+ await assert.rejects(()=>(controller as any).approveIssuance(first,{actorId:'spoofed',password:validPassword}, {user:actor}),BadRequestException);
  assert.deepEqual(attempts,[]);
 });
 
 test('review tokens are validated and forwarded for single and each independent batch item',async()=>{
  const calls:unknown[]=[];const token='a'.repeat(64);
  const financial={approveInvoice:async(...args:unknown[])=>{calls.push(args);return {created:true,label:{period:'2026-09',customer:'Customer',site:'Site'},document:{documentNumber:'INV1'}};}};
- const controller=new BillingController({} as DatabaseService,{} as FinancialReadinessService,financial as unknown as FinancialApplicationService,{} as ContractPdfService);
- await controller.approveIssuance(first,{reviewToken:token},{user:actor});
- await controller.approveMany({billingCycleIds:[first,second],reviewTokens:{[first]:token,[second]:'b'.repeat(64)}},{user:actor});
+ const controller=new BillingController({query:async(sql:string)=>sql.includes('FROM users WHERE id=$1')?{rows:[{password_hash:validHash}]}:{rows:[]}} as unknown as DatabaseService,{} as FinancialReadinessService,financial as unknown as FinancialApplicationService,{} as ContractPdfService,undefined,authService);
+ await controller.approveIssuance(first,{reviewToken:token,password:validPassword},{user:actor});
+ await controller.approveMany({billingCycleIds:[first,second],reviewTokens:{[first]:token,[second]:'b'.repeat(64)},password:validPassword},{user:actor});
  assert.deepEqual(calls,[[first,actorId,token],[first,actorId,token],[second,actorId,'b'.repeat(64)]]);
- for(const reviewToken of ['',null,123,'raw'])await assert.rejects(controller.approveIssuance(first,{reviewToken},{user:actor}),BadRequestException);
- await assert.rejects(controller.approveMany({billingCycleIds:[first,second],reviewTokens:{[first]:token}},{user:actor}),BadRequestException);
+ for(const reviewToken of ['',null,123,'raw'])await assert.rejects(controller.approveIssuance(first,{reviewToken,password:validPassword},{user:actor}),BadRequestException);
+ await assert.rejects(controller.approveMany({billingCycleIds:[first,second],reviewTokens:{[first]:token},password:validPassword},{user:actor}),BadRequestException);
 });
 
 test('label lookup failures never expose database errors or authorize issuance',async()=>{
  const {controller,attempts,setLookupFail}=harness();setLookupFail();
- assert.deepEqual(await (controller as any).approveMany({billingCycleIds:[first]},{user:actor}),{results:[unavailable]});
+ assert.deepEqual(await (controller as any).approveMany({billingCycleIds:[first],password:validPassword},{user:actor}),{results:[unavailable]});
  assert.deepEqual(attempts,[]);
 });
 
 test('simultaneous batch and single replay retain one saved number per cycle',async()=>{
  const {controller,issued}=harness();
- const [batch,single]=await Promise.all([(controller as any).approveMany({billingCycleIds:[first,second]},{user:actor}),(controller as any).approveIssuance(first,{}, {user:actor})]);
+ const [batch,single]=await Promise.all([(controller as any).approveMany({billingCycleIds:[first,second],password:validPassword},{user:actor}),(controller as any).approveIssuance(first,{password:validPassword}, {user:actor})]);
  assert.deepEqual([batch.results[0].status,single.status].sort(),['already_issued','issued']);
  assert.equal(batch.results[0].documentNumber,single.documentNumber);assert.equal(issued.size,2);
 });
 
 test('one bulk response includes issued, already issued and failed results in request order',async()=>{
  const {controller}=harness();
- const batch=await controller.approveMany({billingCycleIds:[first,second,third,missing]},{user:actor});
+ const batch=await controller.approveMany({billingCycleIds:[first,second,third,missing],password:validPassword},{user:actor});
  assert.deepEqual(batch.results.map(result=>result.status),['issued','already_issued','failed','failed']);
  assert.deepEqual(batch.results[2],batch.results[3]);
  assert.equal(batch.results[0]!.documentNumber,'INV260900001');
@@ -174,12 +178,12 @@ test('registered guard chain permits granted staff and preserves identical inacc
  const {controller}=harness();
  const outputs=[];
  for(const id of [third,missing]){
-  const request={path:`/v1/billing-cycles/${id}/approve-issuance`,method:'POST',body:{},user:actor};
+  const request={path:`/v1/billing-cycles/${id}/approve-issuance`,method:'POST',body:{password:validPassword},user:actor};
   const context={getHandler:()=>BillingController.prototype.approveIssuance,getClass:()=>BillingController,switchToHttp:()=>({getRequest:()=>request})} as unknown as ExecutionContext;
   const db={query:async()=>{throw new Error('Premature lookup');}} as unknown as DatabaseService;
   assert.equal(new RolesGuard(new Reflector()).canActivate(context),true);
   assert.equal(await new PlatformAccessGuard(db,new Reflector()).canActivate(context),true);
-  outputs.push(await controller.approveIssuance(id,{}, {user:actor}));
+  outputs.push(await controller.approveIssuance(id,{password:validPassword}, {user:actor}));
  }
  assert.deepEqual(outputs,[unavailable,unavailable]);
 });

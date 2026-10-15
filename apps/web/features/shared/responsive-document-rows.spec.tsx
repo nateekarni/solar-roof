@@ -24,31 +24,31 @@ function renderSelectionTable(rows=selectionRows,resource='billing',locale:'en'|
  </AppRouterContext.Provider>);
 }
 
-test('desktop billing selection is the first column and excludes ineligible rows and internal IDs',()=>{
+test('desktop billing selection is the first column and includes all rows without exposing internal IDs',()=>{
  const html=renderSelectionTable();
  const firstHeader=html.match(/<thead[\s\S]*?<th\s[^>]*>([\s\S]*?)<\/th>/)?.[1];
- assert.ok(firstHeader?.includes('Select all eligible bills on this page'));
+ assert.ok(firstHeader?.includes('Select all on this page'));
  const body=html.match(/<tbody[\s\S]*?<\/tbody>/)?.[0]??'';
- assert.equal((body.match(/role="checkbox"/g)??[]).length,1);
+ assert.equal((body.match(/role="checkbox"/g)??[]).length,2);
  assert.match(body,/aria-label="Select October School A Roof A"/);
- assert.doesNotMatch(html,/secret-pending-id|secret-paid-id|Select September School B Roof B/);
+ assert.match(body,/aria-label="Select September School B Roof B"/);
+ assert.doesNotMatch(html,/secret-pending-id|secret-paid-id/);
 });
 
-test('select-all is disabled when no visible billing rows are eligible',()=>{
- const html=renderSelectionTable([selectionRows[1]!]);
- assert.match(html,/<button[^>]*role="checkbox"[^>]*disabled=""[^>]*aria-label="Select all eligible bills on this page"/);
- assert.doesNotMatch(html,/aria-label="Select September/);
+test('select-all is disabled when table has no rows',()=>{
+ const html=renderSelectionTable([]);
+ assert.match(html,/<button[^>]*role="checkbox"[^>]*disabled=""[^>]*aria-label="Select all on this page"/);
  const unrelated=renderSelectionTable(selectionRows,'receipts');
  assert.doesNotMatch(unrelated,/role="checkbox"/);
 });
 
-test('mobile selection reflects shared state with human labels and excludes ineligible rows',()=>{
+test('mobile selection reflects shared state with human labels across rows',()=>{
  for(const locale of ['en','th'] as const){
   const html=renderToStaticMarkup(<LocaleProvider initialLocale={locale}><OperationCardList resource="billing" title="Bills" columns={[]} rows={selectionRows} selection={{selected:new Set(['secret-pending-id']),toggle(){},togglePage(){}}}/></LocaleProvider>);
-  assert.equal((html.match(/role="checkbox"/g)??[]).length,2);
+  assert.equal((html.match(/role="checkbox"/g)??[]).length,3);
   assert.match(html,new RegExp(`aria-label="${locale==='th'?'เลือก':'Select'} October School A Roof A"`));
   assert.match(html,/aria-checked="true"/);
-  assert.doesNotMatch(html,/secret-pending-id|secret-paid-id|(?:Select|เลือก) September School B Roof B/);
+  assert.doesNotMatch(html,/secret-pending-id|secret-paid-id/);
  }
 });
 

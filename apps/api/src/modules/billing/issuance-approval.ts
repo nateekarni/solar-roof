@@ -1,9 +1,10 @@
-import { BadRequestException, ConflictException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
 import type { IssuanceApprovalResult, IssuanceLabel, IssuancePreviewResponse, PendingIssuanceStatus } from '@solar/api-contracts';
 import { effectiveAuthorization, hasPermission, siteScope, type DomainGrant } from '../../common/auth/authorization.js';
 import type { ScopePrincipal } from '../../common/auth/route-policy.js';
 import type { DatabaseService } from '../../database/database.service.js';
 import type { FinancialApplicationService } from './financial-application.service.js';
+import { AuthService } from '../identity/auth.service.js';
 import type { PoolClient } from 'pg';
 import { randomUUID } from 'node:crypto';
 
@@ -17,7 +18,7 @@ export const PENDING_ISSUANCE_STATUS: PendingIssuanceStatus = 'pending_issue_app
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function validateIssuanceBatch(input: unknown): string[] {
-  if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(key => !['billingCycleIds','reviewTokens'].includes(key))) {
+  if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(key => !['billingCycleIds','reviewTokens','password'].includes(key))) {
     throw new BadRequestException('ข้อมูลอนุมัติไม่ถูกต้อง');
   }
   const raw = (input as { billingCycleIds?: unknown }).billingCycleIds;
@@ -44,6 +45,31 @@ export function validateIssuanceBatch(input: unknown): string[] {
 export function validateReviewToken(value:unknown):string {
  if(typeof value!=='string'||! /^[0-9a-f]{64}$/.test(value))throw new BadRequestException('ข้อมูลตรวจอนุมัติไม่ถูกต้อง');
  return value;
+}
+
+export function validateIssuancePassword(value: unknown): string {
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new UnauthorizedException('รหัสผ่านไม่ถูกต้อง กรุณาระบุรหัสผ่านใหม่อีกครั้ง');
+  }
+  return value;
+}
+
+export async function verifyIssuanceApproverPassword(
+  db: { query: (sql: string, params?: unknown[]) => Promise<{ rows: any[] }> },
+  authService: { verifyPassword: (password: string, encoded: string) => boolean } | undefined,
+  actorId: string,
+  passwordInput: unknown
+): Promise<void> {
+  const password = validateIssuancePassword(passwordInput);
+  const userResult = await db.query('SELECT password_hash FROM users WHERE id=$1', [actorId]);
+  const passwordHash = userResult.rows[0]?.password_hash;
+  if (!passwordHash || typeof passwordHash !== 'string') {
+    throw new UnauthorizedException('รหัสผ่านไม่ถูกต้อง กรุณาระบุรหัสผ่านใหม่อีกครั้ง');
+  }
+  const verifier = authService ?? new AuthService('', '');
+  if (!verifier.verifyPassword(password, passwordHash)) {
+    throw new UnauthorizedException('รหัสผ่านไม่ถูกต้อง กรุณาระบุรหัสผ่านใหม่อีกครั้ง');
+  }
 }
 
 /** Copy only display fields, including the nested label, from an authorized result. */

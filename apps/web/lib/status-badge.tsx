@@ -10,7 +10,7 @@ export const STATUS_MAP: Record<
     className?: string;
   }
 > = {
-  pending_issue_approval: {th:'รออนุมัติออกเอกสาร',en:'Awaiting issuance approval',variant:'secondary',className:'bg-warning/15 text-warning-emphasis border-warning/30'},
+  pending_issue_approval: {th:'รออนุมัติออกเอกสาร',en:'Awaiting issuance approval',variant:'secondary',className:'bg-info/15 text-info border-info/30'},
   awaiting_payment: {th:'รอชำระเงิน',en:'Awaiting payment',variant:'secondary',className:'bg-warning/15 text-warning-emphasis border-warning/30'},
   unsuccessful: {th:'ไม่สำเร็จ',en:'Unsuccessful',variant:'destructive'},
   complete: {th:'ข้อมูลครบถ้วน',en:'Complete data',variant:'secondary',className:'bg-success/15 text-success border-success/30'},
