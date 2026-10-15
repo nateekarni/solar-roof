@@ -27,6 +27,7 @@ import {SiteEditDialog} from "../sites/site-edit-dialog";
 import {SiteServiceDialog} from "../sites/site-service-dialog";
 import { SiteFormDialog } from "../sites/site-form-dialog";
 import { InviteUserDialog } from "../users/invite-user-dialog";
+import { BillingHeaderBulkAction } from "../billing/billing-header-bulk-action";
 
 export function OperationActions({
   resource,
@@ -120,6 +121,7 @@ export function OperationActions({
           <Download className="size-3.5" />
             <span>{exporting ? t("common.loading") : locale === 'th' ? 'นำออกข้อมูล' : 'Export data'}</span>
         </Button>
+        {resource === 'billing' && <BillingHeaderBulkAction />}
 
         {canCreate && action && action.trim() !== "" && (
           <AddButton

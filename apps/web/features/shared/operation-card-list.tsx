@@ -26,6 +26,7 @@ export function OperationCardList({resource,columns:rawColumns,rows,idKey='id',o
  const titleKey=keys[0]||'title',statusKey=keys.find(k=>k.includes('status')||k.includes('severity'));
  const secondaryKeys=keys.filter(k=>k!==titleKey&&k!==statusKey);
  const formatNumber=(value:unknown)=>value===null||value===undefined||value===""?"—":Number.isFinite(Number(value))?new Intl.NumberFormat(locale==='th'?'th-TH':'en-US',{maximumFractionDigits:2}).format(Number(value)):String(value??'—');
+ const formatRate=(value:unknown)=>value===null||value===undefined||value===""?"—":Number.isFinite(Number(value))?new Intl.NumberFormat(locale==='th'?'th-TH':'en-US',{minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(value)):String(value??'—');
  const isStatusValue=(value:unknown)=>Boolean(STATUS_MAP[String(value??'').trim().toLowerCase()]||STATUS_MAP[String(value??'').trim()]);
  const getStatusBadge=(value:string)=>resource==='receipts'?renderReceiptStatusBadge(value,locale):renderStatusBadge(value,locale);
  return <div className="space-y-3">
@@ -70,7 +71,7 @@ export function OperationCardList({resource,columns:rawColumns,rows,idKey='id',o
                 {/* Card Header: Title + Status */}
                 <div className="flex items-start justify-between gap-2">
                   {billingSelection&&<div className="flex items-center justify-center min-h-11 min-w-11" onClick={event=>event.stopPropagation()}>
-                   <Checkbox aria-label={locale==='th'?`เลือก ${row.period??'—'} ${row.customerName??'—'} ${row.siteName??'—'}`:`Select ${row.period??'—'} ${row.customerName??'—'} ${row.siteName??'—'}`} checked={billingSelection.selected.has(row.id)} onCheckedChange={()=>billingSelection.toggle(row.id)}/>
+                   <Checkbox className="size-4 aspect-square shrink-0" aria-label={locale==='th'?`เลือก ${row.period??'—'} ${row.customerName??'—'} ${row.siteName??'—'}`:`Select ${row.period??'—'} ${row.customerName??'—'} ${row.siteName??'—'}`} checked={billingSelection.selected.has(row.id)} onCheckedChange={()=>billingSelection.toggle(row.id)}/>
                   </div>}
                   <div className="min-w-0 flex-1">
                     <p className="text-xs font-semibold text-muted-foreground/70 uppercase tracking-wider text-[10px]">
@@ -101,6 +102,11 @@ export function OperationCardList({resource,columns:rawColumns,rows,idKey='id',o
                         key.toLowerCase().includes("ยอด") ||
                         key.toLowerCase().includes("price") ||
                         key.toLowerCase().includes("revenue");
+
+                      const isRate =
+                        key === "rate" ||
+                        key.toLowerCase().includes("rate") ||
+                        key.includes("อัตรา");
 
                       const isEnergy =
                         key.toLowerCase().includes("kwh") ||
@@ -147,6 +153,8 @@ export function OperationCardList({resource,columns:rawColumns,rows,idKey='id',o
                                 getStatusBadge(str)
                               ) : isAmount ? (
                                 `฿${formatNumber(val)}`
+                              ) : isRate ? (
+                                formatRate(val)
                               ) : isEnergy ? (
                                 formatNumber(val)
                               ) : (isTemporalColumn(key) || isIsoDateLike(str)) && str && str !== "-" ? (

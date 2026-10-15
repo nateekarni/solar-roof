@@ -74,14 +74,33 @@ function BillingSelectionHeader({table}:HeaderContext<OperationRow,unknown>){
   if(!selection)return null;
   const ids=table.getRowModel().rows.map(row=>row.original.id);
   const count=ids.filter(id=>selection.selected.has(id)).length;
-  return <Checkbox aria-label={selection.locale==='th'?'เลือกทั้งหมดในหน้านี้':'Select all on this page'} disabled={ids.length===0} checked={count>0&&count===ids.length?true:count>0?'indeterminate':false} onCheckedChange={()=>selection.togglePage(ids)}/>;
+  return (
+    <div className="flex items-center justify-center">
+      <Checkbox
+        aria-label={selection.locale==='th'?'เลือกทั้งหมดในหน้านี้':'Select all on this page'}
+        disabled={ids.length===0}
+        checked={count>0&&count===ids.length?true:count>0?'indeterminate':false}
+        onCheckedChange={()=>selection.togglePage(ids)}
+        className="size-4 aspect-square shrink-0"
+      />
+    </div>
+  );
 }
 
 function BillingSelectionCell({row}:CellContext<OperationRow,unknown>){
   const selection=React.useContext(BillingSelectionContext);
   if(!selection)return null;
   const item=row.original;
-  return <Checkbox aria-label={selection.locale==='th'?`เลือก ${item.period??'—'} ${item.customerName??'—'} ${item.siteName??'—'}`:`Select ${item.period??'—'} ${item.customerName??'—'} ${item.siteName??'—'}`} checked={selection.selected.has(item.id)} onCheckedChange={()=>selection.toggle(item.id)}/>;
+  return (
+    <div className="flex items-center justify-center">
+      <Checkbox
+        aria-label={selection.locale==='th'?`เลือก ${item.period??'—'} ${item.customerName??'—'} ${item.siteName??'—'}`:`Select ${item.period??'—'} ${item.customerName??'—'} ${item.siteName??'—'}`}
+        checked={selection.selected.has(item.id)}
+        onCheckedChange={()=>selection.toggle(item.id)}
+        className="size-4 aspect-square shrink-0"
+      />
+    </div>
+  );
 }
 
 type SummaryItem = {
@@ -221,6 +240,15 @@ export function OperationTable({
     const num = Number(val);
     if (isNaN(num)) return val;
     return new Intl.NumberFormat(locale === "th" ? "th-TH" : "en-US", {
+      maximumFractionDigits: 2,
+    }).format(num);
+  };
+
+  const formatRate = (val: any) => {
+    const num = Number(val);
+    if (isNaN(num)) return val ?? "—";
+    return new Intl.NumberFormat(locale === "th" ? "th-TH" : "en-US", {
+      minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     }).format(num);
   };
@@ -436,6 +464,14 @@ export function OperationTable({
             return (
               <span className="font-medium text-foreground">
                 {formatNumber(val)}
+              </span>
+            );
+          }
+
+          if (key === "rate" || key.toLowerCase().includes("rate") || key.includes("อัตรา")) {
+            return (
+              <span className="font-medium text-foreground">
+                {formatRate(val)}
               </span>
             );
           }

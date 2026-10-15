@@ -8,7 +8,7 @@ import { OperationPageHeader } from "./operation-page-header";
 import { OperationQueryTable } from "./operation-query-table";
 import { OperationAutoRefresh } from "./operation-auto-refresh";
 import { getSessionUser } from "../../lib/session-user";
-import { FinancialDocumentIntro } from "./financial-document-intro";
+import { getFinancialDocumentIntroText } from "./financial-document-intro";
 import {
   operationRequestQueries,
   type OperationSearchParams,
@@ -106,11 +106,10 @@ export async function OperationPage({
           resource={resource}
           eyebrow={displayEyebrow}
           title={displayTitle}
-          description={businessFinancial ? "" : displayDescription}
+          description={businessFinancial ? getFinancialDocumentIntroText({resource, role: user.role, locale}) : displayDescription}
           action={displayAction}
           headerActions={headerActions}
         />
-        <FinancialDocumentIntro resource={resource} role={user.role} locale={locale} />
         {beforeTable}
         <OperationQueryTable
           resource={resource}

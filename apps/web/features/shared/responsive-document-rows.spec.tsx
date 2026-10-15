@@ -78,5 +78,5 @@ test('missing mobile financial amounts never display a zero charge',()=>{
 });
 test('mobile contract and billing rates remain numeric instead of being parsed as dates',()=>{
  const html=renderToStaticMarkup(<LocaleProvider initialLocale="en"><OperationCardList resource="billing" title="Invoices" columns={['Period','Customer','Site','Energy','Rate','Amount','Slip','Status']} rows={[{id:'a',period:'October',rate:2,amount:20,status:'approved'}]}/></LocaleProvider>);
- assert.match(html,/>2<\/span>/);assert.doesNotMatch(html,/February 2001|January 2001/);
+ assert.match(html,/>2\.00<\/span>/);assert.doesNotMatch(html,/February 2001|January 2001/);
 });
