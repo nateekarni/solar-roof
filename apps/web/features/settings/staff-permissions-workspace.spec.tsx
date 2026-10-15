@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {renderToStaticMarkup} from 'react-dom/server';
 import * as workspace from './staff-permissions-workspace';
 import * as model from './staff-permissions-model';
+import {apiClient} from '../../lib/api-client';
 test('site scope table filters rows without losing selected sites outside the search',()=>{
  assert.equal(typeof workspace.SiteScopeTable,'function');
  const html=renderToStaticMarkup(<workspace.SiteScopeTable sites={[{id:'a',name:'Alpha'},{id:'b',name:'Beta'}]} scope={{mode:'selected',siteIds:['b']}} search=" BETA " onSearch={()=>{}} onChange={()=>{}}/>);
@@ -44,3 +45,180 @@ test('staff position filters include canonical manager assignments without grant
  assert.deepEqual(model.filterEmployees([manager],'','all','unassigned'),[]);
  assert.deepEqual(model.filterPositions([{id:'director',name:'Director'}],[manager],'','assigned'),[{id:'director',name:'Director'}]);
 });
+
+test('StaffInvitation renders 2-tab modal with general details and permissions tabs',()=>{
+ assert.equal(typeof (workspace as any).StaffInvitation, 'function');
+ const html = renderToStaticMarkup(
+  React.createElement((workspace as any).StaffInvitation, {
+   inline: true,
+   domain: 'business',
+   positions: [{id: 'p1', name: 'วิศวกรไฟฟ้า', rules: {'business.sites.view': true}, revision: 1}],
+   permissions: ['business.sites.view', 'business.sites.edit', 'technical.gateways.view'],
+   sites: [{id: 's1', name: 'ไซต์ทดสอบ 1'}],
+   onSaved: () => {},
+   onClose: () => {},
+  })
+ );
+
+ // Dialog Title & Description
+ assert.match(html, /เพิ่มพนักงาน/);
+ assert.match(html, /ส่งคำเชิญและกำหนดสิทธิ์การใช้งานสำหรับพนักงานใหม่/);
+ assert.match(html, /sm:max-w-5xl/);
+
+ // Tab triggers
+ assert.match(html, /ข้อมูลทั่วไป/);
+ assert.match(html, /สิทธิ์การใช้งานและไซต์/);
+
+ // General details fields
+ assert.match(html, /id="staff-name"/);
+ assert.match(html, /id="staff-email"/);
+ assert.match(html, /id="staff-position"/);
+ assert.match(html, /aria-haspopup="listbox"/);
+});
+
+test('selecting position preset populates domain permissions and preserves preset rules',()=>{
+ const permissions = ['business.sites.view', 'business.sites.edit', 'business.billing.view', 'technical.gateways.view'];
+ const presetRules = {'business.sites.view': true, 'business.billing.view': true};
+
+ const populated = model.applyPositionPreset('business', permissions, presetRules);
+ assert.deepEqual(populated, {
+  'business.sites.view': true,
+  'business.sites.edit': false,
+  'business.billing.view': true,
+ });
+
+ // Unspecified preset rules defaults to all false
+ const emptyPreset = model.applyPositionPreset('business', permissions);
+ assert.deepEqual(emptyPreset, {
+  'business.sites.view': false,
+  'business.sites.edit': false,
+  'business.billing.view': false,
+ });
+});
+
+test('editing position text preserves configured permission overrides',()=>{
+ const permissions = ['business.sites.view', 'business.sites.edit'];
+ const presetRules = {'business.sites.view': true};
+ const overrides = model.applyPositionPreset('business', permissions, presetRules);
+
+ // Simulating user changing the position text manually (typing custom title)
+ const customPosition = 'หัวหน้าฝ่ายปฏิบัติการทั่วไป';
+ const updatedOverrides = {...overrides};
+
+ // Overrides must be preserved as-is
+ assert.deepEqual(updatedOverrides, {
+  'business.sites.view': true,
+  'business.sites.edit': false,
+ });
+
+ const payload = (model as any).buildInvitePayload({
+  email: 'operator@example.com',
+  name: 'สมหญิง รักงาน',
+  position: customPosition,
+  domain: 'business',
+  permissions,
+  overrides: updatedOverrides,
+  scope: {mode: 'all', siteIds: []},
+ });
+
+ assert.equal(payload.companyPosition, 'หัวหน้าฝ่ายปฏิบัติการทั่วไป');
+ assert.deepEqual(payload.permissions, {
+  'business.sites.view': true,
+  'business.sites.edit': false,
+ });
+});
+
+test('buildInvitePayload formats companyPosition, permissions, and scope for submit',()=>{
+ const permissions = ['business.sites.view', 'business.sites.edit', 'technical.devices.view'];
+
+ // 1. Selected scope mode with trimmed values
+ const payload1 = (model as any).buildInvitePayload({
+  email: '  NEW_STAFF@Domain.COM  ',
+  name: '  นายทดสอบ ระบบ  ',
+  position: '  วิศวกรสนาม  ',
+  domain: 'business',
+  permissions,
+  overrides: {'business.sites.view': true, 'business.sites.edit': false, 'technical.devices.view': true},
+  scope: {mode: 'selected', siteIds: ['site-101', 'site-102']},
+ });
+
+ assert.deepEqual(payload1, {
+  email: 'new_staff@domain.com',
+  displayName: 'นายทดสอบ ระบบ',
+  role: 'operator',
+  companyPosition: 'วิศวกรสนาม',
+  permissions: {
+   'business.sites.view': true,
+   'business.sites.edit': false,
+  },
+  scope: {
+   mode: 'selected',
+   siteIds: ['site-101', 'site-102'],
+  },
+ });
+
+ // 2. All scope mode clears siteIds, blank position becomes undefined
+ const payload2 = (model as any).buildInvitePayload({
+  email: 'staff@example.test',
+  name: 'เจ้าหน้าที่',
+  position: '   ',
+  domain: 'business',
+  permissions,
+  overrides: {'business.sites.view': false},
+  scope: {mode: 'all', siteIds: ['site-ignore']},
+ });
+
+ assert.equal(payload2.companyPosition, undefined);
+ assert.deepEqual(payload2.scope, {
+  mode: 'all',
+  siteIds: [],
+ });
+ assert.deepEqual(payload2.permissions, {
+  'business.sites.view': false,
+  'business.sites.edit': false,
+ });
+});
+
+test('apiClient.post sends invite payload to /v1/users/invite', async () => {
+ const originalPost = apiClient.post;
+ let calledEndpoint = '';
+ let calledBody: any = null;
+ (apiClient as any).post = async (endpoint: string, body?: unknown) => {
+  calledEndpoint = endpoint;
+  calledBody = body;
+  return { success: true } as any;
+ };
+
+ try {
+  const payload = (model as any).buildInvitePayload({
+   email: 'newuser@domain.com',
+   name: 'John Doe',
+   position: 'Project Lead',
+   domain: 'business',
+   permissions: ['business.sites.view', 'business.billing.view'],
+   overrides: { 'business.sites.view': true, 'business.billing.view': false },
+   scope: { mode: 'selected', siteIds: ['site-1'] },
+  });
+
+  await apiClient.post('/v1/users/invite', payload);
+
+  assert.equal(calledEndpoint, '/v1/users/invite');
+  assert.deepEqual(calledBody, {
+   email: 'newuser@domain.com',
+   displayName: 'John Doe',
+   role: 'operator',
+   companyPosition: 'Project Lead',
+   permissions: {
+    'business.sites.view': true,
+    'business.billing.view': false,
+   },
+   scope: {
+    mode: 'selected',
+    siteIds: ['site-1'],
+   },
+  });
+ } finally {
+  apiClient.post = originalPost;
+ }
+});
+

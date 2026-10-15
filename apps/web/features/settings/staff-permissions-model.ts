@@ -83,11 +83,47 @@ export function isActionValidForResource(resource: string, action: string): bool
 export function applyPositionPreset(
   domain: string,
   permissions: readonly string[],
-  presetRules: Record<string, RuleValue>
+  presetRules: Record<string, RuleValue> = {}
 ): Record<string, boolean> {
+  const safeRules = presetRules ?? {};
   const result: Record<string, boolean> = {};
   for (const p of permissions.filter((perm) => perm.startsWith(domain + '.'))) {
-    result[p] = presetRules[p] === true;
+    result[p] = safeRules[p] === true;
   }
   return result;
 }
+
+export function buildInvitePayload({
+  email,
+  name,
+  position,
+  domain,
+  permissions,
+  overrides,
+  scope,
+}: {
+  email: string;
+  name: string;
+  position: string;
+  domain: string;
+  permissions: readonly string[];
+  overrides: Record<string, RuleValue>;
+  scope: { mode: 'all' | 'selected'; siteIds: string[] };
+}) {
+  const snapshotOverrides: Record<string, boolean> = {};
+  for (const p of permissions.filter((perm) => perm.startsWith(domain + '.'))) {
+    snapshotOverrides[p] = overrides[p] === true;
+  }
+  return {
+    email: email.trim().toLowerCase(),
+    displayName: name.trim(),
+    role: 'operator' as const,
+    companyPosition: position.trim() || undefined,
+    permissions: snapshotOverrides,
+    scope: {
+      mode: scope.mode,
+      siteIds: scope.mode === 'all' ? [] : scope.siteIds,
+    },
+  };
+}
+
