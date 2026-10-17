@@ -10,7 +10,7 @@ export default function AuditSettingsPage({searchParams}:{searchParams:Promise<O
       eyebrow="AUDIT TRAIL"
       title="ประวัติการทำงาน"
       description="ตรวจสอบเหตุการณ์สำคัญและการเปลี่ยนแปลงข้อมูลแบบ append-only"
-      action="ส่งออก log"
+      action=""
       searchParams={searchParams}
     />
   );

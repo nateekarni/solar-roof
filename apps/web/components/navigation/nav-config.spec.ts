@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {getNavItems, getBottomNavItems} from './nav-config';
+import {getNavItems, getBottomNavItems, navLabel} from './nav-config';
 const paths = (role: string) => getNavItems(role).flatMap(item => [item.href, ...(item.subItems?.map(sub => sub.href) ?? [])]).filter(Boolean);
 test('Owner destinations include business staff management and omit a separate customer menu', () => {
   assert.equal(paths('owner').includes('/sites'), true);
@@ -12,6 +12,13 @@ test('Customer has scoped documents and account destinations without configurati
   assert.deepEqual(getNavItems('customer_user').map(item => item.href), ['/', '/billing', '/receipts', '/settings']); assert.deepEqual(getBottomNavItems('customer_user').map(item => item.href), ['/', '/billing', '/receipts', '/settings']);
   assert.equal(paths('customer_user').includes('/settings/company'), false);
   assert.equal(getBottomNavItems('customer_user').some(item => item.href === '/production'),false);
+});
+test('Customer navigation labels the settings route as ข้อมูลองค์กรและบัญชี / Organization & Account', () => {
+  const items = getNavItems('customer_user');
+  const settingsItem = items.find(item => item.href === '/settings');
+  assert.ok(settingsItem);
+  assert.equal(navLabel(settingsItem, 'th', (k) => k), 'ข้อมูลองค์กรและบัญชี');
+  assert.equal(navLabel(settingsItem, 'en', (k) => k), 'Organization & Account');
 });
 test('Unknown roles get no navigation and Admin retains technical destinations', () => {
   assert.deepEqual(getNavItems('unknown'), []);

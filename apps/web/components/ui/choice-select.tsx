@@ -10,25 +10,30 @@ export const ChoiceSelect = React.forwardRef<HTMLSelectElement, React.ComponentP
     const triggerRef = React.useRef<HTMLButtonElement | null>(null);
     const options = React.Children.toArray(children).filter(React.isValidElement) as React.ReactElement<React.ComponentProps<'option'>>[];
     const [current, setCurrent] = React.useState(String(value ?? defaultValue ?? options[0]?.props.value ?? options[0]?.props.children ?? ''));
+    const [nativeInvalid, setNativeInvalid] = React.useState(false);
     React.useEffect(() => { if (nativeRef.current) setCurrent(nativeRef.current.value); }, [value, children]);
+    React.useEffect(() => { if (value) setNativeInvalid(false); }, [value]);
     const selected = String(value ?? current);
     const encode = (input: string) => input === '' ? '__empty_choice__' : input;
+    const isInvalid = Boolean(props['aria-invalid'] && props['aria-invalid'] !== 'false') || nativeInvalid;
     return <>
       <select {...props} value={value} defaultValue={defaultValue} tabIndex={-1} aria-hidden="true" className="hidden"
         ref={node => { nativeRef.current = node; if (typeof forwardedRef === 'function') forwardedRef(node); else if (forwardedRef) forwardedRef.current = node; }}
-        onInvalid={event => { event.preventDefault(); triggerRef.current?.focus(); onInvalid?.(event); }}
-        onChange={event => { setCurrent(event.target.value); onChange?.(event); }}>
+        onInvalid={event => { event.preventDefault(); setNativeInvalid(true); triggerRef.current?.setAttribute('aria-invalid', 'true'); triggerRef.current?.focus(); onInvalid?.(event); }}
+        onChange={event => { setNativeInvalid(false); triggerRef.current?.removeAttribute('aria-invalid'); setCurrent(event.target.value); onChange?.(event); }}>
         {children}
       </select>
       <Select value={encode(selected)} disabled={Boolean(props.disabled)} onValueChange={next => {
         const node = nativeRef.current;
         if (!node) return;
         const nextValue = next === '__empty_choice__' ? '' : next;
+        setNativeInvalid(false);
+        triggerRef.current?.removeAttribute('aria-invalid');
         Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set?.call(node, nextValue);
         node.dispatchEvent(new Event('change', { bubbles: true }));
         setCurrent(nextValue);
       }}>
-        <SelectTrigger ref={triggerRef} id={id} aria-required={props.required} aria-label={props['aria-label']} aria-describedby={props['aria-describedby']} aria-invalid={props['aria-invalid']} className={className} onBlur={() => nativeRef.current?.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))}>
+        <SelectTrigger ref={triggerRef} id={id} aria-required={props.required} aria-label={props['aria-label']} aria-describedby={props['aria-describedby']} aria-invalid={isInvalid || undefined} className={className} onBlur={() => nativeRef.current?.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))}>
           <SelectValue />
         </SelectTrigger>
         <SelectContent><SelectGroup>{options.map((option, index) => {

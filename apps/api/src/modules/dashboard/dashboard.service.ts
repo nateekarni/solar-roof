@@ -167,15 +167,32 @@ return await this.db.query<{site_id:string;generation_kw:string|null;generation_
     const sites=siteId ? await this.sites(user,siteId) : availableSites;
     const ids=sites.map(s=>s.id);
     const businessScope=siteScope(user,'business');const financialIds=user.role==='customer_user'||businessScope===null?ids:ids.filter(id=>businessScope.includes(id));
+    const canTechnicalAlerts = user.role === 'admin' || hasPermission(user, 'technical.alerts.view');
+    const canBusinessEvents = user.role === 'owner' || user.role === 'customer_user' || hasPermission(user, 'business.billing.view') || hasPermission(user, 'business.receipts.view') || hasPermission(user, 'business.documents.view');
     const [energy,power,billing,alerts]=await Promise.all([
       generationEnergy(this.db,ids,start,end).catch((err: Error) => deferredEnergyFallback(ids, start, 'Summary', err)),
       this.generationPower(ids),
       (user.role!=='customer_user'&&!hasPermission(user,'business.billing.view') ? Promise.resolve({rows:[] as {site_id:string;day:string;amount:string;consumed_kwh:string;paid:boolean}[]}) : this.db.query<{site_id:string;day:string;amount:string;consumed_kwh:string;paid:boolean}>(`SELECT b.site_id,b.period_start::text AS day,b.amount::text,b.consumed_kwh::text,
         coalesce((SELECT sum(coalesce(p.verified_amount,p.amount)) FROM payments p WHERE p.billing_cycle_id=b.id AND p.status='paid'),0)>=b.amount paid
         FROM billing_cycles b WHERE b.site_id=ANY($1::uuid[]) AND b.status NOT IN('draft','cancelled','superseded') AND EXISTS(SELECT 1 FROM documents d WHERE d.billing_cycle_id=b.id AND d.document_type='invoice' AND d.is_current AND d.status IN('issued','finalized')) AND b.period_start >= $2::date AND b.period_start <= $3::date ORDER BY b.period_end`,[financialIds,start,end])),
-      this.db.query<{id:string;title:string;detail:string;severity:string;status:string;occurred_at:string;active_count?:string}>(`SELECT id,title,detail,severity,status,occurred_at::text,
-        count(*) FILTER (WHERE status <> 'acknowledged') OVER ()::text active_count FROM alerts WHERE site_id=ANY($1::uuid[])
-        AND occurred_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok') AND occurred_at < (($3::date+1)::timestamp AT TIME ZONE 'Asia/Bangkok') ORDER BY occurred_at DESC LIMIT 5`,[ids,start,end]),
+      this.db.query<{id:string;title:string;detail:string;severity:string;status:string;occurred_at:string;siteName?:string;destination?:string;kind?:string;active_count?:string}>(`WITH combined AS (
+        SELECT 'alert:'||a.id::text AS id, a.title, a.detail, a.severity, a.status, a.occurred_at, s.name AS "siteName", '/alerts'::text AS destination, 'alert'::text AS kind
+        FROM alerts a JOIN sites s ON s.id=a.site_id
+        WHERE a.site_id=ANY($1::uuid[])
+          AND a.occurred_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok') AND a.occurred_at < (($3::date+1)::timestamp AT TIME ZONE 'Asia/Bangkok')
+          AND ($5::boolean OR ($4::uuid IS NOT NULL AND EXISTS (SELECT 1 FROM operational_event_recipients er WHERE er.notification_id='alert:'||a.id::text AND er.user_id=$4::uuid)))
+        UNION ALL
+        SELECT e.id, e.title, e.detail, 'info'::text AS severity,
+          (CASE WHEN ($4::uuid IS NOT NULL AND EXISTS (SELECT 1 FROM notification_feed_reads r WHERE r.user_id=$4::uuid AND r.notification_id=e.id)) THEN 'acknowledged'::text ELSE 'active'::text END) AS status,
+          e.created_at AS occurred_at, s.name AS "siteName", e.destination, 'workflow'::text AS kind
+        FROM notification_feed_events e JOIN sites s ON s.id=e.site_id
+        WHERE e.site_id=ANY($1::uuid[])
+          AND e.created_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok') AND e.created_at < (($3::date+1)::timestamp AT TIME ZONE 'Asia/Bangkok')
+          AND ($6::boolean AND (NOT EXISTS (SELECT 1 FROM operational_event_recipients er WHERE er.notification_id=e.id) OR ($4::uuid IS NOT NULL AND EXISTS (SELECT 1 FROM operational_event_recipients er WHERE er.notification_id=e.id AND er.user_id=$4::uuid))))
+      )
+      SELECT id, title, detail, severity, status, occurred_at::text, "siteName", destination, kind,
+        count(*) FILTER (WHERE status <> 'acknowledged') OVER ()::text active_count
+      FROM combined ORDER BY occurred_at DESC LIMIT 5`,[ids,start,end,user.id??null,canTechnicalAlerts,canBusinessEvents]),
     ]);
     const production=new Map<string,number|null>(); const qualities=new Map<string,string>(); const watermarks=new Map<string,string>(); const reasons=new Map<string,Set<string>>(); const unknownSites=new Set<string>(); const revenue=new Map<string,number>(); const perSite=new Map<string,number>();
     for (const row of energy.rows) {

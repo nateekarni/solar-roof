@@ -59,7 +59,7 @@ test('missing uploaded logo and default bank produces safe Owner checklist witho
   const result=await f.service.status(owner);
   assert.deepEqual(result.items.filter(i=>i.responsibility==='owner'&&!i.ready&&!i.siteId).map(i=>i.id),['company.logo','company.default_bank','approval.confirmation']);
   assert.ok(result.items.every(i=>!['company.signatory','company.signature'].includes(i.id)));
-  assert.ok(result.items.every(i=>Object.keys(i).every(key=>['id','ready','responsibility','destination','siteId'].includes(key))));
+  assert.ok(result.items.every(i=>Object.keys(i).every(key=>['id','ready','responsibility','destination','siteId','siteName'].includes(key))));
   assert.ok(!JSON.stringify(result).includes('1234567890123'));
 }));
 test('company readiness confirmation accepts absent legacy signer and preserves approval after signer changes',()=>environment(async()=>{

@@ -14,7 +14,7 @@ export function canVisitPage(role: string, rawPath: string): boolean {
   if (!isBusinessRole(role)) return true;
   if (['/','/settings','/settings/account','/settings/general','/settings/security'].includes(path)) return true;
   if (role === 'owner' && path === '/settings/company') return true;
-  if (role === 'owner' && ['/settings/system','/settings/users','/settings/audit'].includes(path)) return true;
+  if (role === 'owner' && ['/settings/system','/settings/users','/settings/audit','/settings/readiness'].includes(path)) return true;
   if (role === 'customer_user' && path === '/production') return true;
   return /^\/(?:contracts|billing|receipts)(?:\/|$)/.test(path)
     || /^\/records\/(?:contracts|billing|invoices|receipts|documents)(?:\/|$)/.test(path);

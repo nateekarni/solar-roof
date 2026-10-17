@@ -7,6 +7,7 @@ import {useSiteSelection} from '../../features/dashboard/site-selection-provider
 import { useSessionUser } from "../../providers/session-user-provider";
 
 import {
+  Building2,
   ChevronRight,
   Globe,
   Laptop,
@@ -113,7 +114,9 @@ export function AppHeader() {
       case "/settings/audit":
         return t("navigation.audit");
       case "/settings":
-        return t("navigation.systemSettings");
+        return user.role === "customer_user"
+          ? (locale === "th" ? "ข้อมูลองค์กรและบัญชี" : "Organization & Account")
+          : t("navigation.systemSettings");
       case "/settings/company":
         return t("navigation.companyAndBanking");
       case "/settings/system":
@@ -238,22 +241,37 @@ export function AppHeader() {
 
               {/* User Account Navigation Links */}
               <div className="p-1.5 border-b border-border/70 space-y-0.5 bg-card">
-                <Link
-                  href="/settings"
-                  onClick={() => setProfileOpen(false)}
-                  className="flex items-center gap-2.5 px-2.5 min-h-10 py-2 rounded-lg text-sm font-normal text-foreground hover:bg-muted/80 transition-colors"
-                >
-                  <Settings2 className="size-3.5 text-muted-foreground" />
-                  <span>{locale === "en" ? "Settings" : "การตั้งค่า"}</span>
-                </Link>
-                <Link
-                  href="/settings/account"
-                  onClick={() => setProfileOpen(false)}
-                  className="flex items-center gap-2.5 px-2.5 min-h-10 py-2 rounded-lg text-sm font-normal text-foreground hover:bg-muted/80 transition-colors"
-                >
-                  <User className="size-3.5 text-muted-foreground" />
-                  <span>{locale === "en" ? "My Account" : "บัญชีของฉัน"}</span>
-                </Link>
+                {user?.role === "customer_user" ? (
+                  <Link
+                    href="/settings"
+                    onClick={() => setProfileOpen(false)}
+                    className="flex items-center gap-2.5 px-2.5 min-h-10 py-2 rounded-lg text-sm font-normal text-foreground hover:bg-muted/80 transition-colors"
+                  >
+                    <Building2 className="size-3.5 text-muted-foreground" />
+                    <span>
+                      {locale === "en" ? "Organization & Account" : "ข้อมูลองค์กรและบัญชี"}
+                    </span>
+                  </Link>
+                ) : (
+                  <>
+                    <Link
+                      href="/settings"
+                      onClick={() => setProfileOpen(false)}
+                      className="flex items-center gap-2.5 px-2.5 min-h-10 py-2 rounded-lg text-sm font-normal text-foreground hover:bg-muted/80 transition-colors"
+                    >
+                      <Settings2 className="size-3.5 text-muted-foreground" />
+                      <span>{locale === "en" ? "Settings" : "การตั้งค่า"}</span>
+                    </Link>
+                    <Link
+                      href="/settings/account"
+                      onClick={() => setProfileOpen(false)}
+                      className="flex items-center gap-2.5 px-2.5 min-h-10 py-2 rounded-lg text-sm font-normal text-foreground hover:bg-muted/80 transition-colors"
+                    >
+                      <User className="size-3.5 text-muted-foreground" />
+                      <span>{locale === "en" ? "My Account" : "บัญชีของฉัน"}</span>
+                    </Link>
+                  </>
+                )}
               </div>
 
               <ProfilePreferences locale={locale} theme={theme??"system"} onLocaleChange={handleLanguageChange} onThemeChange={handleThemeChange}/>

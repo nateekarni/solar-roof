@@ -12,6 +12,6 @@ test('Owner creates sites and financial creation remains capability gated',()=>{
  assert.equal(canCreateOperation('sites',{role:'admin',customerId:'customer-a'},[]),false);
  assert.equal(canCreateOperation('sites',{role:'owner'},[]),true);
  assert.equal(canCreateOperation('contracts',{role:'owner'},[]),false);
- assert.equal(canCreateOperation('contracts',{role:'owner'},['create_contract']),true);
+ assert.equal(canCreateOperation('contracts',{role:'owner'},['create_contract']),false);
  assert.equal(canCreateOperation('billing',{role:'customer_user'},[]),false);
 });

@@ -20,15 +20,20 @@ test('groups only missing requirements in ordered company, confirmation and envi
   assert.match(steps[0]!.title,/บริษัท/);
 });
 
-test('site steps keep separate destinations and readable labels without exposing identifiers',async()=>{
+test('site steps consolidate into a single readiness step with readable labels without exposing identifiers',async()=>{
   const steps=groupMissingReadiness(status([
     {id:'site.tax',siteId:'site-b',ready:false,responsibility:'owner',destination:'/sites/site-b/settings'},
     {id:'site.binding',siteId:'site-a',ready:false,responsibility:'technical',destination:'/sites/site-a/settings'},
     {id:'unknown.requirement',ready:false,responsibility:'environment'},
     {id:'site.rate',siteId:'site-a',ready:false,responsibility:'owner',destination:'/sites/site-a/settings'},
   ]),'en');
-  assert.deepEqual(steps.map(step=>step.destination),['/records/sites/site-a','/records/sites/site-b',null]);
-  assert.deepEqual(steps[0]?.items.map(item=>item.id),['site.binding','site.rate']);
+  assert.deepEqual(steps.map(step=>step.key),['sites','environment']);
+  assert.equal(steps[0]?.key,'sites');
+  assert.equal(steps[0]?.totalSites,2);
+  assert.equal(steps[0]?.pendingSitesCount,2);
+  assert.deepEqual(steps[0]?.items.map(item=>item.id),['site.tax','site.binding','site.rate']);
+  assert.equal(steps[0]?.items[0]?.destination,'/records/sites/site-b');
+  assert.equal(steps[0]?.items[2]?.destination,'/records/sites/site-a');
   assert.doesNotMatch(steps.map(step=>[step.title,step.description,...step.items.map(item=>item.label)].join(' ')).join(' '),/site-a|site-b|site\.tax|unknown\.requirement/);
 });
 

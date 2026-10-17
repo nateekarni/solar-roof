@@ -171,3 +171,34 @@ test('owner can read the selected site configuration summary without technical w
  const result=await new DashboardService(db as any).getSummary({role:'owner'},'2026-09-01','2026-09-01',id);
  assert.equal(result.selectedSite?.gateway?.name,'Gateway A');assert.equal(result.selectedSite?.devices[0]?.name,'Meter A');
 });
+
+test('dashboard summary alerts query scopes technical alerts vs business events by role and captures siteName/destination/kind',async()=>{
+ const site={id,name:'Solar Alpha',customer_name:'Customer',capacity_mwp:'1',gateway_id:null,gateway_name:null,last_seen_at:null};
+ const calls:{sql:string;params:unknown[]}[]=[];
+ const db={query:async(sql:string,params:unknown[]=[])=>{
+  calls.push({sql,params});
+  if(sql.includes('FROM sites s JOIN customers'))return {rows:[site]};
+  if(sql.includes('WITH combined AS'))return {rows:[{id:'event-1',title:'ออกใบวางบิลแล้ว',detail:'INV-2026-001',severity:'info',status:'active',occurred_at:'2026-10-05T10:00:00Z',siteName:'Solar Alpha',destination:'/records/documents/doc-1',kind:'workflow',active_count:'1'}]};
+  return {rows:[]};
+ }};
+ const service=new DashboardService(db as any);
+ const ownerResult=await service.getSummary({id:'user-owner-1',role:'owner'},'2026-10-01','2026-10-07');
+ const ownerAlertsCall=calls.find(c=>c.sql.includes('WITH combined AS'));
+ assert.ok(ownerAlertsCall);
+ assert.equal(ownerAlertsCall.params[3],'user-owner-1');
+ assert.equal(ownerAlertsCall.params[4],false); // canTechnicalAlerts = false for owner
+ assert.equal(ownerAlertsCall.params[5],true); // canBusinessEvents = true for owner
+ assert.equal(ownerResult.alerts[0]?.siteName,'Solar Alpha');
+ assert.equal(ownerResult.alerts[0]?.destination,'/records/documents/doc-1');
+ assert.equal(ownerResult.alerts[0]?.kind,'workflow');
+ assert.equal(ownerResult.alertActiveCount,1);
+
+ calls.length=0;
+ await service.getSummary({id:'user-admin-1',role:'admin'},'2026-10-01','2026-10-07');
+ const adminAlertsCall=calls.find(c=>c.sql.includes('WITH combined AS'));
+ assert.ok(adminAlertsCall);
+ assert.equal(adminAlertsCall.params[3],'user-admin-1');
+ assert.equal(adminAlertsCall.params[4],true); // canTechnicalAlerts = true for admin
+ assert.equal(adminAlertsCall.params[5],false); // canBusinessEvents = false for admin
+});
+

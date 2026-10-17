@@ -28,7 +28,7 @@ export class TeamService {
  catalog(actor:TeamActor,rawDomain:unknown){const domain=domainFor(actor,rawDomain);return {domain,permissions:PERMISSION_CATALOG.filter(key=>key.startsWith(`${domain}.`))};}
  async employees(actor:TeamActor,rawDomain:unknown){
   const domain=domainFor(actor,rawDomain);
-  const result=await this.db.query(`SELECT u.id,u.email,u.display_name AS "displayName",u.avatar_data AS "avatarData",u.role,
+  const result=await this.db.query(`SELECT u.id,u.email,u.phone,u.display_name AS "displayName",u.avatar_data AS "avatarData",u.role,
    CASE
      WHEN u.status = 'inactive' AND u.password_hash IS NULL THEN 'cancelled'
      WHEN u.status = 'inactive' THEN 'inactive'
@@ -40,10 +40,38 @@ export class TeamService {
    (u.password_hash IS NOT NULL) AS "hasPassword",
    u.permission_revision AS revision,
    u.company_position_id AS "companyPositionId",p.name AS "companyPosition",
-   CASE WHEN g.user_id IS NULL THEN NULL ELSE jsonb_build_object('positionId',g.position_id,'overrides',g.overrides,'scope',jsonb_build_object('mode',g.scope_mode,'siteIds',g.site_ids)) END AS grant
+   CASE WHEN g.user_id IS NULL THEN NULL ELSE jsonb_build_object('positionId',g.position_id,'overrides',g.overrides,'scope',jsonb_build_object('mode',g.scope_mode,'siteIds',g.site_ids)) END AS grant,
+   inv.invitation
    FROM users u LEFT JOIN employee_domain_grants g ON g.user_id=u.id AND g.domain=$1
    LEFT JOIN employee_positions p ON p.id=u.company_position_id
-   WHERE u.role IN ('operator','accountant',$2) ORDER BY u.display_name,u.id`,[domain,domain==='business'?'owner':'admin']);
+   LEFT JOIN LATERAL (
+     SELECT jsonb_build_object(
+       'id', ui.id,
+       'invitedAt', ui.created_at,
+       'expiresAt', ui.expires_at,
+       'revokedAt', ui.revoked_at,
+       'deliveryStatus', ui.delivery_status,
+       'issuerId', ui.issuer_id,
+       'issuerName', iss.display_name,
+       'issuerEmail', iss.email
+     ) AS invitation
+     FROM user_invitations ui
+     LEFT JOIN users iss ON iss.id = ui.issuer_id
+     WHERE ui.user_id = u.id
+     ORDER BY ui.created_at DESC
+     LIMIT 1
+   ) inv ON true
+   WHERE u.role IN ('operator','accountant',$2)
+   ORDER BY
+     CASE
+       WHEN (u.status = 'inactive' AND u.password_hash IS NULL)
+         OR (u.status = 'invited' AND EXISTS (
+           SELECT 1 FROM user_invitations ui WHERE ui.user_id = u.id AND ui.expires_at < now() AND ui.consumed_at IS NULL AND ui.revoked_at IS NULL
+         ))
+       THEN 1
+       ELSE 0
+     END ASC,
+     u.display_name,u.id`,[domain,domain==='business'?'owner':'admin']);
   return {domain,employees:result.rows};
  }
  async positions(actor:TeamActor,rawDomain:unknown){
@@ -67,8 +95,11 @@ export class TeamService {
   domainFor({...actor,role:current.role},domain);
   return targetId===undefined?undefined:users.find(row=>row.id===targetId);
  }
- private async audit(client:PoolClient,actor:TeamActor,domain:PermissionDomain,id:string,action:string,after?:unknown){
-  await client.query(`INSERT INTO audit_events(id,actor_id,action,entity_type,entity_id,correlation_id,after_json) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb)`,[randomUUID(),actor.id,`${domain}.${action}`,'employee_permission',id,randomUUID(),after===undefined?null:JSON.stringify(after)]);
+ private async audit(client:PoolClient,actor:TeamActor,domain:PermissionDomain,id:string,action:string,after?:unknown,before?:unknown){
+  const sanitize=(data:unknown):unknown=>{if(!data||typeof data!=='object')return data;if(Array.isArray(data))return data.map(sanitize);const copy:Record<string,unknown>={};for(const [k,v] of Object.entries(data as Record<string,unknown>)){if(/password|secret|token|hash|salt|key_bytes/i.test(k)){copy[k]='[REDACTED]';}else if(v&&typeof v==='object'){copy[k]=sanitize(v);}else{copy[k]=v;}}return copy;};
+  const sanitizedAfter=after===undefined||after===null?null:JSON.stringify(sanitize(after));
+  const sanitizedBefore=before===undefined||before===null?null:JSON.stringify(sanitize(before));
+  await client.query(`INSERT INTO audit_events(id,actor_id,action,entity_type,entity_id,correlation_id,before_json,after_json) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb)`,[randomUUID(),actor.id,`${domain}.${action}`,'employee_permission',id,randomUUID(),sanitizedBefore,sanitizedAfter]);
  }
  private async createPosition(client:PoolClient,domain:PermissionDomain,name:string,rules:Record<string,boolean|null>){
   const inserted=(await client.query('INSERT INTO employee_positions(id,name) VALUES($1,$2) ON CONFLICT (employee_position_name_key(name)) DO NOTHING RETURNING id,name',[randomUUID(),name])).rows[0];
@@ -133,7 +164,7 @@ export class TeamService {
    }
    await client.query('UPDATE users SET permission_revision=permission_revision+1,updated_at=now() WHERE id=$1',[userId]);
    const position={id:positionId||user.company_position_id,name};
-   await this.audit(client,actor,domain,userId,'permissions.updated',{position});
+   await this.audit(client,actor,domain,userId,'permissions.updated',{position,overrides,scopeMode:scope.mode,siteIds:scope.siteIds},{positionId:user.company_position_id,overrides:user.overrides,scopeMode:user.scope_mode,siteIds:user.site_ids});
    return {success:true,revision:expected+1,position,...(positionReused?{positionReused:true as const}:{})};
   });
  }
@@ -149,7 +180,7 @@ export class TeamService {
    if(user.permission_revision!==expected)throw new ConflictException('Permissions changed; reload');
    await client.query('DELETE FROM employee_domain_grants WHERE user_id=$1 AND domain=$2',[userId,domain]);
    await client.query('UPDATE users SET permission_revision=permission_revision+1,updated_at=now() WHERE id=$1',[userId]);
-   await this.audit(client,actor,domain,userId,'permissions.revoked');return {success:true,revision:expected+1};
+   await this.audit(client,actor,domain,userId,'permissions.revoked',{revoked:true},{domain,userId});return {success:true,revision:expected+1};
   });
  }
  async savePosition(actor:TeamActor,rawDomain:unknown,input:unknown,positionId?:string){
@@ -159,10 +190,12 @@ export class TeamService {
   return this.db.transaction(async client=>{
    await this.authorizeCurrent(client,actor,domain,positionId?{positionId}:undefined);
    let id=positionId?uuid(positionId):'';let name=body.name.trim().normalize('NFC'),positionReused=false;
+   let previousRules: unknown = null;
    if(positionId){
-    const current=(await client.query('SELECT revision FROM employee_position_domains WHERE position_id=$1 AND domain=$2 FOR UPDATE',[id,domain])).rows[0];
+    const current=(await client.query('SELECT revision, rules FROM employee_position_domains WHERE position_id=$1 AND domain=$2 FOR UPDATE',[id,domain])).rows[0];
     if(!current)throw new NotFoundException('Position not found');
     if(current.revision!==expected)throw new ConflictException('Position changed; reload');
+    previousRules=current.rules;
     // Name is shared account metadata: names are immutable after creation so changing one domain cannot change another.
     const position=(await client.query('SELECT name FROM employee_positions WHERE id=$1',[id])).rows[0];
     if(position.name!==body.name.trim())throw new BadRequestException('Create a new position to change its name');
@@ -171,7 +204,7 @@ export class TeamService {
    }else{
     const created=await this.createPosition(client,domain,name,rules);id=created.id;name=created.name;positionReused=created.reused;
    }
-   await this.audit(client,actor,domain,id,'position.updated');return {id,name,rules,revision:positionId?expected+1:0,...(positionReused?{positionReused:true as const}:{})};
+   await this.audit(client,actor,domain,id,'position.updated',{name,rules},positionId?{name,rules:previousRules}:null);return {id,name,rules,revision:positionId?expected+1:0,...(positionReused?{positionReused:true as const}:{})};
   });
  }
  async positionImpact(actor:TeamActor,positionId:string,rawDomain:unknown,input:unknown){
@@ -197,10 +230,11 @@ export class TeamService {
    if(!user)throw new NotFoundException('Employee not found');
    if(!['operator','accountant'].includes(user.role))throw new ForbiddenException('Only employee accounts can be globally deactivated');
    if(user.permission_revision!==expected)throw new ConflictException('Permissions changed; preview again');
+   const sessions=(await client.query('SELECT count(*) AS count FROM auth_sessions WHERE user_id=$1 AND revoked_at IS NULL',[userId])).rows[0]?.count;
    await client.query("UPDATE users SET status='inactive',permission_revision=permission_revision+1,updated_at=now() WHERE id=$1",[userId]);
    await client.query('UPDATE auth_sessions SET revoked_at=now(),refresh_hash=NULL WHERE user_id=$1 AND revoked_at IS NULL',[userId]);
    await client.query("UPDATE user_invitations SET revoked_at=now(), consumed_at=now() WHERE user_id=$1 AND consumed_at IS NULL",[userId]);
-   await this.audit(client,actor,domain,userId,'employee.deactivated');return {success:true,revision:expected+1};
+   await this.audit(client,actor,domain,userId,'employee.deactivated',{status:'inactive',sessionsRevoked:Number(sessions??0)},{status:'active',activeSessions:Number(sessions??0)});return {success:true,revision:expected+1};
   });
  }
  async reactivate(actor:TeamActor,userId:string,input?:unknown){
@@ -218,7 +252,7 @@ export class TeamService {
      throw new ConflictException({code:'EMPLOYEE_REVISION_CONFLICT',message:'Permissions changed; reload before saving'});
    }
    await client.query("UPDATE users SET status='active',permission_revision=permission_revision+1,updated_at=now() WHERE id=$1",[userId]);
-   await this.audit(client,actor,domain,userId,'employee.reactivated');return {success:true,revision:user.permission_revision+1};
+   await this.audit(client,actor,domain,userId,'employee.reactivated',{status:'active'},{status:'inactive'});return {success:true,revision:user.permission_revision+1};
   });
  }
 }

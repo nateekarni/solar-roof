@@ -36,7 +36,7 @@ export class UsersController {
   @Post("sites/:siteId/customer-users")
   inviteSiteUser(
     @Param("siteId") siteId: string,
-    @Body() body: { email: string; displayName: string },
+    @Body() body: { email: string; displayName: string; phone?: string | null },
     @Req() req: any,
   ) {
     return this.siteUsers.invite(siteId, body, req.user.id);
@@ -50,6 +50,15 @@ export class UsersController {
     @Req() req: any,
   ) {
     return this.siteUsers.update(siteId, userId, body, req.user.id);
+  }
+  @Roles("owner")
+  @Post("sites/:siteId/customer-users/:userId/cancel-invite")
+  cancelSiteUserInvite(
+    @Param("siteId") siteId: string,
+    @Param("userId") userId: string,
+    @Req() req: any,
+  ) {
+    return this.siteUsers.cancelInvite(siteId, userId, req.user.id);
   }
   @Roles("owner")
   @Delete("sites/:siteId/customer-users/:userId")

@@ -75,10 +75,12 @@ export class SettingsService {
     const body=validateSettingsPatch(domain,input);
     await this.db.transaction(async client=>{
       const current=(await client.query('SELECT revision FROM settings_domain_revisions WHERE domain=$1 FOR UPDATE',[domain])).rows[0];
-      if(current?.revision!==body.revision)throw new ConflictException('Settings changed; reload before saving');
+      const prevRows = (await client.query(`SELECT key, value FROM system_settings WHERE key = ANY($1::text[])`, [Object.keys(body.settings)])).rows;
+      const prevMap: Record<string, unknown> = {};
+      for (const r of prevRows) prevMap[r.key] = r.value;
       for(const [key,value]of Object.entries(body.settings))await client.query(`INSERT INTO system_settings(key,value,updated_at) VALUES($1,$2,now()) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=now()`,[key,String(value)]);
       await client.query('UPDATE settings_domain_revisions SET revision=revision+1 WHERE domain=$1',[domain]);
-      await client.query(`INSERT INTO audit_events(id,actor_id,action,entity_type,entity_id,correlation_id) VALUES($1,$2,$3,'settings',$4,$5)`,[randomUUID(),actorId,`${domain}.settings.updated`,domain,randomUUID()]);
+      await client.query(`INSERT INTO audit_events(id,actor_id,action,entity_type,entity_id,correlation_id,before_json,after_json) VALUES($1,$2,$3,'settings',$4,$5,$6::jsonb,$7::jsonb)`,[randomUUID(),actorId,`${domain}.settings.updated`,domain,randomUUID(),JSON.stringify(prevMap),JSON.stringify(body.settings)]);
     });
     return this.getDomainSettings(domain);
   }

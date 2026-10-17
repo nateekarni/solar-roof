@@ -5,7 +5,7 @@ import { z } from "zod";
 const identifier = z.string().min(1).max(128).regex(/^[A-Za-z0-9_-]+$/);
 const tag = z.string().min(1).max(128).regex(/^[A-Za-z0-9_.-]+$/);
 const unit = z.string().min(1).max(32);
-const fieldSchema = z.object({ tag, sourceTag:tag.optional(),required:z.boolean().optional(), displayName: z.string().min(1).max(128), pollGroup: identifier, sourceUnit: unit, targetUnit: unit, conversion: z.enum(["identity", "wh-to-kwh", "varh-to-kvarh", "auto-v1"]), role: z.enum(["billing-import", "active-power", "none"]).optional() }).strict();
+const fieldSchema = z.object({ tag, sourceTag:tag.optional(),required:z.boolean().optional(), registerAddress: z.string().min(1).max(128).optional(), displayName: z.string().min(1).max(128), pollGroup: identifier, sourceUnit: unit, targetUnit: unit, conversion: z.enum(["identity", "wh-to-kwh", "varh-to-kvarh", "auto-v1"]), role: z.enum(["billing-import", "active-power", "none"]).optional() }).strict();
 const profileSchema = z.object({ id: identifier, version: z.string().regex(/^\d+\.\d+\.\d+$/), sourceProfile:z.object({id:identifier,version:z.string().regex(/^\d+\.\d+\.\d+$/)}).strict().optional(),schemaVersion: z.literal("1.1"), displayName: z.string().min(1).max(128), deviceType: identifier, pollGroups: z.array(identifier).min(1).max(16), fields: z.array(fieldSchema).min(1).max(256) }).strict();
 export type PayloadProfile = z.infer<typeof profileSchema>;
 export type PayloadProfileField = z.infer<typeof fieldSchema>;

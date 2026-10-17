@@ -16,8 +16,8 @@ import {accessibleFeedRows,markFeedRead,type NotificationFeed,type NotificationF
 function formatNotificationCopy(row: NotificationFeedItem, th: boolean) {
  if (row.metadata?.type === 'finance-readiness') {
   return {
-   title: th ? 'ตั้งค่าการเงินให้ครบ' : 'Complete finance setup',
-   detail: th ? `เหลือรายการที่ Owner ต้องดำเนินการ ${row.metadata.missingCount} รายการ` : `${row.metadata.missingCount} Owner setup items remaining`,
+   title: th ? 'รายการข้อมูลที่ต้องตั้งค่าก่อนเริ่มใช้งาน' : 'Setup Checklist Before Go-Live',
+   detail: th ? `มีรายการที่ต้องตั้งค่าอีก ${row.metadata.missingCount} รายการ` : `${row.metadata.missingCount} items require setup`,
    siteName: null,
   };
  }
@@ -59,11 +59,23 @@ function formatNotificationCopy(row: NotificationFeedItem, th: boolean) {
    detail = row.detail.replace(/ครบกำหนด\s*\/\s*Due:\s*/i, th ? 'ครบกำหนด: ' : 'Due: ');
   }
  }
- // Contract lifecycle
- else if (row.title === 'สร้างสัญญาแล้ว') {
-  title = th ? 'สร้างสัญญาใหม่แล้ว' : 'Contract Created';
- } else if (row.title === 'ปรับปรุงสัญญาแล้ว') {
-  title = th ? 'อัปเดตสัญญาแล้ว' : 'Contract Updated';
+ // System Alerts & Offline Status
+ else if (row.title === 'แจ้งเตือน / Alert' || row.title === 'Alert' || row.kind === 'alert') {
+  if (row.title === 'แจ้งเตือน / Alert' || row.title === 'Alert') {
+   title = th ? 'การแจ้งเตือนระบบ' : 'System Alert';
+  } else if (row.title === 'กลับสู่ปกติ / Recovered' || row.title === 'Recovered') {
+   title = th ? 'ระบบกลับสู่ปกติ' : 'System Recovered';
+  }
+
+  if (detail === 'offline' || detail.toLowerCase() === 'offline') {
+   detail = th ? 'เกตเวย์ออฟไลน์' : 'Gateway offline';
+  } else if (detail === 'stale' || detail.toLowerCase() === 'stale') {
+   detail = th ? 'ข้อมูลหยุดส่งเกินกำหนด' : 'Data transmission stale';
+  } else if (detail === 'online' || detail.toLowerCase() === 'online') {
+   detail = th ? 'เกตเวย์ออนไลน์' : 'Gateway online';
+  } else if (detail.toLowerCase().includes('offline')) {
+   detail = detail.replace(/\boffline\b/gi, th ? 'เกตเวย์ออฟไลน์' : 'Gateway offline');
+  }
  }
 
  return {
@@ -75,6 +87,7 @@ function formatNotificationCopy(row: NotificationFeedItem, th: boolean) {
 
 export function NotificationFeedRow({row,th,onRead,onNavigate}:{row:NotificationFeedItem;th:boolean;onRead:(id:string)=>void;onNavigate?:()=>void}) {
  const {title, detail, siteName} = formatNotificationCopy(row, th);
+ const isFinanceReadiness = row.metadata?.type === 'finance-readiness';
  const formattedDate = new Intl.DateTimeFormat(th ? 'th-TH' : 'en-GB', {
   dateStyle: 'medium',
   timeStyle: 'short',
@@ -84,11 +97,18 @@ export function NotificationFeedRow({row,th,onRead,onNavigate}:{row:Notification
  const content = (
   <div className="flex w-full min-w-0 items-start gap-2.5">
    <span className="mt-0.5 shrink-0 text-muted-foreground">
-    {row.kind === 'alert' ? <AlertTriangle className="size-4" /> : <Bell className="size-4" />}
+    {isFinanceReadiness ? <AlertTriangle className="size-4 text-amber-600 dark:text-amber-400" /> : row.kind === 'alert' ? <AlertTriangle className="size-4" /> : <Bell className="size-4" />}
    </span>
    <div className="flex min-w-0 flex-1 flex-col gap-1">
     <div className="flex items-center justify-between gap-2">
-     <span className="text-sm font-medium truncate">{title}</span>
+     <div className="flex items-center gap-1.5 min-w-0">
+      <span className="text-sm font-medium truncate">{title}</span>
+      {isFinanceReadiness && (
+       <Badge variant="outline" className="shrink-0 bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-700 text-[10px] px-1.5 py-0 font-medium">
+        {th ? 'จำเป็น' : 'Action Required'}
+       </Badge>
+      )}
+     </div>
      <div className="flex items-center gap-1.5 shrink-0">
       <time dateTime={row.createdAt} className="text-xs text-muted-foreground whitespace-nowrap">
        {formattedDate}
@@ -119,7 +139,7 @@ export function NotificationFeedRow({row,th,onRead,onNavigate}:{row:Notification
  };
 
  return row.destination ? (
-  <Button asChild variant="ghost" className="h-auto! w-full justify-start rounded-none border-b p-3 text-left whitespace-normal">
+  <Button asChild variant="ghost" className={`h-auto! w-full justify-start rounded-none border-b p-3 text-left whitespace-normal ${isFinanceReadiness ? 'bg-amber-500/5 hover:bg-amber-500/10' : ''}`}>
    <Link href={row.destination} onClick={activate}>{content}</Link>
   </Button>
  ) : (
@@ -137,7 +157,10 @@ export function NotificationBell({siteId}:{siteId?:string|undefined}) {
  const [open,setOpen]=React.useState(false),[loading,setLoading]=React.useState(true),[busy,setBusy]=React.useState(false),[error,setError]=React.useState('');
  const [loaded,setLoaded]=React.useState(''),[feed,setFeed]=React.useState<NotificationFeed>({rows:[],unreadCount:0});
  const ready=loaded===scope;
- const rows=ready?feed.rows:[],count=ready?feed.unreadCount:0;
+ const rows=ready
+  ? [...feed.rows].sort((a,b)=>(b.metadata?.type==='finance-readiness'?1:0)-(a.metadata?.type==='finance-readiness'?1:0))
+  : [];
+ const count=ready?feed.unreadCount:0;
  const load=React.useCallback(async()=>{
   const request=++generation.current;setLoading(true);setError('');
   try {
@@ -164,7 +187,19 @@ export function NotificationBell({siteId}:{siteId?:string|undefined}) {
   popoverClassName="flex w-96 max-w-[calc(100vw-2rem)] flex-col gap-0 overflow-hidden p-0"
   sheetClassName="inset-0 flex h-full max-h-screen w-full flex-col gap-0 overflow-hidden rounded-none bg-background p-0"
   trigger={<Button type="button" variant="ghost" size="icon" className="relative rounded-full" aria-label={th?'การแจ้งเตือน':'Notifications'}><Bell/>{count>0&&<span className="absolute right-1 top-1 size-2 rounded-full bg-destructive ring-2 ring-background"/>}<span className="sr-only">{count} {th?'รายการที่ยังไม่อ่าน':'unread'}</span></Button>}>
-  <div className="flex items-center justify-between gap-2 border-b p-3"><div className="flex items-center gap-2"><span className="text-sm font-semibold">{th?'การแจ้งเตือน':'Notifications'}</span>{count>0&&<Badge variant="destructive">{count}</Badge>}</div><div className="flex gap-1"><Button type="button" variant="ghost" size="icon" disabled={busy||loading||!ready||count===0} onClick={()=>void read()} aria-label={th?'อ่านทั้งหมด':'Mark all as read'} title={th?'อ่านทั้งหมด':'Mark all as read'}><CheckCheck/></Button><Button type="button" variant="ghost" size="icon" onClick={()=>setOpen(false)} aria-label={th?'ปิด':'Close'}><X/></Button></div></div>
+  <div className="flex items-center justify-between gap-2 border-b p-3">
+   <div className="flex flex-col gap-0.5">
+    <div className="flex items-center gap-2">
+     <span className="text-sm font-semibold">{th?'การแจ้งเตือน':'Notifications'}</span>
+     {count>0&&<Badge variant="destructive">{count}</Badge>}
+    </div>
+    <p className="text-xs text-muted-foreground">{th?'รายการแจ้งเตือนและกิจกรรมล่าสุด':'Recent alerts and activity'}</p>
+   </div>
+   <div className="flex gap-1">
+    <Button type="button" variant="ghost" size="icon" disabled={busy||loading||!ready||count===0} onClick={()=>void read()} aria-label={th?'อ่านทั้งหมด':'Mark all as read'} title={th?'อ่านทั้งหมด':'Mark all as read'}><CheckCheck/></Button>
+    <Button type="button" variant="ghost" size="icon" onClick={()=>setOpen(false)} aria-label={th?'ปิด':'Close'}><X/></Button>
+   </div>
+  </div>
   <div className="flex min-h-0 flex-1 flex-col overflow-y-auto md:max-h-96">
    {error&&<Alert variant="destructive" className="m-3 w-auto"><AlertDescription><span>{error}</span><Button type="button" variant="outline" onClick={()=>void load()}>{th?'ลองอีกครั้ง':'Retry'}</Button></AlertDescription></Alert>}
    {loading||!ready?<div className="flex flex-col gap-3 p-4" role="status" aria-label={th?'กำลังโหลดการแจ้งเตือน':'Loading notifications'}><Skeleton className="h-12 w-full"/><Skeleton className="h-12 w-full"/></div>:!error&&rows.length===0?<Empty className="rounded-none border-0 py-8"><EmptyHeader><EmptyMedia variant="icon"><Bell/></EmptyMedia><EmptyTitle>{th?'ไม่มีการแจ้งเตือน':'No notifications'}</EmptyTitle><EmptyDescription>{th?'รายการที่เกี่ยวข้องกับคุณจะแสดงที่นี่':'Notifications relevant to you will appear here.'}</EmptyDescription></EmptyHeader></Empty>:rows.map(row=><NotificationFeedRow key={row.id} row={row} th={th} onRead={id=>{void read([id]);}} onNavigate={()=>setOpen(false)}/>)}

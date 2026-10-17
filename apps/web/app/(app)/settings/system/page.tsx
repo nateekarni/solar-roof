@@ -6,7 +6,7 @@ import { SystemSettingsContent } from "../../../../features/settings/system-sett
 export default function SystemSettingsPage() {
   return (
     <main className="content">
-      <SystemSettingsContent showBackLink={true} />
+      <SystemSettingsContent />
     </main>
   );
 }

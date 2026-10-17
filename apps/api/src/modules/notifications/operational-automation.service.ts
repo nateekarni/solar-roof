@@ -8,7 +8,14 @@ import { customerScope, type ScopePrincipal } from '../../common/auth/route-poli
 import { hasPermission,siteScope } from '../../common/auth/authorization.js';
 import { localFinancialBinding } from '../billing/local-financial-policy.js';
 import { reminderSlot, transitionAlert } from './automation-policy.js';
-const ruleSchema=z.object({siteId:z.uuid(),kind:z.enum(['offline','stale','threshold']),semanticField:z.enum(['total_energy','active_power','voltage','current','frequency','power_factor']).optional(),operator:z.enum(['gt','gte','lt','lte']).optional(),threshold:z.coerce.number().finite().optional(),durationSeconds:z.number().int().min(0).max(604800),cooldownSeconds:z.number().int().min(0).max(2592000),recovery:z.boolean(),recipientUserIds:z.array(z.uuid()).min(1).max(100),channels:z.array(z.enum(['in_app','email'])).min(1)}).refine(r=>r.kind!=='threshold'||(r.semanticField&&r.operator&&r.threshold!==undefined),'Threshold requires field, operator and value');
+const ruleSchema=z.object({siteId:z.uuid().optional(),siteIds:z.array(z.uuid()).min(1).max(100).optional(),kind:z.enum(['offline','stale','threshold']),semanticField:z.enum(['total_energy','active_power','voltage','current','frequency','power_factor']).optional(),operator:z.enum(['gt','gte','lt','lte']).optional(),threshold:z.coerce.number().finite().optional(),durationSeconds:z.number().int().min(0).max(604800),cooldownSeconds:z.number().int().min(0).max(2592000),recovery:z.boolean(),recipientUserIds:z.array(z.uuid()).min(1).max(100),channels:z.array(z.enum(['in_app','email'])).min(1)}).refine(r=>Boolean(r.siteId||(r.siteIds&&r.siteIds.length>0)),'At least one site is required').refine(r=>r.kind!=='threshold'||(r.semanticField&&r.operator&&r.threshold!==undefined),'Threshold requires field, operator and value');
+const updateRuleSchema=z.object({siteId:z.uuid().optional(),siteIds:z.array(z.uuid()).min(1).max(100).optional(),enabled:z.boolean().optional(),kind:z.enum(['offline','stale','threshold']).optional(),semanticField:z.enum(['total_energy','active_power','voltage','current','frequency','power_factor']).optional(),operator:z.enum(['gt','gte','lt','lte']).optional(),threshold:z.coerce.number().finite().optional(),durationSeconds:z.number().int().min(0).max(604800).optional(),cooldownSeconds:z.number().int().min(0).max(2592000).optional(),recovery:z.boolean().optional(),recipientUserIds:z.array(z.uuid()).min(1).max(100).optional(),channels:z.array(z.enum(['in_app','email'])).min(1).optional()}).refine(r=>r.kind!=='threshold'||(r.semanticField&&r.operator&&r.threshold!==undefined),'Threshold requires field, operator and value');
+function normalizeRuleRow(row:Record<string,any>){
+ const stateSiteIds=Array.isArray(row?.state?.site_ids)?row.state.site_ids.filter((id:unknown):id is string=>typeof id==='string'&&id.length>0):[];
+ const rowSiteIds=Array.isArray(row?.site_ids)?row.site_ids.filter((id:unknown):id is string=>typeof id==='string'&&id.length>0):[];
+ const siteIds=rowSiteIds.length?Array.from(new Set(rowSiteIds)):stateSiteIds.length?Array.from(new Set(stateSiteIds)):row?.site_id?[row.site_id]:[];
+ return {...row,site_ids:siteIds};
+}
 // Called before queueing and again before delivery. Customer permissions are live assignments.
 export const eligibleRecipientSql=`SELECT u.id,u.email FROM users u JOIN sites s ON s.id=$1 JOIN customers c ON c.id=s.customer_id
  WHERE u.id=$2 AND u.status='active' AND c.status='active' AND u.email_verified_at IS NOT NULL AND u.verified_email=u.email
@@ -29,15 +36,71 @@ export class OperationalAutomationService implements OnModuleInit,OnModuleDestro
  onModuleInit(){if(!technicalAutomationEnabled()&&!financialAutomationEnabled())return;this.timer=setInterval(()=>void this.tick(),60000);this.timer.unref();}
  onModuleDestroy(){if(this.timer)clearInterval(this.timer);}
  private authorize(user:ScopePrincipal){if(!user.id||!hasPermission(user,'technical.alerts.view'))throw new ForbiddenException();}
- async list(user:ScopePrincipal){this.authorize(user);return (await this.db.query(`SELECT r.* FROM operational_alert_rules r JOIN sites s ON s.id=r.site_id WHERE ($1::uuid[] IS NULL OR s.id=ANY($1::uuid[])) ORDER BY r.created_at DESC`,[siteScope(user,'technical')])).rows;}
+ async list(user:ScopePrincipal){this.authorize(user);const rows=(await this.db.query(`SELECT r.* FROM operational_alert_rules r JOIN sites s ON s.id=r.site_id WHERE ($1::uuid[] IS NULL OR s.id=ANY($1::uuid[])) ORDER BY r.created_at DESC`,[siteScope(user,'technical')])).rows;return rows.map(normalizeRuleRow);}
  async sites(user:ScopePrincipal){this.authorize(user);return (await this.db.query(`SELECT s.id,s.name,s.external_site_id AS code FROM sites s WHERE ($1::uuid[] IS NULL OR s.id=ANY($1::uuid[])) ORDER BY s.name`,[siteScope(user,'technical')])).rows;}
- async recipients(user:ScopePrincipal,siteId:string){this.authorize(user);if(!z.uuid().safeParse(siteId).success)throw new BadRequestException('Invalid site');return (await this.db.query(`SELECT u.id,u.display_name AS name,u.email FROM users u JOIN sites s ON s.id=$1 JOIN customers c ON c.id=s.customer_id WHERE ($2::uuid[] IS NULL OR s.id=ANY($2::uuid[])) AND c.status='active' AND u.status='active' AND u.email_verified_at IS NOT NULL AND u.verified_email=u.email AND employee_can_access(u.id,'technical','technical.alerts.view',s.id) ORDER BY u.display_name`,[siteId,siteScope(user,'technical')])).rows;}
+ async recipients(user:ScopePrincipal,siteIdOrIds:string){
+  this.authorize(user);
+  const ids=(siteIdOrIds??'').split(',').map(s=>s.trim()).filter(Boolean);
+  if(!ids.length||ids.some(id=>!z.uuid().safeParse(id).success))throw new BadRequestException('Invalid site');
+  if(ids.length===1){
+   return (await this.db.query(`SELECT u.id,u.display_name AS name,u.email FROM users u JOIN sites s ON s.id=$1 JOIN customers c ON c.id=s.customer_id WHERE ($2::uuid[] IS NULL OR s.id=ANY($2::uuid[])) AND c.status='active' AND u.status='active' AND u.email_verified_at IS NOT NULL AND u.verified_email=u.email AND employee_can_access(u.id,'technical','technical.alerts.view',s.id) ORDER BY u.display_name`,[ids[0],siteScope(user,'technical')])).rows;
+  }
+  return (await this.db.query(`SELECT u.id,u.display_name AS name,u.email FROM users u WHERE u.status='active' AND u.email_verified_at IS NOT NULL AND u.verified_email=u.email AND NOT EXISTS (SELECT 1 FROM unnest($1::uuid[]) AS req_site(id) LEFT JOIN sites s ON s.id=req_site.id LEFT JOIN customers c ON c.id=s.customer_id WHERE s.id IS NULL OR c.status<>'active' OR ($2::uuid[] IS NOT NULL AND NOT (s.id=ANY($2::uuid[]))) OR NOT employee_can_access(u.id,'technical','technical.alerts.view',s.id)) ORDER BY u.display_name`,[ids,siteScope(user,'technical')])).rows;
+ }
  async save(user:ScopePrincipal,body:unknown){this.authorize(user);if(!hasPermission(user,'technical.alerts.edit'))throw new ForbiddenException();const parsed=ruleSchema.safeParse(body);if(!parsed.success)throw new BadRequestException(parsed.error.message);const r=parsed.data;
+ const targetSiteIds=Array.from(new Set(r.siteIds?.length?r.siteIds:r.siteId?[r.siteId]:[]));
+ const primarySiteId=targetSiteIds[0]!;
  return this.db.transaction(async client=>{
-  if(!(await client.query(`SELECT id FROM sites WHERE id=$1 AND ($2::uuid[] IS NULL OR id=ANY($2::uuid[])) FOR SHARE`,[r.siteId,siteScope(user,'technical')])).rowCount)throw new ForbiddenException();
-  for(const id of r.recipientUserIds)if(!(await client.query(eligibleRecipientSql,[r.siteId,id,false])).rowCount)throw new BadRequestException('Recipient must have live site access and verified email');
-  return (await client.query(`INSERT INTO operational_alert_rules(site_id,kind,semantic_field,operator,threshold,duration_seconds,cooldown_seconds,recovery,recipient_user_ids,channels,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,[r.siteId,r.kind,r.semanticField??null,r.operator??null,r.threshold??null,r.durationSeconds,r.cooldownSeconds,r.recovery,[...new Set(r.recipientUserIds)],[...new Set(r.channels)],user.id])).rows[0];
+  for(const sId of targetSiteIds){
+   if(!(await client.query(`SELECT id FROM sites WHERE id=$1 AND ($2::uuid[] IS NULL OR id=ANY($2::uuid[])) FOR SHARE`,[sId,siteScope(user,'technical')])).rowCount)throw new ForbiddenException();
+   for(const id of r.recipientUserIds)if(!(await client.query(eligibleRecipientSql,[sId,id,false])).rowCount)throw new BadRequestException('Recipient must have live site access and verified email');
+  }
+  const initialState=JSON.stringify({site_ids:targetSiteIds});
+  const created=(await client.query(`INSERT INTO operational_alert_rules(site_id,kind,semantic_field,operator,threshold,duration_seconds,cooldown_seconds,recovery,recipient_user_ids,channels,state,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12) RETURNING *`,[primarySiteId,r.kind,r.semanticField??null,r.operator??null,r.threshold??null,r.durationSeconds,r.cooldownSeconds,r.recovery,[...new Set(r.recipientUserIds)],[...new Set(r.channels)],initialState,user.id])).rows[0];
+  return normalizeRuleRow(created);
  });}
+ async update(user:ScopePrincipal,id:string,body:unknown){
+  this.authorize(user);
+  if(!hasPermission(user,'technical.alerts.edit'))throw new ForbiddenException();
+  if(!z.uuid().safeParse(id).success)throw new BadRequestException('Invalid rule');
+  const parsed=updateRuleSchema.safeParse(body);
+  if(!parsed.success)throw new BadRequestException(parsed.error.message);
+  const patch=parsed.data;
+  return this.db.transaction(async client=>{
+   const existing=(await client.query(`SELECT r.* FROM operational_alert_rules r JOIN sites s ON s.id=r.site_id WHERE r.id=$1 AND ($2::uuid[] IS NULL OR s.id=ANY($2::uuid[])) FOR UPDATE`,[id,siteScope(user,'technical')])).rows[0];
+   if(!existing)throw new ForbiddenException();
+   const existingNormalized=normalizeRuleRow(existing);
+   const nextSiteIds=patch.siteIds?.length?Array.from(new Set(patch.siteIds)):patch.siteId?[patch.siteId]:existingNormalized.site_ids;
+   const nextPrimarySiteId=nextSiteIds[0]??existing.site_id;
+   if(patch.siteIds||patch.siteId){
+    for(const sId of nextSiteIds){
+     if(!(await client.query(`SELECT id FROM sites WHERE id=$1 AND ($2::uuid[] IS NULL OR id=ANY($2::uuid[])) FOR SHARE`,[sId,siteScope(user,'technical')])).rowCount)throw new ForbiddenException();
+    }
+   }
+   const nextRecipients=patch.recipientUserIds?[...new Set(patch.recipientUserIds)]:existing.recipient_user_ids;
+   if(patch.recipientUserIds||patch.siteIds||patch.siteId){
+    for(const sId of nextSiteIds){
+     for(const recipientId of nextRecipients){
+      if(!(await client.query(eligibleRecipientSql,[sId,recipientId,false])).rowCount){
+       throw new BadRequestException('Recipient must have live site access and verified email');
+      }
+     }
+    }
+   }
+   const nextKind=patch.kind??existing.kind;
+   const nextField=nextKind==='threshold'?(patch.semanticField??existing.semantic_field):null;
+   const nextOperator=nextKind==='threshold'?(patch.operator??existing.operator):null;
+   const nextThreshold=nextKind==='threshold'?(patch.threshold!==undefined?patch.threshold:existing.threshold):null;
+   const nextDuration=patch.durationSeconds??existing.duration_seconds;
+   const nextCooldown=patch.cooldownSeconds??existing.cooldown_seconds;
+   const nextRecovery=patch.recovery!==undefined?patch.recovery:existing.recovery;
+   const nextChannels=patch.channels?[...new Set(patch.channels)]:existing.channels;
+   const nextEnabled=patch.enabled!==undefined?patch.enabled:existing.enabled;
+   const nextState={...(existing.state&&typeof existing.state==='object'?existing.state:{}),site_ids:nextSiteIds};
+   const updated=(await client.query(`UPDATE operational_alert_rules SET site_id=$1,kind=$2,semantic_field=$3,operator=$4,threshold=$5,duration_seconds=$6,cooldown_seconds=$7,recovery=$8,recipient_user_ids=$9,channels=$10,enabled=$11,state=$12::jsonb WHERE id=$13 RETURNING *`,[nextPrimarySiteId,nextKind,nextField,nextOperator,nextThreshold,nextDuration,nextCooldown,nextRecovery,nextRecipients,nextChannels,nextEnabled,JSON.stringify(nextState),id])).rows[0];
+   return normalizeRuleRow(updated);
+  });
+ }
  async remove(user:ScopePrincipal,id:string){this.authorize(user);if(!hasPermission(user,'technical.alerts.edit'))throw new ForbiddenException();if(!z.uuid().safeParse(id).success)throw new BadRequestException('Invalid rule');await this.db.query(`UPDATE operational_alert_rules r SET enabled=false FROM sites s WHERE r.id=$1 AND s.id=r.site_id AND ($2::uuid[] IS NULL OR s.id=ANY($2::uuid[]))`,[id,siteScope(user,'technical')]);return {disabled:true};}
  async tick(now=new Date()){
   if(this.running||(!technicalAutomationEnabled()&&!financialAutomationEnabled()))return;

@@ -456,5 +456,667 @@ test('StaffInvitation form has noValidate to allow cross-tab validation', () => 
  assert.match(html, /<form[^>]+noValidate/i);
 });
 
+test('DiscardConfirmDialog renders title, warning message, and action buttons', () => {
+ assert.equal(typeof (workspace as any).DiscardConfirmDialog, 'function');
+ const html = renderToStaticMarkup(
+  React.createElement((workspace as any).DiscardConfirmDialog, {
+   open: true,
+   inline: true,
+   onConfirm: () => {},
+   onCancel: () => {},
+  })
+ );
+ assert.match(html, /ละทิ้งการเปลี่ยนแปลง\?/);
+ assert.match(html, /ข้อมูลที่คุณแก้ไขยังไม่ได้บันทึก/);
+ assert.match(html, /แก้ไขต่อ/);
+ assert.match(html, /ละทิ้งข้อมูล/);
+});
+
+test('SiteScopeTable empty state renders centered empty component with icon', () => {
+ const html = renderToStaticMarkup(
+  React.createElement(workspace.SiteScopeTable, {
+   sites: [],
+   scope: { mode: 'selected', siteIds: [] },
+   search: '',
+   onSearch: () => {},
+   onChange: () => {},
+  })
+ );
+ assert.match(html, /ไม่พบไซต์/);
+ assert.match(html, /ยังไม่มีไซต์ในระบบ/);
+ assert.match(html, /text-center/);
+});
+
+test('StaffInvitation and EmployeeEditor render avatar preview and full-width segmented tab triggers', () => {
+ const inviteHtml = renderToStaticMarkup(
+  React.createElement((workspace as any).StaffInvitation, {
+   inline: true,
+   domain: 'business',
+   positions: [],
+   permissions: [],
+   sites: [],
+   onSaved: () => {},
+   onClose: () => {},
+  })
+ );
+ assert.match(inviteHtml, /w-full flex gap-2/);
+ assert.match(inviteHtml, /พนักงานใหม่/);
+
+ const editHtml = renderToStaticMarkup(
+  React.createElement((workspace as any).EmployeeEditor, {
+   inline: true,
+   employee: {
+    id: 'emp-1',
+    email: 'test@example.com',
+    displayName: 'กฤษณะ วารี',
+    role: 'staff',
+    status: 'active',
+    revision: 1,
+    companyPositionId: null,
+    companyPosition: 'วิศวกร',
+    grant: null,
+   },
+   domain: 'business',
+   positions: [],
+   permissions: [],
+   sites: [],
+   onSaved: () => {},
+   onClose: () => {},
+   canDeactivate: false,
+  })
+ );
+ assert.match(editHtml, /w-full flex gap-2/);
+ assert.match(editHtml, /กฤษณะ วารี/);
+});
+
+test('ACTIVE_DISPLAY_RESOURCES contains only real active system menus and excludes obsolete resources', () => {
+  assert.deepEqual(model.ACTIVE_DISPLAY_RESOURCES.business, [
+    'dashboard',
+    'sites',
+    'billing',
+    'receipts',
+    'tariffs',
+    'settings',
+    'audit',
+  ]);
+  assert.equal(model.ACTIVE_DISPLAY_RESOURCES.business.includes('customers'), false);
+  assert.equal(model.ACTIVE_DISPLAY_RESOURCES.business.includes('documents'), false);
+
+  assert.deepEqual(model.ACTIVE_DISPLAY_RESOURCES.technical, [
+    'dashboard',
+    'gateways',
+    'alerts',
+    'settings',
+    'profiles',
+    'audit',
+  ]);
+  assert.equal(model.ACTIVE_DISPLAY_RESOURCES.technical.includes('registers'), false);
+  assert.equal(model.ACTIVE_DISPLAY_RESOURCES.technical.includes('devices'), false);
+  assert.equal(model.ACTIVE_DISPLAY_RESOURCES.technical.includes('fields'), false);
+  assert.equal(model.ACTIVE_DISPLAY_RESOURCES.technical.includes('brokers'), false);
+  assert.equal(model.ACTIVE_DISPLAY_RESOURCES.technical.includes('telemetry'), false);
+  assert.equal(model.ACTIVE_DISPLAY_RESOURCES.technical.includes('reception'), false);
+});
+
+test('bundleSubPermissions syncs sub-permissions for business and technical domains', () => {
+  // Business domain: customers follows sites, documents follows billing
+  const businessBundled = model.bundleSubPermissions('business', {
+    'business.sites.view': true,
+    'business.sites.edit': true,
+    'business.billing.view': true,
+    'business.billing.edit': false,
+    'business.billing.download': true,
+  });
+  assert.equal(businessBundled['business.customers.view'], true);
+  assert.equal(businessBundled['business.customers.edit'], true);
+  assert.equal(businessBundled['business.documents.view'], true);
+  assert.equal(businessBundled['business.documents.edit'], false);
+  assert.equal(businessBundled['business.documents.download'], true);
+
+  // Technical domain: devices, fields, registers, brokers, telemetry follow gateways; reception follows settings
+  const technicalBundled = model.bundleSubPermissions('technical', {
+    'technical.gateways.view': true,
+    'technical.gateways.edit': false,
+    'technical.settings.view': true,
+    'technical.settings.edit': true,
+  });
+  assert.equal(technicalBundled['technical.devices.view'], true);
+  assert.equal(technicalBundled['technical.devices.edit'], false);
+  assert.equal(technicalBundled['technical.fields.view'], true);
+  assert.equal(technicalBundled['technical.fields.edit'], false);
+  assert.equal(technicalBundled['technical.registers.view'], true);
+  assert.equal(technicalBundled['technical.registers.edit'], false);
+  assert.equal(technicalBundled['technical.brokers.view'], true);
+  assert.equal(technicalBundled['technical.brokers.edit'], false);
+  assert.equal(technicalBundled['technical.telemetry.view'], true);
+  assert.equal(technicalBundled['technical.telemetry.download'], true);
+  assert.equal(technicalBundled['technical.reception.view'], true);
+  assert.equal(technicalBundled['technical.reception.edit'], true);
+});
+
+test('RuleMatrix displays only active menus for business domain and hides customers and documents', () => {
+  const permissions = [
+    'business.dashboard.view',
+    'business.sites.view',
+    'business.sites.edit',
+    'business.customers.view',
+    'business.customers.edit',
+    'business.billing.view',
+    'business.receipts.view',
+    'business.documents.view',
+    'business.tariffs.view',
+    'business.settings.view',
+    'business.audit.view',
+  ];
+  const html = renderToStaticMarkup(
+    React.createElement(workspace.RuleMatrix, {
+      domain: 'business',
+      permissions,
+      rules: {},
+      overrides: {},
+      onChange: () => {},
+    })
+  );
+  assert.match(html, /ภาพรวม/);
+  assert.match(html, /จัดการไซต์งาน/);
+  assert.match(html, /ใบวางบิล/);
+  assert.match(html, /ใบเสร็จรับเงิน/);
+  assert.match(html, /อัตราค่าไฟ/);
+  assert.match(html, /ตั้งค่าบริษัทและบัญชี/);
+  assert.match(html, /ประวัติการทำงาน/);
+
+  // Must NOT contain obsolete or internal sub-resources
+  assert.doesNotMatch(html, />ลูกค้า</);
+  assert.doesNotMatch(html, />เอกสาร</);
+});
+
+test('RuleMatrix displays only active menus for technical domain and hides registers, devices, fields, brokers', () => {
+  const permissions = [
+    'technical.dashboard.view',
+    'technical.gateways.view',
+    'technical.devices.view',
+    'technical.fields.view',
+    'technical.registers.view',
+    'technical.brokers.view',
+    'technical.telemetry.view',
+    'technical.alerts.view',
+    'technical.settings.view',
+    'technical.profiles.view',
+    'technical.audit.view',
+  ];
+  const html = renderToStaticMarkup(
+    React.createElement(workspace.RuleMatrix, {
+      domain: 'technical',
+      permissions,
+      rules: {},
+      overrides: {},
+      onChange: () => {},
+    })
+  );
+  assert.match(html, /ภาพรวม/);
+  assert.match(html, /จัดการเกตเวย์/);
+  assert.match(html, /การแจ้งเตือนระบบ/);
+  assert.match(html, /การรับข้อมูล/);
+  assert.match(html, /แม่แบบอุปกรณ์/);
+  assert.match(html, /ประวัติการทำงาน/);
+
+  // Must NOT contain merged/obsolete items
+  assert.doesNotMatch(html, />รีจิสเตอร์</);
+  assert.doesNotMatch(html, />อุปกรณ์</);
+  assert.doesNotMatch(html, />รายการข้อมูล</);
+  assert.doesNotMatch(html, />การเชื่อมต่อ</);
+  assert.doesNotMatch(html, />ข้อมูลเทคนิค</);
+});
+
+test('EmployeeEditor renders horizontal row layout for Name, Email, Role, and Position in single card', () => {
+  const employee = {
+    id: 'emp-20',
+    email: 'operator@example.com',
+    displayName: 'มานะ ชัยชนะ',
+    role: 'operator',
+    status: 'active',
+    revision: 1,
+    companyPositionId: null,
+    companyPosition: 'วิศวกรควบคุม',
+    grant: null,
+  };
+  const html = renderToStaticMarkup(
+    React.createElement(workspace.EmployeeEditor, {
+      employee,
+      domain: 'business',
+      positions: [{ id: 'p1', name: 'วิศวกรควบคุม', rules: {}, revision: 1 }],
+      permissions: ['business.sites.view'],
+      sites: [],
+      onSaved: () => {},
+      onClose: () => {},
+      canDeactivate: true,
+      inline: true,
+    })
+  );
+
+  // Check 140px horizontal grid row classes for all 4 fields
+  assert.match(html, /sm:grid-cols-\[140px_minmax\(0,1fr\)\]/);
+  assert.match(html, /id="edit-staff-name"/);
+  assert.match(html, /operator@example.com/);
+  assert.match(html, /id="edit-staff-position"/);
+
+  // No separate "ตำแหน่งและสิทธิ์เริ่มต้น" section
+  assert.doesNotMatch(html, /ตำแหน่งและสิทธิ์เริ่มต้น/);
+});
+
+test('EmployeeEditor renders RuleMatrix and site scope as read-only for builtInManager (Owner/Admin) without hiding them', () => {
+  const adminEmployee = {
+    id: 'admin-1',
+    email: 'admin@solar.local',
+    displayName: 'Platform Administrator',
+    role: 'admin',
+    status: 'active',
+    revision: 1,
+    companyPositionId: null,
+    companyPosition: 'ผู้ดูแลระบบ',
+    grant: null,
+  };
+  const html = renderToStaticMarkup(
+    React.createElement(workspace.EmployeeEditor, {
+      employee: adminEmployee,
+      domain: 'technical',
+      positions: [],
+      permissions: ['technical.gateways.view', 'technical.alerts.view'],
+      sites: [{ id: 's1', name: 'Site Alpha' }],
+      onSaved: () => {},
+      onClose: () => {},
+      canDeactivate: false,
+      inline: true,
+      initialTab: 'permissions',
+    })
+  );
+
+  // RuleMatrix and site scope must be rendered (NOT hidden)
+  assert.match(html, /<table/);
+  assert.match(html, /จัดการเกตเวย์/);
+  assert.match(html, /การแจ้งเตือนระบบ/);
+  assert.match(html, /ทุกไซต์/);
+
+  // Notification badge explaining role permissions
+  assert.match(html, /สิทธิ์การใช้งานและขอบเขตไซต์ถูกกำหนดตามบทบาทผู้ดูแลระบบ\/เจ้าของระบบ/);
+
+  // No confirmation checkbox
+  assert.doesNotMatch(html, /ยืนยันสิทธิ์สำหรับตำแหน่งใหม่/);
+});
+
+test('StaffInvitation renders horizontal row layout for Name, Email, and Position', () => {
+  const html = renderToStaticMarkup(
+    React.createElement(workspace.StaffInvitation, {
+      inline: true,
+      domain: 'business',
+      positions: [{ id: 'p1', name: 'หัวหน้างาน', rules: {}, revision: 1 }],
+      permissions: ['business.sites.view'],
+      sites: [],
+      onSaved: () => {},
+      onClose: () => {},
+    })
+  );
+
+  assert.match(html, /sm:grid-cols-\[140px_minmax\(0,1fr\)\]/);
+  assert.match(html, /id="staff-name"/);
+  assert.match(html, /id="staff-email"/);
+  assert.match(html, /id="staff-position"/);
+});
+
+test('employeePositionDraft allows custom position creation without permissionsConfigured requirement', () => {
+  const draft = model.employeePositionDraft({
+    revision: 1,
+    choice: { kind: 'new', name: 'ตำแหน่งกำหนดเอง' },
+    domain: 'business',
+    permissions: ['business.sites.view', 'business.customers.view'],
+    rules: {},
+    overrides: { 'business.sites.view': true },
+    scope: { mode: 'all', siteIds: [] },
+  });
+
+  assert.equal(draft.position?.name, 'ตำแหน่งกำหนดเอง');
+  assert.deepEqual(draft.overrides, {
+    'business.sites.view': true,
+    'business.customers.view': true,
+  });
+});
+
+test('StaffInvitation renders stepper buttons: Next on general tab, Back and Send invitation on permissions tab', () => {
+  // 1. General tab (default)
+  const generalHtml = renderToStaticMarkup(
+    React.createElement((workspace as any).StaffInvitation, {
+      inline: true,
+      domain: 'business',
+      positions: [{ id: 'p1', name: 'หัวหน้างาน', rules: {}, revision: 1 }],
+      permissions: ['business.sites.view'],
+      sites: [],
+      onSaved: () => {},
+      onClose: () => {},
+    })
+  );
+  assert.match(generalHtml, />ถัดไป</);
+  assert.doesNotMatch(generalHtml, />ส่งคำเชิญ</);
+  assert.doesNotMatch(generalHtml, />ย้อนกลับ</);
+
+  // 2. Permissions tab
+  const permissionsHtml = renderToStaticMarkup(
+    React.createElement((workspace as any).StaffInvitation, {
+      inline: true,
+      domain: 'business',
+      initialTab: 'permissions',
+      positions: [{ id: 'p1', name: 'หัวหน้างาน', rules: {}, revision: 1 }],
+      permissions: ['business.sites.view'],
+      sites: [],
+      onSaved: () => {},
+      onClose: () => {},
+    })
+  );
+  assert.match(permissionsHtml, />ย้อนกลับ</);
+  assert.match(permissionsHtml, />ส่งคำเชิญ</);
+  assert.doesNotMatch(permissionsHtml, />ถัดไป</);
+});
+
+test('EmployeeEditor renders stepper buttons: Next on general tab, Back and Save on permissions tab', () => {
+  const employee = {
+    id: 'emp-1',
+    email: 'worker@example.com',
+    displayName: 'วิศวกร ทดสอบ',
+    role: 'operator',
+    status: 'active',
+    revision: 1,
+    companyPositionId: null,
+    companyPosition: 'วิศวกรไฟฟ้า',
+    grant: null,
+  };
+
+  // 1. General tab (default)
+  const generalHtml = renderToStaticMarkup(
+    React.createElement((workspace as any).EmployeeEditor, {
+      employee,
+      domain: 'business',
+      positions: [{ id: 'pos-1', name: 'วิศวกรไฟฟ้า', rules: {}, revision: 1 }],
+      permissions: ['business.sites.view'],
+      sites: [{ id: 'site-1', name: 'ไซต์ 1' }],
+      onSaved: () => {},
+      onClose: () => {},
+      canDeactivate: true,
+      inline: true,
+    })
+  );
+  assert.match(generalHtml, />ถัดไป</);
+  assert.doesNotMatch(generalHtml, />บันทึกข้อมูล</);
+  assert.doesNotMatch(generalHtml, />ย้อนกลับ</);
+
+  // 2. Permissions tab
+  const permissionsHtml = renderToStaticMarkup(
+    React.createElement((workspace as any).EmployeeEditor, {
+      employee,
+      domain: 'business',
+      initialTab: 'permissions',
+      positions: [{ id: 'pos-1', name: 'วิศวกรไฟฟ้า', rules: {}, revision: 1 }],
+      permissions: ['business.sites.view'],
+      sites: [{ id: 'site-1', name: 'ไซต์ 1' }],
+      onSaved: () => {},
+      onClose: () => {},
+      canDeactivate: true,
+      inline: true,
+    })
+  );
+  assert.match(permissionsHtml, />ย้อนกลับ</);
+  assert.match(permissionsHtml, />บันทึกข้อมูล</);
+  assert.doesNotMatch(permissionsHtml, />ถัดไป</);
+});
+
+test('StaffInvitation and EmployeeEditor decouple submit buttons from form and use type="button"', () => {
+  // StaffInvitation general tab
+  const inviteGeneral = renderToStaticMarkup(
+    React.createElement((workspace as any).StaffInvitation, {
+      inline: true,
+      domain: 'business',
+      positions: [],
+      permissions: ['business.sites.view'],
+      sites: [],
+      onSaved: () => {},
+      onClose: () => {},
+    })
+  );
+  assert.doesNotMatch(inviteGeneral, /type="submit"/);
+  assert.match(inviteGeneral, /type="button"[^>]*>ถัดไป<\/button>/);
+
+  // StaffInvitation permissions tab
+  const invitePermissions = renderToStaticMarkup(
+    React.createElement((workspace as any).StaffInvitation, {
+      inline: true,
+      domain: 'business',
+      initialTab: 'permissions',
+      positions: [],
+      permissions: ['business.sites.view'],
+      sites: [],
+      onSaved: () => {},
+      onClose: () => {},
+    })
+  );
+  assert.doesNotMatch(invitePermissions, /type="submit"/);
+  assert.match(invitePermissions, /type="button"[^>]*>ส่งคำเชิญ<\/button>/);
+
+  // EmployeeEditor general tab
+  const employee = {
+    id: 'emp-1',
+    email: 'worker@example.com',
+    displayName: 'วิศวกร ทดสอบ',
+    role: 'operator',
+    status: 'active',
+    revision: 1,
+    companyPositionId: null,
+    companyPosition: 'วิศวกรไฟฟ้า',
+    grant: null,
+  };
+  const editorGeneral = renderToStaticMarkup(
+    React.createElement((workspace as any).EmployeeEditor, {
+      employee,
+      domain: 'business',
+      positions: [],
+      permissions: ['business.sites.view'],
+      sites: [],
+      onSaved: () => {},
+      onClose: () => {},
+      canDeactivate: true,
+      inline: true,
+    })
+  );
+  assert.doesNotMatch(editorGeneral, /type="submit"/);
+  assert.match(editorGeneral, /type="button"[^>]*>ถัดไป<\/button>/);
+
+  // EmployeeEditor permissions tab
+  const editorPermissions = renderToStaticMarkup(
+    React.createElement((workspace as any).EmployeeEditor, {
+      employee,
+      domain: 'business',
+      initialTab: 'permissions',
+      positions: [],
+      permissions: ['business.sites.view'],
+      sites: [],
+      onSaved: () => {},
+      onClose: () => {},
+      canDeactivate: true,
+      inline: true,
+    })
+  );
+  assert.doesNotMatch(editorPermissions, /type="submit"/);
+  assert.match(editorPermissions, /type="button"[^>]*>บันทึกข้อมูล<\/button>/);
+});
+
+test('TooltipContent with variant="popover" renders theme-aware popover styling and data-variant', async () => {
+  const { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } = await import('../../components/ui/tooltip');
+  const html = renderToStaticMarkup(
+    <TooltipProvider>
+      <Tooltip open={true}>
+        <TooltipTrigger asChild>
+          <button type="button">Hover</button>
+        </TooltipTrigger>
+        <TooltipContent variant="popover" inline={true}>
+          <div className="font-semibold">ขอบเขตไซต์งาน</div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+  assert.match(html, /data-slot="tooltip-content"/);
+  assert.match(html, /data-variant="popover"/);
+  assert.match(html, /bg-popover/);
+  assert.match(html, /text-popover-foreground/);
+  assert.match(html, /border-border/);
+  assert.match(html, /ขอบเขตไซต์งาน/);
+});
+
+test('EmployeeScopeBadgeList renders primary subtle badge and theme-aware popover with site count and icons', () => {
+  const sites = [
+    'ศูนย์กระจายสินค้า ลาดกระบัง',
+    'โรงงานบรรจุภัณฑ์ บางพลี',
+    'คลังสินค้า คลองหลวง',
+    'โรงงานชิ้นส่วน บางปะอิน',
+    'ศูนย์บริการ ศรีราชา',
+  ];
+  const html = renderToStaticMarkup(
+    <workspace.EmployeeScopeBadgeList siteNames={sites} th={true} inline={true} open={true} />
+  );
+  // Truncated primary site name
+  assert.match(html, /ศูนย์กระจายสินค้า ลาดกระบัง/);
+  // Primary subtle badge +4
+  assert.match(html, /\+4/);
+  assert.match(html, /bg-primary\/10 text-primary border-primary\/25/);
+  // Tooltip content with popover variant
+  assert.match(html, /data-variant="popover"/);
+  assert.match(html, /bg-popover text-popover-foreground/);
+  assert.match(html, /ขอบเขตไซต์งาน/);
+  assert.match(html, /5 ไซต์/);
+  // Site list items with primary bullet dot
+  assert.match(html, /bg-primary/);
+  assert.match(html, /โรงงานบรรจุภัณฑ์ บางพลี/);
+  assert.match(html, /คลังสินค้า คลองหลวง/);
+  assert.match(html, /โรงงานชิ้นส่วน บางปะอิน/);
+  assert.match(html, /ศูนย์บริการ ศรีราชา/);
+});
+
+test('row action menu renders only "ดูรายละเอียด" for cancelled and expired invitations', () => {
+  const cancelledEmployee = {
+    id: 'emp-cancelled',
+    email: 'cancelled@example.com',
+    displayName: 'สมปอง อดีตผู้รับเชิญ',
+    role: 'operator',
+    status: 'cancelled',
+    revision: 1,
+    companyPositionId: null,
+    companyPosition: 'วิศวกรไฟฟ้า',
+    grant: null,
+  };
+  const cancelledHtml = renderToStaticMarkup(
+    React.createElement((workspace as any).EmployeeRowActions, {
+      employee: cancelledEmployee,
+      inline: true,
+      onEdit: () => {},
+      onDeactivate: () => {},
+      onReactivate: () => {},
+      onCancelInvite: () => {},
+      onViewInvitation: () => {},
+    })
+  );
+  assert.match(cancelledHtml, /ดูรายละเอียด/);
+  assert.doesNotMatch(cancelledHtml, /แก้ไขข้อมูล/);
+  assert.doesNotMatch(cancelledHtml, /ยกเลิกใช้งาน/);
+  assert.doesNotMatch(cancelledHtml, /เปิดใช้งานอีกครั้ง/);
+  assert.doesNotMatch(cancelledHtml, /ยกเลิกคำเชิญ/);
+
+  const expiredEmployee = {
+    ...cancelledEmployee,
+    id: 'emp-expired',
+    status: 'expired',
+  };
+  const expiredHtml = renderToStaticMarkup(
+    React.createElement((workspace as any).EmployeeRowActions, {
+      employee: expiredEmployee,
+      inline: true,
+      onEdit: () => {},
+      onDeactivate: () => {},
+      onReactivate: () => {},
+      onCancelInvite: () => {},
+      onViewInvitation: () => {},
+    })
+  );
+  assert.match(expiredHtml, /ดูรายละเอียด/);
+  assert.doesNotMatch(expiredHtml, /แก้ไขข้อมูล/);
+  assert.doesNotMatch(expiredHtml, /เปิดใช้งานอีกครั้ง/);
+});
+
+test('InvitationDetailsDialog renders invitation metadata, masked personal data, read-only permissions, and Close button', () => {
+  assert.equal(typeof (workspace as any).InvitationDetailsDialog, 'function');
+  const archivedEmployee = {
+    id: 'emp-arch-1',
+    email: 'testuser@gmail.com',
+    phone: '0812345678',
+    displayName: 'สมเกียรติ ประวัติคำเชิญ',
+    role: 'operator',
+    status: 'cancelled',
+    revision: 1,
+    companyPositionId: 'pos-1',
+    companyPosition: 'วิศวกรตรวจสอบ',
+    grant: {
+      positionId: 'pos-1',
+      overrides: { 'business.sites.view': true, 'business.billing.view': false },
+      scope: { mode: 'selected' as const, siteIds: ['site-1', 'site-2'] },
+    },
+    invitation: {
+      id: 'inv-1',
+      invitedAt: '2026-09-21T07:27:00.000Z',
+      expiresAt: '2026-09-28T07:27:00.000Z',
+      revokedAt: '2026-09-22T09:15:00.000Z',
+      deliveryStatus: 'sent',
+      issuerId: 'admin-1',
+      issuerName: 'ผู้จัดการ ฝ่ายบุคคล',
+      issuerEmail: 'hradmin@company.co.th',
+    },
+  };
+
+  const html = renderToStaticMarkup(
+    React.createElement((workspace as any).InvitationDetailsDialog, {
+      employee: archivedEmployee,
+      domain: 'business',
+      positions: [{ id: 'pos-1', name: 'วิศวกรตรวจสอบ', rules: { 'business.sites.view': true }, revision: 1 }],
+      permissions: ['business.sites.view', 'business.billing.view'],
+      sites: [
+        { id: 'site-1', name: 'โรงงานบางปะอิน' },
+        { id: 'site-2', name: 'คลังสินค้าลาดกระบัง' },
+      ],
+      onClose: () => {},
+      inline: true,
+    })
+  );
+
+  // Title & Sections
+  assert.match(html, /รายละเอียดคำเชิญ/);
+  assert.match(html, /ข้อมูลการเชิญ/);
+  assert.match(html, /ข้อมูลที่กรอก/);
+
+  // Inviter & Status
+  assert.match(html, /ยกเลิกแล้ว/);
+  assert.match(html, /ผู้จัดการ ฝ่ายบุคคล/);
+  assert.match(html, /hr\*\*\*@company\.co\.th/);
+  assert.doesNotMatch(html, /hradmin@company\.co\.th/);
+
+  // Masked personal fields (only masked shown, never raw)
+  assert.match(html, /สมเกียรติ ประวัติคำเชิญ/);
+  assert.match(html, /te\*\*\*@gmail\.com/);
+  assert.doesNotMatch(html, /testuser@gmail\.com/);
+  assert.match(html, /08x-xxx-5678/);
+  assert.doesNotMatch(html, /0812345678/);
+
+  // Position, Site scope & Read-only permissions
+  assert.match(html, /วิศวกรตรวจสอบ/);
+  assert.match(html, /โรงงานบางปะอิน/);
+  assert.match(html, /คลังสินค้าลาดกระบัง/);
+  assert.match(html, /จัดการไซต์งาน/);
+
+  // Separated footer with Close button
+  assert.match(html, />ปิด<\/button>/);
+});
 
 

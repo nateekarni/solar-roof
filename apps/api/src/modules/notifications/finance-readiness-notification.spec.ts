@@ -8,10 +8,10 @@ function status(items:FinancialReadinessStatus['items'],fingerprint='a'.repeat(6
 }
 const missing=status([{id:'company.logo',ready:false,responsibility:'owner'},{id:'approval.confirmation',ready:false,responsibility:'owner'},{id:'environment.smtp',ready:false,responsibility:'environment'}]);
 
-test('only an authenticated Owner receives a finance workflow pointing to Company Settings',()=>{
+test('only an authenticated Owner receives a finance workflow pointing to Setup Checklist Before Go-Live',()=>{
  const row=financeReadinessNotification({id:'owner',role:'owner'},missing)!;
  assert.equal(row.id,'workflow:finance-readiness:aaaaaaaaaaaaaaaaaaaaaaaa');
- assert.equal(row.kind,'workflow');assert.equal(row.destination,'/settings/company');
+ assert.equal(row.kind,'workflow');assert.equal(row.destination,'/settings/readiness');
  for(const role of ['admin','operator','accountant','customer_user'])assert.equal(financeReadinessNotification({id:role,role},missing),null);
  assert.equal(financeReadinessNotification({role:'owner'},missing),null);
 });

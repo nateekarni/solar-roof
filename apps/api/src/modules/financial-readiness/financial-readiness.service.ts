@@ -31,8 +31,8 @@ function smtpReady() {
   return text(process.env.SMTP_HOST)&&Number.isInteger(port)&&port>0&&port<=65535&&email(process.env.SMTP_FROM)
     && (!secure||['true','false'].includes(secure)) && (!!process.env.SMTP_USER===!!password);
 }
-function item(id:string,ready:boolean,responsibility:FinancialReadinessItem['responsibility'],siteId?:string):FinancialReadinessItem {
-  return {id,ready,responsibility,...(siteId?{siteId,destination:`/sites/${siteId}/settings`}:responsibility==='owner'?{destination:'/settings/company'}:{})};
+function item(id:string,ready:boolean,responsibility:FinancialReadinessItem['responsibility'],siteId?:string,siteName?:string|null):FinancialReadinessItem {
+  return {id,ready,responsibility,...(siteId?{siteId,siteName:siteName||null,destination:`/sites/${siteId}/settings`}:responsibility==='owner'?{destination:'/settings/company'}:{})};
 }
 const unavailable = (missing:string[],context:FinancialWorkflowContext={}) => new ServiceUnavailableException({code:'FINANCIAL_NOT_READY',message:'Financial workflows await verified accounting requirements and implementation readiness.',missing,context});
 
@@ -112,7 +112,7 @@ export class FinancialReadinessService {
     if((start||end)&&(!start||!end||!validFinancialDate(start)||!validFinancialDate(end)||start>end))throw new BadRequestException('Valid ordered period dates required');
     const scopeIds=siteScope(actor,'business');
     if(siteId&&scopeIds!==null&&!scopeIds.includes(siteId))throw new ForbiddenException('Site outside financial scope');
-    const sites=(await client.query(`SELECT s.id,s.status,s.timezone,c.status AS customer_status,c.legal_name,c.tax_id,c.tax_address,c.document_email,cfg.version,to_char(cfg.service_start_date,'YYYY-MM-DD') AS service_start_date,cfg.payment_term_days,cfg.tax_rate,cfg.prices_include_tax,cfg.tax_confirmed,cfg.recipient_user_ids FROM sites s JOIN customers c ON c.id=s.customer_id LEFT JOIN site_billing_settings cfg ON cfg.site_id=s.id WHERE ($1::uuid IS NULL OR s.id=$1) AND ($2::uuid[] IS NULL OR s.id=ANY($2)) AND s.status<>'archived' ORDER BY s.id`,[siteId??null,scopeIds])).rows;
+    const sites=(await client.query(`SELECT s.id,s.name,s.status,s.timezone,c.status AS customer_status,c.legal_name,c.tax_id,c.tax_address,c.document_email,cfg.version,to_char(cfg.service_start_date,'YYYY-MM-DD') AS service_start_date,cfg.payment_term_days,cfg.tax_rate,cfg.prices_include_tax,cfg.tax_confirmed,cfg.recipient_user_ids FROM sites s JOIN customers c ON c.id=s.customer_id LEFT JOIN site_billing_settings cfg ON cfg.site_id=s.id WHERE ($1::uuid IS NULL OR s.id=$1) AND ($2::uuid[] IS NULL OR s.id=ANY($2)) AND s.status<>'archived' ORDER BY s.id`,[siteId??null,scopeIds])).rows;
     const perSite:FinancialReadinessItem[][]=[];
     for(const site of sites) {
       const siteItems=await this.siteItems(client,site,start,end);
@@ -158,7 +158,7 @@ export class FinancialReadinessService {
   }
 
   private async siteItems(client:QueryBoundary,site:any,start?:string,end?:string):Promise<FinancialReadinessItem[]> {
-    const add=(id:string,ready:boolean,responsibility:FinancialReadinessItem['responsibility']='owner')=>item(id,ready,responsibility,site.id);
+    const add=(id:string,ready:boolean,responsibility:FinancialReadinessItem['responsibility']='owner')=>item(id,ready,responsibility,site.id,site.name);
     let tax=false;try{tax=site.tax_confirmed===true&&typeof site.prices_include_tax==='boolean'&&scaledDecimal(site.tax_rate,4)<=1000000n;}catch{/* Missing or invalid tax is a checklist blocker. */}
     const recipients=await this.recipients(client,site.id,site.recipient_user_ids??[]);
     const meters=(await client.query(`SELECT b.*,EXISTS(SELECT 1 FROM billing_source_bindings bs JOIN devices d ON d.id=bs.device_id JOIN payload_profile_revisions p ON p.id=bs.profile_revision_id WHERE bs.id=b.billing_source_binding_id AND bs.site_id=b.site_id AND bs.meter_id=b.id AND bs.device_id=b.device_id AND bs.profile_revision_id=d.payload_profile_revision_id AND bs.canonical_tag='energy.active.import.total' AND bs.target_unit='kWh' AND EXISTS(SELECT 1 FROM jsonb_array_elements(p.config->'fields') f WHERE coalesce(f->>'sourceTag',f->>'tag')=bs.source_tag AND f->>'tag'=bs.canonical_tag AND f->>'sourceUnit'=bs.source_unit AND f->>'targetUnit'=bs.target_unit AND f->>'conversion'=bs.conversion AND f->>'role'='billing-import')) AS binding_ready FROM billing_meters b WHERE b.site_id=$1 AND b.active ORDER BY b.id`,[site.id])).rows;

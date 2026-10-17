@@ -298,6 +298,40 @@
     font-family: var(--font-sans);
   }
 
+  /* Interactive Controls Affordance: Pointer when clickable, not-allowed when disabled */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]):not([data-disabled]),
+  [type="button"]:not(:disabled),
+  [type="reset"]:not(:disabled),
+  [type="submit"]:not(:disabled),
+  select:not(:disabled),
+  summary,
+  [data-slot="button"]:not(:disabled):not([aria-disabled="true"]),
+  [data-slot="dropdown-menu-item"]:not([data-disabled]),
+  [data-slot="dropdown-menu-checkbox-item"]:not([data-disabled]),
+  [data-slot="select-trigger"]:not(:disabled),
+  [data-slot="select-item"]:not([data-disabled]),
+  [data-slot="tabs-trigger"]:not(:disabled):not([data-disabled]),
+  [data-slot="checkbox"]:not(:disabled):not([data-disabled]),
+  [data-slot="switch"]:not(:disabled):not([data-disabled]) {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  [role="button"][aria-disabled="true"],
+  [role="button"][data-disabled],
+  [data-slot="button"]:disabled,
+  [data-slot="button"][aria-disabled="true"],
+  [data-slot="select-trigger"]:disabled,
+  [data-slot="select-item"][data-disabled],
+  [data-slot="dropdown-menu-item"][data-disabled],
+  [data-slot="dropdown-menu-checkbox-item"][data-disabled],
+  [data-slot="checkbox"][data-disabled],
+  [data-slot="switch"][data-disabled],
+  :disabled {
+    cursor: not-allowed;
+  }
+
   *,
   *::before,
   *::after,
@@ -1291,3 +1325,14 @@ td.rdp-range_middle:has(+ td.rdp-hidden) {
 @media (max-width:639px) { .dashboard-chart-grid { grid-template-columns:minmax(0,1fr); } }
 /* Browser autofill inherits the same readable control surface in either theme. */
 input:-webkit-autofill, textarea:-webkit-autofill { -webkit-text-fill-color:var(--foreground); box-shadow:0 0 0 1000px var(--card) inset; caret-color:var(--foreground); }
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-6px); }
+  40%, 80% { transform: translateX(6px); }
+}
+
+.animate-shake {
+  animation: shake 0.35s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+

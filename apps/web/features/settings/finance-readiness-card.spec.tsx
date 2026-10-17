@@ -25,7 +25,7 @@ test('complete global Owner data permits confirmation despite site and environme
   assert.match(html,/Site readiness/);
   assert.match(html,/aria-expanded="false"/);
   assert.doesNotMatch(html,/secret-smtp|SMTP_PASSWORD|type="password"/);
-  assert.match(html,/Finance and delivery services/);
+  assert.doesNotMatch(html,/Finance and delivery services/);
 });
 test('current site step has setup navigation and technical guidance without displaying its ID',()=>{
   const html=render(status([{...confirmation,ready:true},{id:'site.tax',siteId:'site-a',ready:false,responsibility:'owner',destination:'/sites/site-a/settings'},{id:'site.meter',siteId:'site-a',ready:false,responsibility:'technical',destination:'/sites/site-a/settings'}],approval));
@@ -36,7 +36,7 @@ test('current site step has setup navigation and technical guidance without disp
 test('approved configuration shows infrastructure blockers and does not ask for confirmation again',()=>{
   const html=render(status([{...confirmation,ready:true},{id:'environment.smtp',ready:false,responsibility:'environment'}],approval));
   assert.match(html,/Production configuration confirmed/);
-  assert.match(html,/Email delivery/);
+  assert.doesNotMatch(html,/Email delivery|Finance and delivery services/);
   assert.doesNotMatch(html,/Confirm production readiness/);
 });
 test('ready status is distinguished from test scope and non Owners cannot confirm',()=>{
@@ -89,3 +89,19 @@ test('awaiting confirmation is distinct from incomplete setup despite infrastruc
   assert.match(th,/รอการยืนยันจากเจ้าของ/);
   assert.doesNotMatch(render(status([{id:'company.logo',ready:false,responsibility:'owner'},confirmation])),/Awaiting Owner confirmation/);
 });
+
+test('multiple sites consolidate into a single site readiness step with count summary',()=>{
+  const multiSiteItems: FinancialReadinessStatus['items'] = [
+    { ...confirmation, ready: true },
+    { id: 'site.tax', siteId: 'site-1', ready: false, responsibility: 'owner', destination: '/sites/site-1/settings' },
+    { id: 'site.meter', siteId: 'site-1', ready: true, responsibility: 'technical', destination: '/sites/site-1/settings' },
+    { id: 'site.tax', siteId: 'site-2', ready: true, responsibility: 'owner', destination: '/sites/site-2/settings' },
+    { id: 'site.meter', siteId: 'site-2', ready: true, responsibility: 'technical', destination: '/sites/site-2/settings' },
+    { id: 'site.tax', siteId: 'site-3', ready: false, responsibility: 'owner', destination: '/sites/site-3/settings' },
+  ];
+  const html = render(status(multiSiteItems, approval));
+  const siteMatches = html.match(/Site readiness/g) ?? [];
+  assert.equal(siteMatches.length, 1);
+  assert.match(html, /1 of 3 sites ready/);
+});
+

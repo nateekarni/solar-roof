@@ -53,8 +53,7 @@ test('staff combobox keyboard selection, explicit creation, permission confirmat
   await search.fill('กรรมการบริษัท');await search.press('ArrowDown');await search.press('Enter');
   await page.waitForFunction(()=>document.querySelector('#staff-position')?.textContent.includes('กรรมการบริษัท'));
   await page.getByRole('tab',{name:'สิทธิ์',exact:true}).click();
-  await page.getByRole('combobox',{name:'ใบวางบิล อนุมัติ',exact:true}).click();
-  await page.getByRole('option',{name:'อนุญาต',exact:true}).click();
+  await page.getByRole('checkbox',{name:'ใบวางบิล อนุมัติ',exact:true}).click();
   await page.getByRole('tab',{name:'โปรไฟล์',exact:true}).click();
   await trigger.click();await search.fill('  บัญชี  ');
   assert.equal(await page.getByRole('option',{name:/สร้างตำแหน่ง/}).count(),0);
@@ -73,7 +72,7 @@ test('staff combobox keyboard selection, explicit creation, permission confirmat
   fail();await page.getByRole('button',{name:'บันทึกสิทธิ์',exact:true}).click();
   await page.getByRole('alert').filter({hasText:/เปลี่ยน|changed|โหลด/}).waitFor();
   assert.equal(await page.evaluate(()=>window.saved),0);
-  assert.deepEqual(bodies[0],{revision:7,position:{name:'หัวหน้าฝ่ายขาย',rules:{'business.billing.view':true,'business.billing.approve':true}},overrides:{'business.billing.approve':true},scope:{mode:'selected',siteIds:['site-a']}});
+  assert.deepEqual(bodies[0],{revision:7,position:{name:'หัวหน้าฝ่ายขาย',rules:{'business.billing.view':true,'business.billing.approve':true}},overrides:{'business.billing.approve':true,'business.billing.view':true},scope:{mode:'selected',siteIds:['site-a']}});
   assert.equal(await page.getByRole('button',{name:'บันทึกสิทธิ์',exact:true}).isDisabled(),true);
   // Even a programmatic submit cannot blindly resend the known-stale revision.
   await page.locator('form').evaluate(form=>form.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
@@ -113,7 +112,7 @@ test('concurrent duplicate title reloads the existing preset and requires review
   assert.equal(bodies.length,1);assert.equal(await page.getByRole('button',{name:'บันทึกสิทธิ์',exact:true}).isDisabled(),true);
   await page.getByRole('button',{name:'ยืนยันว่าได้ตรวจสอบข้อมูลล่าสุด',exact:true}).click();assert.equal(bodies.length,1);
   await page.getByRole('button',{name:'บันทึกสิทธิ์',exact:true}).click();await page.waitForFunction(()=>window.saved===1);
-  assert.deepEqual(bodies[1],{revision:7,position:{id:'concurrent-preset'},overrides:{'business.billing.approve':false},scope:{mode:'selected',siteIds:['site-a']}});assert.deepEqual(errors,[]);
+  assert.deepEqual(bodies[1],{revision:7,position:{id:'concurrent-preset'},overrides:{'business.billing.approve':false,'business.billing.view':false},scope:{mode:'selected',siteIds:['site-a']}});assert.deepEqual(errors,[]);
  }finally{await browser.close();}
 });
 

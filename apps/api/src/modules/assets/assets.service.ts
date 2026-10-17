@@ -167,4 +167,27 @@ export class AssetsService {
   listCustomers(): CustomerRecord[] {
     return [...this.customers.values()];
   }
+
+  async listGateways(scopes: string[] | null) {
+    if (!this.db) return [];
+    return (await this.db.query(`SELECT g.id,g.site_id AS "siteId",s.name AS "siteName",s.external_site_id AS "siteCode",g.name,g.external_gateway_id AS "externalGatewayId",g.endpoint AS "subscriptionTopic",g.last_seen_at AS "lastSeenAt",g.polling_interval_seconds AS "pollingIntervalSeconds",
+      CASE WHEN g.last_seen_at BETWEEN now()-make_interval(secs=>greatest(120,g.polling_interval_seconds*2)) AND now() THEN 'online' ELSE 'offline' END AS status,
+      g.desired_config_version AS "desiredVersion",g.published_config_version AS "publishedVersion",g.acknowledged_config_version AS "acknowledgedVersion",g.applied_config_version AS "appliedVersion",
+      (SELECT count(*)::int FROM devices WHERE gateway_id=g.id) AS "deviceCount",latest.measured AS "lastMeasuredAt",latest.received AS "lastReceivedAt",pv.kw AS "currentProductionKw"
+      FROM gateways g JOIN sites s ON s.id=g.site_id LEFT JOIN LATERAL (
+        SELECT max(sample.measured) AS measured,max(sample.received) AS received FROM devices d
+        LEFT JOIN LATERAL (SELECT coalesce(ps.measured_at,ps.polled_at) AS measured,ps.received_at AS received FROM payload_samples ps WHERE ps.device_id=d.id ORDER BY coalesce(ps.measured_at,ps.polled_at) DESC,ps.received_at DESC,ps.id DESC LIMIT 1) sample ON true
+        WHERE d.gateway_id=g.id
+      ) latest ON true
+      LEFT JOIN LATERAL (SELECT CASE WHEN count(*)=1 AND bool_and(ps.quality='good' AND ps.communication='online' AND ps.unit IN('W','kW') AND ps.value>=0 AND ps.value<'Infinity'::float8
+        AND coalesce(ps.measured_at,ps.polled_at) BETWEEN now()-make_interval(secs=>greatest(120,d.expected_interval_seconds*2)) AND now() AND ps.received_at BETWEEN now()-make_interval(secs=>greatest(120,d.expected_interval_seconds*2)) AND now()) THEN max(CASE WHEN ps.unit='W' THEN ps.value/1000 ELSE ps.value END) ELSE NULL END AS kw
+        FROM devices d JOIN payload_profile_revisions p ON p.id=d.payload_profile_revision_id LEFT JOIN LATERAL (SELECT * FROM payload_samples WHERE device_id=d.id AND profile_revision_id=d.payload_profile_revision_id AND tag='solar.active_power' ORDER BY coalesce(measured_at,polled_at) DESC,received_at DESC,id DESC LIMIT 1) ps ON true
+        WHERE d.gateway_id=g.id AND (EXISTS(SELECT 1 FROM gateway_dashboard_sources chosen WHERE chosen.gateway_id=g.id AND chosen.metric='power' AND chosen.device_id=d.id AND chosen.tag='solar.active_power') OR (NOT EXISTS(SELECT 1 FROM gateway_dashboard_sources chosen WHERE chosen.gateway_id=g.id AND chosen.metric='power') AND p.config->>'deviceType'='solar-logger'))) pv ON true
+      WHERE s.status<>'archived' AND g.retired_at IS NULL AND ($1::uuid[] IS NULL OR g.site_id=ANY($1::uuid[])) ORDER BY g.name,g.id`,[scopes] )).rows;
+  }
+
+  async getGatewaySiteOptions(gatewayId: string | null, scopes: string[] | null, includeAssigned: boolean) {
+    if (!this.db) return [];
+    return (await this.db.query(`SELECT s.id,s.name,s.external_site_id AS code,true AS active,g.id AS "assignedGatewayId" FROM sites s LEFT JOIN gateways g ON g.site_id=s.id AND g.retired_at IS NULL WHERE s.status<>'archived' AND ($3 OR g.id IS NULL OR g.id::text=$1) AND ($2::uuid[] IS NULL OR s.id=ANY($2::uuid[])) ORDER BY s.name,s.id`,[gatewayId??null,scopes,includeAssigned])).rows;
+  }
 }

@@ -9,7 +9,7 @@ const status=(options:OperationFilter['options']):OperationFilter=>({key:'status
 const active=status([option('active','ใช้งาน','Active'),option('inactive','ปิดใช้งาน','Inactive'),option('archived','เก็บถาวร','Archived')]);
 const documentStatus=status([option('draft','ฉบับร่าง','Draft'),option('issued','ออกแล้ว','Issued'),option('finalized','ยืนยันแล้ว','Finalized'),option('superseded','ถูกแทนที่ด้วยฉบับใหม่','Replaced by a new version'),option('cancelled','ยกเลิก','Cancelled')]);
 export const operationFilters:Record<string,readonly OperationFilter[]>={
- customers:[active],sites:[status([...active.options,option('online','ออนไลน์','Online'),option('offline','ออฟไลน์','Offline')])],
+ customers:[active],sites:[status([option('online','ออนไลน์','Online'),option('offline','ออฟไลน์','Offline'),option('inactive','ปิดใช้งาน','Inactive')])],
  billing:[],
  contracts:[status([option('draft','ฉบับร่าง','Draft'),option('active','ใช้งาน','Active'),option('expired','หมดอายุ','Expired'),option('terminated','สิ้นสุด','Terminated'),option('cancelled','ยกเลิก','Cancelled')])],
  documents:[documentStatus,{key:'type',label:['ประเภท','Type'],options:[option('invoice','ใบวางบิล','Billing statement'),option('receipt','ใบเสร็จรับเงิน','Receipt'),option('billing_statement','สรุปยอดเรียกเก็บ','Billing summary'),option('contract','สัญญา','Contract')]}],

@@ -21,3 +21,29 @@ test('inline identity rejects empty customer name and invalid tax ID before send
  assert.throws(()=>siteServicePayload(site,{...customer,name:' '}),/customer|ลูกค้า/i);
  assert.throws(()=>siteServicePayload(site,{...customer,taxId:'123'}),/Tax ID|ภาษี/i);
 });
+test('embeds billing and service activation settings when provided',()=>{
+ const payload=siteServicePayload(site,customer,{
+  serviceStartDate:'2026-11-01',
+  ratePerKwh:4.5,
+  paymentTermDays:45,
+  taxRate:7,
+  pricesIncludeTax:true,
+  taxConfirmed:true,
+  remindersEnabled:true,
+  reminderStartDays:10,
+  reminderIntervalDays:5,
+ });
+ assert.equal(payload.serviceStartDate,'2026-11-01');
+ assert.equal(payload.ratePerKwh,4.5);
+ assert.equal(payload.paymentTermDays,45);
+ assert.equal(payload.taxRate,7);
+ assert.equal(payload.pricesIncludeTax,true);
+ assert.equal(payload.taxConfirmed,true);
+ assert.equal(payload.remindersEnabled,true);
+ assert.equal(payload.reminderStartDays,10);
+ assert.equal(payload.reminderIntervalDays,5);
+});
+test('validates tariff rate non-negativity',()=>{
+ assert.throws(()=>siteServicePayload(site,customer,{ratePerKwh:-1}),/Tariff rate|อัตราค่าบริการ/i);
+});
+

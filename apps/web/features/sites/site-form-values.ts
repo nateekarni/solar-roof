@@ -5,15 +5,85 @@ export function optionalNumber(value: string | number | null | undefined) { retu
 
 import type {PayloadProfile,PayloadRevision,PayloadDevice} from './payload-contracts';
 import {derivedConversion} from '@solar/api-contracts/unit-conversion';
-export interface DeviceDraft {key:string;name:string;model:string;serialNumber:string;externalDeviceId:string;payloadProfileRevisionId:string;sourcePresetRevisionId?:string|undefined;config:PayloadProfile;dirty:boolean;profileDirty:boolean}
-export function newDeviceDraft():DeviceDraft {return {key:crypto.randomUUID(),name:'',model:'',serialNumber:'',externalDeviceId:'',payloadProfileRevisionId:'',config:{id:'manual',version:'1.0.0',schemaVersion:'1.1',displayName:'Manual device',deviceType:'energy-meter',pollGroups:['energy'],fields:[]},dirty:false,profileDirty:true};}
-export function selectDevicePreset(draft:DeviceDraft,preset:PayloadRevision|undefined,confirmed=false):DeviceDraft|null {
- if(draft.dirty&&!confirmed)return null;
- if(!preset)return {...draft,payloadProfileRevisionId:'',sourcePresetRevisionId:undefined,dirty:false,profileDirty:true};
- return {...draft,name:preset.config.displayName,model:preset.config.displayName,payloadProfileRevisionId:preset.id,sourcePresetRevisionId:preset.id,config:structuredClone(preset.config),dirty:false,profileDirty:false};
+export interface DeviceDraft {
+  key: string;
+  name: string;
+  model: string;
+  serialNumber: string;
+  externalDeviceId: string;
+  payloadProfileRevisionId: string;
+  sourcePresetRevisionId?: string | undefined;
+  config: PayloadProfile;
+  dirty: boolean;
+  profileDirty: boolean;
+  telemetryTopic?: string | undefined;
+  expectedIntervalSeconds?: number | undefined;
 }
-export function draftFromDevice(device:PayloadDevice):DeviceDraft {return {...newDeviceDraft(),key:device.id,name:device.name,model:device.model??'',serialNumber:device.serialNumber??'',externalDeviceId:device.externalDeviceId,payloadProfileRevisionId:device.profileRevisionId,sourcePresetRevisionId:device.sourcePresetRevisionId??(device.profileOwnerDeviceId?undefined:device.profileRevisionId),profileDirty:false,config:structuredClone(device.profileConfig??{id:device.profileId,version:device.profileVersion,schemaVersion:'1.1',displayName:device.model??device.name,deviceType:device.profileDeviceType??'energy-meter',pollGroups:[...new Set(device.fields?.map(f=>f.pollGroup)??[])],fields:device.fields??[],sourceProfile:{id:device.sourceProfileId??device.profileId,version:device.sourceProfileVersion??device.profileVersion}})};}
-export function deviceProfilePayload(draft:DeviceDraft):{payloadProfileRevisionId?:string;localOverrideConfig?:PayloadProfile;sourcePresetRevisionId?:string} {return !draft.profileDirty&&draft.payloadProfileRevisionId?{payloadProfileRevisionId:draft.payloadProfileRevisionId}:{localOverrideConfig:structuredClone(draft.config),...(draft.sourcePresetRevisionId?{sourcePresetRevisionId:draft.sourcePresetRevisionId}:{})};}
+export function newDeviceDraft(deviceType = 'energy-meter', defaultCadence?: number): DeviceDraft {
+  const isLogger = deviceType === 'solar-logger' || deviceType.includes('logger');
+  const cadence = defaultCadence ?? (isLogger ? 15 : 5);
+  return {
+    key: crypto.randomUUID(),
+    name: '',
+    model: '',
+    serialNumber: '',
+    externalDeviceId: '',
+    payloadProfileRevisionId: '',
+    config: { id: 'manual', version: '1.0.0', schemaVersion: '1.1', displayName: 'Manual device', deviceType, pollGroups: ['energy'], fields: [] },
+    dirty: false,
+    profileDirty: true,
+    expectedIntervalSeconds: cadence,
+  };
+}
+export function selectDevicePreset(draft: DeviceDraft, preset: PayloadRevision | undefined, confirmed = false): DeviceDraft | null {
+  if (draft.dirty && !confirmed) return null;
+  if (!preset) return { ...draft, payloadProfileRevisionId: '', sourcePresetRevisionId: undefined, dirty: false, profileDirty: true };
+  const isLogger = preset.config.deviceType === 'solar-logger' || preset.config.deviceType.includes('logger');
+  const defaultInterval = isLogger ? 15 : 5;
+  return {
+    ...draft,
+    name: preset.config.displayName,
+    model: preset.config.displayName,
+    payloadProfileRevisionId: preset.id,
+    sourcePresetRevisionId: preset.id,
+    config: structuredClone(preset.config),
+    dirty: false,
+    profileDirty: false,
+    expectedIntervalSeconds: draft.expectedIntervalSeconds ?? defaultInterval,
+  };
+}
+export function draftFromDevice(device: PayloadDevice): DeviceDraft {
+  const isLogger = (device.deviceType ?? device.profileDeviceType ?? '').includes('logger');
+  const fallbackCadence = isLogger ? 15 : 5;
+  return {
+    ...newDeviceDraft(device.profileDeviceType ?? device.deviceType ?? 'energy-meter', device.expectedIntervalSeconds ?? fallbackCadence),
+    key: device.id,
+    name: device.name,
+    model: device.model ?? '',
+    serialNumber: device.serialNumber ?? '',
+    externalDeviceId: device.externalDeviceId,
+    payloadProfileRevisionId: device.profileRevisionId,
+    sourcePresetRevisionId: device.sourcePresetRevisionId ?? (device.profileOwnerDeviceId ? undefined : device.profileRevisionId),
+    profileDirty: false,
+    telemetryTopic: device.telemetryTopic,
+    expectedIntervalSeconds: device.expectedIntervalSeconds ?? fallbackCadence,
+    config: structuredClone(device.profileConfig ?? {
+      id: device.profileId,
+      version: device.profileVersion,
+      schemaVersion: '1.1',
+      displayName: device.model ?? device.name,
+      deviceType: device.profileDeviceType ?? 'energy-meter',
+      pollGroups: [...new Set(device.fields?.map(f => f.pollGroup) ?? [])],
+      fields: device.fields ?? [],
+      sourceProfile: { id: device.sourceProfileId ?? device.profileId, version: device.sourceProfileVersion ?? device.profileVersion }
+    })
+  };
+}
+export function deviceProfilePayload(draft: DeviceDraft): { payloadProfileRevisionId?: string; localOverrideConfig?: PayloadProfile; sourcePresetRevisionId?: string } {
+  return !draft.profileDirty && draft.payloadProfileRevisionId
+    ? { payloadProfileRevisionId: draft.payloadProfileRevisionId }
+    : { localOverrideConfig: structuredClone(draft.config), ...(draft.sourcePresetRevisionId ? { sourcePresetRevisionId: draft.sourcePresetRevisionId } : {}) };
+}
 export function validateDeviceProfile(config:PayloadProfile,billing:boolean,locale:string):string|null {
  const fail=(en:string,th:string)=>locale==='th'?th:en;
  if(!/^[A-Za-z0-9_-]{1,128}$/.test(config.deviceType)||!config.fields.length||config.fields.length>256)return fail('Add 1–256 valid fields and a device type.','เพิ่มฟิลด์ 1–256 รายการและระบุประเภทอุปกรณ์');

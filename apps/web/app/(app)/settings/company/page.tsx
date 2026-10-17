@@ -13,11 +13,9 @@ import {
 } from "lucide-react";
 import { useLocale } from "../../../../providers/locale-provider";
 import { apiClient } from "../../../../lib/api-client";
-import type { FinancialReadinessStatus } from "@solar/api-contracts";
 import { useAuth } from "../../../../stores/auth-store";
 import { companyBrandingUpdated } from "../../../../components/brand/branding-logo";
 import { CompanyProfileCard, type CompanyProfile } from "../../../../features/settings/company-profile-card";
-import { FinanceReadinessCard } from "../../../../features/settings/finance-readiness-card";
 import { AppLoading } from "../../../../components/feedback/app-loading";
 import { notify } from "../../../../components/feedback/notifications";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../../../components/ui/card";
@@ -71,9 +69,6 @@ export default function CompanyBankingPage() {
   const locale = useLocale();
   const { user } = useAuth();
   const isOwner = user?.role === 'owner';
-  const [readiness, setReadiness] = React.useState<FinancialReadinessStatus | null>(null);
-  const [readinessError, setReadinessError] = React.useState('');
-  const [confirming, setConfirming] = React.useState(false);
   const bankDisplayName = (name: string) => {
     const thaiName = name.replace(/ \(.*\)$/, "");
     const index = COMMON_BANKS.findIndex(bank => bank.replace(/ \(.*\)$/, "") === thaiName);
@@ -131,44 +126,19 @@ export default function CompanyBankingPage() {
     }
   }, [locale]);
 
-  const fetchReadiness = React.useCallback(async () => {
-    try {
-      const result = await apiClient.get<FinancialReadinessStatus>('/v1/settings/finance-readiness', {cache:'no-store'});
-      setReadiness(result);
-      setReadinessError('');
-    } catch {
-      setReadiness(null);
-      setReadinessError(locale === 'th' ? 'ไม่สามารถโหลดความพร้อมการเงินได้ กรุณาลองอีกครั้ง' : 'Unable to load finance readiness. Please try again.');
-    }
-  }, [locale]);
-
   React.useEffect(() => {
-    void Promise.all([fetchCompany(), fetchBankAccounts(), fetchReadiness()]);
-  }, [fetchCompany, fetchBankAccounts, fetchReadiness]);
-
-  const handleConfirm = async () => {
-    if (!isOwner || confirming || savingCompany || savingBank || deletingBank) return;
-    setConfirming(true);
-    try {
-      const result = await apiClient.post<FinancialReadinessStatus>('/v1/settings/finance-readiness/confirm');
-      setReadiness(result);
-      notify.success(locale === 'th' ? 'ยืนยันข้อมูลสำหรับการเงินจริงแล้ว' : 'Production configuration confirmed');
-    } catch (err) {
-      notify.error(err instanceof Error ? err.message : (locale === 'th' ? 'ไม่สามารถยืนยันได้' : 'Unable to confirm readiness'));
-      await fetchReadiness();
-    } finally { setConfirming(false); }
-  };
+    void Promise.all([fetchCompany(), fetchBankAccounts()]);
+  }, [fetchCompany, fetchBankAccounts]);
 
   const handleSaveCompany = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isOwner || confirming) return;
+    if (!isOwner) return;
     setSavingCompany(true);
     try {
       await apiClient.put("/v1/settings/company", company);
       setSavedCompany(company);
       setEditingCompany(false);
       if ((company.logoUrl ?? '') !== (savedCompany.logoUrl ?? '')) companyBrandingUpdated();
-      await fetchReadiness();
       notify.success(locale === "th" ? "บันทึกข้อมูลบริษัทเรียบร้อยแล้ว" : "Company profile updated");
     } catch (err: any) {
       notify.error(err?.message || (locale === "th" ? "ไม่สามารถบันทึกข้อมูลบริษัทได้" : "Unable to save company profile"));
@@ -194,7 +164,7 @@ export default function CompanyBankingPage() {
   };
 
   const handleSaveBank = async () => {
-    if (!isOwner || confirming) return;
+    if (!isOwner) return;
     if (!editingBank.bankName || !editingBank.accountNumber || !editingBank.accountName) {
       notify.error(locale === "th" ? "กรุณากรอกข้อมูลบัญชีให้ครบถ้วน" : "Please fill all required fields");
       return;
@@ -208,7 +178,7 @@ export default function CompanyBankingPage() {
       }
       notify.success(locale === "th" ? "บันทึกบัญชีธนาคารเรียบร้อยแล้ว" : "Bank account saved");
       setBankModalOpen(false);
-      await Promise.all([fetchBankAccounts(), fetchReadiness()]);
+      await fetchBankAccounts();
     } catch (err: any) {
       notify.error(err?.message || (locale === "th" ? "ไม่สามารถบันทึกบัญชีธนาคารได้" : "Unable to save bank account"));
     } finally {
@@ -217,13 +187,13 @@ export default function CompanyBankingPage() {
   };
 
   const handleDeleteBank = async (id?: string) => {
-    if (!id || deletingBank || !isOwner || confirming) return;
+    if (!id || deletingBank || !isOwner) return;
     setDeletingBank(true);
     try {
       await apiClient.delete(`/v1/settings/bank-accounts/${id}`);
       setBankToDelete(null);
       notify.success(locale === "th" ? "ลบบัญชีธนาคารเรียบร้อยแล้ว" : "Bank account deleted");
-      await Promise.all([fetchBankAccounts(), fetchReadiness()]);
+      await fetchBankAccounts();
     } catch (err: any) {
       notify.error(err?.message || (locale === "th" ? "ไม่สามารถลบบัญชีธนาคารได้" : "Unable to delete bank account"));
     } finally { setDeletingBank(false); }
@@ -257,10 +227,8 @@ export default function CompanyBankingPage() {
         </div>
 
         {loadError && <p role="alert">{loadError}</p>}
-        {readinessError && <div className="space-y-2"><p role="alert">{readinessError}</p><Button type="button" variant="outline" onClick={() => void fetchReadiness()}>{locale === 'th' ? 'ลองอีกครั้ง' : 'Try again'}</Button></div>}
-        {readiness && <FinanceReadinessCard status={readiness} locale={locale} isOwner={isOwner} confirming={confirming} pendingChanges={savingCompany || savingBank || deletingBank || editingCompany || bankModalOpen} onConfirm={() => void handleConfirm()} onEditCompany={() => setEditingCompany(true)}/>}
         {/* Section 1: Company Profile (FlowAccount Standard) */}
-        <CompanyProfileCard company={company} locale={locale} editingCompany={editingCompany} canEdit={isOwner} disabled={loadingCompany || !!loadError || confirming} savingCompany={savingCompany} setCompany={setCompany} onEdit={() => setEditingCompany(true)} onCancel={() => {setCompany(savedCompany); setEditingCompany(false);}} onSave={handleSaveCompany}/>
+        <CompanyProfileCard company={company} locale={locale} editingCompany={editingCompany} canEdit={isOwner} disabled={loadingCompany || !!loadError} savingCompany={savingCompany} setCompany={setCompany} onEdit={() => setEditingCompany(true)} onCancel={() => {setCompany(savedCompany); setEditingCompany(false);}} onSave={handleSaveCompany}/>
 
         {/* Section 2: Bank Accounts for Payments (FlowAccount Standard) */}
         <Card id="company-bank-accounts" className="gap-0 border-border/80 shadow-xs">
@@ -275,12 +243,10 @@ export default function CompanyBankingPage() {
                   : "Bank accounts displayed in billing invoices for customer payment transfer"}
               </CardDescription>
             </div>
-            {isOwner && <AddButton disabled={confirming}
-
+            {isOwner && <AddButton
               onClick={handleOpenAddBank}
               className="h-10 text-xs font-medium  gap-1"
             >
-
               <span>{locale === "th" ? "เพิ่มบัญชี" : "Add Account"}</span>
             </AddButton>}
           </CardHeader>
@@ -291,7 +257,7 @@ export default function CompanyBankingPage() {
               <div className="p-6 text-center text-xs text-muted-foreground space-y-2">
                 <CreditCard className="size-8 mx-auto text-muted-foreground/40" />
                 <p>{locale === "th" ? "ยังไม่มีการเพิ่มบัญชีธนาคาร" : "No bank accounts added yet"}</p>
-                {isOwner && <AddButton disabled={confirming} variant="outline" onClick={handleOpenAddBank} className="">
+                {isOwner && <AddButton variant="outline" onClick={handleOpenAddBank} className="">
                   {locale === "th" ? "เพิ่มบัญชีแรก" : "Add first account"}
                 </AddButton>}
               </div>
@@ -302,7 +268,7 @@ export default function CompanyBankingPage() {
  {accessorKey:'accountName',header:locale==='th'?'ชื่อบัญชี':'Account name'},
  {accessorKey:'branchName',header:locale==='th'?'สาขา':'Branch',cell:({row})=>row.original.branchName||'—'},
  {accessorKey:'promptpayId',header:locale==='th'?'พร้อมเพย์':'PromptPay',cell:({row})=>row.original.promptpayId||'—'},
- {id:'actions',header:'',enableSorting:false,cell:({row})=>isOwner?<DropdownMenu><DropdownMenuTrigger asChild><Button type="button" disabled={confirming} variant="ghost" size="icon" aria-label={locale==='th'?'เมนูบัญชีธนาคาร':'Bank account actions'}><MoreHorizontal/></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onSelect={()=>handleOpenEditBank(row.original)}>{locale==='th'?'แก้ไขบัญชีธนาคาร':'Edit bank account'}</DropdownMenuItem><DropdownMenuItem variant="destructive" onSelect={()=>row.original.id&&setBankToDelete(row.original.id)}>{locale==='th'?'ลบบัญชีธนาคาร':'Delete bank account'}</DropdownMenuItem></DropdownMenuContent></DropdownMenu>:null}
+ {id:'actions',header:'',enableSorting:false,cell:({row})=>isOwner?<DropdownMenu><DropdownMenuTrigger asChild><Button type="button" variant="ghost" size="icon" aria-label={locale==='th'?'เมนูบัญชีธนาคาร':'Bank account actions'}><MoreHorizontal/></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onSelect={()=>handleOpenEditBank(row.original)}>{locale==='th'?'แก้ไขบัญชีธนาคาร':'Edit bank account'}</DropdownMenuItem><DropdownMenuItem variant="destructive" onSelect={()=>row.original.id&&setBankToDelete(row.original.id)}>{locale==='th'?'ลบบัญชีธนาคาร':'Delete bank account'}</DropdownMenuItem></DropdownMenuContent></DropdownMenu>:null}
  ]}/>
             )}
           </CardContent>

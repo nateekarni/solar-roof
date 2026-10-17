@@ -16,6 +16,7 @@ import { OperationTable, type OperationTableProps } from './operation-table';
 import { useLocale } from '../../providers/locale-provider';
 import { operationQueryKeys,billingStatusViewFromQuery,patchOperationQuery } from './operation-request-query';
 import {BillingStatusTabs,billingStatusTabId} from '../billing/billing-status-tabs';
+import {AlertWorkspaceTabs} from '../alerts/alert-workspace-tabs';
 
 export function OperationQueryTable({ initial, ...props }: Omit<OperationTableProps,'rows'|'columns'> & {initial:OperationPage<OperationRow>}) {
   const th=useLocale()==='th';
@@ -93,7 +94,7 @@ export function OperationQueryTable({ initial, ...props }: Omit<OperationTablePr
      {(operationFilters[props.resource]??[]).filter(filter=>props.resource!=='billing'||filter.key!=='status').map(filter=><ChoiceSelect key={filter.key} aria-label={filter.label[th?0:1]} className='h-10 min-w-32 w-auto' value={searchParams.get(filter.key)??''} onChange={event=>update({[filter.key]:event.target.value})}><option value=''>{filter.label[th?0:1]}: {th?'ทั้งหมด':'All'}</option>{filter.options.map(option=><option key={option.value} value={option.value}>{option.label[th?0:1]}</option>)}</ChoiceSelect>)}
      {!['customers','sites','users'].includes(props.resource)&&<ListPeriodPicker from={searchParams.get('from')??''} to={searchParams.get('to')??''} onValueChange={period=>update(period)}/>}
     </div>
-  </div>{props.resource==='billing'&&<BillingStatusTabs value={billingStatusView} panelId={resultsPanelId} counts={data.facets?.billingStatusCounts} locale={th?'th':'en'} onValueChange={billingStatusView=>update({billingStatusView})}/>}</div>;
+  </div>{props.resource==='billing'&&<BillingStatusTabs value={billingStatusView} panelId={resultsPanelId} counts={data.facets?.billingStatusCounts} locale={th?'th':'en'} onValueChange={billingStatusView=>update({billingStatusView})}/>}{props.resource==='alerts'&&<AlertWorkspaceTabs value="incidents" />}</div>;
 return <div className="space-y-3" aria-busy={loading}>
     {error&&<p role="alert">{error}</p>}
     <OperationTable {...props} {...(props.resource==='billing'?{onBillingApprovalCompleted:refreshAfterApproval,selectionScope:JSON.stringify([query,search]),resultsPanel:{id:resultsPanelId,labelledBy:billingStatusTabId(resultsPanelId,billingStatusView)}}:{})} columns={data.columns} rows={error?[]:data.rows} summary={summary} toolbar={toolbar} serverManaged />

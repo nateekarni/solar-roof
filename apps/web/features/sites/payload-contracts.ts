@@ -1,5 +1,5 @@
 export interface PayloadField {
-  sourceTag?:string; required?:boolean;
+  sourceTag?:string; required?:boolean; registerAddress?:string;
   tag: string; displayName: string; pollGroup: string; sourceUnit: string; targetUnit: string;
   conversion: 'identity' | 'wh-to-kwh' | 'varh-to-kvarh' | 'auto-v1'; role?: 'billing-import' | 'active-power' | 'none';
 }
@@ -16,6 +16,7 @@ export interface PayloadDevice {
   id: string; name: string; externalDeviceId: string; profileRevisionId: string; profileId: string;
   model?:string; serialNumber?:string; deviceType?:string; fields?:PayloadField[];
   profileVersion: string; telemetryTopic: string; fixture: Record<string, unknown>;
+  expectedIntervalSeconds?: number | undefined;
 }
 export interface PayloadConfig {
   protocolMode?: "standard" | "legacy";

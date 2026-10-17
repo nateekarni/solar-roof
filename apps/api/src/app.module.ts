@@ -3,6 +3,7 @@ import { FinancialReadinessModule } from './modules/financial-readiness/financia
 import { JobsModule } from './modules/jobs/jobs.module.js';
 import {HistoryModule} from './modules/history/history.module.js';
 import {PlatformObservabilityModule} from './common/observability/platform-observability.module.js';
+import { MailerModule } from './modules/mailer/mailer.module.js';
 import { Module } from "@nestjs/common";
 import { DatabaseModule } from "./database/database.module.js";
 import { HealthModule } from "./health/health.module.js";
@@ -42,6 +43,7 @@ import { RequestOriginGuard } from "./common/auth/request-origin.guard.js";
     HistoryModule,
     PlatformObservabilityModule,
     SettingsModule,
+    MailerModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: RequestOriginGuard },

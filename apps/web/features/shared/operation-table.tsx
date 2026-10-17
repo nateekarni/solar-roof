@@ -56,12 +56,34 @@ import { useFinancialCapabilities } from "../../lib/financial-capabilities";
 import { useSessionUser } from "../../providers/session-user-provider";
 import { ResponsiveDocumentRows } from "./responsive-document-rows";
 import { OperationCardList } from "./operation-card-list";
-import { DocumentPreviewModal, type DocumentPreviewData } from "./document-preview-modal";
-import { BillingDetailModal } from "../billing/billing-detail-modal";
-import { PaymentDialog } from "../billing/payment-dialog";
-import { SiteEditDialog } from "../sites/site-edit-dialog";
-import { SiteDeleteDialog } from "../sites/site-delete-dialog";
-import { SiteTelemetryDialog } from "../sites/site-telemetry-dialog";
+import dynamic from "next/dynamic";
+import type { DocumentPreviewData } from "./document-preview-modal";
+import { formatAuditAction, formatAuditEntityType, formatAuditActor } from "./audit-wording";
+
+const DocumentPreviewModal = dynamic(
+  () => import("./document-preview-modal").then((m) => m.DocumentPreviewModal),
+  { ssr: false }
+);
+const BillingDetailModal = dynamic(
+  () => import("../billing/billing-detail-modal").then((m) => m.BillingDetailModal),
+  { ssr: false }
+);
+const PaymentDialog = dynamic(
+  () => import("../billing/payment-dialog").then((m) => m.PaymentDialog),
+  { ssr: false }
+);
+const SiteEditDialog = dynamic(
+  () => import("../sites/site-dialog").then((m) => m.SiteEditDialog),
+  { ssr: false }
+);
+const SiteDeleteDialog = dynamic(
+  () => import("../sites/site-delete-dialog").then((m) => m.SiteDeleteDialog),
+  { ssr: false }
+);
+const SiteTelemetryDialog = dynamic(
+  () => import("../sites/site-telemetry-dialog").then((m) => m.SiteTelemetryDialog),
+  { ssr: false }
+);
 import { renderStatusBadge, renderReceiptStatusBadge, renderBillingStatusBadge, STATUS_MAP } from "../../lib/status-badge";
 import { formatAppDate, formatAppDateTime, isIsoDateLike } from "../../lib/date-format";
 
@@ -343,7 +365,7 @@ export function OperationTable({
                       <Radio className="size-3.5 text-foreground" />
                       <span>{locale === "th" ? "ข้อมูลสดและค่ารีจิสเตอร์" : "Live Telemetry & Registers"}</span>
                     </DropdownMenuItem>
-                    {user?.role === "admin" && (
+                    {user?.role === "owner" && (
                       <>
                         <DropdownMenuItem
                           onClick={() => {
@@ -402,6 +424,30 @@ export function OperationTable({
     ? <OperationActionList actions={getOperationActions(resource,item,financial)} onAction={id=>handleAction(id,item)} />
     : <DropdownMenu><DropdownMenuTrigger asChild><Button size="sm" variant="outline">{locale==='th'?'ดูรายละเอียด':'View Details'}</Button></DropdownMenuTrigger><DropdownMenuContent>{renderMenuActions(item)}</DropdownMenuContent></DropdownMenu>;
 
+const COLUMN_SIZES: Record<string, { size: number; minSize?: number; maxSize?: number }> = {
+  status: { size: 105, minSize: 90, maxSize: 120 },
+  severity: { size: 95, minSize: 85, maxSize: 110 },
+  daysOverdue: { size: 90, minSize: 80, maxSize: 100 },
+  deviceCount: { size: 80, minSize: 70, maxSize: 90 },
+  devicesCount: { size: 80, minSize: 70, maxSize: 90 },
+  sitesCount: { size: 80, minSize: 70, maxSize: 90 },
+  gatewaysCount: { size: 85, minSize: 75, maxSize: 95 },
+  capacityMwp: { size: 115, minSize: 100, maxSize: 130 },
+  rate: { size: 110, minSize: 95, maxSize: 125 },
+  amount: { size: 130, minSize: 110, maxSize: 150 },
+  totalAmount: { size: 135, minSize: 115, maxSize: 160 },
+  version: { size: 75, minSize: 65, maxSize: 85 },
+  time: { size: 145, minSize: 130, maxSize: 160 },
+  createdAt: { size: 125, minSize: 110, maxSize: 140 },
+  issueDate: { size: 115, minSize: 105, maxSize: 130 },
+  dueDate: { size: 115, minSize: 105, maxSize: 130 },
+  startDate: { size: 115, minSize: 105, maxSize: 130 },
+  endDate: { size: 115, minSize: 105, maxSize: 130 },
+  period: { size: 100, minSize: 90, maxSize: 115 },
+  channel: { size: 90, minSize: 80, maxSize: 105 },
+  format: { size: 80, minSize: 70, maxSize: 90 },
+};
+
   const tableColumns = React.useMemo<ColumnDef<OperationRow, any>[]>(() => {
     const firstRow = rows[0] ?? {};
 
@@ -414,9 +460,11 @@ export function OperationTable({
           ? COLUMN_TRANSLATIONS[rawTitle]
           : rawTitle;
       const headerTitle=operationColumnLabel(resource,key,locale,fallbackTitle);
+      const colSize = COLUMN_SIZES[key];
 
       return {
         accessorKey: key,
+        ...(colSize ? { size: colSize.size, minSize: colSize.minSize, maxSize: colSize.maxSize } : {}),
         meta: { title: headerTitle },
         header: ({ column }) => {
           const sortKey = resource === 'receipts' && key === 'receiptNumber' ? 'documentNumber' : resource === 'receipts' && key === 'totalAmount' ? 'amount' : key;
@@ -442,6 +490,62 @@ export function OperationTable({
           const val = row.getValue(key);
           const str = String(val ?? "-").trim();
           const lower = str.toLowerCase();
+
+          if (resource === 'alerts') {
+            if (key === 'title') {
+              if (str === 'แจ้งเตือน / Alert' || str.toLowerCase() === 'alert') {
+                return <span className="font-medium text-foreground">{locale === 'th' ? 'การแจ้งเตือนระบบ' : 'System Alert'}</span>;
+              }
+              if (str === 'กลับสู่ปกติ / Recovered' || str.toLowerCase() === 'recovered') {
+                return <span className="font-medium text-foreground">{locale === 'th' ? 'ระบบกลับสู่ปกติ' : 'System Recovered'}</span>;
+              }
+            }
+            if (key === 'detail') {
+              if (str.toLowerCase() === 'offline') {
+                return <Badge variant="destructive" className="font-medium">{locale === 'th' ? 'เกตเวย์ออฟไลน์' : 'Gateway offline'}</Badge>;
+              }
+              if (str.toLowerCase() === 'stale') {
+                return <Badge variant="secondary" className="bg-warning/15 text-warning-emphasis border-warning/30 font-medium">{locale === 'th' ? 'ข้อมูลหยุดส่งเกินกำหนด' : 'Data transmission stale'}</Badge>;
+              }
+              if (str.toLowerCase() === 'online') {
+                return <Badge variant="secondary" className="bg-success/15 text-success border-success/30 font-medium">{locale === 'th' ? 'เกตเวย์ออนไลน์' : 'Gateway online'}</Badge>;
+              }
+            }
+          }
+
+          if (resource === 'audit') {
+            if (key === 'action') {
+              const actionBadge = formatAuditAction(str, locale);
+              return (
+                <Badge
+                  variant={actionBadge.variant}
+                  className={`font-medium ${actionBadge.badgeClass ?? ''}`}
+                >
+                  {actionBadge.label}
+                </Badge>
+              );
+            }
+            if (key === 'entityType') {
+              return <span className="text-sm font-medium text-foreground">{formatAuditEntityType(str, locale)}</span>;
+            }
+            if (key === 'actor') {
+              return <span className="text-sm text-foreground">{formatAuditActor(str, locale)}</span>;
+            }
+            if (key === 'entityId') {
+              if (str && str !== '-') {
+                const shortId = str.length > 12 ? `${str.slice(0, 8)}…` : str;
+                return (
+                  <span
+                    title={str}
+                    className="font-mono text-xs text-muted-foreground bg-muted/40 px-1.5 py-0.5 rounded border border-border/50"
+                  >
+                    {shortId}
+                  </span>
+                );
+              }
+              return <span className="text-sm text-muted-foreground">-</span>;
+            }
+          }
 
           if (
             key.toLowerCase().includes("status") ||
@@ -533,12 +637,12 @@ export function OperationTable({
       };
     });
 
-    if(resource==='billing')cols.unshift({
-      id:'selection',
-      enableSorting:false,
-      enableHiding:false,
-      header:BillingSelectionHeader,
-      cell:BillingSelectionCell,
+    if (resource === 'billing' && user?.role !== 'customer_user') cols.unshift({
+      id: 'selection',
+      enableSorting: false,
+      enableHiding: false,
+      header: BillingSelectionHeader,
+      cell: BillingSelectionCell,
     });
 
     // Append Action column (header empty string / visually hidden label)
@@ -577,7 +681,7 @@ export function OperationTable({
     });
 
     return cols;
-  }, [rows, rawColumns, idKey, locale, resource, openResourceDetail, query.sort, query.direction, queryControlsReady, serverManaged, setQuery]);
+  }, [rows, rawColumns, idKey, locale, resource, openResourceDetail, query.sort, query.direction, queryControlsReady, serverManaged, setQuery, user?.role]);
 
   const searchPlaceholder =
     locale === "th"
@@ -620,7 +724,7 @@ export function OperationTable({
 
       {toolbar}
 
-      <div className="min-w-0" {...(resultsPanel?{id:resultsPanel.id,role:'tabpanel','aria-labelledby':resultsPanel.labelledBy,tabIndex:0}:{})}><ResponsiveDocumentRows role={user.role} resource={resource} mobile={<OperationCardList resource={resource} title={title} columns={rawColumns} rows={rows} idKey={idKey} {...(resource==='billing'?{selection:{selected,toggle:toggleSelection,togglePage:togglePageSelection}}:{})} onOpenDetail={row => openResourceDetail(resource, row)} renderActions={renderMobileActions} onOpenSlip={url => { setSelectedSlipImage(url); setSlipImageModalOpen(true); }} />} desktop={<div className="block min-w-0">
+      <div className="min-w-0" {...(resultsPanel?{id:resultsPanel.id,role:'tabpanel','aria-labelledby':resultsPanel.labelledBy,tabIndex:0}:{})}><ResponsiveDocumentRows role={user.role} resource={resource} mobile={<OperationCardList resource={resource} title={title} columns={rawColumns} rows={rows} idKey={idKey} {...(resource==='billing'&&user.role!=='customer_user'?{selection:{selected,toggle:toggleSelection,togglePage:togglePageSelection}}:{})} onOpenDetail={row => openResourceDetail(resource, row)} renderActions={renderMobileActions} onOpenSlip={url => { setSelectedSlipImage(url); setSlipImageModalOpen(true); }} />} desktop={<div className="block min-w-0">
         <DataTable
           serverManaged={serverManaged}
           columns={tableColumns}
@@ -633,10 +737,12 @@ export function OperationTable({
         />
       </div>} /></div>
 
-      {resource==='billing'&&<>
-        <BillingBulkApproval rows={rows.filter(row=>selected.has(row.id))} approver={approver} locale={locale} canApprove={financial.operationsActions?.includes('approve_invoice')??false} onCompleted={approvalCompleted} onClearSelection={resetSelection}/>
-        <BillingBulkApproval rows={approvalRow?[approvalRow]:[]} approver={approver} locale={locale} mode="single" open={approvalOpen} onOpenChange={setApprovalOpen} canApprove={financial.operationsActions?.includes('approve_invoice')??false} onCompleted={approvalCompleted}/>
-      </>}
+      {resource === 'billing' && user.role !== 'customer_user' && (
+        <>
+          <BillingBulkApproval rows={rows.filter(row=>selected.has(row.id))} approver={approver} locale={locale} canApprove={financial.operationsActions?.includes('approve_invoice')??false} onCompleted={approvalCompleted} onClearSelection={resetSelection}/>
+          <BillingBulkApproval rows={approvalRow?[approvalRow]:[]} approver={approver} locale={locale} mode="single" open={approvalOpen} onOpenChange={setApprovalOpen} canApprove={financial.operationsActions?.includes('approve_invoice')??false} onCompleted={approvalCompleted}/>
+        </>
+      )}
 
       {/* Interactive Document Preview Modal */}
       <DocumentPreviewModal

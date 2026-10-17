@@ -7,14 +7,14 @@ import { validateOrganizationPassword } from "./organization-settings-model";
 import AccountSettingsPage from '../../app/(app)/settings/account/page';
 test("settings keeps organization legal records read only and exposes account editing", () => {
   const html = renderToStaticMarkup(<CustomerSettingsView />);
-  assert.match(html, /ข้อมูลลูกค้าสำหรับเอกสาร|Customer document information/);
+  assert.match(html, /ข้อมูลนิติบุคคลสำหรับเอกสาร|ข้อมูลลูกค้าสำหรับเอกสาร|Legal Organization & Tax Info|Customer document information/);
   assert.doesNotMatch(html, /PPA Agreement/);
 });
 
-test("customer settings points to the merged account without duplicate profile or security forms", () => {
+test("customer settings displays user account profile without duplicate profile or security forms", () => {
   const html = renderToStaticMarkup(<CustomerSettingsView />);
-  assert.match(html,/href="\/settings\/account"/);
-  assert.doesNotMatch(html,/type="password"|id="own-display-name"|id="organization-theme"/);
+  assert.match(html, /บัญชีผู้ใช้งานของฉัน|My Account Profile/);
+  assert.doesNotMatch(html, /type="password"|id="own-display-name"|id="organization-theme"/);
 });
 test('My Account starts with display values and separate accessible edit controls',()=>{
  const html=renderToStaticMarkup(<AccountSettingsPage/>);
@@ -42,19 +42,16 @@ test("password validation is localized and rejects mismatch before submission", 
   );
 });
 
-test("Settings actions pair semantic filled surfaces with their foreground tokens", () => {
+test("Settings actions pair semantic surfaces with their foreground tokens", () => {
   const html = renderToStaticMarkup(<CustomerSettingsView />);
   assert.match(
     html,
-    /<a(?=[^>]*href="\/settings\/account")(?=[^>]*class="[^"]*text-primary)[^>]*>/,
-  );
-  assert.match(
-    html,
-    /data-variant="destructive"[^>]*class="[^"]*bg-destructive[^"]*text-destructive-foreground/,
+    /class="[^"]*bg-primary\/10[^"]*text-primary/,
   );
 });
 
-test("Filled signout retains its semantic background in dark mode", () => {
+test("Customer settings delegates sign out to profile popover without redundant button", () => {
   const html = renderToStaticMarkup(<CustomerSettingsView />);
-  assert.doesNotMatch(html, /dark:bg-destructive\/20/);
+  assert.doesNotMatch(html, /data-variant="destructive"/);
+  assert.doesNotMatch(html, /ออกจากระบบ|Sign out/);
 });

@@ -25,7 +25,6 @@ import {
 } from "@nestjs/common";
 import { type Request } from "express";
 import { randomUUID } from "node:crypto";
-import nodemailer from "nodemailer";
 import { DatabaseService } from "../../database/database.service.js";
 import { Roles } from "../../common/roles.decorator.js";
 

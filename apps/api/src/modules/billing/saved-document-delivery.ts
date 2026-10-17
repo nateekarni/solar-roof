@@ -1,8 +1,9 @@
 import {documentPdfFilename} from '../documents/document-number.js';
 import { ConflictException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
-import nodemailer from 'nodemailer';
 import type { PoolClient } from 'pg';
+import { MailerService } from '../mailer/mailer.service.js';
+const mailer = new MailerService();
 import {localFinancialBinding} from './local-financial-policy.js';
 export interface FrozenRecipient { id:string; email:string; name?:string; }
 export function originalArtifactHash(job:{pdf_bytes:Buffer;sha256:string;content_hash:string;artifact_sha256?:string}):string {
@@ -55,15 +56,14 @@ export async function deliverSavedArtifacts(client:PoolClient,jobs:any[],actorId
    if(job.delivered_user_ids?.includes(recipient.id))continue;
    const messageId=`<financial-${job.id}-${recipient.id}@solar-platform.invalid>`;
    await client.query('UPDATE financial_delivery_outbox SET message_id=$2 WHERE id=$1',[job.id,messageId]);
-   const password=process.env.SMTP_PASSWORD??process.env.SMTP_PASS;
-   const transport=nodemailer.createTransport({host:process.env.SMTP_HOST,port:Number(process.env.SMTP_PORT),secure:process.env.SMTP_SECURE==='true',...(process.env.SMTP_USER?{auth:{user:process.env.SMTP_USER,pass:password}}:{}),connectionTimeout:5000,socketTimeout:10000});
+
    try{
-    const result=await transport.sendMail({from:process.env.SMTP_FROM??'local-financial@solar-platform.invalid',to:recipient.email,messageId,subject:`${test?'TEST ':''}${job.document_number}`,text:test?'Synthetic local document workflow test. Saved original attached.':'Your issued document is attached.',attachments:[{filename:documentPdfFilename(job.document_number),content:job.pdf_bytes,contentType:'application/pdf'}]});
+    const result=await mailer.sendMail({from:process.env.SMTP_FROM??'local-financial@solar-platform.invalid',to:recipient.email,messageId,subject:`${test?'TEST ':''}${job.document_number}`,text:test?'Synthetic local document workflow test. Saved original attached.':'Your issued document is attached.',attachments:[{filename:documentPdfFilename(job.document_number),content:job.pdf_bytes,contentType:'application/pdf'}]});
     if(!result.accepted?.map((email:string)=>email.toLowerCase()).includes(recipient.email.toLowerCase()))throw Object.assign(new Error('SMTP recipient rejected'),{code:'ERECIPIENT'});
    }catch(error){
     const e=error as Error&{code?:string;responseCode?:number};const safe=['ECONNREFUSED','ERECIPIENT','EAUTH','EDNS'].includes(e.code??'')||Boolean(e.responseCode&&e.responseCode>=400);
     await client.query('UPDATE financial_delivery_outbox SET state=$2,last_error=$3 WHERE id=$1',[job.id,safe?'failed':'uncertain',e.message]);throw error;
-   }finally{transport.close();}
+   }
    // Failure after SMTP acceptance leaves sending, stopping unsafe retries.
    await client.query('UPDATE financial_delivery_outbox SET delivered_user_ids=array_append(delivered_user_ids,$2::uuid) WHERE id=$1',[job.id,recipient.id]);
   }

@@ -45,7 +45,7 @@ export const notificationVisibleSql=`WITH visible AS (
 @Injectable()
 export class NotificationFeedService {
  constructor(@Inject(DatabaseService) private readonly db:DatabaseService,@Inject(FinancialReadinessService) private readonly readiness:Pick<FinancialReadinessService,'status'>){}
- private parameters(user:ScopePrincipal,site:unknown){const scope=notificationScope(user);return [scope.userId,scope.customers,parseNotificationSite(site),scope.alerts,scope.workflows,['owner','admin'].includes(user.role??''),['/records/contracts','/records/documents','/records/receipts','/records/billing'].filter(path=>canVisitPage(user.role??'',path))];}
+ private parameters(user:ScopePrincipal,site:unknown){const scope=notificationScope(user);return [scope.userId,scope.customers,parseNotificationSite(site),scope.alerts,scope.workflows,['owner','admin'].includes(user.role??''),['/records/documents','/records/receipts','/records/billing'].filter(path=>canVisitPage(user.role??'',path))];}
  private async financeItem(user:ScopePrincipal){return user.role==='owner'?financeReadinessNotification(user,await this.readiness.status(user)):null;}
  private async financeReadAt(user:ScopePrincipal,id:string):Promise<string|null>{
   const result=await this.db.query<{readAt:string|Date}>(`SELECT read_at AS "readAt" FROM notification_feed_reads WHERE user_id=$1::uuid AND notification_id=$2`,[user.id,id]);
@@ -63,8 +63,9 @@ export class NotificationFeedService {
   const feed=result.rows[0]??{rows:[],unreadCount:0};
   if(!finance)return feed;
   finance.readAt=await this.financeReadAt(user,finance.id);
-  // The setup reminder is global and remains actionable in a site-filtered bell.
-  return {rows:[finance,...feed.rows].sort((a,b)=>Date.parse(b.createdAt)-Date.parse(a.createdAt)||a.id.localeCompare(b.id)).slice(0,100),unreadCount:feed.unreadCount+(finance.readAt?0:1)};
+  // The setup reminder is global and pinned at the top until all setup items are ready.
+  const remaining = (feed.rows as Array<{id: string}>).filter(r => r.id !== finance.id);
+  return {rows:[finance,...remaining].slice(0,100),unreadCount:feed.unreadCount+(finance.readAt?0:1)};
  }
  async read(user:ScopePrincipal,ids:unknown,site?:unknown){return this.mark(user,parseNotificationIds(ids),site);}
  async readAll(user:ScopePrincipal,site?:unknown){return this.mark(user,null,site);}

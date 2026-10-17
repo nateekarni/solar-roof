@@ -35,9 +35,9 @@ export class OperationsService {
           WHERE ${where} GROUP BY s.id ORDER BY s.name`;
         columns=["ชื่อลูกค้า","ภูมิภาค","กำลังติดตั้ง (MWp)","จำนวนไซต์","Gateway","สถานะ"];break;
       case "sites":
-        sql=`SELECT si.id,si.external_site_id AS "externalSiteId",to_char(si.created_at AT TIME ZONE 'Asia/Bangkok','YYYY-MM-DD') AS "createdAt",si.name,s.name AS "customerName",s.region,si.capacity_mwp AS "capacityMwp",${siteConnectionStatus} AS status,(SELECT to_char(service_start_date,'YYYY-MM-DD') FROM site_billing_settings WHERE site_id=si.id) AS "serviceStartDate"
+        sql=`SELECT si.id,si.external_site_id AS "externalSiteId",to_char(si.created_at AT TIME ZONE 'Asia/Bangkok','YYYY-MM-DD') AS "createdAt",si.name,s.name AS "customerName",si.capacity_mwp AS "capacityMwp",${siteConnectionStatus} AS status,(SELECT to_char(service_start_date,'YYYY-MM-DD') FROM site_billing_settings WHERE site_id=si.id) AS "serviceStartDate"
           FROM sites si JOIN customers s ON s.id=si.customer_id WHERE ${where} ORDER BY si.name`;
-        columns=["ชื่อไซต์","ลูกค้า","ภูมิภาค","กำลังติดตั้ง (MWp)","วันเริ่มบริการ","สถานะ"];break;
+        columns=["ชื่อไซต์","ลูกค้า","กำลังติดตั้ง (MWp)","วันเริ่มบริการ","สถานะ"];break;
       case "billing":
         sql=`SELECT b.id,b.site_id AS "siteId",b.contract_id AS "contractId",to_char(b.period_start,'YYYY-MM-DD') AS "periodStart",to_char(b.period_end,'YYYY-MM-DD') AS "periodEnd",to_char(b.period_end,'YYYY-MM') AS period,s.name AS "customerName",si.external_site_id AS "externalSiteId",si.name AS "siteName",
           b.billing_kind AS "billingKind",to_char(d.issue_date,'YYYY-MM-DD') AS "issueDate",to_char(b.due_date,'YYYY-MM-DD') AS "dueDate",b.consumed_kwh AS "consumedKwh",b.rate,b.amount,b.simulated_tax::text AS "simulatedTax",b.status,b.quality,b.opening_energy AS "openingEnergy",b.closing_energy AS "closingEnergy",
@@ -93,7 +93,8 @@ export class OperationsService {
       case "audit":
         if(!["owner","admin"].includes(user?.role??"")) throw new ForbiddenException();
         sql=`SELECT a.id,a.occurred_at AS time,a.action,a.entity_type AS "entityType",a.entity_id AS "entityId",u.display_name AS actor,
-          a.correlation_id AS "correlationId",a.reason
+          a.correlation_id AS "correlationId",a.reason,
+          a.before_json AS "beforeJson",a.after_json AS "afterJson"
           FROM audit_events a LEFT JOIN users u ON u.id=a.actor_id LEFT JOIN customers s ON s.id=u.customer_id
           WHERE ${where} AND starts_with(a.action,'${user?.role==='owner'?'business':'technical'}.') ORDER BY a.occurred_at DESC LIMIT 500`;
         columns=["เวลา","การดำเนินการ","ประเภทข้อมูล","รหัสอ้างอิง","ผู้ดำเนินการ","เหตุผล"];break;
@@ -127,7 +128,7 @@ export class OperationsService {
     return {columns,rows,idKey:'id',page:{limit:query.limit,nextCursor,hasMore},...facets};
   }
   async detail(resource:string,id:string,user?:ScopePrincipal) {
-    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) throw new NotFoundException('Record not found');
+    if(resource === 'contracts' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) throw new NotFoundException('Record not found');
     const {sql,params,columns}=this.source(resource,user);
     params.push(id);
     const result=await this.db.query<OperationRow>(`SELECT q.* FROM (${sql}) q WHERE q.id=$${params.length}::uuid`,params);
@@ -168,7 +169,7 @@ export class OperationsService {
       case 'billing': source=this.source(resource,user).sql;break;
       case 'receipts':source=this.source(resource,user).sql;break;
       case 'documents': source=`SELECT x.id,x.document_number AS "documentNumber",x.document_type AS type,s.name AS "customerName",si.external_site_id AS "externalSiteId",si.name AS "siteName",x.status,x.amount,to_char(x.issue_date,'YYYY-MM-DD') AS "issueDate" FROM documents x${join} WHERE ${where}`;break;
-      case 'sites':source=`SELECT si.id,si.external_site_id AS "externalSiteId",to_char(si.created_at AT TIME ZONE 'Asia/Bangkok','YYYY-MM-DD') AS "createdAt",si.name,s.name AS "customerName",s.region,si.capacity_mwp AS "capacityMwp",${siteConnectionStatus} AS status,(SELECT to_char(service_start_date,'YYYY-MM-DD') FROM site_billing_settings WHERE site_id=si.id) AS "serviceStartDate" FROM sites si JOIN customers s ON s.id=si.customer_id WHERE ${where}`;break;
+      case 'sites':source=`SELECT si.id,si.external_site_id AS "externalSiteId",to_char(si.created_at AT TIME ZONE 'Asia/Bangkok','YYYY-MM-DD') AS "createdAt",si.name,s.name AS "customerName",si.capacity_mwp AS "capacityMwp",${siteConnectionStatus} AS status,(SELECT to_char(service_start_date,'YYYY-MM-DD') FROM site_billing_settings WHERE site_id=si.id) AS "serviceStartDate" FROM sites si JOIN customers s ON s.id=si.customer_id WHERE ${where}`;break;
       case 'customers':source=`SELECT DISTINCT s.id,to_char(s.created_at AT TIME ZONE 'Asia/Bangkok','YYYY-MM-DD') AS "createdAt",s.name,s.code,s.region,s.status FROM customers s JOIN sites si ON si.customer_id=s.id WHERE ${where}`;break;
       case 'contracts':source=`SELECT x.id,(SELECT d.document_number FROM documents d WHERE d.contract_id=x.id AND d.document_type='contract') AS "contractNumber",s.name AS "customerName",si.external_site_id AS "externalSiteId",si.name AS "siteName",x.signer_name AS signers,x.status,to_char(x.start_date,'YYYY-MM-DD') AS "startDate" FROM contracts x${join} WHERE ${where}`;break;
       case 'alerts':source=`SELECT x.id,x.title,x.detail,x.severity,x.status,x.occurred_at AS "occurredAt" FROM alerts x${join} WHERE ${where}`;break;

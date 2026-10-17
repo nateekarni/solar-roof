@@ -90,7 +90,7 @@ export async function Dashboard({
     ]);
     if(billResponse.status===401) redirect("/login");
     const bills = billResponse.ok ? await billResponse.json() as {rows:SchoolInvoice[];page?:{hasMore:boolean}} : null;
-    return <><DashboardAutoRefresh/><BusinessDashboard data={data} role={user.role} locale={locale} todayKwh={daily.energyReadModel?.status==='preparing'?null:daily.stats.periodKwh} monthKwh={monthly.energyReadModel?.status==='preparing'?null:monthly.stats.periodKwh} invoices={(bills?.rows??[]).filter(bill=>!resolvedParams?.site_id||bill.siteId===resolvedParams.site_id)} billingHasMore={bills?.page?.hasMore??false} siteId={resolvedParams?.site_id} siteControl={<SiteFilter sites={data.availableSites}/>} billingUnavailable={!billResponse.ok} periodControl={<PeriodPicker/>}/></>;
+    return <><DashboardAutoRefresh/><BusinessDashboard data={data} role={user.role} locale={locale} todayKwh={daily.energyReadModel?.status==='preparing'?null:daily.stats.periodKwh} monthKwh={monthly.energyReadModel?.status==='preparing'?null:monthly.stats.periodKwh} invoices={(bills?.rows??[]).filter(bill=>!resolvedParams?.site_id||bill.siteId===resolvedParams.site_id)} billingHasMore={bills?.page?.hasMore??false} siteId={resolvedParams?.site_id} siteControl={undefined} billingUnavailable={!billResponse.ok} periodControl={<PeriodPicker/>}/></>;
   }
 
   const presentation=dashboardLayout(user.role);

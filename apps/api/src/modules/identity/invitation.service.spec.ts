@@ -23,7 +23,7 @@ function inviteFixture(options: { existingUser?: { id: string; role: string }; a
         return { rows: options.existingUser ? [{ ...options.existingUser, password_hash: 'hashed', status: 'active' }] : [] };
       }
       if (sql.includes('SELECT id FROM sites WHERE id=ANY')) {
-        return { rows: [{ id: values[0][0] }] };
+        return { rows: [{ id: (values[0] as string[])[0] }] };
       }
       if (sql.includes('INSERT INTO invitation_rate_limits')) {
         return { rows: [{ attempts: 1, window_started_at: 'now' }] };
@@ -131,5 +131,150 @@ test('re-inviting existing employee without grants preserves existing overrides 
   const revisionUpdate = statements.find(({ sql }) => sql.includes('permission_revision=permission_revision+1'))!;
   assert.ok(revisionUpdate);
   assert.deepEqual(revisionUpdate.values, [existingUserId]);
+});
+
+test('getInvitationDetails returns valid details including company branding', async () => {
+  const token = 'abcdefghijklmnopqrstuvwxyz0123456789-_ABCDE'; // 43 chars
+  const statements: { sql: string; values: unknown[] }[] = [];
+  const db = {
+    query: async (sql: string, values: unknown[] = []) => {
+      statements.push({ sql, values });
+      if (sql.includes('FROM user_invitations i')) {
+        return {
+          rows: [
+            {
+              email: 'staff@example.test',
+              role: 'operator',
+              expires_at: new Date(Date.now() + 86400000).toISOString(),
+              consumed_at: null,
+              revoked_at: null,
+              displayName: 'Pre-filled Staff',
+              userStatus: 'invited',
+            },
+          ],
+        };
+      }
+      if (sql.includes('FROM company_profile')) {
+        return {
+          rows: [
+            {
+              company_name: 'Solar Tech Corp',
+              logo_data: null,
+              logo_url: 'https://example.test/logo.png',
+            },
+          ],
+        };
+      }
+      return { rows: [] };
+    },
+  } as unknown as DatabaseService;
+  const auth = { hashPassword: () => 'hashed' } as unknown as AuthService;
+  const service = new InvitationService(db, auth);
+
+  const details = await service.getInvitationDetails(token);
+  assert.equal(details.email, 'staff@example.test');
+  assert.equal(details.displayName, 'Pre-filled Staff');
+  assert.equal(details.role, 'operator');
+  assert.equal(details.companyName, 'Solar Tech Corp');
+  assert.equal(details.logoUrl, 'https://example.test/logo.png');
+});
+
+test('getInvitationDetails rejects malformed or consumed tokens', async () => {
+  const db = {
+    query: async () => ({ rows: [] }),
+  } as unknown as DatabaseService;
+  const auth = { hashPassword: () => 'hashed' } as unknown as AuthService;
+  const service = new InvitationService(db, auth);
+
+  await assert.rejects(async () => service.getInvitationDetails('short-token'), /Invitation is invalid or expired/);
+
+  const token = 'abcdefghijklmnopqrstuvwxyz0123456789-_ABCDE';
+  await assert.rejects(async () => service.getInvitationDetails(token), /Invitation is invalid or expired/);
+});
+
+test('activate updates user with displayName and avatarData', async () => {
+  const token = 'abcdefghijklmnopqrstuvwxyz0123456789-_ABCDE';
+  const statements: { sql: string; values: unknown[] }[] = [];
+  const client = {
+    query: async (sql: string, values: unknown[] = []) => {
+      statements.push({ sql, values });
+      if (sql.includes('SELECT * FROM user_invitations WHERE token_hash=$1')) {
+        return {
+          rows: [
+            {
+              id: '00000000-0000-0000-0000-000000000099',
+              user_id: '00000000-0000-0000-0000-000000000055',
+              issuer_id: ownerActor.id,
+              role: 'operator',
+              customer_id: null,
+              email: 'staff@example.test',
+              delivery_status: 'sent',
+              consumed_at: null,
+              revoked_at: null,
+              expires_at: new Date(Date.now() + 86400000).toISOString(),
+            },
+          ],
+        };
+      }
+      if (sql.includes('SELECT id,email,role,status,customer_id,password_hash FROM users')) {
+        return {
+          rows: [
+            {
+              id: '00000000-0000-0000-0000-000000000055',
+              email: 'staff@example.test',
+              role: 'operator',
+              status: 'invited',
+              customer_id: null,
+              password_hash: null,
+            },
+            {
+              id: ownerActor.id,
+              email: 'owner@example.test',
+              role: 'owner',
+              status: 'active',
+              customer_id: null,
+              password_hash: 'hashed',
+            },
+          ],
+        };
+      }
+      if (sql.includes('UPDATE user_invitations SET consumed_at=now()')) {
+        return { rows: [{ id: '00000000-0000-0000-0000-000000000099' }] };
+      }
+      return { rows: [] };
+    },
+  } as unknown as PoolClient;
+  const db = {
+    transaction: async <T>(work: (c: PoolClient) => Promise<T>) => work(client),
+    query: async (sql: string, values: unknown[] = []) => {
+      statements.push({ sql, values });
+      return { rows: [] };
+    },
+  } as unknown as DatabaseService;
+  const auth = { hashPassword: (pw: string) => `hashed_${pw}` } as unknown as AuthService;
+  const service = new InvitationService(db, auth);
+
+  const avatar = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+  await service.activate(token, 'StrongP@ssw0rd123!', 'Edited Name', avatar);
+
+  const userUpdate = statements.find(({ sql }) => sql.includes('UPDATE users SET status=\'active\''))!;
+  assert.ok(userUpdate);
+  assert.equal(userUpdate.values[0], '00000000-0000-0000-0000-000000000055');
+  assert.equal(userUpdate.values[1], 'hashed_StrongP@ssw0rd123!');
+  assert.equal(userUpdate.values[2], 'Edited Name');
+  assert.equal(userUpdate.values[3], avatar);
+});
+
+test('activate rejects avatar payload exceeding 2MB limit', async () => {
+  const token = 'abcdefghijklmnopqrstuvwxyz0123456789-_ABCDE';
+  const db = {} as unknown as DatabaseService;
+  const auth = { hashPassword: () => 'hashed' } as unknown as AuthService;
+  const service = new InvitationService(db, auth);
+
+  const oversizedAvatar = 'data:image/png;base64,' + 'A'.repeat(2_800_001);
+  await assert.rejects(
+    async () => service.activate(token, 'StrongP@ssw0rd123!', 'Name', oversizedAvatar),
+    /Avatar image exceeds 2MB limit/,
+  );
 });
 

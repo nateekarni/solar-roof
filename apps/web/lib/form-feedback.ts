@@ -1,19 +1,37 @@
-/** Reveal and focus errors without scrolling the page behind an open dialog. */
-export function focusErrorElement(element: HTMLElement) {
+/** Activate any enclosing inactive tab panel before focusing an invalid field. */
+export function activateEnclosingTab(element: HTMLElement) {
  for (let ancestor = element.parentElement; ancestor; ancestor = ancestor.parentElement) {
   if (ancestor instanceof HTMLDetailsElement) ancestor.open = true;
+  if (ancestor.getAttribute('role') === 'tabpanel' && (ancestor.getAttribute('data-state') === 'inactive' || ancestor.hasAttribute('hidden'))) {
+   const labelledBy = ancestor.getAttribute('aria-labelledby');
+   const panelId = ancestor.id;
+   const trigger = (labelledBy ? document.getElementById(labelledBy) : null)
+    ?? (panelId ? document.querySelector<HTMLElement>(`[role="tab"][aria-controls="${CSS.escape(panelId)}"]`) : null);
+   if (trigger) {
+    trigger.click();
+    trigger.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }));
+   }
+  }
  }
+}
+
+/** Reveal and focus errors without scrolling the page behind an open dialog. */
+export function focusErrorElement(element: HTMLElement) {
+ activateEnclosingTab(element);
  requestAnimationFrame(() => {
   if (!element.isConnected) return;
-  if (!element.matches('input,select,textarea,button,[tabindex]')) element.tabIndex = -1;
-  element.focus({preventScroll:true});
+  const focusTarget = element.classList.contains('hidden')
+   ? (element.parentElement?.querySelector<HTMLElement>('[data-slot="select-trigger"],input:not([type=hidden]),textarea,button,[tabindex]') ?? element)
+   : element;
+  if (!focusTarget.matches('input,select,textarea,button,[tabindex]')) focusTarget.tabIndex = -1;
+  focusTarget.focus({preventScroll:true});
   const behavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
-  let container = element.parentElement;
+  let container = focusTarget.parentElement;
   while (container && !/(auto|scroll)/.test(getComputedStyle(container).overflowY)) container = container.parentElement;
   if (container) {
-   const target = element.getBoundingClientRect(), bounds = container.getBoundingClientRect();
+   const target = focusTarget.getBoundingClientRect(), bounds = container.getBoundingClientRect();
    container.scrollTo({top:container.scrollTop + target.top - bounds.top - 24, behavior});
-  } else element.scrollIntoView({block:'center',behavior});
+  } else focusTarget.scrollIntoView({block:'center',behavior});
  });
 }
 
@@ -54,9 +72,17 @@ export function observeFormErrors(root:HTMLElement) {
     .filter(node=>node.textContent?.trim() && !node.closest('[hidden]'));
    const fingerprint=errors.map(node=>node.textContent).join('|');
    if(fingerprint && fingerprint!==previous){
+    for (const errNode of errors) {
+     const container = errNode.closest('[data-slot="field"], .space-y-2, .space-y-1, .space-y-1\\.5');
+     const control = container?.querySelector<HTMLElement>('[data-slot="select-trigger"],input:not([type=hidden]),textarea,select,[role=combobox]');
+     if (control) {
+      control.setAttribute('aria-invalid', 'true');
+      if (!errNode.id) errNode.id = `form-error-${crypto.randomUUID()}`;
+      control.setAttribute('aria-errormessage', errNode.id);
+     }
+    }
     const error=errors[0]!;
-    const field=error.closest('[data-slot="field"], .space-y-2, .space-y-1, .space-y-1\\.5')?.querySelector<HTMLElement>('input:not([type=hidden]),textarea,select,[role=combobox]');
-    if(field){field.setAttribute('aria-invalid','true');if(!error.id)error.id=`form-error-${crypto.randomUUID()}`;field.setAttribute('aria-errormessage',error.id);}
+    const field=error.closest('[data-slot="field"], .space-y-2, .space-y-1, .space-y-1\\.5')?.querySelector<HTMLElement>('[data-slot="select-trigger"],input:not([type=hidden]),textarea,select,[role=combobox]');
     focusErrorElement(field??error);
    }
    previous=fingerprint;
@@ -68,6 +94,41 @@ export function observeFormErrors(root:HTMLElement) {
  root.addEventListener('submit',submit,true);
  root.addEventListener('invalid',invalid,true);
  let invalidPending=false;
- function invalid(event:Event){if(!invalidPending && event.target instanceof HTMLElement){invalidPending=true;focusErrorElement(event.target);requestAnimationFrame(()=>{invalidPending=false;});}}
+ function invalid(event:Event){
+  if(!(event.target instanceof HTMLElement)) return;
+  event.preventDefault();
+  const target = event.target as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
+  const container = target.closest('[data-slot="field"], .space-y-2, .space-y-1, .space-y-1\\.5') ?? target.parentElement;
+  const visibleTrigger = container?.querySelector<HTMLElement>('[data-slot="select-trigger"]') ?? target;
+  target.setAttribute('aria-invalid', 'true');
+  visibleTrigger.setAttribute('aria-invalid', 'true');
+  if (container && !container.querySelector('[data-slot="field-error"], [role="alert"], p.text-destructive')) {
+   const msg = document.createElement('p');
+   msg.setAttribute('data-slot', 'field-error');
+   msg.setAttribute('data-auto-error', 'true');
+   msg.setAttribute('role', 'alert');
+   msg.className = 'text-xs font-normal text-destructive mt-1';
+   const isTh = document.documentElement.lang !== 'en';
+   msg.textContent = target.tagName === 'SELECT'
+    ? (isTh ? 'กรุณาเลือกรายการ' : 'Please select an option')
+    : (target.validationMessage || (isTh ? 'กรุณากรอกข้อมูลในช่องนี้' : 'Please fill out this field'));
+   container.appendChild(msg);
+  }
+  const clear = () => {
+   target.removeAttribute('aria-invalid');
+   visibleTrigger.removeAttribute('aria-invalid');
+   container?.querySelector('[data-auto-error="true"]')?.remove();
+   target.removeEventListener('input', clear);
+   target.removeEventListener('change', clear);
+  };
+  target.addEventListener('input', clear);
+  target.addEventListener('change', clear);
+  if(!invalidPending){
+   invalidPending=true;
+   focusErrorElement(visibleTrigger);
+   requestAnimationFrame(()=>{invalidPending=false;});
+  }
+ }
  return()=>{observer.disconnect();cancelAnimationFrame(scheduled);root.removeEventListener('submit',submit,true);root.removeEventListener('invalid',invalid,true);};
 }
+

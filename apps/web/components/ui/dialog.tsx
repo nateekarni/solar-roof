@@ -89,13 +89,13 @@ function DialogContent({
         onInputCapture={() => setSubmitError('')}
         onSubmitCapture={() => setSubmitError('')}
         className={cn(
-          "fixed z-50 grid gap-5 [&_div:not([data-slot=field])>label+input]:mt-2 [&_div:not([data-slot=field])>label+textarea]:mt-2 [&_div:not([data-slot=field])>label+[data-slot=select-trigger]]:mt-2 w-full bg-popover text-sm text-popover-foreground shadow-xl ring-1 ring-foreground/10 outline-none duration-200",
+          "fixed z-50 grid gap-5 [&_div:not([data-slot=field])>label+input]:mt-2 [&_div:not([data-slot=field])>label+textarea]:mt-2 [&_div:not([data-slot=field])>label+[data-slot=select-trigger]]:mt-2 w-full bg-popover text-sm text-popover-foreground shadow-xl ring-1 ring-foreground/10 outline-none duration-200 overflow-y-auto [&:has([data-slot=dialog-body])]:overflow-hidden",
           // Mobile: Bottom Sheet full width, max 92vh, slide up from bottom
-          "max-sm:inset-x-0 max-sm:bottom-0 max-sm:top-auto max-sm:max-w-full max-sm:rounded-b-none max-sm:rounded-t-2xl max-sm:p-4.5 max-sm:max-h-[92svh] max-sm:overflow-y-auto",
+          "max-sm:inset-x-0 max-sm:bottom-0 max-sm:top-auto max-sm:max-w-full max-sm:rounded-b-none max-sm:rounded-t-2xl max-sm:p-4.5 max-sm:max-h-[92svh]",
           "data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
           "max-sm:data-open:slide-in-from-bottom max-sm:data-closed:slide-out-to-bottom",
           // Desktop: Centered modal
-          "sm:fixed sm:left-1/2 sm:top-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:bottom-auto sm:right-auto sm:max-w-lg sm:rounded-2xl sm:p-6 sm:max-h-[88vh] sm:overflow-y-auto",
+          "sm:fixed sm:left-1/2 sm:top-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:bottom-auto sm:right-auto sm:max-w-lg sm:rounded-2xl sm:p-6 sm:max-h-[88vh]",
           "sm:data-open:zoom-in-95 sm:data-closed:zoom-out-95",
           className
         )}
@@ -126,7 +126,7 @@ function DialogHeader({ className, children, ...props }: React.ComponentProps<"d
   return (
     <HeaderIconContext.Provider value={containsIcon(children)}><div
       data-slot="dialog-header"
-      className={cn("flex flex-col gap-2 pr-7 text-left", className)}
+      className={cn("flex flex-col gap-2 pr-7 text-left shrink-0", className)}
       {...props}
     >{children}</div></HeaderIconContext.Provider>
   )
@@ -144,7 +144,7 @@ function DialogFooter({
     <div
       data-slot="dialog-footer"
       className={cn(
-        "-mx-4.5 -mb-4.5 mt-4 flex flex-col-reverse gap-2 bg-muted/40 px-4.5 py-3.5 sm:-mx-6 sm:-mb-6 sm:mt-5 sm:flex-row sm:justify-end sm:px-6 sm:py-3.5 sm:rounded-b-2xl",
+        "self-stretch !w-auto -mx-4.5 -mb-4.5 mt-4 shrink-0 border-t border-border/60 flex flex-col-reverse gap-2 bg-muted/40 px-4.5 py-3.5 sm:-mx-6 sm:-mb-6 sm:mt-5 sm:flex-row sm:items-center sm:justify-between [&>:only-child]:ml-auto sm:px-6 sm:py-3.5 sm:rounded-b-2xl",
         className
       )}
       {...props}

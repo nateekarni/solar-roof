@@ -17,20 +17,21 @@ for(const role of ['owner','admin','operator','accountant','customer_user'] sati
  });
 }
 
-for(const [th,title,detail] of [[false,'Complete finance setup','2 Owner setup items remaining'],[true,'ตั้งค่าการเงินให้ครบ','เหลือรายการที่ Owner ต้องดำเนินการ 2 รายการ']] as const){
- test(`finance workflow renders localized ${th?'Thai':'English'} count and Company Settings action`,()=>{
-  const row:NotificationFeedItem={id:'workflow:finance-readiness:aaaaaaaaaaaaaaaaaaaaaaaa',title:'Server title',detail:'Server detail',destination:'/settings/company',createdAt:'2026-10-13T00:00:00.000Z',readAt:null,kind:'workflow',metadata:{type:'finance-readiness',missingCount:2}};
+for(const [th,title,detail] of [[false,'Setup Checklist Before Go-Live','2 items require setup'],[true,'รายการข้อมูลที่ต้องตั้งค่าก่อนเริ่มใช้งาน','มีรายการที่ต้องตั้งค่าอีก 2 รายการ']] as const){
+ test(`finance workflow renders localized ${th?'Thai':'English'} count and Setup Checklist action`,()=>{
+  const row:NotificationFeedItem={id:'workflow:finance-readiness:aaaaaaaaaaaaaaaaaaaaaaaa',title:'Server title',detail:'Server detail',destination:'/settings/readiness',createdAt:'2026-10-13T00:00:00.000Z',readAt:null,kind:'workflow',metadata:{type:'finance-readiness',missingCount:2}};
   const html=renderToStaticMarkup(<NotificationFeedRow row={row} th={th} onRead={()=>{}}/>);
-  assert.match(html,/href="\/settings\/company"/);
+  assert.match(html,/href="\/settings\/readiness"/);
   assert.ok(html.includes(title));assert.ok(html.includes(detail));
+  assert.ok(html.includes(th?'จำเป็น':'Action Required'));
   assert.ok(html.includes(th?'ยังไม่อ่าน':'Unread'));
   assert.doesNotMatch(html,/Server title|Server detail/);
  });
 }
 test('read finance items retain the action without an unread indicator and ordinary rows retain their copy',()=>{
- const row:NotificationFeedItem={id:'workflow:finance-readiness:aaaaaaaaaaaaaaaaaaaaaaaa',title:'Setup',detail:'Pending',destination:'/settings/company',createdAt:'2026-10-13T00:00:00.000Z',readAt:'2026-10-13T01:00:00.000Z',kind:'workflow',metadata:{type:'finance-readiness',missingCount:1}};
+ const row:NotificationFeedItem={id:'workflow:finance-readiness:aaaaaaaaaaaaaaaaaaaaaaaa',title:'Setup',detail:'Pending',destination:'/settings/readiness',createdAt:'2026-10-13T00:00:00.000Z',readAt:'2026-10-13T01:00:00.000Z',kind:'workflow',metadata:{type:'finance-readiness',missingCount:1}};
  const html=renderToStaticMarkup(<NotificationFeedRow row={row} th={false} onRead={()=>{}}/>);
- assert.match(html,/href="\/settings\/company"/);assert.doesNotMatch(html,/Unread/);
+ assert.match(html,/href="\/settings\/readiness"/);assert.doesNotMatch(html,/Unread/);
  const activity=renderToStaticMarkup(<NotificationFeedRow row={{...row,id:'document:invoice',metadata:undefined,title:'Invoice issued',detail:'INV-123',destination:'/records/documents/invoice'}} th={false} onRead={()=>{}}/>);
  assert.ok(activity.includes('Invoice issued'));assert.ok(activity.includes('INV-123'));
 });
@@ -77,4 +78,14 @@ test('normalizes financial notification wording and renders bold site name along
  assert.ok(reminderHtml.includes('แจ้งเตือนครบกำหนดชำระเงิน'));
  assert.ok(reminderHtml.includes('ครบกำหนดชำระวันที่ 13 พ.ย. 2569'));
  assert.match(reminderHtml,/<strong class="font-semibold text-foreground">โรงงานอาหาร ปลวกแดง<\/strong>/);
+
+ const alertOfflineRow:NotificationFeedItem={id:'alert:1',title:'แจ้งเตือน / Alert',detail:'offline',siteName:'อาคารสำนักงาน นครราชสีมา',destination:'/alerts',createdAt:'2026-10-16T08:55:00.000Z',readAt:null,kind:'alert'};
+ const alertTh=renderToStaticMarkup(<NotificationFeedRow row={alertOfflineRow} th={true} onRead={()=>{}}/>);
+ assert.ok(alertTh.includes('การแจ้งเตือนระบบ'));
+ assert.ok(alertTh.includes('เกตเวย์ออฟไลน์'));
+ assert.ok(!alertTh.includes('Alert'));
+
+ const alertEn=renderToStaticMarkup(<NotificationFeedRow row={alertOfflineRow} th={false} onRead={()=>{}}/>);
+ assert.ok(alertEn.includes('System Alert'));
+ assert.ok(alertEn.includes('Gateway offline'));
 });

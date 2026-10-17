@@ -42,23 +42,25 @@ export function CompanyProfileCard({company, locale, editingCompany, canEdit, di
           </CardTitle>
           <CardDescription className="text-xs mt-0.5">
             {locale === "th"
-              ? "ข้อมูลบริษัทที่แสดงในใบวางบิลและใบเสร็จรับเงิน/ใบกำกับภาษี"
-              : "Header information shown on invoices, tax receipts, and PPA contracts (FlowAccount standard)"}
+              ? "ใช้ในเอกสารที่ออกจากระบบ เช่น ใบวางบิล ใบเสร็จรับเงิน/ใบกำกับภาษี"
+              : "Used on system-generated documents such as billing statements and receipts"}
           </CardDescription>
         </div>
         {!editingCompany && canEdit && <Button type="button" variant="outline" size="sm" disabled={disabled} onClick={onEdit} className="h-10 shrink-0 gap-1.5 text-xs"><Edit2 className="size-3.5" /><span>{locale === "th" ? "แก้ไข" : "Edit"}</span></Button>}
       </CardHeader>
       <CardContent className="p-0 pt-4">
-        <div className="mb-4 flex flex-col items-start gap-2">
-          <Badge variant="secondary" className="h-auto min-h-5 max-w-full whitespace-normal">
-            {locale === 'th' ? 'ใช้ในเอกสารที่ออกจากระบบ เช่น ใบวางบิล' : 'Used on system-generated documents, such as billing statements'}
-          </Badge>
-          {!editingCompany && (company.logoUrl ?
-            <img src={company.logoUrl} alt={locale === 'th' ? 'โลโก้บริษัท' : 'Company logo'} className="max-h-24 max-w-full object-contain md:max-w-48"/> :
-            <p className="text-sm text-muted-foreground">{locale === 'th'
-              ? (canEdit ? 'ยังไม่ได้อัปโหลดโลโก้ เลือกแก้ไขเพื่อเพิ่มโลโก้บริษัท' : 'ยังไม่ได้อัปโหลดโลโก้')
-              : (canEdit ? 'No logo uploaded. Choose Edit to add your company logo.' : 'No logo uploaded.')}</p>)}
-        </div>
+        {!editingCompany && (
+          <div className="mb-4">
+            <CompanyLogoField
+              id="company-logo-view"
+              purpose="logo"
+              value={company.logoUrl ?? ''}
+              locale={locale}
+              readOnly={true}
+              canEdit={canEdit}
+            />
+          </div>
+        )}
         {!editingCompany ? <div className="space-y-4"><dl className="grid grid-cols-1 gap-4 md:grid-cols-2">{([
             ['companyName', 'ชื่อบริษัท / นิติบุคคล', 'Company name'], ['taxId', 'เลขประจำตัวผู้เสียภาษี', 'Tax ID'], ['branch', 'สาขา', 'Branch'], ['phone', 'เบอร์โทรศัพท์', 'Phone'], ['email', 'อีเมลสำหรับการเงิน', 'Billing email'], ['address', 'ที่อยู่จดทะเบียนภาษี', 'Tax address']
           ] as const).map(([key, th, en]) => <div key={key} className={key === "address" ? "space-y-1 md:col-span-2" : "space-y-1"}><dt className="text-sm text-muted-foreground">{locale === 'th' ? th : en}</dt><dd className="text-sm font-medium whitespace-pre-wrap break-words">{company[key] || '—'}</dd></div>)}</dl></div> : <form onSubmit={onSave} className="space-y-4">

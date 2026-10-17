@@ -1,0 +1,977 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Solar Roof - บัญชีทดสอบระบบ (Test Accounts & Credentials)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&family=Sarabun:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #f59e0b;
+      --primary-hover: #d97706;
+      --primary-light: #fef3c7;
+      --primary-text: #92400e;
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --border: #e2e8f0;
+      --text-main: #0f172a;
+      --text-muted: #64748b;
+      --owner: #d97706;
+      --owner-bg: #fef3c7;
+      --admin: #4f46e5;
+      --admin-bg: #e0e7ff;
+      --operator: #059669;
+      --operator-bg: #d1fae5;
+      --accountant: #7c3aed;
+      --accountant-bg: #ede9fe;
+      --customer: #0284c7;
+      --customer-bg: #e0f2fe;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Prompt', 'Sarabun', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background-color: var(--bg);
+      color: var(--text-main);
+      padding: 24px;
+      line-height: 1.5;
+    }
+
+    .container {
+      max-width: 1280px;
+      margin: 0 auto;
+    }
+
+    header {
+      background: var(--card-bg);
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      padding: 24px 32px;
+      margin-bottom: 24px;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .brand-icon {
+      width: 48px;
+      height: 48px;
+      background: linear-gradient(135deg, #fbbf24 0%, #ea580c 100%);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 24px;
+      box-shadow: 0 4px 10px rgba(245, 158, 11, 0.3);
+    }
+
+    .brand-title h1 {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text-main);
+      letter-spacing: -0.01em;
+    }
+
+    .brand-title p {
+      font-size: 14px;
+      color: var(--text-muted);
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .pwd-pill {
+      background: var(--primary-light);
+      border: 1px solid rgba(245, 158, 11, 0.3);
+      padding: 8px 16px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+    }
+
+    .pwd-pill strong {
+      color: var(--primary-text);
+    }
+
+    .pwd-code {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 600;
+      color: #b45309;
+      background: rgba(255, 255, 255, 0.8);
+      padding: 2px 8px;
+      border-radius: 6px;
+      border: 1px solid rgba(245, 158, 11, 0.2);
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 18px;
+      font-size: 14px;
+      font-weight: 600;
+      font-family: inherit;
+      border-radius: 10px;
+      cursor: pointer;
+      border: none;
+      transition: all 0.15s ease;
+      text-decoration: none;
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: #000;
+    }
+
+    .btn-primary:hover {
+      background: var(--primary-hover);
+      color: #fff;
+      transform: translateY(-1px);
+    }
+
+    .btn-outline {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-main);
+    }
+
+    .btn-outline:hover {
+      background: #f1f5f9;
+    }
+
+    .btn-copy {
+      padding: 4px 8px;
+      font-size: 11px;
+      font-weight: 500;
+      background: #f1f5f9;
+      color: var(--text-main);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.12s ease;
+    }
+
+    .btn-copy:hover {
+      background: var(--primary-light);
+      color: var(--primary-text);
+      border-color: rgba(245, 158, 11, 0.4);
+    }
+
+    .btn-copy.copied {
+      background: #dcfce7;
+      color: #15803d;
+      border-color: #86efac;
+    }
+
+    .toolbar {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 14px 20px;
+      margin-bottom: 24px;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .search-box {
+      flex: 1;
+      min-width: 260px;
+      position: relative;
+    }
+
+    .search-input {
+      width: 100%;
+      padding: 10px 16px 10px 38px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      font-size: 14px;
+      font-family: inherit;
+      outline: none;
+      transition: border 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .search-input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.15);
+    }
+
+    .search-icon {
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-muted);
+      font-size: 16px;
+    }
+
+    .section-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 24px;
+      margin-bottom: 24px;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+    }
+
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 18px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .section-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    .counter-badge {
+      background: #f1f5f9;
+      color: var(--text-muted);
+      font-size: 12px;
+      padding: 2px 10px;
+      border-radius: 20px;
+      font-weight: 600;
+    }
+
+    .table-container {
+      width: 100%;
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13.5px;
+      text-align: left;
+    }
+
+    th {
+      background: #f8fafc;
+      color: var(--text-muted);
+      font-weight: 600;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+
+    td {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    tr:hover td {
+      background-color: #fbfdff;
+    }
+
+    .role-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .role-owner { background: var(--owner-bg); color: var(--owner); border: 1px solid rgba(217, 119, 6, 0.2); }
+    .role-admin { background: var(--admin-bg); color: var(--admin); border: 1px solid rgba(79, 70, 229, 0.2); }
+    .role-operator { background: var(--operator-bg); color: var(--operator); border: 1px solid rgba(5, 150, 105, 0.2); }
+    .role-accountant { background: var(--accountant-bg); color: var(--accountant); border: 1px solid rgba(124, 58, 237, 0.2); }
+    .role-customer { background: var(--customer-bg); color: var(--customer); border: 1px solid rgba(2, 132, 199, 0.2); }
+
+    .email-cell {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      color: #1e293b;
+    }
+
+    .password-cell {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12.5px;
+      color: #64748b;
+    }
+
+    .site-code {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 600;
+      font-size: 12px;
+      background: #f1f5f9;
+      color: #334155;
+      padding: 3px 8px;
+      border-radius: 6px;
+      border: 1px solid #cbd5e1;
+      display: inline-block;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 9px;
+      border-radius: 20px;
+      font-size: 11.5px;
+      font-weight: 500;
+    }
+
+    .status-online {
+      background: #dcfce7;
+      color: #166534;
+      border: 1px solid #bbf7d0;
+    }
+
+    .status-online::before {
+      content: '';
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #22c55e;
+    }
+
+    .status-offline {
+      background: #fee2e2;
+      color: #991b1b;
+      border: 1px solid #fecaca;
+    }
+
+    .status-offline::before {
+      content: '';
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #ef4444;
+    }
+
+    .subtle-info {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: #1e293b;
+      color: #fff;
+      padding: 12px 20px;
+      border-radius: 10px;
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2);
+      font-size: 13.5px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      opacity: 0;
+      transform: translateY(20px);
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      pointer-events: none;
+      z-index: 1000;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    @media (max-width: 768px) {
+      body {
+        padding: 12px;
+      }
+      header {
+        padding: 18px;
+      }
+      .section-card {
+        padding: 16px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <!-- Header -->
+    <header>
+      <div class="brand">
+        <div class="brand-icon">☀️</div>
+        <div class="brand-title">
+          <h1>Solar Roof · บัญชีสำหรับทดสอบระบบ</h1>
+          <p>ข้อมูลบัญชีพนักงาน ผู้ดูแลระบบ และลูกค้าประจำไซต์ สำหรับใช้ล็อกอินทดสอบ</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <div class="pwd-pill">
+          <span>รหัสผ่านเริ่มต้นทั้งหมด:</span>
+          <span class="pwd-code" id="master-pwd">SolarLocal2026!</span>
+          <button class="btn-copy" onclick="copyText('SolarLocal2026!', this)">คัดลอก</button>
+        </div>
+        <a href="http://localhost:3000/login" target="_blank" class="btn btn-primary">
+          เข้าสู่ระบบ (localhost:3000) ↗
+        </a>
+      </div>
+    </header>
+
+    <!-- Toolbar & Search -->
+    <div class="toolbar">
+      <div class="search-box">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="searchInput" class="search-input" placeholder="พิมพ์ค้นหาตามชื่อ, อีเมล, บทบาท, หรือไซต์งาน..." oninput="filterAccounts()">
+      </div>
+      <div style="font-size: 13px; color: var(--text-muted);" id="matchCounter">
+        แสดงรายการบัญชีทั้งหมด 20 บัญชี
+      </div>
+    </div>
+
+    <!-- Section 1: Staff & Admins -->
+    <div class="section-card">
+      <div class="section-header">
+        <div class="section-title">
+          <span>👥 กลุ่มพนักงานและผู้ดูแลระบบ (Platform Staff & Admins)</span>
+          <span class="counter-badge" id="staffCounter">10 บัญชี</span>
+        </div>
+        <span class="subtle-info">ใช้งานจัดการแพลตฟอร์ม, วิศวกรรม, บริหารจัดการ และการเงิน</span>
+      </div>
+
+      <div class="table-container">
+        <table id="staffTable">
+          <thead>
+            <tr>
+              <th style="width: 130px;">บทบาท (Role)</th>
+              <th style="width: 220px;">ชื่อ - นามสกุล</th>
+              <th style="width: 320px;">อีเมลล็อกอิน (Email)</th>
+              <th style="width: 200px;">รหัสผ่าน (Password)</th>
+              <th>ขอบเขตและสิทธิ์ในระบบ</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="role-badge role-owner">👑 Owner</span></td>
+              <td><strong>Platform Owner</strong></td>
+              <td>
+                <div class="email-cell">
+                  <span>owner@solar.local</span>
+                  <button class="btn-copy" onclick="copyText('owner@solar.local', this)">คัดลอก</button>
+                </div>
+              </td>
+              <td>
+                <div class="password-cell">
+                  <span>SolarLocal2026!</span>
+                  <button class="btn-copy" onclick="copyText('SolarLocal2026!', this)">คัดลอก</button>
+                </div>
+              </td>
+              <td><span style="color: #059669; font-weight: 500;">สิทธิ์เต็มทุกระบบ / ทุกไซต์</span></td>
+            </tr>
+            <tr>
+              <td><span class="role-badge role-admin">⚡ Admin</span></td>
+              <td><strong>Platform Administrator</strong></td>
+              <td>
+                <div class="email-cell">
+                  <span>admin@solar.local</span>
+                  <button class="btn-copy" onclick="copyText('admin@solar.local', this)">คัดลอก</button>
+                </div>
+              </td>
+              <td>
+                <div class="password-cell">
+                  <span>SolarLocal2026!</span>
+                  <button class="btn-copy" onclick="copyText('SolarLocal2026!', this)">คัดลอก</button>
+                </div>
+              </td>
+              <td><span style="color: #059669; font-weight: 500;">สิทธิ์เต็มทุกระบบ / ทุกไซต์</span></td>
+            </tr>
+            <tr>
+              <td><span class="role-badge role-owner">👑 Owner</span></td>
+              <td><strong>ธนกฤต วัฒนาภิรมย์</strong></td>
+              <td>
+                <div class="email-cell">
+                  <span>owner@demo.solar.test</span>
+                  <button class="btn-copy" onclick="copyText('owner@demo.solar.test', this)">คัดลอก</button>
+                </div>
+              </td>
+              <td>
+                <div class="password-cell">
+                  <span>SolarLocal2026!</span>
+                  <button class="btn-copy" onclick="copyText('SolarLocal2026!', this)">คัดลอก</button>
+                </div>
+              </td>
+              <td>สิทธิ์เต็มทุกระบบ / ทุกไซต์ (CEO)</td>
+            </tr>
+            <tr>
+              <td><span class="role-badge role-owner">👑 Owner (สำรอง)</span></td>
+              <td><strong>พิมพ์ชนก ศรีวัฒน์</strong></td>
+              <td>
+                <div class="email-cell">
+                  <span>owner.backup@demo.solar.test</span>
+                  <button class="btn-copy" onclick="copyText('owner.backup@demo.solar.test', this)">คัดลอก</button>
+                </div>
+              </td>
+              <td>
+                <div class="password-cell">
+                  <span>SolarLocal2026!</span>
+                  <button class="btn-copy" onclick="copyText('SolarLocal2026!', this)">คัดลอก</button>
+                </div>
+              </td>
+              <td>สิทธิ์เต็มทุกระบบ / ทุกไซต์</td>
+            </tr>
+            <tr>
+              <td><span class="role-badge role-admin">⚡ Admin</span></td>
+              <td><strong>กิตติศักดิ์ จันทร์ประเสริฐ</strong></td>
+              <td>
+                <div class="email-cell">
+                  <span>admin@demo.solar.test</span>
+                  <button class="btn-copy" onclick="copyText('admin@demo.solar.test', this)">คัดลอก</button>
+                </div>
+              </td>
+              <td>
+                <div class="password-cell">
+                  <span>SolarLocal2026!</span>
+                  <button class="btn-copy" onclick="copyText('SolarLocal2026!', this)">คัดลอก</button>
+                </div>
+              </td>
+              <td>สิทธิ์เต็มสายเทคนิค (Technical) / ทุกไซต์</td>
+            </tr>
+            <tr>
+              <td><span class="role-badge role-admin">⚡ Admin (สำรอง)</span></td>
+              <td><strong>อรทัย สุขเกษม</strong></td>
+              <td>
+                <div class="email-cell">
+                  <span>admin.backup@demo.solar.test</span>
+                  <button class="btn-copy" onclick="copyText('admin.backup@demo.solar.test', this)">คัดลอก</button>
+                </div>
+              </td>
+              <td>
+                <div class="password-cell">
+                  <span>SolarLocal2026!</span>
+                  <button class="btn-copy" onclick="copyText('SolarLocal2026!', this)">คัดลอก</button>
+                </div>
+              </td>
+              <td>สิทธิ์เต็มสายเทคนิค (Technical) / ทุกไซต์</td>
+            </tr>
+            <tr>
+              <td><span class="role-badge role-operator">🛠️ Operator</span></td>
+              <td><strong>ภาคภูมิ อินทร์แก้ว</strong></td>
+              <td>
+                <div class="email-cell">
+                  <span>operator@demo.solar.test</span>
+                  <button class="btn-copy" onclick="copyText('operator@demo.solar.test', this)">คัดลอก</button>
+                </div>
+              </td>
+              <td>
+                <div class="password-cell">
+                  <span>SolarLocal2026!</span>
+                  <button class="btn-copy" onclick="copyText('SolarLocal2026!', this)">คัดลอก</button>
+                </div>
+              </td>
+              <td>เขตเทคนิค (Technical) / ทุกไซต์</td>
+            </tr>
+            <tr>
+              <td><span class="role-badge role-operator">🛠️ Operator (สำรอง)</span></td>
+              <td><strong>ณัฐชา พงศ์ไพบูลย์</strong></td>
+              <td>
+                <div class="email-cell">
+                  <span>operator.backup@demo.solar.test</span>
+                  <button class="btn-copy" onclick="copyText('operator.backup@demo.solar.test', this)">คัดลอก</button>
+                </div>
+              </td>
+              <td>
+                <div class="password-cell">
+                  <span>SolarLocal2026!</span>
+                  <button class="btn-copy" onclick="copyText('SolarLocal2026!', this)">คัดลอก</button>
+                </div>
+              </td>
+              <td>เขตเทคนิค (Technical) / เฉพาะไซต์ที่เลือก</td>
+            </tr>
+            <tr>
+              <td><span class="role-badge role-accountant">📊 Accountant</span></td>
+              <td><strong>ชนาภา รัตนวาณิช</strong></td>
+              <td>
+                <div class="email-cell">
+                  <span>accountant@demo.solar.test</span>
+                  <button class="btn-copy" onclick="copyText('accountant@demo.solar.test', this)">คัดลอก</button>
+                </div>
+              </td>
+              <td>
+                <div class="password-cell">
+                  <span>SolarLocal2026!</span>
+                  <button class="btn-copy" onclick="copyText('SolarLocal2026!', this)">คัดลอก</button>
+                </div>
+              </td>
+              <td>เขตธุรกิจและการเงิน (Business) / ทุกไซต์</td>
+            </tr>
+            <tr>
+              <td><span class="role-badge role-accountant">📊 Accountant (สำรอง)</span></td>
+              <td><strong>วรพล ตั้งสุวรรณ</strong></td>
+              <td>
+                <div class="email-cell">
+                  <span>accountant.backup@demo.solar.test</span>
+                  <button class="btn-copy" onclick="copyText('accountant.backup@demo.solar.test', this)">คัดลอก</button>
+                </div>
+              </td>
+              <td>
+                <div class="password-cell">
+                  <span>SolarLocal2026!</span>
+                  <button class="btn-copy" onclick="copyText('SolarLocal2026!', this)">คัดลอก</button>
+                </div>
+              </td>
+              <td>เขตธุรกิจและการเงิน (Business) / เฉพาะไซต์ที่เลือก</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Section 2: Customer Users -->
+    <div class="section-card">
+      <div class="section-header">
+        <div class="section-title">
+          <span>🏢 กลุ่มบัญชีลูกค้าประจำไซต์ (Customer Users)</span>
+          <span class="counter-badge" id="customerCounter">10 บัญชี</span>
+        </div>
+        <span class="subtle-info">สำหรับตรวจสอบมุมมองฝั่งลูกค้า (Customer Portal) เฉพาะไซต์งานของตนเอง</span>
+      </div>
+
+      <div class="table-container">
+        <table id="customerTable">
+          <thead>
+            <tr>
+              <th style="width: 140px;">รหัสไซต์ (Code)</th>
+              <th style="width: 250px;">บริษัทลูกค้า / ผู้ติดต่อ</th>
+              <th style="width: 330px;">อีเมลล็อกอิน (Email)</th>
+              <th style="width: 190px;">รหัสผ่าน (Password)</th>
+              <th>ไซต์งานที่ได้รับสิทธิ์</th>
+              <th style="width: 120px;">สถานะไซต์</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="site-code">BKK-LKB-001</span></td>
+              <td>
+                <strong>บจก. รุ่งอรุณโลจิสติกส์</strong><br>
+                <span class="subtle-info">คุณสิริพร วัฒนกิจ</span>
+              </td>
+              <td>
+                <div class="email-cell">
+                  <span>billing.bkk-lkb-001@customer.solar.test</span>
+                  <button class="btn-copy" onclick="copyText('billing.bkk-lkb-001@customer.solar.test', this)">คัดลอก</button>
+                </div>
+              </td>
+              <td>
+                <div class="password-cell">
+                  <span>SolarLocal2026!</span>
+                  <button class="btn-copy" onclick="copyText('SolarLocal2026!', this)">คัดลอก</button>
+                </div>
+              </td>
+              <td>ศูนย์กระจายสินค้า ลาดกระบัง</td>
+              <td><span class="status-pill status-online">ออนไลน์</span></td>
+            </tr>
+            <tr>
+              <td><span class="site-code">SPK-BPL-002</span></td>
+              <td>
+                <strong>บจก. กรีนแพค เอเชีย</strong><br>
+                <span class="subtle-info">คุณธนพงศ์ เกียรติไพบูลย์</span>
+              </td>
+              <td>
+                <div class="email-cell">
+                  <span>billing.spk-bpl-002@customer.solar.test</span>
+                  <button class="btn-copy" onclick="copyText('billing.spk-bpl-002@customer.solar.test', this)">คัดลอก</button>
+                </div>
+              </td>
+              <td>
+                <div class="password-cell">
+                  <span>SolarLocal2026!</span>
+                  <button class="btn-copy" onclick="copyText('SolarLocal2026!', this)">คัดลอก</button>
+                </div>
+              </td>
+              <td>โรงงานบรรจุภัณฑ์ บางพลี</td>
+              <td><span class="status-pill status-online">ออนไลน์</span></td>
+            </tr>
+            <tr>
+              <td><span class="site-code">PTT-KLG-003</span></td>
+              <td>
+                <strong>บจก. ธาราธรซัพพลาย</strong><br>
+                <span class="subtle-info">คุณวรัญญา สุขประเสริฐ</span>
+              </td>
+              <td>
+                <div class="email-cell">
+                  <span>billing.ptt-klg-003@customer.solar.test</span>
+                  <button class="btn-copy" onclick="copyText('billing.ptt-klg-003@customer.solar.test', this)">คัดลอก</button>
+                </div>
+              </td>
+              <td>
+                <div class="password-cell">
+                  <span>SolarLocal2026!</span>
+                  <button class="btn-copy" onclick="copyText('SolarLocal2026!', this)">คัดลอก</button>
+                </div>
+              </td>
+              <td>คลังสินค้า คลองหลวง</td>
+              <td><span class="status-pill status-online">ออนไลน์</span></td>
+            </tr>
+            <tr>
+              <td><span class="site-code">AYA-BPI-004</span></td>
+              <td>
+                <strong>บจก. นวภัทรพรีซิชั่น</strong><br>
+                <span class="subtle-info">คุณกฤตภาส นาคะวัฒน์</span>
+              </td>
+              <td>
+                <div class="email-cell">
+                  <span>billing.aya-bpi-004@customer.solar.test</span>
+                  <button class="btn-copy" onclick="copyText('billing.aya-bpi-004@customer.solar.test', this)">คัดลอก</button>
+                </div>
+              </td>
+              <td>
+                <div class="password-cell">
+                  <span>SolarLocal2026!</span>
+                  <button class="btn-copy" onclick="copyText('SolarLocal2026!', this)">คัดลอก</button>
+                </div>
+              </td>
+              <td>โรงงานชิ้นส่วน บางปะอิน</td>
+              <td><span class="status-pill status-online">ออนไลน์</span></td>
+            </tr>
+            <tr>
+              <td><span class="site-code">CBI-SRC-005</span></td>
+              <td>
+                <strong>บจก. ตะวันออกออโต้แคร์</strong><br>
+                <span class="subtle-info">คุณพรทิพย์ จิรเมธากุล</span>
+              </td>
+              <td>
+                <div class="email-cell">
+                  <span>billing.cbi-src-005@customer.solar.test</span>
+                  <button class="btn-copy" onclick="copyText('billing.cbi-src-005@customer.solar.test', this)">คัดลอก</button>
+                </div>
+              </td>
+              <td>
+                <div class="password-cell">
+                  <span>SolarLocal2026!</span>
+                  <button class="btn-copy" onclick="copyText('SolarLocal2026!', this)">คัดลอก</button>
+                </div>
+              </td>
+              <td>ศูนย์บริการ ศรีราชา</td>
+              <td><span class="status-pill status-online">ออนไลน์</span></td>
+            </tr>
+            <tr>
+              <td><span class="site-code">RYG-PLD-006</span></td>
+              <td>
+                <strong>บจก. อรุณฟู้ดโปรดักส์</strong><br>
+                <span class="subtle-info">คุณอภิชาติ แสงสุวรรณ</span>
+              </td>
+              <td>
+                <div class="email-cell">
+                  <span>billing.ryg-pld-006@customer.solar.test</span>
+                  <button class="btn-copy" onclick="copyText('billing.ryg-pld-006@customer.solar.test', this)">คัดลอก</button>
+                </div>
+              </td>
+              <td>
+                <div class="password-cell">
+                  <span>SolarLocal2026!</span>
+                  <button class="btn-copy" onclick="copyText('SolarLocal2026!', this)">คัดลอก</button>
+                </div>
+              </td>
+              <td>โรงงานอาหาร ปลวกแดง</td>
+              <td><span class="status-pill status-online">ออนไลน์</span></td>
+            </tr>
+            <tr>
+              <td><span class="site-code">NPT-SMP-007</span></td>
+              <td>
+                <strong>บจก. พร้อมพาณิชย์โฮลเซล</strong><br>
+                <span class="subtle-info">คุณชลธิชา วัฒนวงศ์</span>
+              </td>
+              <td>
+                <div class="email-cell">
+                  <span>billing.npt-smp-007@customer.solar.test</span>
+                  <button class="btn-copy" onclick="copyText('billing.npt-smp-007@customer.solar.test', this)">คัดลอก</button>
+                </div>
+              </td>
+              <td>
+                <div class="password-cell">
+                  <span>SolarLocal2026!</span>
+                  <button class="btn-copy" onclick="copyText('SolarLocal2026!', this)">คัดลอก</button>
+                </div>
+              </td>
+              <td>ศูนย์ค้าส่ง สามพราน</td>
+              <td><span class="status-pill status-online">ออนไลน์</span></td>
+            </tr>
+            <tr>
+              <td><span class="site-code">NMA-MUE-008</span></td>
+              <td>
+                <strong>บจก. โคราชบิสซิเนสพาร์ค</strong><br>
+                <span class="subtle-info">คุณพีรณัฐ ตั้งเจริญ</span>
+              </td>
+              <td>
+                <div class="email-cell">
+                  <span>billing.nma-mue-008@customer.solar.test</span>
+                  <button class="btn-copy" onclick="copyText('billing.nma-mue-008@customer.solar.test', this)">คัดลอก</button>
+                </div>
+              </td>
+              <td>
+                <div class="password-cell">
+                  <span>SolarLocal2026!</span>
+                  <button class="btn-copy" onclick="copyText('SolarLocal2026!', this)">คัดลอก</button>
+                </div>
+              </td>
+              <td>อาคารสำนักงาน นครราชสีมา</td>
+              <td><span class="status-pill status-online">ออนไลน์</span></td>
+            </tr>
+            <tr>
+              <td><span class="site-code">CMI-SKP-009</span></td>
+              <td>
+                <strong>บจก. ล้านนาแปรรูปเกษตร</strong><br>
+                <span class="subtle-info">คุณณิชาภัทร อินทนนท์</span>
+              </td>
+              <td>
+                <div class="email-cell">
+                  <span>billing.cmi-skp-009@customer.solar.test</span>
+                  <button class="btn-copy" onclick="copyText('billing.cmi-skp-009@customer.solar.test', this)">คัดลอก</button>
+                </div>
+              </td>
+              <td>
+                <div class="password-cell">
+                  <span>SolarLocal2026!</span>
+                  <button class="btn-copy" onclick="copyText('SolarLocal2026!', this)">คัดลอก</button>
+                </div>
+              </td>
+              <td>โรงงานแปรรูป สันกำแพง</td>
+              <td><span class="status-pill status-online">ออนไลน์</span></td>
+            </tr>
+            <tr>
+              <td><span class="site-code">SKA-HDY-010</span></td>
+              <td>
+                <strong>บจก. อันดามันโคลด์เชน</strong><br>
+                <span class="subtle-info">คุณศุภชัย มณีรัตน์</span>
+              </td>
+              <td>
+                <div class="email-cell">
+                  <span>billing.ska-hdy-010@customer.solar.test</span>
+                  <button class="btn-copy" onclick="copyText('billing.ska-hdy-010@customer.solar.test', this)">คัดลอก</button>
+                </div>
+              </td>
+              <td>
+                <div class="password-cell">
+                  <span>SolarLocal2026!</span>
+                  <button class="btn-copy" onclick="copyText('SolarLocal2026!', this)">คัดลอก</button>
+                </div>
+              </td>
+              <td>คลังห้องเย็น หาดใหญ่</td>
+              <td><span class="status-pill status-offline">ออฟไลน์</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast">คัดลอกลงคลิปบอร์ดแล้ว!</div>
+
+  <script>
+    function copyText(text, btnElement) {
+      navigator.clipboard.writeText(text).then(() => {
+        showToast('คัดลอก "' + text + '" เรียบร้อยแล้ว!');
+        if (btnElement) {
+          const originalText = btnElement.innerText;
+          btnElement.innerText = 'คัดลอกแล้ว ✓';
+          btnElement.classList.add('copied');
+          setTimeout(() => {
+            btnElement.innerText = originalText;
+            btnElement.classList.remove('copied');
+          }, 1500);
+        }
+      }).catch(err => {
+        // Fallback
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        showToast('คัดลอกแล้ว!');
+      });
+    }
+
+    let toastTimer;
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      toast.innerText = msg;
+      toast.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
+        toast.classList.remove('show');
+      }, 2000);
+    }
+
+    function filterAccounts() {
+      const query = document.getElementById('searchInput').value.toLowerCase().trim();
+      let staffVisible = 0;
+      let customerVisible = 0;
+
+      // Filter Staff
+      const staffRows = document.querySelectorAll('#staffTable tbody tr');
+      staffRows.forEach(row => {
+        const text = row.innerText.toLowerCase();
+        if (!query || text.includes(query)) {
+          row.style.display = '';
+          staffVisible++;
+        } else {
+          row.style.display = 'none';
+        }
+      });
+
+      // Filter Customer
+      const customerRows = document.querySelectorAll('#customerTable tbody tr');
+      customerRows.forEach(row => {
+        const text = row.innerText.toLowerCase();
+        if (!query || text.includes(query)) {
+          row.style.display = '';
+          customerVisible++;
+        } else {
+          row.style.display = 'none';
+        }
+      });
+
+      // Update counters
+      document.getElementById('staffCounter').innerText = staffVisible + ' บัญชี';
+      document.getElementById('customerCounter').innerText = customerVisible + ' บัญชี';
+      document.getElementById('matchCounter').innerText = 'แสดงผล ' + (staffVisible + customerVisible) + ' จาก 20 บัญชี';
+    }
+  </script>
+</body>
+</html>

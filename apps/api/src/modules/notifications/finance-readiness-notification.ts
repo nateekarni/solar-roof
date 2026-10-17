@@ -7,8 +7,8 @@ export function financeReadinessNotification(user:ScopePrincipal,status:Financia
  if(!missingCount)return null;
  return {
   id:`workflow:finance-readiness:${status.fingerprint.slice(0,24)}`,
-  title:'Complete finance setup',detail:`${missingCount} Owner setup items remaining`,
-  destination:'/settings/company',createdAt:new Date().toISOString(),readAt:null as string|null,kind:'workflow' as const,
+  title:'Setup Checklist Before Go-Live',detail:`${missingCount} Owner setup items remaining`,
+  destination:'/settings/readiness',createdAt:new Date().toISOString(),readAt:null as string|null,kind:'workflow' as const,
   metadata:{type:'finance-readiness' as const,missingCount},
  };
 }

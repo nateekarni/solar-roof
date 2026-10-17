@@ -5,6 +5,7 @@ import "./globals.css";
 import { Toaster } from "../components/ui/sonner";
 import { TooltipProvider } from "../components/ui/tooltip";
 import { ThemeProvider } from "../components/theme-provider";
+import { QueryProvider } from "../providers/query-provider";
 
 export const metadata = {
   title: `${BRAND_NAME} · แพลตฟอร์มจัดการพลังงาน`,
@@ -16,8 +17,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="th" suppressHydrationWarning style={{ "--brand-primary": BRAND_PRIMARY } as CSSProperties}>
       <body>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-          <TooltipProvider>{children}</TooltipProvider>
-          <Toaster position="top-right" richColors closeButton />
+          <QueryProvider>
+            <TooltipProvider>{children}</TooltipProvider>
+            <Toaster position="top-right" richColors closeButton />
+          </QueryProvider>
         </ThemeProvider>
       </body>
     </html>

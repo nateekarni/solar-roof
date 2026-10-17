@@ -77,6 +77,9 @@ export interface DashboardSummaryAlert {
   severity: string;
   status: string;
   occurred_at: string;
+  siteName?: string;
+  destination?: string;
+  kind?: string;
 }
 
 export interface DashboardSummaryCollection {

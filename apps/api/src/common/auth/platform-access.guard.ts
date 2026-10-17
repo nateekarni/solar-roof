@@ -25,7 +25,7 @@ export class PlatformAccessGuard implements CanActivate {
     const domain=permission?.split('.')[0] as PermissionDomain|undefined;
     const employeeSites=domain?siteScope(req.user,domain):null;
     if(req.user?.role==='owner' && /^\/v1\/sites(?:\/[^/]+)?$/.test(path) && ['POST','PATCH','PUT'].includes(req.method)) {
-      const businessFields=new Set(['customerId','customerName','name','siteName','capacityMwp','latitude','longitude','status','timezone','serviceStartDate','paymentTermDays','reminderStartDays','reminderIntervalDays','impactConfirmed','expectedUpdatedAt']);
+      const businessFields=new Set(['customerId','customerName','name','siteName','externalSiteId','newOrganization','capacityMwp','latitude','longitude','status','timezone','serviceStartDate','paymentTermDays','remindersEnabled','reminderStartDays','reminderIntervalDays','taxRate','pricesIncludeTax','taxConfirmed','recipientUserIds','ratePerKwh','rate','impactConfirmed','expectedUpdatedAt']);
       if(Object.keys(req.body??{}).some(field=>!businessFields.has(field)))throw new ForbiddenException('Owner cannot modify technical site fields');
     }
     const scope = customerScope(req.user);

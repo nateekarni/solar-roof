@@ -56,12 +56,24 @@ interface DataTableProps<TData, TValue> {
   filterComponent?: React.ReactNode;
   actionsComponent?: React.ReactNode;
   pageSize?: number;
-  onRowClick?: (row: TData) => void;
+  onRowClick?: ((row: TData) => void) | undefined;
   onViewChange?: () => void;
   serverManaged?: boolean;
   variant?: "default" | "embedded";
   emptyContent?: React.ReactNode;
   renderSearchToolbar?: (search: React.ReactNode) => React.ReactNode;
+}
+
+function getColumnStyle(column: any): React.CSSProperties | undefined {
+  if (column.id === "actions") return { width: 56, minWidth: 56, maxWidth: 64 };
+  if (['selection', 'select'].includes(column.id)) return { width: 1, minWidth: 40, maxWidth: 40 };
+  const size = column.columnDef?.size;
+  if (typeof size === 'number' && size > 0) {
+    const min = column.columnDef.minSize ?? size;
+    const max = column.columnDef.maxSize ?? size;
+    return { width: size, minWidth: min, maxWidth: max };
+  }
+  return undefined;
 }
 
 export function DataTable<TData, TValue>({
@@ -153,7 +165,7 @@ export function DataTable<TData, TValue>({
                   {headerGroup.headers.map((header) => (
                     <TableHead
                       key={header.id}
-                      style={header.column.id === "actions" ? {width:64,minWidth:64,maxWidth:64} : ['selection','select'].includes(header.column.id) ? {width:1,minWidth:40,maxWidth:40} : undefined}
+                      style={getColumnStyle(header.column)}
                       className="h-10 py-0 text-xs font-semibold text-muted-foreground whitespace-nowrap"
                     >
                       {header.isPlaceholder
@@ -194,7 +206,7 @@ export function DataTable<TData, TValue>({
                     }}
                   >
                     {row.getVisibleCells().map((cell) => (
-                      <TableCell key={cell.id} className={cn("text-xs py-3", cell.column.id === "actions" && "text-right")} style={cell.column.id === "actions" ? {width:64,minWidth:64,maxWidth:64} : ['selection','select'].includes(cell.column.id) ? {width:1,minWidth:40,maxWidth:40} : undefined}>
+                      <TableCell key={cell.id} className={cn("text-xs py-3", cell.column.id === "actions" && "text-right")} style={getColumnStyle(cell.column)}>
                         {cell.column.id === "actions" ? <div className="flex justify-end">{flexRender(cell.column.columnDef.cell, cell.getContext())}</div> : flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </TableCell>
                     ))}
@@ -220,7 +232,7 @@ export function DataTable<TData, TValue>({
         </div>
 
         {/* Pagination Bar */}
-        {!serverManaged && <div data-slot="table-pagination" className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-4 py-3 bg-card">
+        {!serverManaged && table.getFilteredRowModel().rows.length > 0 && <div data-slot="table-pagination" className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-4 py-3 bg-card">
           <div className="text-xs text-muted-foreground">
             {locale === "th" ? "แสดง" : "Showing"} <span className="font-semibold text-foreground">{table.getRowModel().rows.length}</span> {locale === "th" ? "จากทั้งหมด" : "of"}{" "}
             <span className="font-semibold text-foreground">{table.getFilteredRowModel().rows.length}</span> {locale === "th" ? "รายการ" : "records"}

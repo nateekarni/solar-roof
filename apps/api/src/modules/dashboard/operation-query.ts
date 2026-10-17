@@ -7,7 +7,7 @@ import type { ScopePrincipal } from '../../common/auth/resource-scope.js';
 // Identifiers only come from this server-owned vocabulary, never request text.
 export const operationQueries: Record<string, { sorts: string[]; search: string[]; date?: string; direction: 'asc' | 'desc' }> = {
   customers: { sorts: ["name", "code", "region", "capacityMwp", "sitesCount", "gatewaysCount", "status"], search: ['name', 'code', 'region'], date: 'createdAt', direction: 'asc' },
-  sites: { sorts: ["name", "customerName", "capacityMwp", "region", "serviceStartDate", "status"], search: ['name', 'customerName', 'externalSiteId'], date: 'createdAt', direction: 'asc' },
+  sites: { sorts: ["name", "customerName", "capacityMwp", "serviceStartDate", "status"], search: ['name', 'customerName', 'externalSiteId'], date: 'createdAt', direction: 'asc' },
   billing: { sorts: ["period", "customerName", "siteName", "consumedKwh", "rate", "amount", "status"], search: ['period', 'customerName', 'siteName', 'status'], date: 'period', direction: 'desc' },
   contracts: { sorts: ["startDate", "contractNumber", "customerName", "version", "rate", "signers", "status"], search: ['contractNumber', 'customerName', 'siteName', 'signers', 'status'], date: 'startDate', direction: 'desc' },
   documents: { sorts: ["issueDate", "documentNumber", "type", "customerName", "amount", "status"], search: ['documentNumber', 'type', 'customerName', 'siteName', 'status'], date: 'issueDate', direction: 'desc' },
@@ -68,6 +68,30 @@ function fingerprint(resource: string, query: OperationQuery, user: ScopePrincip
   return createHash('sha256').update(JSON.stringify([resource, query.sort, query.direction, query.search ?? '', query.from ?? '', query.to ?? '',query.siteId,query.collectionStatus,...(resource==='billing'?[query.billingStatusView??'all']:[]),(operationFilters[resource]??[]).map(filter=>query[filter.key]??''), user?.id, user?.role, scope])).digest('hex');
 }
 
+const AUDIT_THAI_SEARCH_TERMS: Record<string, string[]> = {
+  'ระงับ': ['deactivated', 'revoked', 'retired', 'cancelled'],
+  'พนักงาน': ['employee', 'employee_permission'],
+  'สิทธิ์': ['permission'],
+  'ตำแหน่ง': ['position'],
+  'สร้าง': ['created'],
+  'แก้ไข': ['updated'],
+  'ลบ': ['deleted'],
+  'คืนสิทธิ์': ['reactivated'],
+  'เปิดใช้งาน': ['activated', 'reactivated'],
+  'เชิญ': ['invited'],
+  'เข้าสู่ระบบ': ['login'],
+  'รีเซ็ต': ['password_reset'],
+  'รหัสผ่าน': ['password_reset'],
+  'หมุนเวียน': ['rotated'],
+  'เพิกถอน': ['revoked'],
+  'ไซต์': ['site'],
+  'ธนาคาร': ['bank'],
+  'บริษัท': ['company'],
+  'การเงิน': ['finance'],
+  'ตัดรอบ': ['cutover'],
+  'อนุมัติ': ['approved'],
+};
+
 export function operationPredicate(resource: string, query: OperationQuery, params: unknown[]) {
   const config = operationQueries[resource]!;
   const clauses: string[] = [];
@@ -79,10 +103,28 @@ export function operationPredicate(resource: string, query: OperationQuery, para
     const value=query[filter.key];
     if(value)clauses.push(`q."${filter.key}"::text = ${bind(value)}`);
   }
+
   if (query.search) {
     // Literal substring search: wildcard characters supplied by users remain literal.
     const term = query.search.replace(/[\\%_]/g, '\\$&');
-    clauses.push(`concat_ws(' ',${config.search.map(key => `q."${key}"::text`).join(',')}) ILIKE ${bind('%' + term + '%')} ESCAPE '\\'`);
+    const searchTarget = `concat_ws(' ',${config.search.map(key => `q."${key}"::text`).join(',')})`;
+    const extraAliases: string[] = [];
+    if (resource === 'audit') {
+      for (const [thaiWord, aliases] of Object.entries(AUDIT_THAI_SEARCH_TERMS)) {
+        if (query.search.includes(thaiWord)) {
+          extraAliases.push(...aliases);
+        }
+      }
+    }
+    if (extraAliases.length > 0) {
+      const orConditions = [`${searchTarget} ILIKE ${bind('%' + term + '%')} ESCAPE '\\'`];
+      for (const alias of new Set(extraAliases)) {
+        orConditions.push(`${searchTarget} ILIKE ${bind('%' + alias + '%')}`);
+      }
+      clauses.push(`(${orConditions.join(' OR ')})`);
+    } else {
+      clauses.push(`${searchTarget} ILIKE ${bind('%' + term + '%')} ESCAPE '\\'`);
+    }
   }
   const dateExpression = resource==='billing'||resource==='receipts'&&query.collectionStatus?`q."periodStart"::text`:["occurredAt", "sentAt", "generatedAt", "time"].includes(config.date ?? "") ? `(q."${config.date}" AT TIME ZONE 'Asia/Bangkok')::date::text` : `q."${config.date}"::text`;
   if (query.from) clauses.push(`${dateExpression} >= ${bind(query.from)}`);

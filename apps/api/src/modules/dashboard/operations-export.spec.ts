@@ -53,3 +53,12 @@ test("date filters work for all catalogues and use Bangkok calendar days for tim
   assert.deepEqual(params,["2026-10-06","2026-10-07"]);
   assert.throws(()=>parseOperationQuery("sites",{from:"2026-10-07",to:"2026-10-06"}));
 });
+
+test("audit search expands Thai keywords into matching aliases for intuitive searching", () => {
+  const params: unknown[] = [];
+  const sql = operationPredicate("audit", parseOperationQuery("audit", { search: "ระงับ" }), params).join(" ");
+  assert.ok(sql.includes("ILIKE"));
+  assert.ok(params.includes("%ระงับ%"));
+  assert.ok(params.includes("%deactivated%"));
+  assert.ok(params.includes("%revoked%"));
+});

@@ -79,13 +79,13 @@ export function getNavItems(role: string,authorization?:AuthorizationSnapshot): 
    { key: "dashboard", labelKey: "dashboard", icon: LayoutDashboard, href: "/" },
    { key: "billing", labelKey: "navigation.billing", icon: ScrollText, href: "/billing" },
    { key: "receipts", labelKey: "navigation.receipts", icon: ScrollText, href: "/receipts" },
-   { key: "settings", labelKey: "navigation.settings", icon: Settings2, href: "/settings" },
+   { key: "settings", labelKey: "navigation.customerSettings", icon: Settings2, href: "/settings" },
  ].filter(item => canVisitPage(role, item.href));
  return NAV_ITEMS.flatMap(item => {
  const subItems = item.key==='settings' ? settingsSections(role,authorization).flatMap(section=>section.items.map(entry=>({href:entry.href,labelKey:entry.href==='/settings/system'&&section.key==='technical'?'technicalDefaults':entry.href}))) : item.subItems?.filter(sub => allowed(sub.href));
  const href = item.href && allowed(item.href) ? item.href : undefined;
  if (!href && !subItems?.length) return [];
- return [{ ...item, labelKey: item.key === "settings" && role === "owner" ? "navigation.ownerSettings" : item.key === "settings" && role === "customer_user" ? "navigation.personalSettings" : item.labelKey, href, ...(subItems ? { subItems } : {}) }];
+ return [{ ...item, labelKey: item.key === "settings" && role === "owner" ? "navigation.ownerSettings" : item.key === "settings" && role === "customer_user" ? "navigation.customerSettings" : item.labelKey, href, ...(subItems ? { subItems } : {}) }];
  });
 }
 export function getBottomNavItems(role: string,authorization?:AuthorizationSnapshot): NavItem[] {
@@ -99,7 +99,7 @@ export function navLabel(item: {labelKey: string; href?: string | undefined; key
  if(settingsEntry)return settingsEntry.label[locale==='en'?1:0];
  const billingLabels:Record<string,[string,string]>={"navigation.rates":["อัตราค่าไฟ","Electricity tariffs"],"navigation.billing":["ใบวางบิล","Billing statements"],"navigation.receipts":["ใบเสร็จรับเงิน","Receipts"],"navigation.customers":["ข้อมูลลูกค้า","Customers"],"navigation.gateways":["จัดการเกตเวย์","Manage gateways"],"navigation.contractsAndDocs":["เอกสาร","Documents"]};
  if(billingLabels[item.labelKey])return billingLabels[item.labelKey]![locale==='en'?1:0];
- const labels: Record<string, [string,string]> = { "navigation.documents":["เอกสาร","Documents"], "navigation.settings":["การตั้งค่า","Settings"], "navigation.ownerSettings":["การตั้งค่า","Settings"], "navigation.personalSettings":["บัญชีของฉัน","My account"], dashboard:["หน้าแรก","Home"], production:["การผลิตไฟฟ้า","Production"], "/settings/account":["บัญชีของฉัน","My account"], "/settings/general":["การแสดงผล","Preferences"], "/settings/security":["ความปลอดภัย","Security"], "/settings/users":["ทีมงานและสิทธิ์","Staff and permissions"] };
+ const labels: Record<string, [string,string]> = { "navigation.documents":["เอกสาร","Documents"], "navigation.settings":["การตั้งค่า","Settings"], "navigation.ownerSettings":["การตั้งค่า","Settings"], "navigation.personalSettings":["บัญชีของฉัน","My account"], "navigation.customerSettings":["ข้อมูลองค์กรและบัญชี","Organization & Account"], dashboard:["หน้าแรก","Home"], production:["การผลิตไฟฟ้า","Production"], "/settings/account":["บัญชีของฉัน","My account"], "/settings/general":["การแสดงผล","Preferences"], "/settings/security":["ความปลอดภัย","Security"], "/settings/users":["ทีมงานและสิทธิ์","Staff and permissions"] };
  const label=labels[item.labelKey] || labels[item.key || item.href || ""];
  return label ? label[locale === "en" ? 1 : 0] : t(item.labelKey);
 }

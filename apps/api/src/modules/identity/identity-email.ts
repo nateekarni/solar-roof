@@ -1,7 +1,10 @@
 import {ServiceUnavailableException} from '@nestjs/common';
 import {createHash,randomInt} from 'node:crypto';
-import nodemailer from 'nodemailer';
 import type {PoolClient} from 'pg';
+import {MailerService} from '../mailer/mailer.service.js';
+
+const mailer = new MailerService();
+
 export type EmailPurpose='login'|'enroll'|'disable'|'reset';
 export const tokenDigest=(value:string)=>createHash('sha256').update(value).digest('hex');
 export const maskEmail=(email:string)=>email.replace(/^(.).*(@.*)$/,'$1***$2');
@@ -10,9 +13,13 @@ export async function verifiedEmail(client:PoolClient,userId:string):Promise<str
  return row?.email_verified_at&&row.verified_email===row.email?row.email:null;
 }
 export async function sendIdentityMail(to:string,subject:string,text:string){
- if(!process.env.SMTP_HOST)throw new ServiceUnavailableException('Email delivery is not configured');
- const transport=nodemailer.createTransport({host:process.env.SMTP_HOST,port:Number(process.env.SMTP_PORT??587),secure:process.env.SMTP_SECURE==='true',connectionTimeout:5000,greetingTimeout:5000,socketTimeout:10000,...(process.env.SMTP_USER?{auth:{user:process.env.SMTP_USER,pass:process.env.SMTP_PASSWORD??process.env.SMTP_PASS??''}}:{})});
- try{const sent=await transport.sendMail({from:process.env.SMTP_FROM??'security@solar-platform.invalid',to,subject,text});if(!sent.accepted?.length)throw Error('rejected');}catch{throw new ServiceUnavailableException('Email delivery failed');}finally{transport.close();}
+ if(!mailer.isConfigured())throw new ServiceUnavailableException('Email delivery is not configured');
+ try{
+  const sent=await mailer.sendMail({from:mailer.getDefaultFrom(),to,subject,text});
+  if(!sent.accepted?.length)throw Error('rejected');
+ }catch{
+  throw new ServiceUnavailableException('Email delivery failed');
+ }
 }
 /** Caller holds users row lock. Target is revalidated on both issue and consume. */
 export async function issueEmailOtp(client:PoolClient,userId:string,purpose:EmailPurpose){

@@ -1,15 +1,16 @@
-import { BadRequestException, ConflictException, ForbiddenException, HttpException, Inject, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, HttpException, Inject, Injectable, NotFoundException, Optional, UnauthorizedException } from '@nestjs/common';
 import {createHash,randomBytes,randomUUID} from 'node:crypto';
 import type {PoolClient} from 'pg';
-import nodemailer from 'nodemailer';
 import {DatabaseService} from '../../database/database.service.js';
 import {AuthService} from './auth.service.js';
+import {MailerService} from '../mailer/mailer.service.js';
 import {customerScope, type ScopePrincipal} from '../../common/auth/route-policy.js';
 import {validateDomainRules, validateScope} from '../../common/auth/authorization.js';
 export type InvitationStatus='pending_delivery'|'sent'|'delivery_failed';
 export interface InviteInput {
   email: string;
   displayName: string;
+  phone?: string | null | undefined;
   role?: string;
   customerId?: string | null;
   siteId?: string;
@@ -30,7 +31,11 @@ const digest=(token:string)=>createHash('sha256').update(token).digest('hex');
 const invalid=()=>new UnauthorizedException('Invitation is invalid or expired');
 @Injectable()
 export class InvitationService {
-  constructor(@Inject(DatabaseService) private readonly db:DatabaseService,@Inject(AuthService) private readonly auth:AuthService) {}
+  constructor(
+    @Inject(DatabaseService) private readonly db:DatabaseService,
+    @Inject(AuthService) private readonly auth:AuthService,
+    @Optional() @Inject(MailerService) private readonly mailer?:MailerService
+  ) {}
   private async limit(client:PoolClient,key:string,seconds:number):Promise<string> {
     // Both budgets expire within one hour. Bound each cleanup and avoid contention
     // with another request's limiter row. Current active windows are never removed.
@@ -45,8 +50,9 @@ export class InvitationService {
     if(result.rows[0].attempts>5)throw new HttpException('Too many invitation attempts; try again later',429);
     return result.rows[0].window_started_at;
   }
-  private async actor(client:PoolClient,id:string) {
-    return (await client.query('SELECT id,role,status,customer_id AS "customerId" FROM users WHERE id=$1 FOR SHARE',[id])).rows[0];
+  private async actor(client:PoolClient | undefined,id:string) {
+    const q = client ? (text:string,params:unknown[])=>client.query(text,params) : (text:string,params:unknown[])=>this.db.query(text,params);
+    return (await q('SELECT id,role,status,customer_id AS "customerId" FROM users WHERE id=$1 FOR SHARE',[id])).rows[0];
   }
   private authorize(actor:any,role:string,customerId:string|null) {
     if(!actor||!canGrantInvitation(actor,role,customerId))throw new ForbiddenException('Cannot grant invitation role or customer scope');
@@ -54,10 +60,12 @@ export class InvitationService {
   async invite(input:InviteInput,actor:ScopePrincipal & {id:string}):Promise<{invitationId:string|null;status:InvitationStatus|'existing';userId:string}> {
     const email=typeof input.email==='string'?input.email.trim().toLowerCase():'';
     const displayName=typeof input.displayName==='string'?input.displayName.trim():'';
+    const phone=typeof input.phone==='string'&&input.phone.trim()?input.phone.trim().slice(0,50):null;
     const role=input.role ?? (input.customerId ? 'customer_user' : 'operator');let customerId=input.customerId || null;
     if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||email.length>254||!displayName||displayName.length>200)throw new BadRequestException('Valid email and displayName are required');
     if(customerId&&!/^[a-f0-9-]{36}$/i.test(customerId))throw new BadRequestException('Invalid customerId');
-    const token=randomBytes(32).toString('base64url'),invitationId=randomUUID(),userId=randomUUID();
+    const token=randomBytes(32).toString('base64url'),invitationId=randomUUID();
+    let userId=randomUUID();
     let existingUserId:string|undefined;
     await this.db.transaction(async client=>{
       const current=await this.actor(client,actor.id);
@@ -128,7 +136,7 @@ export class InvitationService {
           return;
         }
         // Account has no password (e.g. invite was cancelled or expired): re-issue fresh invitation!
-        await client.query("UPDATE users SET status='invited', display_name=$2, updated_at=now() WHERE id=$1", [existing.id, displayName]);
+        await client.query("UPDATE users SET status='invited', display_name=$2, phone=COALESCE($3, phone), updated_at=now() WHERE id=$1", [existing.id, displayName, phone]);
         await client.query("UPDATE user_invitations SET revoked_at=now(), consumed_at=now() WHERE user_id=$1 AND consumed_at IS NULL AND revoked_at IS NULL", [existing.id]);
         await client.query(`INSERT INTO user_invitations(id,user_id,issuer_id,email,role,customer_id,token_hash,expires_at,delivery_status)
           VALUES($1,$2,$3,$4,$5,$6,$7,now()+interval '24 hours','pending_delivery')`,[invitationId,existing.id,actor.id,email,role,customerId,digest(token)]);
@@ -138,8 +146,8 @@ export class InvitationService {
       }
       if(customerId&&!(await client.query('SELECT id FROM customers WHERE id=$1',[customerId])).rows[0])throw new BadRequestException('Customer not found');
       await this.limit(client,`delivery:${actor.id}:${email}`,3600);
-      const inserted=await client.query(`INSERT INTO users(id,email,display_name,role,status,customer_id,password_hash,company_position_id)
-        VALUES($1,$2,$3,$4,'invited',$5,NULL,$6) ON CONFLICT(email) DO NOTHING RETURNING id`,[userId,email,displayName,role,customerId,companyPositionId]);
+      const inserted=await client.query(`INSERT INTO users(id,email,display_name,role,status,customer_id,password_hash,company_position_id,phone)
+        VALUES($1,$2,$3,$4,'invited',$5,NULL,$6,$7) ON CONFLICT(email) DO NOTHING RETURNING id`,[userId,email,displayName,role,customerId,companyPositionId,phone]);
       if(!inserted.rows[0])throw new ConflictException('User already exists; use resend for an outstanding invitation');
       if(role!=='customer_user') {
         const overrides = JSON.stringify(overridesMap ?? {});
@@ -165,20 +173,18 @@ export class InvitationService {
       }
       await client.query(`INSERT INTO user_invitations(id,user_id,issuer_id,email,role,customer_id,token_hash,expires_at,delivery_status)
         VALUES($1,$2,$3,$4,$5,$6,$7,now()+interval '24 hours','pending_delivery')`,[invitationId,userId,actor.id,email,role,customerId,digest(token)]);
-      await client.query("INSERT INTO audit_events(id,actor_id,action,entity_type,entity_id,correlation_id,occurred_at) VALUES($1,$2,'user.invited','user',$3,$4,now())",[randomUUID(),actor.id,userId,invitationId]);
+      await client.query("INSERT INTO audit_events(id,actor_id,action,entity_type,entity_id,correlation_id,occurred_at,after_json) VALUES($1,$2,'user.invited','user',$3,$4,now(),$5::jsonb)",[randomUUID(),actor.id,userId,invitationId,JSON.stringify({email,role,customerId,siteId:input.siteId??null,domain,companyPositionId})]);
     });
     if(existingUserId)return {invitationId:null,status:'existing',userId:existingUserId};
     return {invitationId,status:await this.deliver(invitationId,email,token),userId};
   }
   async findOutstanding(email:string,actor:ScopePrincipal & {id:string}) {
     if(typeof email!=='string'||!email.trim())throw new BadRequestException('Email is required');
-    return this.db.transaction(async client=>{
-      const invitation=(await client.query(`SELECT i.* FROM user_invitations i JOIN users u ON u.id=i.user_id
-        WHERE i.email=$1 AND i.consumed_at IS NULL AND u.status='invited'`,[email.trim().toLowerCase()])).rows[0];
-      if(!invitation)throw new NotFoundException('Outstanding invitation not found');
-      this.authorize(await this.actor(client,actor.id),invitation.role,invitation.customer_id);
-      return {invitationId:invitation.id,status:invitation.delivery_status as InvitationStatus};
-    });
+    const invitation=(await this.db.query(`SELECT i.* FROM user_invitations i JOIN users u ON u.id=i.user_id
+      WHERE i.email=$1 AND i.consumed_at IS NULL AND u.status='invited'`,[email.trim().toLowerCase()])).rows[0];
+    if(!invitation)throw new NotFoundException('Outstanding invitation not found');
+    this.authorize(await this.actor(undefined,actor.id),invitation.role,invitation.customer_id);
+    return {invitationId:invitation.id,status:invitation.delivery_status as InvitationStatus};
   }
   async resend(invitationId:string,actor:ScopePrincipal & {id:string}):Promise<{invitationId:string;status:InvitationStatus}> {
     if(!/^[a-f0-9-]{36}$/i.test(invitationId))throw new NotFoundException('Invitation not found');
@@ -201,22 +207,107 @@ export class InvitationService {
     if(process.env.SMTP_HOST) {
       status='delivery_failed';
       try {
-        // No caller-supplied URL, Host header or redirect can select where the token goes.
         const web=new URL(process.env.WEB_URL ?? '');
         if(!['http:','https:'].includes(web.protocol)||web.username||web.password||web.search||web.hash)throw new Error('Invalid web origin');
         const url=new URL('/activate',web);url.searchParams.set('token',token);
-        const transport=nodemailer.createTransport({host:process.env.SMTP_HOST,port:Number(process.env.SMTP_PORT || 587),secure:process.env.SMTP_SECURE==='true',...(process.env.SMTP_USER?{auth:{user:process.env.SMTP_USER,pass:process.env.SMTP_PASS}}:{}),connectionTimeout:10000,greetingTimeout:10000,socketTimeout:10000});
-        const sent=await transport.sendMail({from:process.env.SMTP_FROM || process.env.SMTP_USER,to:email,subject:'Solar Roof account invitation',text:`You have been invited to Solar Roof. Open this link within 24 hours to activate your account:\n${url.toString()}\nIf you did not expect this invitation, ignore this email.`});
+        
+        const company=(await this.db.query('SELECT company_name, logo_data, logo_url FROM company_profile LIMIT 1')).rows[0];
+        const companyName=company?.company_name||'Solar Roof';
+        const logoSrc=company?.logo_url||company?.logo_data||'';
+        const recipient=(await this.db.query('SELECT u.display_name, u.role FROM user_invitations i JOIN users u ON u.id = i.user_id WHERE i.id = $1',[id])).rows[0];
+        const displayName=recipient?.display_name||'';
+        const roleLabel=recipient?.role==='customer_user'?'ผู้ใช้งานลูกค้า (Customer User)':recipient?.role==='operator'?'เจ้าหน้าที่ปฏิบัติการ (Operator)':recipient?.role==='accountant'?'เจ้าหน้าที่บัญชี (Accountant)':recipient?.role==='admin'?'ผู้ดูแลระบบ (Admin)':'ผู้ดูแล (Owner)';
+
+        const logoHtml=logoSrc?`<div style="text-align:center;margin-bottom:16px;"><img src="${logoSrc}" alt="${companyName}" style="max-height:56px;max-width:220px;object-fit:contain;" /></div>`:'';
+        const htmlBody=`<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>หนังสือเชิญเปิดใช้งานบัญชีผู้ใช้ระบบ Solar Roof</title>
+</head>
+<body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background-color:#f8fafc;margin:0;padding:24px;color:#1e293b;">
+  <div style="max-width:600px;margin:0 auto;background:#ffffff;border-radius:12px;border:1px solid #e2e8f0;overflow:hidden;box-shadow:0 4px 6px -1px rgba(0,0,0,0.05);">
+    <div style="padding:32px 32px 24px;text-align:center;border-bottom:1px solid #f1f5f9;background:#ffffff;">
+      ${logoHtml}
+      <h1 style="font-size:20px;font-weight:700;color:#0f172a;margin:0;">${companyName}</h1>
+      <p style="font-size:13px;color:#64748b;margin:4px 0 0 0;">ระบบบริหารจัดการพลังงานแสงอาทิตย์ (Solar Roof Management System)</p>
+    </div>
+    <div style="padding:32px;line-height:1.6;font-size:15px;">
+      <div style="font-weight:600;font-size:16px;margin-bottom:16px;color:#0f172a;">เรียน คุณ ${displayName || email} (Dear ${displayName || email}),</div>
+      <p style="margin:0 0 16px 0;">ท่านได้รับคำเชิญให้เปิดใช้งานบัญชีผู้ใช้ในระบบ <strong>Solar Roof</strong> ภายใต้การกำกับดูแลของ <strong>${companyName}</strong></p>
+      <div style="background-color:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px;margin:24px 0;font-size:14px;">
+        <div style="margin-bottom:8px;"><strong>บทบาทที่ได้รับมอบหมาย / Assigned Role:</strong> ${roleLabel}</div>
+        <div><strong>ที่อยู่อีเมล / Account Email:</strong> ${email}</div>
+      </div>
+      <p style="margin:0 0 24px 0;">กรุณากดปุ่มด้านล่างเพื่อตั้งรหัสผ่านและเปิดใช้งานบัญชีของท่านภายใน 24 ชั่วโมง:</p>
+      <div style="text-align:center;margin:32px 0;">
+        <a href="${url.toString()}" style="display:inline-block;background-color:#f59e0b;color:#ffffff !important;font-weight:600;font-size:16px;padding:14px 32px;border-radius:8px;text-decoration:none;box-shadow:0 2px 4px rgba(245,158,11,0.25);" target="_blank">เปิดใช้งานบัญชีผู้ใช้ / Activate Account</a>
+      </div>
+      <p style="font-size:13px;color:#64748b;margin:24px 0 0 0;line-height:1.5;">หากปุ่มด้านบนไม่ทำงาน สามารถคัดลอกลิงก์ต่อไปนี้ไปวางในเบราว์เซอร์ของท่าน:<br>
+        <a href="${url.toString()}" style="word-break:break-all;color:#3b82f6;">${url.toString()}</a>
+      </p>
+    </div>
+    <div style="padding:24px 32px;background-color:#f8fafc;border-top:1px solid #f1f5f9;font-size:12px;color:#94a3b8;text-align:center;line-height:1.5;">
+      <p style="margin:0 0 8px 0;">คำชี้แจงความปลอดภัย: ลิงก์นี้สามารถใช้งานได้เพียงครั้งเดียวและจะหมดอายุภายใน 24 ชั่วโมง หากท่านไม่คาดคิดว่าจะได้รับอีเมลฉบับนี้ สามารถละเว้นหรือลบอีเมลฉบับนี้ได้</p>
+      <p style="margin:0;">&copy; ${new Date().getFullYear()} ${companyName}. All rights reserved.</p>
+    </div>
+  </div>
+</body>
+</html>`;
+
+        const plainText=`เรียน คุณ ${displayName || email} (Dear ${displayName || email}),\n\nท่านได้รับคำเชิญให้เปิดใช้งานบัญชีผู้ใช้ในระบบ Solar Roof ภายใต้การกำกับดูแลของ ${companyName}\nบทบาทที่ได้รับมอบหมาย: ${roleLabel} (${email})\n\nกรุณาเปิดลิงก์ด้านล่างภายใน 24 ชั่วโมงเพื่อตั้งรหัสผ่านและเปิดใช้งานบัญชี:\n${url.toString()}\n\nคำชี้แจงความปลอดภัย: ลิงก์นี้จะหมดอายุภายใน 24 ชั่วโมง หากท่านไม่ได้คาดคิดว่าจะได้รับคำเชิญนี้ โปรดเพิกเฉยต่ออีเมลฉบับนี้`;
+
+        const mailer = this.mailer ?? new MailerService();
+        const sent = await mailer.sendMail({
+          from: mailer.getDefaultFrom(),
+          to: email,
+          subject: `หนังสือเชิญเปิดใช้งานบัญชีผู้ใช้ระบบ Solar Roof · ${companyName}`,
+          text: plainText,
+          html: htmlBody,
+        });
         if(sent.accepted?.length)status='sent';
       } catch { /* Delivery failure is persisted; SMTP errors can contain token-bearing message data. */ }
     }
     const update=await this.db.query("UPDATE user_invitations SET delivery_status=$3,revoked_at=CASE WHEN $3='delivery_failed' THEN now() ELSE revoked_at END,updated_at=now() WHERE id=$1 AND token_hash=$2 RETURNING delivery_status",[id,digest(token),status]);
-    // A concurrent resend supersedes this operation. Never report a stale delivery result.
     return update.rows[0]?.delivery_status ?? (await this.db.query('SELECT delivery_status FROM user_invitations WHERE id=$1',[id])).rows[0]?.delivery_status ?? 'delivery_failed';
   }
-  async activate(token:string,password:string):Promise<void> {
+
+  async getInvitationDetails(token:string):Promise<{email:string;displayName:string;role:string;companyName:string;logoUrl:string|null}> {
+    if(typeof token!=='string'||!/^[\w-]{43}$/.test(token))throw invalid();
+    const tokenHash=digest(token);
+    const row=(await this.db.query(
+      `SELECT i.email,i.role,i.expires_at,i.consumed_at,i.revoked_at,
+              u.display_name AS "displayName",u.status AS "userStatus"
+       FROM user_invitations i
+       JOIN users u ON u.id = i.user_id
+       WHERE i.token_hash = $1`,
+      [tokenHash]
+    )).rows[0];
+
+    if(!row||row.consumed_at||row.revoked_at||new Date(row.expires_at).getTime()<=Date.now()||row.userStatus!=='invited'){
+      throw invalid();
+    }
+
+    const company=(await this.db.query('SELECT company_name, logo_data, logo_url FROM company_profile LIMIT 1')).rows[0];
+    return {
+      email:row.email,
+      displayName:row.displayName||'',
+      role:row.role,
+      companyName:company?.company_name||'Solar Roof',
+      logoUrl:company?.logo_url||company?.logo_data||null,
+    };
+  }
+
+  async activate(token:string,password:string,displayName?:string,avatarData?:string):Promise<void> {
     if(typeof token!=='string'||!/^[\w-]{43}$/.test(token))throw invalid();
     if(typeof password!=='string'||password.length<12||password.length>128)throw new BadRequestException('Password must be between 12 and 128 characters');
+    const cleanName=typeof displayName==='string'&&displayName.trim().length>=2?displayName.trim().slice(0,200):null;
+    let cleanAvatar:string|null=null;
+    if(typeof avatarData==='string'&&avatarData.trim().startsWith('data:image/')){
+      if(avatarData.length>2_800_000)throw new BadRequestException('Avatar image exceeds 2MB limit');
+      cleanAvatar=avatarData.trim();
+    }
     const passwordHash=this.auth.hashPassword(password);
     await this.db.transaction(async client=>{
       const invitation=(await client.query('SELECT * FROM user_invitations WHERE token_hash=$1 FOR UPDATE',[digest(token)])).rows[0];
@@ -226,15 +317,16 @@ export class InvitationService {
       if(!recipient||recipient.status!=='invited'||recipient.password_hash||recipient.role!==invitation.role||recipient.customer_id!==invitation.customer_id||recipient.email!==invitation.email||!issuer||!canGrantInvitation({...issuer,customerId:issuer.customer_id},invitation.role,invitation.customer_id))throw invalid();
       const consumed=await client.query('UPDATE user_invitations SET consumed_at=now(),updated_at=now() WHERE id=$1 AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at>clock_timestamp() RETURNING id',[invitation.id]);
       if(!consumed.rows[0])throw invalid();
-      await client.query("UPDATE users SET status='active',password_hash=$2,updated_at=now() WHERE id=$1",[recipient.id,passwordHash]);
-      await client.query("INSERT INTO audit_events(id,actor_id,action,entity_type,entity_id,correlation_id,occurred_at) VALUES($1,$2,'user.activated','user',$2,$3,now())",[randomUUID(),recipient.id,invitation.id]);
+      await client.query(
+        "UPDATE users SET status='active',password_hash=$2,display_name=COALESCE($3,display_name),avatar_data=COALESCE($4,avatar_data),updated_at=now() WHERE id=$1",
+        [recipient.id,passwordHash,cleanName,cleanAvatar]
+      );
+      await client.query("INSERT INTO audit_events(id,actor_id,action,entity_type,entity_id,correlation_id,occurred_at,before_json,after_json) VALUES($1,$2,'user.activated','user',$2,$3,now(),$4::jsonb,$5::jsonb)",[randomUUID(),recipient.id,invitation.id,JSON.stringify({status:'invited',email:recipient.email}),JSON.stringify({status:'active',email:recipient.email,displayName:cleanName??recipient.display_name})]);
     });
   }
-  async activationAttempt(ip:string,token:string,password:string):Promise<void> {
-    // Reserve a slot before validating, so parallel failures cannot bypass the shared budget.
-    // Success releases its slot; invalid attempts remain counted even when activation rolls back.
+  async activationAttempt(ip:string,token:string,password:string,displayName?:string,avatarData?:string):Promise<void> {
     const windowStarted=await this.db.transaction(client=>this.limit(client,`activation:${digest(ip)}`,60));
-    await this.activate(token,password);
+    await this.activate(token,password,displayName,avatarData);
     await this.db.query('UPDATE invitation_rate_limits SET attempts=greatest(attempts-1,0) WHERE key=$1 AND window_started_at=$2',[`activation:${digest(ip)}`,windowStarted]);
   }
 }

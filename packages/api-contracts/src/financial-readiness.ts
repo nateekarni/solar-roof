@@ -9,6 +9,7 @@ export interface FinancialReadinessItem {
   responsibility: ReadinessResponsibility;
   destination?: string;
   siteId?: string;
+  siteName?: string | null;
 }
 
 export interface FinancialReadinessStatus {

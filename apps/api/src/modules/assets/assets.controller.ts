@@ -8,6 +8,7 @@ import {
   Get,
   Inject,
   NotFoundException,
+  Optional,
   Param,
   Patch,
   Post,
@@ -33,17 +34,22 @@ import { PayloadReceptionSettings } from '../telemetry/payload-reception-setting
 import { validateReceiveConfig } from '../telemetry/payload-receive.js';
 import { DatabaseService } from "../../database/database.service.js";
 import { MqttIngestionService } from "../telemetry/mqtt-ingestion.service.js";
+import { AssetsService } from "./assets.service.js";
 
 @Controller("v1")
 export class AssetsController {
   constructor(
     @Inject(DatabaseService) private readonly db: DatabaseService,
-    @Inject(MqttIngestionService) private readonly mqttService: MqttIngestionService
+    @Inject(MqttIngestionService) private readonly mqttService: MqttIngestionService,
+    @Optional() @Inject(AssetsService) private readonly assetsService?: AssetsService
   ) {}
 
   @Get('gateways')
   async listGateways(@Req() req?:{user?:AuthorizationPrincipal}) {
-        return (await this.db.query(`SELECT g.id,g.site_id AS "siteId",s.name AS "siteName",s.external_site_id AS "siteCode",g.name,g.external_gateway_id AS "externalGatewayId",g.endpoint AS "subscriptionTopic",g.last_seen_at AS "lastSeenAt",g.polling_interval_seconds AS "pollingIntervalSeconds",
+    if (this.assetsService) {
+      return this.assetsService.listGateways(siteScope(req?.user, 'technical'));
+    }
+    return (await this.db.query(`SELECT g.id,g.site_id AS "siteId",s.name AS "siteName",s.external_site_id AS "siteCode",g.name,g.external_gateway_id AS "externalGatewayId",g.endpoint AS "subscriptionTopic",g.last_seen_at AS "lastSeenAt",g.polling_interval_seconds AS "pollingIntervalSeconds",
       CASE WHEN g.last_seen_at BETWEEN now()-make_interval(secs=>greatest(120,g.polling_interval_seconds*2)) AND now() THEN 'online' ELSE 'offline' END AS status,
       g.desired_config_version AS "desiredVersion",g.published_config_version AS "publishedVersion",g.acknowledged_config_version AS "acknowledgedVersion",g.applied_config_version AS "appliedVersion",
       (SELECT count(*)::int FROM devices WHERE gateway_id=g.id) AS "deviceCount",latest.measured AS "lastMeasuredAt",latest.received AS "lastReceivedAt",pv.kw AS "currentProductionKw"
@@ -61,6 +67,9 @@ export class AssetsController {
 
   @Get('gateways/site-options')
   async gatewaySiteOptions(@Query('gatewayId') gatewayId?:string,@Req() req?:{user?:AuthorizationPrincipal},@Query('includeAssigned') includeAssigned?:string) {
+    if (this.assetsService) {
+      return this.assetsService.getGatewaySiteOptions(gatewayId ?? null, siteScope(req?.user, 'technical'), includeAssigned === 'true');
+    }
     return (await this.db.query(`SELECT s.id,s.name,s.external_site_id AS code,true AS active,g.id AS "assignedGatewayId" FROM sites s LEFT JOIN gateways g ON g.site_id=s.id AND g.retired_at IS NULL WHERE s.status<>'archived' AND ($3 OR g.id IS NULL OR g.id::text=$1) AND ($2::uuid[] IS NULL OR s.id=ANY($2::uuid[])) ORDER BY s.name,s.id`,[gatewayId??null,siteScope(req?.user,'technical'),includeAssigned==='true'])).rows;
   }
 
@@ -74,6 +83,48 @@ export class AssetsController {
     const sources=(await this.db.query(`SELECT metric,device_id AS "deviceId",tag FROM gateway_dashboard_sources WHERE gateway_id=$1 ORDER BY metric`,[id])).rows;
     const metricSources=Object.fromEntries(sources.map(row=>[row.metric,{deviceId:row.deviceId,tag:row.tag}]));
     return {...context,configuration:gateway,cadence,revisions,metricSources};
+  }
+
+  @Get('gateways/:id/telemetry')
+  async gatewayTelemetry(@Param('id') id: string) {
+    const gateway = (await this.db.query(`SELECT g.id, g.site_id AS "siteId", s.name AS "siteName", s.external_site_id AS "siteCode", g.name, g.external_gateway_id AS "externalGatewayId", g.endpoint AS "subscriptionTopic", g.last_seen_at AS "lastSeenAt", g.polling_interval_seconds AS "pollingIntervalSeconds",
+      CASE WHEN g.last_seen_at BETWEEN now()-make_interval(secs=>greatest(120,g.polling_interval_seconds*2)) AND now() THEN 'online' ELSE 'offline' END AS status,
+      g.desired_config_version AS "desiredVersion", g.published_config_version AS "publishedVersion", g.acknowledged_config_version AS "acknowledgedVersion", g.applied_config_version AS "appliedVersion",
+      (SELECT count(*)::int FROM devices WHERE gateway_id=g.id) AS "deviceCount",
+      latest.measured AS "lastMeasuredAt", latest.received AS "lastReceivedAt", pv.kw AS "currentProductionKw"
+      FROM gateways g JOIN sites s ON s.id=g.site_id
+      LEFT JOIN LATERAL (
+        SELECT max(sample.measured) AS measured, max(sample.received) AS received FROM devices d
+        LEFT JOIN LATERAL (SELECT coalesce(ps.measured_at,ps.polled_at) AS measured, ps.received_at AS received FROM payload_samples ps WHERE ps.device_id=d.id ORDER BY coalesce(ps.measured_at,ps.polled_at) DESC, ps.received_at DESC, ps.id DESC LIMIT 1) sample ON true
+        WHERE d.gateway_id=g.id
+      ) latest ON true
+      LEFT JOIN LATERAL (SELECT CASE WHEN count(*)=1 AND bool_and(ps.quality='good' AND ps.communication='online' AND ps.unit IN('W','kW') AND ps.value>=0 AND ps.value<'Infinity'::float8
+        AND coalesce(ps.measured_at,ps.polled_at) BETWEEN now()-make_interval(secs=>greatest(120,d.expected_interval_seconds*2)) AND now() AND ps.received_at BETWEEN now()-make_interval(secs=>greatest(120,d.expected_interval_seconds*2)) AND now()) THEN max(CASE WHEN ps.unit='W' THEN ps.value/1000 ELSE ps.value END) ELSE NULL END AS kw
+        FROM devices d JOIN payload_profile_revisions p ON p.id=d.payload_profile_revision_id LEFT JOIN LATERAL (SELECT * FROM payload_samples WHERE device_id=d.id AND profile_revision_id=d.payload_profile_revision_id AND tag='solar.active_power' ORDER BY coalesce(measured_at,polled_at) DESC,received_at DESC,id DESC LIMIT 1) ps ON true
+        WHERE d.gateway_id=g.id AND (EXISTS(SELECT 1 FROM gateway_dashboard_sources chosen WHERE chosen.gateway_id=g.id AND chosen.metric='power' AND chosen.device_id=d.id AND chosen.tag='solar.active_power') OR (NOT EXISTS(SELECT 1 FROM gateway_dashboard_sources chosen WHERE chosen.gateway_id=g.id AND chosen.metric='power') AND p.config->>'deviceType'='solar-logger'))) pv ON true
+      WHERE g.id::text=$1 AND g.retired_at IS NULL`, [id])).rows[0];
+    if (!gateway) throw new NotFoundException('Gateway not found');
+
+    const samples = await this.db.query(`SELECT DISTINCT ON (ps.device_id, ps.tag)
+      ps.device_id AS "deviceId", d.external_device_id AS "externalDeviceId", d.name AS "deviceName",
+      ps.tag, ps.value, ps.unit, ps.raw_value AS "rawValue", ps.raw_unit AS "rawUnit",
+      ps.polled_at AS "polledAt", coalesce(ps.measured_at, ps.polled_at) AS "sourceTime",
+      ps.received_at AS "receivedAt", ps.quality, ps.communication, ps.poll_group AS "pollGroup"
+      FROM payload_samples ps JOIN devices d ON d.id=ps.device_id
+      WHERE d.gateway_id=$1
+      ORDER BY ps.device_id, ps.tag, coalesce(ps.measured_at, ps.polled_at) DESC, ps.received_at DESC, ps.id DESC`, [id]);
+
+    return {
+      gateway,
+      samples: samples.rows.map(row => ({
+        ...row,
+        value: Number(row.value),
+        rawValue: row.rawValue !== null && row.rawValue !== undefined ? Number(row.rawValue) : null,
+        polledAt: row.polledAt ? new Date(row.polledAt).toISOString() : null,
+        sourceTime: row.sourceTime ? new Date(row.sourceTime).toISOString() : null,
+        receivedAt: row.receivedAt ? new Date(row.receivedAt).toISOString() : null,
+      })),
+    };
   }
 
   @Patch('gateways/:id/dashboard-sources')
@@ -475,10 +526,11 @@ export class AssetsController {
       localOverrideConfig?: unknown;
       sourcePresetRevisionId?: string;
       receiveConfig?: unknown;
-      additionalDevices?: {name:string;model:string;serialNumber:string;externalDeviceId?:string;payloadProfileRevisionId?:string;localOverrideConfig?:unknown;sourcePresetRevisionId?:string}[];
+      additionalDevices?: {name:string;model:string;serialNumber:string;externalDeviceId?:string;payloadProfileRevisionId?:string;localOverrideConfig?:unknown;sourcePresetRevisionId?:string;expectedIntervalSeconds?:number}[];
       externalSiteId?: string;
       externalGatewayId?: string;
       externalDeviceId?: string;
+      expectedIntervalSeconds?: number;
       pollingIntervalSeconds?: number;
       interval?: number;
       alertRules?: Record<string, unknown>;
@@ -496,7 +548,42 @@ export class AssetsController {
         const id=randomUUID(),externalSiteId=body.externalSiteId?.trim()||`SITE-${randomUUID().slice(0,8).toUpperCase()}`;
         externalIdentifier(externalSiteId);
         const site=(await client.query(`INSERT INTO sites(id,customer_id,name,capacity_mwp,timezone,status,latitude,longitude,external_site_id) VALUES($1,$2,$3,$4,'Asia/Bangkok','offline',$5,$6,$7) RETURNING id,customer_id AS "customerId",external_site_id AS "externalSiteId"`,[id,customerId,name,capacity,body.latitude??null,body.longitude??null,externalSiteId])).rows[0];
-        return {...site,configDelivery:'pending'};
+
+        const serviceStartDate = (body as any).serviceStartDate || new Date().toISOString().slice(0, 10);
+        const paymentTermDays = (body as any).paymentTermDays !== undefined ? Number((body as any).paymentTermDays) : 30;
+        const taxRate = (body as any).taxRate !== undefined ? Number((body as any).taxRate) : 7.0;
+        const pricesIncludeTax = Boolean((body as any).pricesIncludeTax);
+        const taxConfirmed = (body as any).taxConfirmed !== undefined ? Boolean((body as any).taxConfirmed) : false;
+        const remindersEnabled = Boolean((body as any).remindersEnabled);
+        const reminderStartDays = (body as any).reminderStartDays !== undefined ? Number((body as any).reminderStartDays) : 7;
+        const reminderIntervalDays = (body as any).reminderIntervalDays !== undefined ? Number((body as any).reminderIntervalDays) : 7;
+
+        await client.query(`
+          INSERT INTO site_billing_settings (
+            site_id, version, service_start_date, payment_term_days, tax_rate,
+            prices_include_tax, tax_confirmed, reminders_enabled, reminder_start_days, reminder_interval_days
+          ) VALUES ($1, 1, $2, $3, $4, $5, $6, $7, $8, $9)
+          ON CONFLICT (site_id) DO UPDATE SET
+            service_start_date = EXCLUDED.service_start_date,
+            payment_term_days = EXCLUDED.payment_term_days,
+            tax_rate = EXCLUDED.tax_rate,
+            prices_include_tax = EXCLUDED.prices_include_tax,
+            tax_confirmed = EXCLUDED.tax_confirmed,
+            reminders_enabled = EXCLUDED.reminders_enabled,
+            reminder_start_days = EXCLUDED.reminder_start_days,
+            reminder_interval_days = EXCLUDED.reminder_interval_days
+        `, [id, serviceStartDate, paymentTermDays, taxRate, pricesIncludeTax, taxConfirmed, remindersEnabled, reminderStartDays, reminderIntervalDays]);
+
+        const ratePerKwh = (body as any).ratePerKwh !== undefined ? Number((body as any).ratePerKwh) : (body as any).rate !== undefined ? Number((body as any).rate) : null;
+        if (ratePerKwh !== null && Number.isFinite(ratePerKwh) && ratePerKwh >= 0) {
+          await client.query(`
+            INSERT INTO rate_versions (id, site_id, effective_from, rate_type, rate, currency, change_reason)
+            VALUES ($1, $2, $3, 'fixed_kwh', $4, 'THB', 'Initial site tariff')
+            ON CONFLICT (id) DO NOTHING
+          `, [randomUUID(), id, serviceStartDate, ratePerKwh]);
+        }
+
+        return {...site,configDelivery:'pending',site:{id,name}};
       }); } catch(error) { organizationCodeError(error); }
     }
     const originalBody = body;
@@ -583,16 +670,18 @@ export class AssetsController {
 
       if(payloadRevision) await this.persistDeviceProfile(client,payloadRevision,deviceId);
       // 3. Create Device
+      const meterInterval = body.expectedIntervalSeconds !== undefined ? validatedInterval(body.expectedIntervalSeconds) : 5;
       await client.query(
-        `INSERT INTO devices (id, gateway_id, site_id, name, device_type, model, serial_number, slave_id, status, external_device_id, payload_profile_revision_id)
-         VALUES ($1, $2, $3, $4, 'meter', $5, $6, 1, $7, $8, $9)`,
-        [deviceId, gwId, siteId, devName, devModel, devSerial, initialStatus, body.externalDeviceId, payloadRevision?.id ?? null]
+        `INSERT INTO devices (id, gateway_id, site_id, name, device_type, model, serial_number, slave_id, status, external_device_id, payload_profile_revision_id, expected_interval_seconds)
+         VALUES ($1, $2, $3, $4, 'meter', $5, $6, 1, $7, $8, $9, $10)`,
+        [deviceId, gwId, siteId, devName, devModel, devSerial, initialStatus, body.externalDeviceId, payloadRevision?.id ?? null, meterInterval]
       );
 
       // 4. Assign Billing Meter
       for (const device of additionalDevices) {
         await this.persistDeviceProfile(client,device.revision,device.id);
-        await client.query(`INSERT INTO devices(id,gateway_id,site_id,name,device_type,model,serial_number,slave_id,status,external_device_id,payload_profile_revision_id) VALUES($1,$2,$3,$4,$5,$6,$7,1,'offline',$8,$9)`,[device.id,gwId,siteId,device.name.trim(),device.revision.config.deviceType.includes('logger')?'logger':'meter',device.model.trim(),device.serialNumber.trim(),device.externalDeviceId,device.revision.id]);
+        const addInterval = device.expectedIntervalSeconds !== undefined ? validatedInterval(device.expectedIntervalSeconds) : (device.revision.config.deviceType.includes('logger') ? 15 : 5);
+        await client.query(`INSERT INTO devices(id,gateway_id,site_id,name,device_type,model,serial_number,slave_id,status,external_device_id,payload_profile_revision_id,expected_interval_seconds) VALUES($1,$2,$3,$4,$5,$6,$7,1,'offline',$8,$9,$10)`,[device.id,gwId,siteId,device.name.trim(),device.revision.config.deviceType.includes('logger')?'logger':'meter',device.model.trim(),device.serialNumber.trim(),device.externalDeviceId,device.revision.id,addInterval]);
       }
       if (receiveConfig) await client.query('INSERT INTO gateway_payload_receive_revisions(id,gateway_id,version,config) VALUES($1,$2,1,$3::jsonb)',[randomUUID(),gwId,JSON.stringify(receiveConfig)]);
 
@@ -777,7 +866,7 @@ export class AssetsController {
 
         if(body.mqttBrokerId !== undefined){
           if(body.mqttBrokerId && !(await client.query("SELECT id FROM mqtt_brokers WHERE id=$1",[body.mqttBrokerId])).rows.length)throw new BadRequestException("Broker not found");
-          gwUpdates.push(`mqtt_broker_id = ${gIdx++}`);gwValues.push(body.mqttBrokerId||null);
+          gwUpdates.push(`mqtt_broker_id = $${gIdx++}`);gwValues.push(body.mqttBrokerId||null);
         }
         if (body.gatewayName !== undefined) {
           gwUpdates.push(`name = $${gIdx++}`);
@@ -940,7 +1029,7 @@ export class AssetsController {
   }
 
   @Post("sites/:id/devices")
-  async addDevice(@Param("id") siteId: string, @Body() body: { name?: string; model?: string; serialNumber?: string; slaveId?: number; meterPresetId?: string; payloadProfileRevisionId?: string; localOverrideConfig?: unknown; sourcePresetRevisionId?:string; externalDeviceId?: string }, allocationAttempt=0):Promise<{id:string;siteId:string;gatewayId:string;externalDeviceId:string|undefined}> {
+  async addDevice(@Param("id") siteId: string, @Body() body: { name?: string; model?: string; serialNumber?: string; slaveId?: number; meterPresetId?: string; payloadProfileRevisionId?: string; localOverrideConfig?: unknown; sourcePresetRevisionId?:string; externalDeviceId?: string; expectedIntervalSeconds?: number }, allocationAttempt=0):Promise<{id:string;siteId:string;gatewayId:string;externalDeviceId:string|undefined}> {
     const originalBody=body;
     body={...body,externalDeviceId:operationalCode(body.externalDeviceId,"DEV")};
     if (!body.name?.trim() || !body.model?.trim() || !body.serialNumber?.trim()) throw new BadRequestException("Device name, model and meter serial are required");
@@ -949,6 +1038,9 @@ export class AssetsController {
     if (revision) externalIdentifier(body.externalDeviceId);
     const slaveId = Number(body.slaveId ?? 1);
     if (!Number.isInteger(slaveId) || slaveId < 1 || slaveId > 247) throw new BadRequestException("Slave ID must be 1–247");
+    const intervalSec = body.expectedIntervalSeconds !== undefined
+      ? validatedInterval(body.expectedIntervalSeconds)
+      : (revision && revision.config.deviceType === 'solar-logger' ? 15 : 5);
     const client = await this.db.pool.connect();
     try {
       await client.query("BEGIN");
@@ -958,7 +1050,7 @@ export class AssetsController {
       if (revision && (!gateway.rows[0].endpoint?.startsWith("solar/v1/") || !gateway.rows[0].externalSiteId || !gateway.rows[0].externalGatewayId)) throw new BadRequestException("Legacy gateway requires coordinated standard commissioning before adding a payload profile");
       const deviceId = randomUUID();
       if(revision) await this.persistDeviceProfile(client,revision,deviceId);
-      await client.query(`INSERT INTO devices (id,gateway_id,site_id,name,model,serial_number,device_type,slave_id,status,external_device_id,payload_profile_revision_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'offline',$9,$10)`, [deviceId,gateway.rows[0].id,siteId,body.name.trim(),body.model.trim(),body.serialNumber.trim(),revision && revision.config.deviceType === 'solar-logger' ? 'logger' : 'meter',slaveId,body.externalDeviceId,revision?.id ?? null]);
+      await client.query(`INSERT INTO devices (id,gateway_id,site_id,name,model,serial_number,device_type,slave_id,status,external_device_id,payload_profile_revision_id,expected_interval_seconds) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'offline',$9,$10,$11)`, [deviceId,gateway.rows[0].id,siteId,body.name.trim(),body.model.trim(),body.serialNumber.trim(),revision && revision.config.deviceType === 'solar-logger' ? 'logger' : 'meter',slaveId,body.externalDeviceId,revision?.id ?? null,intervalSec]);
       if (body.meterPresetId) {
         const preset = await client.query("SELECT registers FROM meter_presets WHERE id = $1", [body.meterPresetId]);
         if (!Array.isArray(preset.rows[0]?.registers)) throw new BadRequestException("Preset not found");
@@ -1002,10 +1094,14 @@ export class AssetsController {
   }
 
   @Patch("devices/:id/payload-profile")
-  async upgradePayloadProfile(@Param("id") id:string,@Body() body:{payloadProfileRevisionId?:string;localOverrideConfig?:unknown;sourcePresetRevisionId?:string;name?:string;model?:string;serialNumber?:string}) {
+  async upgradePayloadProfile(@Param("id") id:string,@Body() body:{payloadProfileRevisionId?:string;localOverrideConfig?:unknown;sourcePresetRevisionId?:string;name?:string;model?:string;serialNumber?:string;expectedIntervalSeconds?:number}) {
     const revision=await this.prepareDeviceProfile(body,id);
     if(!revision)throw new BadRequestException("Payload revision or local configuration is required");
     for(const key of ["name","model","serialNumber"] as const)if(body[key]!==undefined&&!body[key]?.trim())throw new BadRequestException("Device name, model and serial are required");
+    const nextInterval = body.expectedIntervalSeconds !== undefined ? Number(body.expectedIntervalSeconds) : null;
+    if (nextInterval !== null && (!Number.isInteger(nextInterval) || nextInterval < 1 || nextInterval > 86400)) {
+      throw new BadRequestException("Expected interval must be between 1 and 86400 seconds");
+    }
     const client=await this.db.pool.connect();
     try {
       await client.query('BEGIN');
@@ -1016,7 +1112,7 @@ export class AssetsController {
       if(device.profile_device_type&&device.profile_device_type!==revision.config.deviceType)throw new BadRequestException('Profile device type cannot change');
       if((device.device_type==='logger') !== (revision.config.deviceType==='solar-logger'))throw new BadRequestException("Profile device type cannot change");
       await this.persistDeviceProfile(client,revision,id);
-      await client.query("UPDATE devices SET payload_profile_revision_id=$2,name=coalesce($3,name),model=coalesce($4,model),serial_number=coalesce($5,serial_number) WHERE id=$1",[id,revision.id,body.name?.trim()??null,body.model?.trim()??null,body.serialNumber?.trim()??null]);
+      await client.query("UPDATE devices SET payload_profile_revision_id=$2,name=coalesce($3,name),model=coalesce($4,model),serial_number=coalesce($5,serial_number),expected_interval_seconds=coalesce($6,expected_interval_seconds) WHERE id=$1",[id,revision.id,body.name?.trim()??null,body.model?.trim()??null,body.serialNumber?.trim()??null,nextInterval]);
       await snapshotGatewayConfiguration(client,device.gateway_id);
       await client.query('COMMIT');return {id,payloadProfileRevisionId:revision.id,profileId:revision.config.id,profileVersion:revision.config.version};
     }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
@@ -1042,7 +1138,7 @@ export class AssetsController {
     const gateway=(await this.db.query(`SELECT g.id AS "gatewayId",s.external_site_id AS "externalSiteId",g.external_gateway_id AS "externalGatewayId",g.endpoint AS "subscriptionTopic",g.mqtt_broker_id AS "mqttBrokerId",b.name AS "brokerName",b.url AS "brokerUrl",b.username AS "brokerUsername",s.latitude,s.longitude,g.polling_interval_seconds AS "pollingIntervalSeconds",g.alert_rules AS "alertRules" FROM sites s JOIN gateways g ON g.site_id=s.id LEFT JOIN mqtt_brokers b ON b.id=g.mqtt_broker_id WHERE s.id=$1 AND g.retired_at IS NULL`,[siteId])).rows[0];
     if(!gateway)throw new NotFoundException("Site gateway not found");
     if(!gateway.mqttBrokerId){const url=new URL(process.env.MQTT_URL || 'mqtt://localhost:1883');url.username='';url.password='';gateway.brokerName='Broker เริ่มต้นของระบบ';gateway.brokerUrl=url.toString();gateway.brokerUsername=process.env.MQTT_USERNAME||'';}
-    const devices=(await this.db.query(`SELECT d.id,d.name,d.model,d.serial_number AS "serialNumber",d.device_type AS "deviceType",d.external_device_id AS "externalDeviceId",p.id AS "profileRevisionId",p.profile_id AS "profileId",p.version AS "profileVersion",p.source_preset_revision_id AS "sourcePresetRevisionId",p.owner_device_id AS "profileOwnerDeviceId",p.config,EXISTS(SELECT 1 FROM billing_meters b WHERE b.device_id=d.id AND b.active) AS "billingMeter",(SELECT bs.source_tag FROM billing_meters b JOIN billing_source_bindings bs ON bs.id=b.billing_source_binding_id WHERE b.device_id=d.id AND b.active LIMIT 1) AS "billingSourceTag" FROM devices d JOIN payload_profile_revisions p ON p.id=d.payload_profile_revision_id WHERE d.site_id=$1 AND d.gateway_id=(SELECT id FROM gateways WHERE site_id=$1 AND retired_at IS NULL) ORDER BY d.name,d.id`,[siteId])).rows.map(d=>{
+    const devices=(await this.db.query(`SELECT d.id,d.name,d.model,d.serial_number AS "serialNumber",d.device_type AS "deviceType",d.external_device_id AS "externalDeviceId",d.expected_interval_seconds AS "expectedIntervalSeconds",p.id AS "profileRevisionId",p.profile_id AS "profileId",p.version AS "profileVersion",p.source_preset_revision_id AS "sourcePresetRevisionId",p.owner_device_id AS "profileOwnerDeviceId",p.config,EXISTS(SELECT 1 FROM billing_meters b WHERE b.device_id=d.id AND b.active) AS "billingMeter",(SELECT bs.source_tag FROM billing_meters b JOIN billing_source_bindings bs ON bs.id=b.billing_source_binding_id WHERE b.device_id=d.id AND b.active LIMIT 1) AS "billingSourceTag" FROM devices d JOIN payload_profile_revisions p ON p.id=d.payload_profile_revision_id WHERE d.site_id=$1 AND d.gateway_id=(SELECT id FROM gateways WHERE site_id=$1 AND retired_at IS NULL) ORDER BY d.name,d.id`,[siteId])).rows.map(d=>{
       const config=validatePayloadProfile(d.config),polledAt=new Date().toISOString(),field=config.fields[0]!;
       const {config:_config,...info}=d;
       return {...info,profileConfig:config,profileDeviceType:config.deviceType,sourceProfileId:config.sourceProfile?.id??config.id,sourceProfileVersion:config.sourceProfile?.version??config.version,fields:config.fields,telemetryTopic:payloadTopic(gateway.externalSiteId,gateway.externalGatewayId,d.externalDeviceId),fixture:{schemaVersion:'1.1',messageType:'telemetry',messageId:randomUUID(),sequence:1,lotNumber:1,siteId:gateway.externalSiteId,gatewayId:gateway.externalGatewayId,device:{deviceId:d.externalDeviceId,deviceType:config.deviceType,profileId:config.sourceProfile?.id??config.id,profileVersion:config.sourceProfile?.version??config.version},pollGroup:field.pollGroup,timestamps:{polledAt,sentAt:polledAt},data:{values:Object.fromEntries(config.fields.filter(f=>f.pollGroup===field.pollGroup).map(f=>[f.sourceTag??f.tag,1])),units:Object.fromEntries(config.fields.filter(f=>f.pollGroup===field.pollGroup).map(f=>[f.sourceTag??f.tag,f.sourceUnit]))},quality:{status:'good',communication:'online'}}};
