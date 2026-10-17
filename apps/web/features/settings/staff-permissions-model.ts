@@ -121,15 +121,29 @@ export function bundleSubPermissions(
   return next;
 }
 
-export function employeePositionDraft({revision,choice,domain,permissions,rules,overrides,scope,builtInManager=false,displayName,companyPosition}:{revision:number;choice:PositionChoice|null;domain:string;permissions:string[];rules:Record<string,RuleValue>;overrides:Record<string,RuleValue>;scope:{mode:'all'|'selected';siteIds:string[]};permissionsConfigured?:boolean;builtInManager?:boolean;displayName?:string;companyPosition?:string}){
+export interface EmployeePositionDraftResult {
+ revision: number;
+ position?: { id?: string; name?: string; rules?: Record<string, RuleValue> };
+ companyPosition?: string;
+ overrides: Record<string, RuleValue>;
+ scope: { mode: 'all' | 'selected'; siteIds: string[] };
+ displayName?: string;
+}
+
+export function employeePositionDraft({revision,choice,domain,permissions,rules,overrides,scope,builtInManager=false,displayName,companyPosition}:{revision:number;choice:PositionChoice|null;domain:string;permissions:string[];rules:Record<string,RuleValue>;overrides:Record<string,RuleValue>;scope:{mode:'all'|'selected';siteIds:string[]};permissionsConfigured?:boolean;builtInManager?:boolean;displayName?:string|undefined;companyPosition?:string|undefined}):EmployeePositionDraftResult{
  if(!choice&&!companyPosition)throw new Error('Position required');
  if(choice?.kind==='new'&&(!choice.name.trim()||choice.name.trim().length>120))throw new Error('Position name required');
  const bundledOverrides=bundleSubPermissions(domain,overrides,permissions);
  const domainRules=Object.fromEntries(permissions.filter(permission=>permission.startsWith(domain+'.')).map(permission=>[permission,effectiveRule(permission,rules,bundledOverrides)]));
  return {
   revision,
-  ...(choice?.kind==='existing'?{position:{id:choice.id}}:{}),
-  ...(companyPosition?{companyPosition:companyPosition.trim()}:choice?.kind==='new'?{position:{name:choice.name.trim(),rules:builtInManager?{}:domainRules}}:{}),
+  ...(choice?.kind==='existing'
+    ? {position:{id:choice.id}}
+    : choice?.kind==='new'
+      ? {position:{name:choice.name.trim(),rules:builtInManager?{}:domainRules}}
+      : companyPosition
+        ? {companyPosition:companyPosition.trim()}
+        : {}),
   overrides:builtInManager?{}:domainOverrides(domain,bundledOverrides),
   scope:builtInManager?{mode:'all' as const,siteIds:[]}:{...scope,siteIds:scope.mode==='all'?[]:scope.siteIds},
   ...(displayName!==undefined?{displayName:displayName.trim()}:{})

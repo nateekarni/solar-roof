@@ -654,27 +654,12 @@ export function EmployeeEditor({employee,domain,positions,permissions,sites,onSa
  const dirty=name.trim()!==(employee.displayName??'').trim()||positionText.trim()!==(employee.companyPosition||initialPosition?.name||'').trim()||staffDraftChanged({positionId:positionKey(initialChoice),overrides:initialOverrides,scope:employee.grant?.scope??{mode:'selected',siteIds:[]}},{positionId:positionKey(choice),overrides,scope});
  const close=()=>{if(!busy){if(dirty)setDiscardOpen(true);else onClose();}};
  const rules=choice?.kind==='existing'?currentPositions.find(p=>p.id===choice.id)?.rules??{}:draftRules;
- const choosePreset=(pos:{id:string;name:string;rules?:Record<string,RuleValue>})=>{
-  setPositionText(pos.name);
-  setChoice({kind:'existing',id:pos.id,name:pos.name});
-  const nextOverrides:Record<string,RuleValue>={...overrides};
-  for(const p of permissions.filter(perm=>perm.startsWith(domain+'.'))){
-    nextOverrides[p]=pos.rules?.[p]===true;
+ const choosePosition=(next:PositionChoice)=>{
+  if(next.kind==='new'){
+    setDraftRules(rules);
   }
-  setOverrides(nextOverrides);
-  setError('');
- };
- const handlePositionChange=(val:string)=>{
-  setPositionText(val);
-  const trimmed=val.trim();
-  const match=currentPositions.find(p=>p.name.trim().toLocaleLowerCase()===trimmed.toLocaleLowerCase());
-  if(match){
-    setChoice({kind:'existing',id:match.id,name:match.name});
-  }else if(trimmed){
-    setChoice({kind:'new',name:trimmed});
-  }else{
-    setChoice(null);
-  }
+  setChoice(next);
+  setPositionText(next.name);
   setError('');
  };
  const goToPermissionsTab = () => {
@@ -701,7 +686,8 @@ export function EmployeeEditor({employee,domain,positions,permissions,sites,onSa
       snapshotOverrides[p]=overrides[p]===true;
     }
     const effectiveChoice: PositionChoice | null = choice ?? (positionText.trim() ? { kind: 'new', name: positionText.trim() } : null);
-    const result=await apiClient.patch<{success:true;revision:number;position:{id:string;name:string}}>(`/v1/team/employees/${employee.id}/${domain}`,employeePositionDraft({revision:baseRevision,choice:effectiveChoice,domain,permissions,rules,overrides:snapshotOverrides,scope,builtInManager,displayName:name.trim(),companyPosition:positionText.trim()}));
+    const changedName = name.trim() !== (employee.displayName ?? '').trim() ? name.trim() : undefined;
+    const result=await apiClient.patch<{success:true;revision:number;position:{id:string;name:string}}>(`/v1/team/employees/${employee.id}/${domain}`,employeePositionDraft({revision:baseRevision,choice:effectiveChoice,domain,permissions,rules,overrides:snapshotOverrides,scope,builtInManager,displayName:changedName,companyPosition:positionText.trim()}));
     if (result.position) setChoice({kind:'existing',id:result.position.id,name:result.position.name});
     onSaved();
   }catch(e){
@@ -719,7 +705,25 @@ export function EmployeeEditor({employee,domain,positions,permissions,sites,onSa
  async function loadLatest(){if(busy)return;setBusy(true);setError('');try{const [employeesResponse,positionsResponse]=await Promise.all([apiClient.get<{employees:Employee[]}>(`/v1/team/employees?domain=${domain}`,{cache:'no-store'}),apiClient.get<{positions:Position[]}>(`/v1/team/positions?domain=${domain}`,{cache:'no-store'})]);const fresh=employeesResponse.employees.find(item=>item.id===employee.id);if(!fresh||fresh.role!==employee.role||fresh.status!==employee.status)throw new Error(th?'สถานะหรือบทบาทบัญชีเปลี่ยนแล้ว กรุณาปิดหน้าต่างและตรวจสอบทีมงาน':'Account status or role changed. Close this editor and review the team.');setLatest({employee:fresh,positions:positionsResponse.positions});}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
  const duplicatePreset=(conflict==='position'||choice?.kind==='new')&&choice?latest?.positions.find(position=>conflictingPositionId?position.id===conflictingPositionId:position.name.trim().normalize('NFC').toLocaleLowerCase()===choice.name.trim().normalize('NFC').toLocaleLowerCase()):undefined;
  const reviewedDraftRules=duplicatePreset?.rules??(choice?.kind==='existing'?latest?.positions.find(position=>position.id===choice.id)?.rules??{}:draftRules);
- const reviewLatest=()=>{if(!latest||busy||conflict==='position'&&!duplicatePreset)return;setBaseRevision(latest.employee.revision);setCurrentPositions(latest.positions);if(duplicatePreset)setChoice({kind:'existing',id:duplicatePreset.id,name:duplicatePreset.name});setConflict(null);setLatest(null);setError('');setImpact(null);};
+ const reviewLatest=()=>{
+  if(!latest||busy||conflict==='position'&&!duplicatePreset)return;
+  setBaseRevision(latest.employee.revision);
+  setCurrentPositions(latest.positions);
+  if(duplicatePreset){
+    setChoice({kind:'existing',id:duplicatePreset.id,name:duplicatePreset.name});
+    if(conflict==='position'){
+      const nextOverrides:Record<string,RuleValue>={...overrides};
+      for(const p of permissions.filter(perm=>perm.startsWith(domain+'.'))){
+        nextOverrides[p]=duplicatePreset.rules?.[p]===true;
+      }
+      setOverrides(nextOverrides);
+    }
+  }
+  setConflict(null);
+  setLatest(null);
+  setError('');
+  setImpact(null);
+ };
  async function revoke(){setBusy(true);setError('');try{await apiClient.delete(`/v1/team/employees/${employee.id}/${domain}`,{headers:{"Content-Type":"application/json"},body:JSON.stringify({revision:baseRevision})});onSaved();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
  async function deactivate(){setBusy(true);setError('');try{if(!impact)setImpact(await apiClient.get(`/v1/team/employees/${employee.id}/deactivation-impact`));else{await apiClient.post(`/v1/team/employees/${employee.id}/deactivate`,{revision:baseRevision,impactConfirmed:true});onSaved();}}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
  const editorBody = (
@@ -788,15 +792,16 @@ export function EmployeeEditor({employee,domain,positions,permissions,sites,onSa
          <span className="min-w-0 break-words text-sm font-medium">{accountRoleLabel(employee.role, th ? 'th' : 'en')}</span>
         </div>
         <div className="grid gap-2 sm:grid-cols-[140px_minmax(0,1fr)] sm:items-center sm:gap-4">
-         <Label htmlFor="edit-staff-position" className="text-sm text-muted-foreground">{th ? 'ตำแหน่ง' : 'Position'}</Label>
-         <FreeformPositionCombobox
-          id="edit-staff-position"
-          value={positionText}
-          positions={currentPositions}
-          onChange={handlePositionChange}
-          onSelectPreset={choosePreset}
-          disabled={busy||!!conflict}
-         />
+         <Label htmlFor="staff-position" className="text-sm text-muted-foreground">{th ? 'ตำแหน่ง' : 'Position'}</Label>
+         <div id="edit-staff-position" className="w-full">
+          <PositionCombobox
+           id="staff-position"
+           value={choice}
+           positions={currentPositions}
+           onChange={choosePosition}
+           disabled={busy||!!conflict}
+          />
+         </div>
         </div>
        </div>
       </section>
@@ -858,16 +863,19 @@ export function EmployeeEditor({employee,domain,positions,permissions,sites,onSa
       <fieldset className="min-w-0 space-y-3" disabled={builtInManager}>
        <legend className="text-sm font-semibold">{th ? 'ขอบเขตข้อมูลของเขตนี้' : 'Data scope for this domain'}</legend>
        <div className="flex flex-wrap items-center justify-between gap-3">
-        <ChoiceSelect
-         className="w-full sm:w-auto min-w-[200px]"
-         aria-label={th ? 'ขอบเขตไซต์' : 'Site scope'}
-         value={builtInManager ? 'all' : scope.mode}
-         disabled={builtInManager}
-         onChange={(e) => setScope({ ...scope, mode: e.target.value as Scope['mode'] })}
-        >
-         <option value="all">{th ? 'ทุกไซต์' : 'All sites'}</option>
-         <option value="selected">{th ? 'ไซต์ที่เลือก' : 'Selected sites'}</option>
-        </ChoiceSelect>
+        {builtInManager ? (
+         <p className="text-sm font-medium py-2">{th ? 'ทุกไซต์' : 'All sites'}</p>
+        ) : (
+         <ChoiceSelect
+          className="w-full sm:w-auto min-w-[200px]"
+          aria-label={th ? 'ขอบเขตไซต์' : 'Site scope'}
+          value={scope.mode}
+          onChange={(e) => setScope({ ...scope, mode: e.target.value as Scope['mode'] })}
+         >
+          <option value="all">{th ? 'ทุกไซต์' : 'All sites'}</option>
+          <option value="selected">{th ? 'ไซต์ที่เลือก' : 'Selected sites'}</option>
+         </ChoiceSelect>
+        )}
         {!builtInManager && scope.mode === 'selected' && (
          <SearchInput
           className="w-full sm:w-72"
