@@ -133,6 +133,10 @@ try {
   for(const resource of ['billing','audit'])await service.list(resource,{id:fixture.users[0].id,role:'owner'});
   const errors=publishErrors+pages.filter((p:any)=>p.error).length+reports.filter(r=>r.status==='rejected').length;
   console.log(`[capacity] phase=validation samples=${pages.length} maxReadyMs=${summary(pages.map((p:any)=>p.ms)).max} errors=${errors}`);
+  if(errors>0){
+    for(const p of pages.filter((p:any)=>p.error))console.error(`[capacity] Page error (${p.phase} ${p.path}):`,p.error);
+    for(const r of reports.filter(r=>r.status==='rejected'))console.error(`[capacity] Report error:`,r.reason);
+  }
   const evidence={profile,historyRows:fixture.historyRows,users:tokens.length,steadySent,steadySeconds,burstSent:profile.burst,burstSeconds,replaySent,replaySeconds,exportsReady:reports.filter(r=>r.status==='fulfilled').length,exportPeakOverlap:exportActivity.some(sample=>sample.at>=burstStart&&sample.at<=replayEnd&&sample.running===2),ackedButMissing,unexpectedDuplicateRows,unacked:sent.size-acked.size,errors,pageSamples:pages.map((p:any)=>p.ms),coldAndWarm:false,queryPlans:plans.length===2,hardwareProof:true};
   artifact.actualRatesPerMinute={steady:steadySent/steadySeconds*60,replay:replaySent/replaySeconds*60};
   Object.assign(artifact,evaluateCapacity(evidence),{scenario:evidence,...summary(evidence.pageSamples),pages,reports,acked:acked.size,persisted,duplicates:unexpectedDuplicateRows,ackedButMissing,errors,ackLatency:summary(ackLatency),peakMemory:observations,plans,durationMs:performance.now()-started,database:(await db.query('SELECT pg_database_size(current_database()) bytes')).rows[0],cacheLimitation:'Browser fresh/warm contexts measured; database/OS cold cache is NOT established. Target gate stays failed.'});

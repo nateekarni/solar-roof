@@ -213,11 +213,19 @@ jobs:
           RECOVERY_IMAGE: solar-postgres-backup:ci
           PLATFORM_CI_STORAGE_PORT: '19001'
         run: node scripts/ci/phase-timing.mjs recovery bash scripts/ci/recovery-drill.sh --profile fixture
+      - name: Prepare version-matched browser server
+        id: browser
+        timeout-minutes: 5
+        run: node scripts/ci/phase-timing.mjs browser-preparation bash scripts/ci/browser-server.sh start
       - name: Exercise reduced mixed workload in an isolated stack
+        if: ${{ !cancelled() && steps.browser.outcome == 'success' }}
         timeout-minutes: 10
         env:
           CAPACITY_PREBUILT: 'true'
         run: node scripts/ci/phase-timing.mjs capacity bash scripts/ci/platform-load.sh --profile smoke --history-days 90
+      - name: Capture browser server logs and remove owned container
+        if: always()
+        run: bash scripts/ci/browser-server.sh cleanup
       - name: Upload drill evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -227,6 +235,7 @@ jobs:
             test/artifacts/recovery-result.json
             test/artifacts/platform-capacity.json
             test/artifacts/platform-capacity-*.json
+            test/artifacts/browser-server.log
           retention-days: 7
 
   deploy-staging:

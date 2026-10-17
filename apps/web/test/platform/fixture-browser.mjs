@@ -12,6 +12,6 @@ export async function launchFixtureBrowser() {
   const ids=execFileSync('docker',['ps','-q','--filter',`label=com.docker.compose.project=${project}`],{encoding:'utf8'}).trim().split(/\s+/).filter(Boolean);
   assert.ok(ids.length,'The fixture stack must be running');
   const containers=JSON.parse(execFileSync('docker',['inspect',...ids],{encoding:'utf8'}));
-  assert.ok(containers.some(container=>Object.values(container.NetworkSettings.Ports).flatMap(value=>value??[]).some(binding=>binding.HostIp==='127.0.0.1'&&binding.HostPort==='13000')),'Port 13000 must belong to the fixture project');
+  assert.ok(containers.some(container=>Object.values(container?.NetworkSettings?.Ports ?? {}).flatMap(value=>value??[]).some(binding=>binding?.HostIp==='127.0.0.1'&&binding?.HostPort==='13000')),'Port 13000 must belong to the fixture project');
   return openFixtureBrowser(chromium, process.env);
 }

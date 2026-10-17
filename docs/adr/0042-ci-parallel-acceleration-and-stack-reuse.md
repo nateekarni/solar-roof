@@ -32,8 +32,8 @@ Automated CI on GitHub Actions (`.github/workflows/ci-staging.yml`) took **32 to
 
 3. **Multi-Job Parallel Workflow Architecture (Option A)**:
    - **`verify-fast` (Unit, Lint, Build - ~2 min)**: Runs in parallel without Docker to provide immediate feedback to developers on PRs.
-   - **`verify-platform` (Smokes, Browser & Platform Suites - ~6 min)**: Builds images in parallel with Buildx GHA cache, runs smoke tests, integration, and fast stack-reusing platform regression tests.
-   - **`drills-capacity` (Disaster Recovery 190s & 90-day Load Test - ~7 min)**: Runs concurrently with `verify-platform` on `main` and `workflow_dispatch`, avoiding blocking normal PR workflows.
+   - **`verify-platform` (Smokes, Browser & Platform Suites - ~6 min)**: Builds images in parallel with Buildx GHA cache, runs smoke tests, integration, and fast stack-reusing platform regression tests. Manages its own `browser-server.sh` container lifecycle for browser verification suites.
+   - **`drills-capacity` (Disaster Recovery 190s & 90-day Load Test - ~7 min)**: Runs concurrently with `verify-platform` on `main` and `workflow_dispatch`, avoiding blocking normal PR workflows. Because `platform-load.sh` (`mixed-load.ts`) concurrently exercises browser latency (`measurePages`) during steady and burst phases, `drills-capacity` manages an independent `browser-server.sh` container instance started immediately prior to the capacity drill and cleaned up on exit.
    - **`deploy-staging`**: Gatekeeper requiring all three jobs (`verify-fast`, `verify-platform`, `drills-capacity`) before releasing immutable image digests to staging via Coolify.
    - Add `paths-ignore: ['docs/**', '**.md']` on pull requests to skip CI when only documentation is updated.
 
@@ -43,3 +43,4 @@ Automated CI on GitHub Actions (`.github/workflows/ci-staging.yml`) took **32 to
 - Documentation-only PRs run in 0 seconds.
 - Staging deployment safety remains 100% intact: every immutable release digest deployed to Coolify continues to pass the complete battery of unit, platform, recovery, and capacity gates.
 - Resource usage on GitHub Actions runners is drastically reduced by caching image layers and eliminating 15 redundant container boot/shutdown loops.
+- Browser test isolation is maintained across parallel runner VMs by scoping container ownership (`solar-ci-browser-$owner`) to each job (`$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$GITHUB_JOB`).
