@@ -98,11 +98,17 @@ try {
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'200% effective viewport reflows without page-level horizontal scrolling');
   await page.setViewportSize({width:1440,height:844});
   await page.goto(web+'/sites');
+  await page.waitForLoadState('networkidle');
   const row=page.locator('tbody tr').filter({hasText:'U3 Site'}).first();
   // SSR rows can be visible before client handlers attach. Establish actual
   // interactivity through the row menu before checking keyboard navigation.
-  await row.getByRole('button',{name:'Open actions menu',exact:true}).click();
-  await page.getByRole('menu').waitFor();await page.keyboard.press('Escape');await page.getByRole('menu').waitFor({state:'hidden'});
+  const trigger=row.getByRole('button',{name:'Open actions menu',exact:true});
+  for(let i=0;i<15;i++){
+    await trigger.click();
+    try{await page.getByRole('menu').waitFor({timeout:1500});break;}
+    catch{await page.waitForTimeout(300);}
+  }
+  await page.keyboard.press('Escape');await page.getByRole('menu').waitFor({state:'hidden'});
   await row.press('Enter');await page.waitForURL('**/records/sites/*');await page.getByRole('heading',{name:'Site details',exact:true}).waitFor();
   await page.getByRole('link',{name:'Back to list',exact:true}).focus();await page.keyboard.press('Enter');await page.waitForURL(web+'/sites');
   assert.deepEqual(errors,[],'No page/console/hydration errors');

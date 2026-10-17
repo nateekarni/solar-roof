@@ -32,7 +32,7 @@ export class PlatformAccessGuard implements CanActivate {
     // The legacy financial collection has no scoped query yet; use the scoped operations read model.
     if(scope !== null && req.method === "GET" && path === "/v1/contracts") throw new ForbiddenException("Use the scoped contract collection");
     if (path === "/v1/users/invite" && req.method === "POST") {
-      const invitedRole=req.body?.role ?? "customer_user";
+      const invitedRole=req.body?.role ?? (req.body?.customerId ? "customer_user" : "operator");
       if(!["owner","admin","operator","accountant","customer_user"].includes(invitedRole)) throw new ForbiddenException("Invalid invited role");
       if(!canGrantInvitation({...req.user,status:"active"},invitedRole,req.body.customerId ?? null)) throw new ForbiddenException("Cannot grant invitation role or customer scope");
       if(scope!==null) {

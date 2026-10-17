@@ -211,9 +211,9 @@ export class InvitationService {
         if(!['http:','https:'].includes(web.protocol)||web.username||web.password||web.search||web.hash)throw new Error('Invalid web origin');
         const url=new URL('/activate',web);url.searchParams.set('token',token);
         
-        const company=(await this.db.query('SELECT company_name, logo_data, logo_url FROM company_profile LIMIT 1')).rows[0];
+        const company=(await this.db.query('SELECT company_name, logo_url FROM company_profile LIMIT 1')).rows[0];
         const companyName=company?.company_name||'Solar Roof';
-        const logoSrc=company?.logo_url||company?.logo_data||'';
+        const logoSrc=company?.logo_url||'';
         const recipient=(await this.db.query('SELECT u.display_name, u.role FROM user_invitations i JOIN users u ON u.id = i.user_id WHERE i.id = $1',[id])).rows[0];
         const displayName=recipient?.display_name||'';
         const roleLabel=recipient?.role==='customer_user'?'ผู้ใช้งานลูกค้า (Customer User)':recipient?.role==='operator'?'เจ้าหน้าที่ปฏิบัติการ (Operator)':recipient?.role==='accountant'?'เจ้าหน้าที่บัญชี (Accountant)':recipient?.role==='admin'?'ผู้ดูแลระบบ (Admin)':'ผู้ดูแล (Owner)';
@@ -289,13 +289,13 @@ export class InvitationService {
       throw invalid();
     }
 
-    const company=(await this.db.query('SELECT company_name, logo_data, logo_url FROM company_profile LIMIT 1')).rows[0];
+    const company=(await this.db.query('SELECT company_name, logo_url FROM company_profile LIMIT 1')).rows[0];
     return {
       email:row.email,
       displayName:row.displayName||'',
       role:row.role,
       companyName:company?.company_name||'Solar Roof',
-      logoUrl:company?.logo_url||company?.logo_data||null,
+      logoUrl:company?.logo_url||null,
     };
   }
 

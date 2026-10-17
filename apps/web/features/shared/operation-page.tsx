@@ -115,8 +115,9 @@ export async function OperationPage({
           resource={resource}
           title={displayTitle}
           initial={{...data,idKey:data.idKey||'id'}}
-          summary={summary}
+          summary={user.role === 'customer_user' && ['billing', 'receipts'].includes(resource) ? [] : summary}
           idKey={data.idKey}
+          userRole={user.role}
         />
       </div>
     </div>

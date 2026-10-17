@@ -49,11 +49,22 @@ test('English billing tabs have human names and default missing counts to zero',
  assert.match(html,/Billing statement status/);
  assert.match(html,/Awaiting issuance approval/);
  assert.match(html,/Awaiting evidence review/);
- assert.match(html,/Unsuccessful/);
+ assert.match(html,/Cancelled/);
  assert.equal((html.match(/>0<\/span>/g)??[]).length,7);
 });
 
-test('receipts retain their independent collection filter without billing tabs',()=>{
+test('customer views limit billing tabs to 5 active lifecycle views',()=>{
+ const html=renderToStaticMarkup(<BillingStatusTabs value="awaiting_payment" views={['all','awaiting_payment','pending_verification','overdue','paid']} locale="th" onValueChange={()=>{}}/>);
+ assert.equal((html.match(/role="tab"/g)??[]).length,5);
+ assert.doesNotMatch(html,/รออนุมัติออกเอกสาร/);
+ assert.doesNotMatch(html,/ถูกยกเลิก/);
+ assert.match(html,/รอชำระเงิน/);
+ assert.match(html,/รอตรวจหลักฐาน/);
+ assert.match(html,/เกินกำหนดชำระ/);
+ assert.match(html,/ชำระแล้ว/);
+});
+
+test('receipts render dedicated receipt tabs for all and paid',()=>{
  const html=renderToStaticMarkup(<AppRouterContext.Provider value={{bfcacheId:'test',back(){},forward(){},refresh(){},push(){},replace(){},prefetch(){}}}>
   <SearchParamsContext.Provider value={new URLSearchParams('collectionStatus=paid')}><PathnameContext.Provider value="/receipts">
    <SessionUserProvider user={{id:'session-user',email:'user@example.test',displayName:'Officer',role:'owner'}}>
@@ -61,7 +72,9 @@ test('receipts retain their independent collection filter without billing tabs',
    </SessionUserProvider>
   </PathnameContext.Provider></SearchParamsContext.Provider>
  </AppRouterContext.Provider>);
- assert.match(html,/สถานะการชำระเงิน/);assert.doesNotMatch(html,/role="tablist"/);
+ assert.match(html,/role="tablist"/);
+ assert.match(html,/ชำระแล้ว/);
+ assert.match(html,/ทั้งหมด/);
 });
 
 test('display-safe tab values produce the public billing status view',()=>{

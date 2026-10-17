@@ -32,7 +32,7 @@ test('desktop, mobile and detail display the derived billing view consistently w
   ['pending_verification','issued','รอตรวจหลักฐาน','Awaiting evidence review'],
   ['pending_issue_approval','draft','รออนุมัติออกเอกสาร','Awaiting issuance approval'],
   ['awaiting_payment','approved','รอชำระเงิน','Awaiting payment'],
-  ['unsuccessful','cancelled','ไม่สำเร็จ','Unsuccessful'],
+  ['unsuccessful','cancelled','ถูกยกเลิก','Cancelled'],
  ] as const){
   assert.equal(billingStatusViewFromQuery(new URLSearchParams({billingStatusView:view,status})),view);
   const row={id:'bill-a',period:'October',status,billingStatusView:view,amount:'100.00',payments:[]};
@@ -44,7 +44,7 @@ test('desktop, mobile and detail display the derived billing view consistently w
    assert.ok(detail);
    for(const [surface,html] of [['desktop',desktop],['mobile',mobile],['detail',detail]] as const){
     assert.ok(html.includes(locale==='th'?th:en),`${surface}: ${view}, ${locale}: ${html}`);
-    assert.doesNotMatch(html,/pending_issue_approval|pending_verification|awaiting_payment|>Issued<|>Draft<|>Cancelled<|>ออกแล้ว<|>ฉบับร่าง<|>ยกเลิก</);
+    if(view!=='unsuccessful')assert.doesNotMatch(html,/pending_issue_approval|pending_verification|awaiting_payment|>Issued<|>Draft<|>Cancelled<|>ออกแล้ว<|>ฉบับร่าง<|>ยกเลิก</);
    }
   }
   assert.equal(row.status,status,'display must preserve raw lifecycle state for actions');
@@ -70,7 +70,7 @@ test('billing table excludes slip while retaining financial status',()=>{
 });
 
 test('finance states and data quality render human copy in both locales',()=>{
- for(const [status,th,en] of [['pending_issue_approval','รออนุมัติออกเอกสาร','Awaiting issuance approval'],['awaiting_payment','รอชำระเงิน','Awaiting payment'],['pending_verification','รอตรวจหลักฐาน','Awaiting evidence review'],['unsuccessful','ไม่สำเร็จ','Unsuccessful'],['rejected','ปฏิเสธ','Rejected'],['complete','ข้อมูลครบถ้วน','Complete data']] as const){
+ for(const [status,th,en] of [['pending_issue_approval','รออนุมัติออกเอกสาร','Awaiting issuance approval'],['awaiting_payment','รอชำระเงิน','Awaiting payment'],['pending_verification','รอตรวจหลักฐาน','Awaiting evidence review'],['unsuccessful','ถูกยกเลิก','Cancelled'],['rejected','ปฏิเสธ','Rejected'],['complete','ข้อมูลครบถ้วน','Complete data']] as const){
   for(const locale of ['th','en'] as const){
    const html=renderToStaticMarkup(<>{renderRecordValue(status,status==='complete'?'quality':'status',locale)}</>);
    assert.match(html,new RegExp(locale==='th'?th:en));

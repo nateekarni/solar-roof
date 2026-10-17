@@ -218,6 +218,8 @@ export function OperationTable({
   },[]);
   const billingSelection=React.useMemo(()=>({selected,toggle:toggleSelection,togglePage:togglePageSelection,locale}),[selected,toggleSelection,togglePageSelection,locale]);
   const user = useSessionUser();
+  const isCustomer = user?.role === 'customer_user';
+  const hideSummary = (isCustomer && ['billing', 'receipts'].includes(resource)) || ['alerts', 'audit'].includes(resource);
   const financial = useFinancialCapabilities();
   const [approvalRow,setApprovalRow]=React.useState<OperationRow|null>(null);
   const [approvalOpen,setApprovalOpen]=React.useState(false);
@@ -694,7 +696,7 @@ const COLUMN_SIZES: Record<string, { size: number; minSize?: number; maxSize?: n
       {navigationError&&<p role="alert">{locale==='th'?'เปิดรายละเอียดไม่สำเร็จ กรุณาลองเลือกรายการอีกครั้ง':'Unable to open details. Please select the record again.'}</p>}
       {permissionError && <p role="alert">สิทธิ์ของคุณเปลี่ยนแล้ว ระบบกำลังตรวจสอบสิทธิ์ล่าสุด กรุณาเลือกการดำเนินการที่ยังอนุญาต</p>}
       {/* Top Summary Stat Cards */}
-      {!['alerts','audit'].includes(resource) && summary && summary.length > 0 && (
+      {!hideSummary && summary && summary.length > 0 && (
         <div className={`grid grid-cols-2 gap-3 ${summary.length === 1 ? 'lg:grid-cols-1' : summary.length === 2 ? 'lg:grid-cols-2' : summary.length === 3 ? 'lg:grid-cols-3' : 'lg:grid-cols-4'}`}>
           {summary.map((stat, i) => (
             <Card className="stat-card" key={i}>

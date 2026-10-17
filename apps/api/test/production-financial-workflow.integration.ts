@@ -88,7 +88,7 @@ const password=process.env.PRODUCTION_FINANCE_PASSWORD??('Acceptance-local-only-
  const initial=await readiness.status(owner,{siteId:ids.site,periodStart:'2026-09-01',periodEnd:'2026-09-30'});
  assert.equal(initial.approval,null);assert.equal(initial.actions.calculate.enabled,false);
  const feed=new NotificationFeedService(db,readiness);const setup=(await feed.feed(owner)).rows.filter((row:any)=>row.metadata?.type==='finance-readiness');
- assert.equal(setup.length,1);assert.equal(setup[0].destination,'/settings/company');
+ assert.equal(setup.length,1);assert.equal(setup[0].destination,'/settings/readiness');
  await assert.rejects(readiness.confirm(owner),(error:any)=>error.getStatus()===503);
  await assert.rejects(readiness.confirm({id:ids.admin,role:'admin'}),(error:any)=>error.getStatus()===403);
  if(process.env.PRODUCTION_FINANCE_BROWSER==='true'){

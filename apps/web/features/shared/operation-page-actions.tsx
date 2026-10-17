@@ -107,34 +107,36 @@ export function OperationActions({
     setDialogOpen(true);
   };
 
+  const isCustomer = user.role === 'customer_user';
+
   return (
     <div className="flex flex-col items-end gap-2">
       <div className="flex items-center gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={exporting}
-          onClick={() => {setExportFrom(searchParams.get("from") ?? "");setExportTo(searchParams.get("to") ?? "");setExportOpen(true);}}
-          className="h-10 gap-2 px-4 text-sm"
-        >
-          <Download className="size-3.5" />
+        {!isCustomer && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={exporting}
+            onClick={() => {setExportFrom(searchParams.get("from") ?? "");setExportTo(searchParams.get("to") ?? "");setExportOpen(true);}}
+            className="h-10 gap-2 px-4 text-sm"
+          >
+            <Download className="size-3.5" />
             <span>{exporting ? t("common.loading") : locale === 'th' ? 'นำออกข้อมูล' : 'Export data'}</span>
-        </Button>
-        {resource === 'billing' && <BillingHeaderBulkAction />}
+          </Button>
+        )}
+        {resource === 'billing' && !isCustomer && <BillingHeaderBulkAction />}
 
         {canCreate && action && action.trim() !== "" && (
           <AddButton
             type="button"
-
             onClick={handleActionClick}
             className=" font-semibold shadow-xs cursor-pointer"
           >
-
             <span>{action}</span>
           </AddButton>
         )}
-</div>
+      </div>
       {financialAction && financial.unavailable[financialAction] && (
         <FinancialAvailabilityNotice locale={locale} role={user.role} resource={resource} />
       )}

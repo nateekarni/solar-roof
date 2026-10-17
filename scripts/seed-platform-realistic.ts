@@ -317,6 +317,145 @@ async function seed() {
       }
     }
 
+    // 7. Realistic Billing Documents & Payments for BKK-LKB-001 (Lat Krabang)
+    console.log('Seeding realistic billing cycles and documents for BKK-LKB-001 (Lat Krabang)...');
+    const lkbSite = sites.find(s => s.code === 'BKK-LKB-001');
+    if (lkbSite) {
+      const existing = await client.query('SELECT count(*) as cnt FROM billing_cycles WHERE site_id = $1', [lkbSite.siteId]);
+      if (parseInt(existing.rows[0].cnt, 10) > 0) {
+        console.log('Billing cycles already exist for BKK-LKB-001, skipping.');
+      } else {
+        const rate = lkbSite.rate;
+
+      // Cycle 1: July 2026 -> Paid (มีใบเสร็จรับเงิน)
+      const cycle1Id = randomUUID();
+      const inv1Id = randomUUID();
+      const rct1Id = randomUUID();
+      const pay1Id = randomUUID();
+      const consumed1 = 12500;
+      const subtotal1 = consumed1 * rate;
+      const tax1 = Math.round(subtotal1 * 0.07 * 100) / 100;
+      const amount1 = subtotal1 + tax1;
+
+      await client.query(`
+        INSERT INTO billing_cycles (
+          id, site_id, period_start, period_end, cutoff_time, status, quality,
+          opening_energy, closing_energy, consumed_kwh, rate, subtotal, simulated_tax, amount,
+          due_date, billing_kind, financial_scope
+        ) VALUES ($1, $2, '2026-07-01', '2026-07-31', '2026-08-01 00:00:00+07', 'approved', 'complete',
+          100000, 112500, $3, $4, $5, $6, $7, '2026-08-15', 'energy', 'PRODUCTION')
+      `, [cycle1Id, lkbSite.siteId, consumed1, rate, subtotal1, tax1, amount1]);
+
+      await client.query(`
+        INSERT INTO documents (
+          id, site_id, billing_cycle_id, document_type, document_number, status,
+          issue_date, amount, revision, is_current, template_version, file_key, snapshot
+        ) VALUES ($1, $2, $3, 'invoice', 'INV-202607-001', 'issued',
+          '2026-08-01', $4, 1, true, 'v1', 'local:INV-202607-001.pdf', '{"policy":{"scope":"PRODUCTION"}}')
+      `, [inv1Id, lkbSite.siteId, cycle1Id, amount1]);
+
+      await client.query(`
+        INSERT INTO payments (
+          id, billing_cycle_id, status, paid_at, amount, verified_amount,
+          payment_method, slip_url, submitted_at, payer_name
+        ) VALUES ($1, $2, 'paid', '2026-08-10 14:30:00+07', $3, $3,
+          'bank_transfer', '/uploads/slips/slip-jul2026.png', '2026-08-10 14:32:00+07', lkbSite.customer)
+      `, [pay1Id, cycle1Id, amount1]);
+
+      await client.query(`
+        INSERT INTO documents (
+          id, site_id, billing_cycle_id, document_type, document_number, status,
+          issue_date, amount, revision, is_current, template_version, file_key, snapshot
+        ) VALUES ($1, $2, $3, 'receipt', 'RCT-202608-001', 'issued',
+          '2026-08-11', $4, 1, true, 'v1', 'local:RCT-202608-001.pdf', '{"policy":{"scope":"PRODUCTION"}}')
+      `, [rct1Id, lkbSite.siteId, cycle1Id, amount1]);
+
+      // Cycle 2: August 2026 -> Overdue (เกินกำหนดชำระ)
+      const cycle2Id = randomUUID();
+      const inv2Id = randomUUID();
+      const consumed2 = 13200;
+      const subtotal2 = consumed2 * rate;
+      const tax2 = Math.round(subtotal2 * 0.07 * 100) / 100;
+      const amount2 = subtotal2 + tax2;
+
+      await client.query(`
+        INSERT INTO billing_cycles (
+          id, site_id, period_start, period_end, cutoff_time, status, quality,
+          opening_energy, closing_energy, consumed_kwh, rate, subtotal, simulated_tax, amount,
+          due_date, billing_kind, financial_scope
+        ) VALUES ($1, $2, '2026-08-01', '2026-08-31', '2026-09-01 00:00:00+07', 'approved', 'complete',
+          112500, 125700, $3, $4, $5, $6, $7, '2026-09-15', 'energy', 'PRODUCTION')
+      `, [cycle2Id, lkbSite.siteId, consumed2, rate, subtotal2, tax2, amount2]);
+
+      await client.query(`
+        INSERT INTO documents (
+          id, site_id, billing_cycle_id, document_type, document_number, status,
+          issue_date, amount, revision, is_current, template_version, file_key, snapshot
+        ) VALUES ($1, $2, $3, 'invoice', 'INV-202608-001', 'issued',
+          '2026-09-01', $4, 1, true, 'v1', 'local:INV-202608-001.pdf', '{"policy":{"scope":"PRODUCTION"}}')
+      `, [inv2Id, lkbSite.siteId, cycle2Id, amount2]);
+
+      // Cycle 3: September 2026 -> Pending Verification (รอตรวจหลักฐาน)
+      const cycle3Id = randomUUID();
+      const inv3Id = randomUUID();
+      const pay3Id = randomUUID();
+      const consumed3 = 14100;
+      const subtotal3 = consumed3 * rate;
+      const tax3 = Math.round(subtotal3 * 0.07 * 100) / 100;
+      const amount3 = subtotal3 + tax3;
+
+      await client.query(`
+        INSERT INTO billing_cycles (
+          id, site_id, period_start, period_end, cutoff_time, status, quality,
+          opening_energy, closing_energy, consumed_kwh, rate, subtotal, simulated_tax, amount,
+          due_date, billing_kind, financial_scope
+        ) VALUES ($1, $2, '2026-09-01', '2026-09-30', '2026-10-01 00:00:00+07', 'approved', 'complete',
+          125700, 139800, $3, $4, $5, $6, $7, '2026-10-15', 'energy', 'PRODUCTION')
+      `, [cycle3Id, lkbSite.siteId, consumed3, rate, subtotal3, tax3, amount3]);
+
+      await client.query(`
+        INSERT INTO documents (
+          id, site_id, billing_cycle_id, document_type, document_number, status,
+          issue_date, amount, revision, is_current, template_version, file_key, snapshot
+        ) VALUES ($1, $2, $3, 'invoice', 'INV-202609-001', 'issued',
+          '2026-10-01', $4, 1, true, 'v1', 'local:INV-202609-001.pdf', '{"policy":{"scope":"PRODUCTION"}}')
+      `, [inv3Id, lkbSite.siteId, cycle3Id, amount3]);
+
+      await client.query(`
+        INSERT INTO payments (
+          id, billing_cycle_id, status, amount,
+          payment_method, slip_url, submitted_at, payer_name
+        ) VALUES ($1, $2, 'pending_verification', $3,
+          'bank_transfer', '/uploads/slips/slip-sep2026.png', now() - interval '2 days', lkbSite.customer)
+      `, [pay3Id, cycle3Id, amount3]);
+
+      // Cycle 4: October 2026 -> Awaiting Payment (รอชำระเงิน)
+      const cycle4Id = randomUUID();
+      const inv4Id = randomUUID();
+      const consumed4 = 11800;
+      const subtotal4 = consumed4 * rate;
+      const tax4 = Math.round(subtotal4 * 0.07 * 100) / 100;
+      const amount4 = subtotal4 + tax4;
+
+      await client.query(`
+        INSERT INTO billing_cycles (
+          id, site_id, period_start, period_end, cutoff_time, status, quality,
+          opening_energy, closing_energy, consumed_kwh, rate, subtotal, simulated_tax, amount,
+          due_date, billing_kind, financial_scope
+        ) VALUES ($1, $2, '2026-10-01', '2026-10-31', '2026-11-01 00:00:00+07', 'approved', 'complete',
+          139800, 151600, $3, $4, $5, $6, $7, (now() + interval '15 days')::date, 'energy', 'PRODUCTION')
+      `, [cycle4Id, lkbSite.siteId, consumed4, rate, subtotal4, tax4, amount4]);
+
+      await client.query(`
+        INSERT INTO documents (
+          id, site_id, billing_cycle_id, document_type, document_number, status,
+          issue_date, amount, revision, is_current, template_version, file_key, snapshot
+        ) VALUES ($1, $2, $3, 'invoice', 'INV-202610-001', 'issued',
+          (now() - interval '1 day')::date, $4, 1, true, 'v1', 'local:INV-202610-001.pdf', '{"policy":{"scope":"PRODUCTION"}}')
+      `, [inv4Id, lkbSite.siteId, cycle4Id, amount4]);
+      }
+    }
+
     await client.query('COMMIT');
     console.log('✅ Seeding completed successfully!');
   } catch (err) {

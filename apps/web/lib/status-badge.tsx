@@ -12,7 +12,7 @@ export const STATUS_MAP: Record<
 > = {
   pending_issue_approval: {th:'รออนุมัติออกเอกสาร',en:'Awaiting issuance approval',variant:'secondary',className:'bg-info/15 text-info border-info/30'},
   awaiting_payment: {th:'รอชำระเงิน',en:'Awaiting payment',variant:'secondary',className:'bg-warning/15 text-warning-emphasis border-warning/30'},
-  unsuccessful: {th:'ไม่สำเร็จ',en:'Unsuccessful',variant:'destructive'},
+  unsuccessful: {th:'ถูกยกเลิก',en:'Cancelled',variant:'destructive'},
   complete: {th:'ข้อมูลครบถ้วน',en:'Complete data',variant:'secondary',className:'bg-success/15 text-success border-success/30'},
   partial: {th:'ข้อมูลบางส่วน',en:'Partial data',variant:'secondary',className:'bg-warning/15 text-warning-emphasis border-warning/30'},
   estimated: {th:'ข้อมูลประมาณการ',en:'Estimated data',variant:'secondary',className:'bg-info/15 text-info border-info/30'},
