@@ -204,7 +204,7 @@ export function ActivateAccount({ initialToken, initialReady = false }: { initia
                 ยินดีต้อนรับสู่ระบบ / Welcome!
               </h3>
               <p className="mt-1 text-sm text-emerald-700 dark:text-emerald-400" role="status">
-                บัญชีของคุณได้รับการตั้งค่าและเปิดใช้งานเรียบร้อยแล้ว
+                บัญชีของคุณได้รับการตั้งค่าและเปิดใช้งานเรียบร้อยแล้ว / Your account is ready.
               </p>
             </div>
 
