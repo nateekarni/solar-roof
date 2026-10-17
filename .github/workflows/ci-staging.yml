@@ -67,6 +67,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter './packages/**' --recursive build
+      - run: pnpm --filter @solar/web build
       - name: Build immutable candidate images
         id: build
         timeout-minutes: 10
@@ -115,11 +116,11 @@ jobs:
       - name: Verify MQTT credentials and ACLs
         run: bash infra/docker/mosquitto/smoke.sh
       - name: Real integration and browser E2E in disposable stack
-        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.browser.outcome == 'success' }}
+        if: ${{ !cancelled() && !failure() && steps.build.outcome == 'success' && steps.browser.outcome == 'success' }}
         timeout-minutes: 8
         run: node scripts/ci/phase-timing.mjs integration bash scripts/ci/integration.sh
       - name: Isolated platform regression and latency baseline
-        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.browser.outcome == 'success' }}
+        if: ${{ !cancelled() && !failure() && steps.build.outcome == 'success' && steps.browser.outcome == 'success' }}
         timeout-minutes: 15
         run: node scripts/ci/phase-timing.mjs platform-regression bash scripts/ci/platform-check.sh all-fast --prebuilt
       - name: Capture browser server logs and remove owned container
@@ -139,6 +140,7 @@ jobs:
             test/artifacts/browser-server.log
             test/artifacts/production-finance.json
             test/artifacts/production-*.pdf
+            test/artifacts/production-*.log
             test/artifacts/production-finance-browser*.json
             test/artifacts/production-finance-browser.png
             apps/web/test/artifacts/*.png
