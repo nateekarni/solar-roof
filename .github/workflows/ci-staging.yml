@@ -1,6 +1,9 @@
 name: CI and staging
 on:
   pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
   push:
     branches: [main]
   workflow_dispatch:
@@ -11,9 +14,33 @@ concurrency:
   group: solar-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 jobs:
-  verify:
+  verify-fast:
+    name: Fast Verification (Unit, Lint, Build)
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.24.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter './packages/**' --recursive build
+      - run: pnpm build && pnpm lint && pnpm test
+      - run: node --test scripts/ci/*.test.mjs
+      - run: python3 scripts/ci/recovery-sampler.test.py
+      - run: pnpm --filter @solar/api exec tsx --test test/performance/capacity-policy.test.ts test/performance/page-budget.test.ts
+
+  verify-platform:
+    name: Platform Regression, Smokes & Acceptance
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
     permissions:
       contents: read
       packages: write
@@ -29,6 +56,8 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
       - uses: pnpm/action-setup@v4
         with:
           version: 11.24.0
@@ -38,21 +67,28 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter './packages/**' --recursive build
-      # Next type generation must precede tests in a clean checkout. Acceptance
-      # also starts the built web app against its isolated production fixture.
-      - run: pnpm build && pnpm lint && pnpm test
-      - run: node --test scripts/ci/*.test.mjs
-      - run: python3 scripts/ci/recovery-sampler.test.py
-      - run: pnpm --filter @solar/api exec tsx --test test/performance/capacity-policy.test.ts test/performance/page-budget.test.ts
       - name: Build immutable candidate images
         id: build
         timeout-minutes: 10
         run: |
           node scripts/ci/phase-timing.mjs application-image-build bash -euo pipefail <<'BUILD'
           for app in api worker web mqtt certbot; do
-            docker build --label org.opencontainers.image.revision="$GITHUB_SHA" -f "infra/docker/Dockerfile.$app" -t "solar-$app:ci" .
+            docker buildx build \
+              --cache-from=type=gha,scope=$app \
+              --cache-to=type=gha,mode=max,scope=$app \
+              --label org.opencontainers.image.revision="$GITHUB_SHA" \
+              -f "infra/docker/Dockerfile.$app" \
+              -t "solar-$app:ci" \
+              --load . &
           done
-          docker build --label org.opencontainers.image.revision="$GITHUB_SHA" -f infra/docker/postgres-backup/Dockerfile -t solar-postgres-backup:ci .
+          docker buildx build \
+            --cache-from=type=gha,scope=postgres-backup \
+            --cache-to=type=gha,mode=max,scope=postgres-backup \
+            --label org.opencontainers.image.revision="$GITHUB_SHA" \
+            -f infra/docker/postgres-backup/Dockerfile \
+            -t solar-postgres-backup:ci \
+            --load . &
+          wait
           BUILD
       - name: Validate artifact backup scheduler in the Linux runtime
         run: docker run --rm --entrypoint bash solar-api:ci -n /app/scripts/ci/recovery-artifacts-scheduler.sh
@@ -84,21 +120,8 @@ jobs:
         run: node scripts/ci/phase-timing.mjs integration bash scripts/ci/integration.sh
       - name: Isolated platform regression and latency baseline
         if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.browser.outcome == 'success' }}
-        timeout-minutes: 20
+        timeout-minutes: 15
         run: node scripts/ci/phase-timing.mjs platform-regression bash scripts/ci/platform-check.sh all-fast --prebuilt
-      - name: Verify isolated recovery fixture
-        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-        timeout-minutes: 12
-        env:
-          RECOVERY_IMAGE: solar-postgres-backup:ci
-          PLATFORM_CI_STORAGE_PORT: '19001'
-        run: node scripts/ci/phase-timing.mjs recovery bash scripts/ci/recovery-drill.sh --profile fixture
-      - name: Exercise reduced mixed workload in an isolated stack
-        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.browser.outcome == 'success' }}
-        timeout-minutes: 10
-        env:
-          CAPACITY_PREBUILT: 'true'
-        run: node scripts/ci/phase-timing.mjs capacity bash scripts/ci/platform-load.sh --profile smoke --history-days 90
       - name: Capture browser server logs and remove owned container
         if: always()
         run: bash scripts/ci/browser-server.sh cleanup
@@ -113,9 +136,6 @@ jobs:
             test/artifacts/platform-baseline.json
             test/artifacts/managed-staging.log
             test/artifacts/solar-web-first-*.log
-            test/artifacts/recovery-result.json
-            test/artifacts/platform-capacity.json
-            test/artifacts/platform-capacity-*.json
             test/artifacts/browser-server.log
             test/artifacts/production-finance.json
             test/artifacts/production-*.pdf
@@ -145,8 +165,73 @@ jobs:
           done
           docker logout ghcr.io
           PUBLISH
+
+  drills-capacity:
+    name: Disaster Recovery & Capacity Drill
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    if: github.event_name != 'pull_request' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.24.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter './packages/**' --recursive build
+      - name: Build candidate images with cache
+        timeout-minutes: 10
+        run: |
+          node scripts/ci/phase-timing.mjs application-image-build bash -euo pipefail <<'BUILD'
+          for app in api worker web; do
+            docker buildx build \
+              --cache-from=type=gha,scope=$app \
+              --label org.opencontainers.image.revision="$GITHUB_SHA" \
+              -f "infra/docker/Dockerfile.$app" \
+              -t "solar-$app:ci" \
+              --load . &
+          done
+          docker buildx build \
+            --cache-from=type=gha,scope=postgres-backup \
+            --label org.opencontainers.image.revision="$GITHUB_SHA" \
+            -f infra/docker/postgres-backup/Dockerfile \
+            -t solar-postgres-backup:ci \
+            --load . &
+          wait
+          BUILD
+      - name: Verify isolated recovery fixture
+        timeout-minutes: 12
+        env:
+          RECOVERY_IMAGE: solar-postgres-backup:ci
+          PLATFORM_CI_STORAGE_PORT: '19001'
+        run: node scripts/ci/phase-timing.mjs recovery bash scripts/ci/recovery-drill.sh --profile fixture
+      - name: Exercise reduced mixed workload in an isolated stack
+        timeout-minutes: 10
+        env:
+          CAPACITY_PREBUILT: 'true'
+        run: node scripts/ci/phase-timing.mjs capacity bash scripts/ci/platform-load.sh --profile smoke --history-days 90
+      - name: Upload drill evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: drill-evidence
+          path: |
+            test/artifacts/recovery-result.json
+            test/artifacts/platform-capacity.json
+            test/artifacts/platform-capacity-*.json
+          retention-days: 7
+
   deploy-staging:
-    needs: verify
+    name: Deploy Tested Digests to Staging
+    needs: [verify-fast, verify-platform, drills-capacity]
     if: vars.STAGING_DEPLOY_ENABLED == 'true' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && github.repository == 'nateekarni/solar-roof'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -175,15 +260,14 @@ jobs:
           COOLIFY_URL: ${{ vars.COOLIFY_URL }}
           COOLIFY_APPLICATION_UUID: ${{ vars.COOLIFY_APPLICATION_UUID }}
           COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
-          API_IMAGE: ${{ needs.verify.outputs.api }}
-          WORKER_IMAGE: ${{ needs.verify.outputs.worker }}
-          WEB_IMAGE: ${{ needs.verify.outputs.web }}
-          MQTT_IMAGE: ${{ needs.verify.outputs.mqtt }}
-          CERTBOT_IMAGE: ${{ needs.verify.outputs.certbot }}
+          API_IMAGE: ${{ needs.verify-platform.outputs.api }}
+          WORKER_IMAGE: ${{ needs.verify-platform.outputs.worker }}
+          WEB_IMAGE: ${{ needs.verify-platform.outputs.web }}
+          MQTT_IMAGE: ${{ needs.verify-platform.outputs.mqtt }}
+          CERTBOT_IMAGE: ${{ needs.verify-platform.outputs.certbot }}
           STAGING_WEB_URL: ${{ vars.STAGING_WEB_URL }}
         run: |
           : "${STAGING_WEB_URL:?Set staging environment STAGING_WEB_URL before enabling deployments}"
           node scripts/ci/coolify-deploy.mjs
           node scripts/ci/coolify-deploy.mjs wait "${STAGING_WEB_URL%/}/login"
           node scripts/ci/coolify-deploy.mjs wait "${STAGING_WEB_URL%/}/health"
-

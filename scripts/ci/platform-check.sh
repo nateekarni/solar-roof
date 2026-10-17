@@ -18,10 +18,19 @@ if [[ "$suite" == all-fast ]]; then
   echo 'Separate implemented gate: recovery (isolated physical restore stack)'
   forwarded=()
   [[ $# -eq 1 ]] || forwarded=("$2")
+  export PLATFORM_CI_SESSION="${PLATFORM_CI_SESSION:-session-$$}"
   failed=()
   for item in "${implemented[@]}"; do
     if ! bash "$0" "$item" "${forwarded[@]}"; then failed+=("$item"); fi
   done
+  stack_lock='/tmp/solar-roof-ci-fixed-ports.lock'
+  if [[ -f "$stack_lock/session" && "$(cat "$stack_lock/session" 2>/dev/null)" == "$PLATFORM_CI_SESSION" ]]; then
+    if [[ -f "$stack_lock/project" ]]; then
+      project="$(cat "$stack_lock/project")"
+      docker compose -p "$project" down --volumes --remove-orphans || true
+    fi
+    rm -rf "$stack_lock"
+  fi
   if (( ${#failed[@]} )); then
     echo "Failed platform suites: ${failed[*]}" >&2
     exit 1
@@ -58,9 +67,12 @@ else
     docker build --label "org.opencontainers.image.revision=$revision" -f "infra/docker/Dockerfile.$app" -t "solar-$app:ci" .
   done
 fi
-stack_created=true
-"${compose[@]}" up -d --wait --wait-timeout 240
+if [[ "${PLATFORM_CI_STACK_REUSED:-false}" != true ]]; then
+  stack_created=true
+  "${compose[@]}" up -d --wait --wait-timeout 240
+fi
 for item in "${suites[@]}"; do
+  echo "=== Running platform suite: $item ==="
   if [[ "$item" == archive || "$item" == history ]]; then
     # Override only this phase; restore the base configuration before the next suite.
     export HISTORY_CI_API_ENABLED=true HISTORY_CI_WORKER_ENABLED=false
@@ -75,22 +87,40 @@ for item in "${suites[@]}"; do
   "${compose[@]}" restart api
   node scripts/ci/coolify-deploy.mjs wait "$READINESS_API_URL/ready"
   node scripts/ci/coolify-deploy.mjs wait "$READINESS_API_URL/ready/mqtt"
+  suite_passed=true
   case "$item" in
-    financial-core) bash scripts/ci/production-finance-check.sh ;;
+    financial-core) bash scripts/ci/production-finance-check.sh || suite_passed=false ;;
     ui-jobs|accessibility|history) ;;
-    *) pnpm --filter @solar/api exec tsx --tsconfig tsconfig.json --test "test/platform/$item.test.ts" ;;
+    *) pnpm --filter @solar/api exec tsx --tsconfig tsconfig.json --test "test/platform/$item.test.ts" || suite_passed=false ;;
   esac
-  case "$item" in invitation|csrf|financial-safety|operations|ui-contracts|ui-jobs|accessibility|history) pnpm --filter @solar/web exec node "test/platform/$item.mjs" ;; esac
+  case "$item" in invitation|csrf|financial-safety|operations|ui-contracts|ui-jobs|accessibility|history)
+    if [[ "$suite_passed" == true ]]; then
+      pnpm --filter @solar/web exec node "test/platform/$item.mjs" || suite_passed=false
+    fi
+    ;;
+  esac
   if [[ "$item" == history ]]; then
     export HISTORY_CI_API_ENABLED=false
     "${history_compose[@]}" up -d --no-deps --force-recreate --wait --wait-timeout 120 api
-    D1_HISTORY_EXPECT_AVAILABLE=false pnpm --filter @solar/web exec node test/platform/history.mjs
+    if [[ "$suite_passed" == true ]]; then
+      D1_HISTORY_EXPECT_AVAILABLE=false pnpm --filter @solar/web exec node test/platform/history.mjs || suite_passed=false
+    fi
   fi
   if [[ "$item" == archive || "$item" == history ]]; then
     unset HISTORY_CI_API_ENABLED HISTORY_CI_WORKER_ENABLED PLATFORM_CI_COMPOSE_FILES
     "${compose[@]}" up -d --no-deps --force-recreate --wait --wait-timeout 120 api worker
   fi
-  if [[ "$item" == session ]]; then pnpm --filter @solar/web exec tsx --test lib/api-client.spec.ts; fi
-  if [[ "$item" == accessibility ]]; then pnpm --filter @solar/web exec tsx --test lib/power-format.spec.ts; fi
-  if [[ "$item" == readiness ]]; then pnpm --filter @solar/web exec tsx --test features/dashboard/summary-status.spec.tsx; fi
+  if [[ "$item" == session && "$suite_passed" == true ]]; then pnpm --filter @solar/web exec tsx --test lib/api-client.spec.ts || suite_passed=false; fi
+  if [[ "$item" == accessibility && "$suite_passed" == true ]]; then pnpm --filter @solar/web exec tsx --test lib/power-format.spec.ts || suite_passed=false; fi
+  if [[ "$item" == readiness && "$suite_passed" == true ]]; then pnpm --filter @solar/web exec tsx --test features/dashboard/summary-status.spec.tsx || suite_passed=false; fi
+  if [[ "$suite_passed" == false ]]; then
+    echo "Platform suite FAILED: $item" >&2
+    failed+=("$item")
+  else
+    echo "Platform suite PASSED: $item"
+  fi
 done
+if (( ${#failed[@]} )); then
+  echo "Failed platform suites: ${failed[*]}" >&2
+  exit 1
+fi

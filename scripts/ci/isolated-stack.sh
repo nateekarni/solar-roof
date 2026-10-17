@@ -17,39 +17,56 @@ for endpoint in READINESS_DATABASE_URL READINESS_API_URL READINESS_WEB_URL; do
   fi
 done
 stack_lock='/tmp/solar-roof-ci-fixed-ports.lock'
-stack_owner="$(node -e 'console.log(require("node:crypto").randomUUID())')"
-if ! mkdir "$stack_lock" 2>/dev/null; then
-  echo "CI ports are locked by another run: $stack_lock (remove only after confirming its owner has exited)" >&2
-  exit 1
+export PLATFORM_CI_STACK_REUSED=false
+if [[ -n "${PLATFORM_CI_SESSION:-}" && -d "$stack_lock" && "$(cat "$stack_lock/session" 2>/dev/null)" == "$PLATFORM_CI_SESSION" ]]; then
+  stack_owner="$(cat "$stack_lock/owner")"
+  export COMPOSE_PROJECT_NAME="$(cat "$stack_lock/project")"
+  export PLATFORM_CI_STACK_REUSED=true
+  compose=(docker compose -f infra/ci/compose.yml)
+  stack_created=false
+else
+  stack_owner="$(node -e 'console.log(require("node:crypto").randomUUID())')"
+  if ! mkdir "$stack_lock" 2>/dev/null; then
+    echo "CI ports are locked by another run: $stack_lock (remove only after confirming its owner has exited)" >&2
+    exit 1
+  fi
+  printf '%s\n' "$stack_owner" > "$stack_lock/owner"
+  printf '%s\n' "$$" > "$stack_lock/pid"
+  if [[ -n "${PLATFORM_CI_SESSION:-}" ]]; then
+    printf '%s\n' "$PLATFORM_CI_SESSION" > "$stack_lock/session"
+  fi
+  export COMPOSE_PROJECT_NAME="solar-ci-$stack_owner"
+  printf '%s\n' "$COMPOSE_PROJECT_NAME" > "$stack_lock/project"
+  compose=(docker compose -f infra/ci/compose.yml)
+  stack_created=false
+  mkdir -p test/artifacts
+  if [[ -n "$(docker ps -aq --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME" 2>/dev/null)" ]]; then
+    echo 'Refusing existing Compose project' >&2; exit 1
+  fi
+  # Refuse occupied ports before creating any resources, including non-Docker users.
+  node --input-type=module -e '
+  import net from "node:net";
+  for (const port of [15432,13001,13000,Number(process.env.PLATFORM_CI_DIRECT_WEB_PORT),18883,18025,Number(process.env.PLATFORM_CI_STORAGE_PORT)]) {
+   const server=net.createServer();
+   await new Promise((resolve,reject)=>server.once("error",reject).listen(port,"127.0.0.1",resolve));
+   await new Promise(resolve=>server.close(resolve));
+  }'
 fi
-printf '%s\n' "$stack_owner" > "$stack_lock/owner"
-printf '%s\n' "$$" > "$stack_lock/pid"
-export COMPOSE_PROJECT_NAME="solar-ci-$stack_owner"
-compose=(docker compose -f infra/ci/compose.yml)
-stack_created=false
-mkdir -p test/artifacts
 cleanup() {
+  if [[ -n "${PLATFORM_CI_SESSION:-}" && "$PLATFORM_CI_STACK_REUSED" == true ]]; then return; fi
+  if [[ -n "${PLATFORM_CI_SESSION:-}" && "$stack_created" == true ]]; then
+    # In a shared session, do not tear down on individual suite exit; parent will clean up.
+    return
+  fi
   if [[ "$(cat "$stack_lock/owner" 2>/dev/null)" != "$stack_owner" ]]; then return; fi
   if [[ "$stack_created" == true ]]; then
     "${compose[@]}" logs --no-color > "test/artifacts/$COMPOSE_PROJECT_NAME.log" 2>&1 || true
     "${compose[@]}" down --volumes --remove-orphans || true
   fi
-  rm -f "$stack_lock/owner"
-  rm -f "$stack_lock/pid"
+  rm -f "$stack_lock/owner" "$stack_lock/pid" "$stack_lock/session" "$stack_lock/project"
   rmdir "$stack_lock"
 }
 trap cleanup EXIT
-if [[ -n "$(docker ps -aq --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME")" ]]; then
-  echo 'Refusing existing Compose project' >&2; exit 1
-fi
-# Refuse occupied ports before creating any resources, including non-Docker users.
-node --input-type=module -e '
-import net from "node:net";
-for (const port of [15432,13001,13000,Number(process.env.PLATFORM_CI_DIRECT_WEB_PORT),18883,18025,Number(process.env.PLATFORM_CI_STORAGE_PORT)]) {
- const server=net.createServer();
- await new Promise((resolve,reject)=>server.once("error",reject).listen(port,"127.0.0.1",resolve));
- await new Promise(resolve=>server.close(resolve));
-}'
 export READINESS_DATABASE_URL='postgresql://solar:ci-only-password@127.0.0.1:15432/solar_readiness'
 export READINESS_API_URL='http://127.0.0.1:13001'
 export READINESS_WEB_URL='http://localhost:13000'
