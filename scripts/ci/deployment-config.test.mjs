@@ -48,6 +48,13 @@ test('standalone MQTT is only broker/certificate with correct domain and persist
  assert.equal(config.services.mqtt.ports[0].target,8883);assert.equal(String(config.services.mqtt.ports[0].published),'8883');
  assert.deepEqual(Object.keys(config.volumes).sort(),['letsencrypt-data','mqtt-certs','mqtt-data']);
 });
+test('standalone hostcert MQTT broker has correct domain, ports and host volume',()=>{
+ const config=compose('infra/docker/docker-compose.mqtt-hostcert.yml','infra/docker/.env.mqtt-hostcert.example');
+ assert.deepEqual(Object.keys(config.services).sort(),['mqtt']);
+ assert.equal(config.services.mqtt.environment.MQTT_TLS_DOMAIN,'mqtt-solar.fowir.com');
+ assert.equal(config.services.mqtt.ports[0].target,8883);assert.equal(String(config.services.mqtt.ports[0].published),'8883');
+ assert.deepEqual(Object.keys(config.volumes).sort(),['mqtt-data']);
+});
 test('CI storage initializer preserves AWS metadata property through Compose interpolation and recovery overrides fixture user',()=>{
  const config=compose('infra/ci/compose.yml');
  // config retains the escaped form for round-tripping; container creation unescapes it.

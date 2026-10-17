@@ -18,7 +18,7 @@
 3. เปิด inbound TCP8883 ไป server; **ไม่เปิด1883ออกอินเทอร์เน็ต** MQTT บน8883เป็น TLS/TCP ไม่ใช่เว็บ HTTP ไม่กรอก https:// หน้า MQTT hostname
 4. DNS-01 ใช้ Cloudflare API ไม่ต้องเปิดเว็บ HTTP ของ mqtt-solar เพื่อออก certificate
 
-## 3. Cloudflare token สำหรับ certificate
+## 3. Cloudflare token สำหรับ certificate (เฉพาะกรณีใช้ Cloudflare DNS)
 
 1. My Profile → API Tokens → Create Token → template Edit zone DNS
 2. Permissions: Zone / DNS / Edit และ Zone / Zone / Read
@@ -28,13 +28,19 @@
 
 certificate ของ mqtt-solar อยู่ใน named volumes letsencrypt-data/mqtt-certs ของ resource นี้ แยกจาก certificate เว็บไซต์ที่ Coolify Proxy ดูแล ไม่ต้องสร้าง Zone ใหม่ถ้ามี fowir.com อยู่แล้ว และ token ไม่ใช่ certificate ที่นำไปแจก Gateway
 
+> **หมายเหตุ (กรณีไม่ได้ใช้ Cloudflare DNS):** หาก DNS ของโดเมนไม่ได้อยู่บน Cloudflare ให้ข้ามข้อ 3 นี้ แล้วออก SSL Certificate บนเซิร์ฟเวอร์โดยตรง นำไปวางที่ `/data/mqtt-certs/` และใช้ Compose Location เป็น `/infra/docker/docker-compose.mqtt-hostcert.yml` แทน
+
 ## 4. สร้าง MQTT Application แยก
 
 1. Coolify → Project/Environment เดียวกับเว็บ → New Resource → Git repository → main
-2. Build Pack Docker Compose, Base Directory /, Compose Location **/infra/docker/docker-compose.mqtt.yml** → Save / Load
+2. Build Pack Docker Compose, Base Directory `/`:
+   * **กรณีใช้ Cloudflare DNS-01:** Compose Location **/infra/docker/docker-compose.mqtt.yml**
+   * **กรณีใช้ Host/Manual Certificate (ไม่ได้ใช้ Cloudflare):** Compose Location **/infra/docker/docker-compose.mqtt-hostcert.yml**
 3. ตั้งชื่อ resource เช่น solar-mqtt ไม่เปลี่ยนชื่อของ resource เว็บที่มีข้อมูลอยู่
 4. Domains ของ mqtt/certbot **เว้นว่าง** broker publish8883:8883 ผ่าน Compose ไม่ส่ง MQTT เข้า HTTPS router ของ Coolify
-5. Environment Variables ใช้ [infra/docker/.env.mqtt.example](../../infra/docker/.env.mqtt.example):
+5. Environment Variables:
+   * กรณี Cloudflare ใช้ [infra/docker/.env.mqtt.example](../../infra/docker/.env.mqtt.example)
+   * กรณี Host Certificate ใช้ [infra/docker/.env.mqtt-hostcert.example](../../infra/docker/.env.mqtt-hostcert.example)
 
 | ค่า | ความหมาย |
 |---|---|
