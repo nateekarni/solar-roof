@@ -1,0 +1,26 @@
+# Standalone EMQX Broker resource with Dynamic HTTP Auth, ACL, and TLS Certificates.
+# Gateways connect securely via mqtts://mqtt-solar.fowir.com:8883
+services:
+  mqtt:
+    image: ${EMQX_IMAGE:-emqx/emqx:5.8.3}
+    restart: unless-stopped
+    ports:
+      - '8883:8883'
+      - '1883:1883'
+      - '18083:18083'
+    environment:
+      - EMQX_NODE__NAME=emqx@127.0.0.1
+      - EMQX_DASHBOARD__DEFAULT_USERNAME=${EMQX_DASHBOARD_USER:-admin}
+      - EMQX_DASHBOARD__DEFAULT_PASSWORD=${EMQX_DASHBOARD_PASSWORD:-admin123456}
+    volumes:
+      - ${MQTT_CERTS_DIR:-/data/mqtt-certs}:/opt/emqx/certs:ro
+      - ./infra/docker/emqx/emqx.conf:/opt/emqx/etc/emqx.conf:ro
+      - emqx-data:/opt/emqx/data
+    healthcheck:
+      test: ['CMD', '/opt/emqx/bin/emqx', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+volumes:
+  emqx-data:
