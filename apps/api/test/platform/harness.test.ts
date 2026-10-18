@@ -48,12 +48,12 @@ test('rejects unapproved direct web ports before creating fixture resources',()=
 test('competing runner and unfinished suites fail without stopping the owning Docker stack', async () => {
   const root=new URL('../../../../',import.meta.url);
   const bash=process.platform==='win32'?'C:/Program Files/Git/bin/bash.exe':'bash';
-  const competing=spawnSync(bash,['scripts/ci/platform-check.sh','all-fast'],{cwd:root,encoding:'utf8'});
+  const competing=spawnSync(bash,['scripts/ci/platform-check.sh','all-fast'],{cwd:root,encoding:'utf8',env:{...process.env,PLATFORM_CI_SESSION:'competing-session'}});
   assert.equal(competing.status,1);
   assert.ok(competing.stderr.includes('locked'));
   assert.ok(competing.stdout.includes('Implemented:'));
   assert.ok(competing.stdout.includes('Not ready:'));
-  const missing=spawnSync(bash,['scripts/ci/platform-check.sh','csrf'],{cwd:root,encoding:'utf8'});
+  const missing=spawnSync(bash,['scripts/ci/platform-check.sh','csrf'],{cwd:root,encoding:'utf8',env:{...process.env,PLATFORM_CI_SESSION:'competing-session'}});
   assert.equal(missing.status,1);
   assert.equal((await fetch(process.env.READINESS_API_URL+'/health')).status,200);
 });

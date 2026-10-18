@@ -39,6 +39,7 @@ if [[ "$suite" == all-fast ]]; then
 else
   [[ " $known " == *" $suite "* ]] || { echo "Unknown suite: $suite" >&2; exit 1; }
   suites=("$suite")
+  failed=()
 fi
 for item in "${suites[@]}"; do
   case "$item" in ui-jobs|accessibility|history|financial-core) ;; *) [[ -f "apps/api/test/platform/$item.test.ts" ]] || { echo "Suite not implemented: $item (API)" >&2; exit 1; } ;; esac
@@ -47,12 +48,12 @@ for item in "${suites[@]}"; do
   if [[ "$item" == recovery ]]; then [[ -f scripts/ci/recovery-drill.sh ]] || { echo 'Recovery drill not implemented' >&2; exit 1; }; fi
 done
 source scripts/ci/isolated-stack.sh
-if [[ " ${suites[*]} " == *' financial-core '* ]]; then compose+=(-f infra/ci/production-finance.yml); fi
-if [[ " ${suites[*]} " == *' reports '* || " ${suites[*]} " == *' ui-jobs '* || " ${suites[*]} " == *' accessibility '* ]]; then compose+=(-f infra/ci/report-worker.yml); fi
-if [[ " ${suites[*]} " == *' rollup '* ]]; then
+if [[ -n "${PLATFORM_CI_SESSION:-}" || " ${suites[*]} " == *' financial-core '* ]]; then compose+=(-f infra/ci/production-finance.yml); fi
+if [[ -n "${PLATFORM_CI_SESSION:-}" || " ${suites[*]} " == *' reports '* || " ${suites[*]} " == *' ui-jobs '* || " ${suites[*]} " == *' accessibility '* ]]; then compose+=(-f infra/ci/report-worker.yml); fi
+if [[ -n "${PLATFORM_CI_SESSION:-}" || " ${suites[*]} " == *' rollup '* ]]; then
   compose+=(-f infra/ci/energy-read-model.yml)
 fi
-if [[ " ${suites[*]} " == *' csrf '* || " ${suites[*]} " == *' financial-safety '* || " ${suites[*]} " == *' operations '* || " ${suites[*]} " == *' ui-contracts '* || " ${suites[*]} " == *' ui-jobs '* || " ${suites[*]} " == *' accessibility '* || " ${suites[*]} " == *' history '* ]]; then
+if [[ -n "${PLATFORM_CI_SESSION:-}" || " ${suites[*]} " == *' csrf '* || " ${suites[*]} " == *' financial-safety '* || " ${suites[*]} " == *' operations '* || " ${suites[*]} " == *' ui-contracts '* || " ${suites[*]} " == *' ui-jobs '* || " ${suites[*]} " == *' accessibility '* || " ${suites[*]} " == *' history '* ]]; then
   compose+=(-f infra/ci/request-edge.yml)
   export PLATFORM_EDGE_FIXTURE=true
 fi
