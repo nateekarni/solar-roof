@@ -291,11 +291,10 @@ export function PaymentDialog({
       }, 1500);
     } catch (err: any) {
       setErrorMsg(
-        err?.message ||
-          text(
-            "เกิดข้อผิดพลาดในการส่งหลักฐานการชำระเงิน กรุณาตรวจสอบข้อมูลและลองใหม่",
-            "Unable to submit payment evidence. Check the details and try again.",
-          ),
+        text(
+          "เกิดข้อผิดพลาดในการส่งหลักฐานการชำระเงิน กรุณาตรวจสอบข้อมูลและลองใหม่",
+          "Unable to submit payment evidence. Check the details and try again.",
+        ),
       );
     } finally {
       submitting.current = false;

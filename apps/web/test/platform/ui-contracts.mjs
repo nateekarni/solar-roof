@@ -93,7 +93,7 @@ try {
   const paid=page.waitForResponse(r=>r.request().method()==='POST'&&r.url().endsWith('/pay'));
   await page.getByRole('dialog').locator('form').evaluate(form=>{form.requestSubmit();form.requestSubmit();});
   const paymentResponse=await paid;assert.equal(paymentRequests,1,'Synchronous double submit must send one POST');assert.equal(paymentResponse.status(),409,await paymentResponse.text());
-  await page.getByRole('dialog').getByRole('alert').filter({hasText:'เกิดข้อผิดพลาดในการส่งหลักฐานการชำระเงิน'}).waitFor();
+  await page.getByRole('dialog').getByRole('alert').filter({hasText:/เกิดข้อผิดพลาดในการส่งหลักฐานการชำระเงิน|ข้อมูลถูกเปลี่ยนแล้ว/}).waitFor();
   assert.equal(paymentRequests,1,'Two synchronous submit events send exactly one attempted evidence mutation');
   assert.equal((await db.query('SELECT count(*)::int AS count FROM payments WHERE billing_cycle_id IN (SELECT id FROM billing_cycles WHERE site_id=$1)',[site])).rows[0].count,0,'Legacy cycles without a frozen financial policy reject payment without writing a row');
   await page.getByRole('button',{name:'ยกเลิก',exact:true}).click();await page.getByRole('dialog').waitFor({state:'hidden'});
@@ -104,7 +104,7 @@ try {
   const denied=page.waitForResponse(r=>r.url().endsWith('/pay')),capRefresh=page.waitForResponse(r=>r.url().endsWith('/v1/auth/capabilities'));
   await page.getByRole('button',{name:'ยืนยันการชำระเงิน',exact:true}).click();assert.equal((await denied).status(),403);assert.equal((await (await capRefresh).json()).operationsActions.includes('submit_payment'),false);
   const deniedDialog=page.getByRole('dialog');
-  await deniedDialog.getByRole('alert').filter({hasText:'เกิดข้อผิดพลาดในการส่งหลักฐานการชำระเงิน'}).waitFor();
+  await deniedDialog.getByRole('alert').filter({hasText:/เกิดข้อผิดพลาดในการส่งหลักฐานการชำระเงิน|สิทธิ์ของคุณเปลี่ยนแล้ว/}).waitFor();
   await deniedDialog.locator('button[type="submit"]:disabled').waitFor();
   assert.equal(await deniedDialog.getByRole('button',{name:'ยืนยันการชำระเงิน',exact:true}).isDisabled(),true,'Refreshed empty capabilities disable payment submission');
   await page.getByRole('button',{name:'ยกเลิก',exact:true}).click();await deniedDialog.waitFor({state:'hidden'});

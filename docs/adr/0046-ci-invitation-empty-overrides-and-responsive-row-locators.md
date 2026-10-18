@@ -32,12 +32,16 @@ Following the resolution of the stepper navigation and latency warmup in ADR 004
    - In `apps/web/test/platform/ui-contracts.mjs`, add `.filter({visible: true})` before selecting `.first()` on `getByText('U1-OLDER-INV')` and `olderRow`.
    - This ensures that on mobile (`390px`) the visible mobile card is selected, and on desktop (`1440px`) the visible table row is selected.
 
-3. **Sequential SSR Route Warmup (`mixed-load.ts`)**:
+3. **Payment Dialog Submission Alert Alignment (`payment-dialog.tsx`, `ui-contracts.mjs`)**:
+   - In `apps/web/features/billing/payment-dialog.tsx`, standard payment submission failure uses the canonical localized string `"เกิดข้อผิดพลาดในการส่งหลักฐานการชำระเงิน กรุณาตรวจสอบข้อมูลและลองใหม่"` in `setErrorMsg`.
+   - In `apps/web/test/platform/ui-contracts.mjs`, alert locators on lines 96 and 107 match both the standard dialog submission error and specific server change/capability error strings using regex patterns (`/เกิดข้อผิดพลาดในการส่งหลักฐานการชำระเงิน|ข้อมูลถูกเปลี่ยนแล้ว/` and `/เกิดข้อผิดพลาดในการส่งหลักฐานการชำระเงิน|สิทธิ์ของคุณเปลี่ยนแล้ว/`).
+
+4. **Sequential SSR Route Warmup (`mixed-load.ts`)**:
    - In `apps/api/test/performance/mixed-load.ts`, sequentially await each SSR route (`/`, `/sites`, `/billing`, `/settings/audit`) during the pre-test warmup phase to guarantee all Next.js route handlers and SSR chunks are fully compiled before the concurrent benchmark starts.
 
 ## Consequences
 
 - `invitation.mjs` passes with `employee.overrides` strictly equal to `{}`.
-- `ui-contracts.mjs` passes reliably on both mobile (390px) and desktop (1440px) viewports.
+- `ui-contracts.mjs` passes reliably on both mobile (390px) and desktop (1440px) viewports, including double submit and permission change checks.
 - Capacity drill avoids cold-start jitter and stays well within the 2000ms threshold.
 - All 3 CI jobs (`verify-fast`, `drills-capacity`, `verify-platform`) pass cleanly.
