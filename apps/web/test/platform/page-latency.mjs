@@ -34,6 +34,7 @@ export async function measurePages(tokens) {
   try {
     await Promise.all(tokens.map(async(token,user)=>{
       try {
+        if(user>0) await new Promise(r=>setTimeout(r, user * 200));
         const context=await browser.newContext({viewport:{width:1440,height:900}});
         await context.addInitScript(captureCriticalPageReady);
         await context.addCookies([{name:'access_token',value:token,domain:'localhost',path:'/',httpOnly:true},{name:'locale',value:'en',domain:'localhost',path:'/'}]);
