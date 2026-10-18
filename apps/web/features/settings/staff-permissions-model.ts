@@ -306,10 +306,13 @@ export function buildInvitePayload({
   overrides: Record<string, RuleValue>;
   scope: { mode: 'all' | 'selected'; siteIds: string[] };
 }) {
-  const bundled = bundleSubPermissions(domain, overrides);
+  const hasOverrides = Object.keys(overrides).length > 0;
   const snapshotOverrides: Record<string, boolean> = {};
-  for (const p of permissions.filter((perm) => perm.startsWith(domain + '.'))) {
-    snapshotOverrides[p] = bundled[p] === true;
+  if (hasOverrides) {
+    const bundled = bundleSubPermissions(domain, overrides);
+    for (const p of permissions.filter((perm) => perm.startsWith(domain + '.'))) {
+      snapshotOverrides[p] = bundled[p] === true;
+    }
   }
   return {
     email: email.trim().toLowerCase(),

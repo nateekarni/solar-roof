@@ -71,13 +71,13 @@ try {
    await page.setViewportSize({width,height:900});await page.goto(web+'/billing');
    await page.waitForLoadState('networkidle');
    await page.getByRole('searchbox').fill('U1-OLDER-INV');
-   await page.getByText('U1-OLDER-INV').first().waitFor();
+   await page.getByText('U1-OLDER-INV').filter({visible:true}).first().waitFor();
    const actionMenu=page.getByRole('button',{name:/การจัดการเอกสาร: U1-OLDER-INV|Document actions: U1-OLDER-INV|เมนูการดำเนินการ|Open actions menu/}).filter({visible:true});
    if(await actionMenu.count()>0){
     await actionMenu.first().click();
     await page.getByRole('menuitem',{name:/ต้นฉบับ PDF|Original PDF|ดูใบวางบิล|View Invoice/}).first().click();
    }else{
-    const olderRow=page.getByText('U1-OLDER-INV').first().locator('xpath=ancestor::*[@data-slot="card" or self::tr]');
+    const olderRow=page.getByText('U1-OLDER-INV').filter({visible:true}).first().locator('xpath=ancestor::*[@data-slot="card" or self::tr]');
     await olderRow.getByRole('button',{name:/^(ดูใบวางบิล|View Invoice)/}).filter({visible:true}).first().click();
    }
    await page.getByRole('dialog').getByRole('alert').waitFor();

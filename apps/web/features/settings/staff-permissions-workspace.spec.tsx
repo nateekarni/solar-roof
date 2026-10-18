@@ -177,6 +177,18 @@ test('buildInvitePayload formats companyPosition, permissions, and scope for sub
   'business.sites.view': false,
   'business.sites.edit': false,
  });
+
+ // 3. Empty overrides produces empty permissions object (no implicit overrides)
+ const payload3 = (model as any).buildInvitePayload({
+  email: 'staff3@example.test',
+  name: 'เจ้าหน้าที่สาม',
+  position: 'ช่าง',
+  domain: 'business',
+  permissions,
+  overrides: {},
+  scope: {mode: 'all', siteIds: []},
+ });
+ assert.deepEqual(payload3.permissions, {});
 });
 
 test('apiClient.post sends invite payload to /v1/users/invite', async () => {
