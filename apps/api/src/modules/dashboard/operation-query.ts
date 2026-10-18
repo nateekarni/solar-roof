@@ -8,7 +8,7 @@ import type { ScopePrincipal } from '../../common/auth/resource-scope.js';
 export const operationQueries: Record<string, { sorts: string[]; search: string[]; date?: string; direction: 'asc' | 'desc' }> = {
   customers: { sorts: ["name", "code", "region", "capacityMwp", "sitesCount", "gatewaysCount", "status"], search: ['name', 'code', 'region'], date: 'createdAt', direction: 'asc' },
   sites: { sorts: ["name", "customerName", "capacityMwp", "serviceStartDate", "status"], search: ['name', 'customerName', 'externalSiteId'], date: 'createdAt', direction: 'asc' },
-  billing: { sorts: ["period", "customerName", "siteName", "consumedKwh", "rate", "amount", "status"], search: ['period', 'customerName', 'siteName', 'status'], date: 'period', direction: 'desc' },
+  billing: { sorts: ["period", "customerName", "siteName", "consumedKwh", "rate", "amount", "status"], search: ['period', 'customerName', 'siteName', 'status', 'invoiceNumber', 'receiptNumber'], date: 'period', direction: 'desc' },
   contracts: { sorts: ["startDate", "contractNumber", "customerName", "version", "rate", "signers", "status"], search: ['contractNumber', 'customerName', 'siteName', 'signers', 'status'], date: 'startDate', direction: 'desc' },
   documents: { sorts: ["issueDate", "documentNumber", "type", "customerName", "amount", "status"], search: ['documentNumber', 'type', 'customerName', 'siteName', 'status'], date: 'issueDate', direction: 'desc' },
   receipts: { sorts: ["issueDate", "documentNumber", "taxInvoiceNumber", "customerName", "amount", "status"], search: ['documentNumber', 'type', 'customerName', 'siteName', 'status'], date: 'issueDate', direction: 'desc' },

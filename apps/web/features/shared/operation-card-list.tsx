@@ -80,6 +80,9 @@ export function OperationCardList({resource,columns:rawColumns,rows,idKey='id',o
                     <h3 className="text-sm font-bold text-foreground truncate mt-0.5">
                       {titleDisplay}
                     </h3>
+                    {resource === 'billing' && row.invoiceNumber ? (
+                      <span className="block text-xs font-mono text-muted-foreground">{String(row.invoiceNumber)}</span>
+                    ) : null}
                   </div>
 
                   {statusVal !== null && statusVal !== undefined && (

@@ -471,6 +471,16 @@ const COLUMN_SIZES: Record<string, { size: number; minSize?: number; maxSize?: n
           if(resource==='billing'&&key==='status')return renderBillingStatusBadge(row.original,locale);
           const val = row.getValue(key);
           const str = String(val ?? "-").trim();
+          if (resource === 'billing' && key === 'period') {
+            return (
+              <div className="space-y-0.5">
+                <span className="font-medium text-foreground">{str}</span>
+                {row.original.invoiceNumber ? (
+                  <span className="block text-xs font-mono text-muted-foreground">{String(row.original.invoiceNumber)}</span>
+                ) : null}
+              </div>
+            );
+          }
           const lower = str.toLowerCase();
 
           if (resource === 'alerts') {

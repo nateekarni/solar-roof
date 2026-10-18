@@ -41,7 +41,7 @@ try {
   const fixture=await seedHistory(db,profile);artifact.rows=fixture.historyRows;artifact.fixture={seedTriggers:fixture.seedTriggers,roleDistribution:fixture.roleDistribution};
   compose('restart','api');
   for(let i=0;;i++){try{if((await fetch(api+'/ready')).ok && (await fetch(api+'/ready/mqtt')).ok)break;}catch{} assert.ok(i<120,'API and MQTT readiness after seed');await pause(500);}
-  for(let i=0;;i++){try{if((await fetch(web+'/health')).ok)break;}catch{} assert.ok(i<60,'Web readiness after seed');await pause(500);}
+  for(let i=0;;i++){try{if((await fetch(web+'/health')).ok && (await fetch(web+'/')).status < 500){await Promise.allSettled(['/','/sites','/billing','/settings/audit'].map(p=>fetch(web+p)));break;}}catch{} assert.ok(i<60,'Web readiness after seed');await pause(500);}
   const tokens:string[]=[];
   for(const user of fixture.users) {
     // Respect real per-IP authentication limits; setup is outside measured workload.

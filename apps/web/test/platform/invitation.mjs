@@ -43,8 +43,9 @@ try {
   const dialog=ownerPage.getByRole('dialog'),uiEmail='browser-ui-'+randomUUID()+'@example.test';emails.push(uiEmail);
   await dialog.locator('#staff-email').fill(uiEmail);await dialog.locator('#staff-name').fill('UI Recipient');
   await fetch(capture+'/ok',{method:'POST'});
+  await dialog.getByRole('button',{name:/ถัดไป|Next/i}).click();
   const invited=ownerPage.waitForResponse(response=>response.request().method()==='POST'&&response.url().endsWith('/v1/users/invite'));
-  await dialog.getByRole('button',{name:'ส่งคำเชิญ',exact:true}).click();assert.equal((await invited).status(),201);
+  await dialog.getByRole('button',{name:/ส่งคำเชิญ|Send invitation/i,exact:true}).click();assert.equal((await invited).status(),201);
   await dialog.waitFor({state:'hidden'});await ownerPage.getByText(uiEmail,{exact:true}).filter({visible:true}).waitFor();
   const employee=(await db.query('SELECT u.role,g.domain,g.overrides,g.site_ids FROM users u JOIN employee_domain_grants g ON g.user_id=u.id WHERE u.email=$1',[uiEmail])).rows[0];
   assert.equal(employee.role,'operator');assert.equal(employee.domain,'business');assert.deepEqual(employee.overrides,{});assert.deepEqual(employee.site_ids,[]);
