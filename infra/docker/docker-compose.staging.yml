@@ -131,7 +131,7 @@ services:
     restart: 'no'
     command: [pnpm, --filter, '@solar/api', 'db:migrate']
     environment:
-      DATABASE_URL: ${DATABASE_URL:?URL-encoded PostgreSQL connection URL required}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://solar:${POSTGRES_PASSWORD}@postgres:5432/solar_platform}
     depends_on:
       postgres: {condition: service_healthy}
   release-evidence:
