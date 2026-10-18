@@ -23,7 +23,7 @@ export const operationQueries: Record<string, { sorts: string[]; search: string[
 // Collection aliases normalize to one tab; an explicit billingStatusView wins.
 const legacyBillingStatusViews:Readonly<Record<string,BillingStatusView>>={
   '':'all',draft:'unsuccessful',pending_review:'all',approved:'all',issued:'all',
-  unpaid:'awaiting_payment',pending_payment:'awaiting_payment',pending_verification:'pending_verification',overdue:'overdue',paid:'paid',cancelled:'unsuccessful',
+  unpaid:'awaiting_payment',pending_payment:'awaiting_payment',pending_verification:'pending_verification',partially_paid:'partially_paid',overdue:'overdue',paid:'paid',cancelled:'unsuccessful',
 };
 
 export function parseOperationQuery(resource: string, raw: Record<string, unknown> = {}): OperationQuery {
@@ -50,11 +50,11 @@ export function parseOperationQuery(resource: string, raw: Record<string, unknow
   if(resource==='billing'&&raw.status!==undefined){const legacy=String(raw.status);if(!Object.hasOwn(legacyBillingStatusViews,legacy))throw new BadRequestException('Invalid legacy billing status');filters.billingStatusView=legacyBillingStatusViews[legacy]!;}
   if(raw.siteId!==undefined){if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(raw.siteId)))throw new BadRequestException('Invalid site filter');filters.siteId=String(raw.siteId);}
   if(raw.collectionStatus!==undefined){
-    if(!['paid','pending_review','overdue','awaiting_payment'].includes(String(raw.collectionStatus)))throw new BadRequestException('Invalid collection filter');
+    if(!['paid','pending_review','overdue','awaiting_payment','partially_paid'].includes(String(raw.collectionStatus)))throw new BadRequestException('Invalid collection filter');
     if(resource==='billing')filters.billingStatusView=raw.collectionStatus==='pending_review'?'pending_verification':raw.collectionStatus as BillingStatusView;
     else filters.collectionStatus=raw.collectionStatus as NonNullable<OperationQuery['collectionStatus']>;
   }
-  if(raw.billingStatusView!==undefined){if(!['all','pending_issue_approval','awaiting_payment','pending_verification','overdue','paid','unsuccessful'].includes(String(raw.billingStatusView)))throw new BadRequestException('Invalid billing status view');filters.billingStatusView=raw.billingStatusView as NonNullable<OperationQuery['billingStatusView']>;}
+  if(raw.billingStatusView!==undefined){if(!['all','pending_issue_approval','awaiting_payment','pending_verification','partially_paid','overdue','paid','unsuccessful'].includes(String(raw.billingStatusView)))throw new BadRequestException('Invalid billing status view');filters.billingStatusView=raw.billingStatusView as NonNullable<OperationQuery['billingStatusView']>;}
   for(const filter of operationFilters[resource]??[]){
     const value=raw[filter.key];
     if(value===undefined||value==='')continue;
@@ -135,7 +135,11 @@ export function operationPredicate(resource: string, query: OperationQuery, para
 export function operationPageSql(resource: string, source: string, params: unknown[], query: OperationQuery, user: ScopePrincipal | undefined, scope: string[] | null) {
   const fp = fingerprint(resource, query, user, scope);
   const clauses = operationPredicate(resource, query, params);
+  const pinOrder = (resource === 'billing' && user?.role !== 'customer_user' && (!query.billingStatusView || query.billingStatusView === 'all')) ? 'CASE WHEN q."billingStatusView" = \'pending_verification\' THEN 0 ELSE 1 END ASC, ' : '';
   if (query.cursor) {
+    if (pinOrder) {
+      clauses.push(`(q."billingStatusView" <> 'pending_verification' OR q."billingStatusView" IS NULL)`);
+    }
     let cursor: { v?: unknown; fingerprint?: unknown; value?: unknown; id?: unknown };
     try { cursor = JSON.parse(Buffer.from(query.cursor, 'base64url').toString('utf8')); } catch { throw new BadRequestException('Invalid cursor'); }
     if (!cursor || cursor.v !== 1 || cursor.fingerprint !== fp || !(cursor.value === null || typeof cursor.value === 'string' && cursor.value.length <= 500) || typeof cursor.id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cursor.id)) throw new BadRequestException('Cursor does not match query or scope');
@@ -154,5 +158,5 @@ export function operationPageSql(resource: string, source: string, params: unkno
     }
   }
   params.push(query.limit + 1);
-  return { sql: `SELECT q.*,q."${query.sort}"::text AS "__operationCursorValue" FROM (${source}) q WHERE ${clauses.join(' AND ') || 'TRUE'} ORDER BY q."${query.sort}" ${query.direction} NULLS LAST,q.id ${query.direction} LIMIT $${params.length}`, cursor: (row: Record<string, unknown>) => Buffer.from(JSON.stringify({ v: 1, fingerprint: fp, value: row.__operationCursorValue===null?null:String(row.__operationCursorValue), id: row.id })).toString('base64url') };
+  return { sql: `SELECT q.*,q."${query.sort}"::text AS "__operationCursorValue" FROM (${source}) q WHERE ${clauses.join(' AND ') || 'TRUE'} ORDER BY ${pinOrder}q."${query.sort}" ${query.direction} NULLS LAST,q.id ${query.direction} LIMIT $${params.length}`, cursor: (row: Record<string, unknown>) => Buffer.from(JSON.stringify({ v: 1, fingerprint: fp, value: row.__operationCursorValue===null?null:String(row.__operationCursorValue), id: row.id })).toString('base64url') };
 }

@@ -16,6 +16,7 @@ import { apiClient } from "../../../../lib/api-client";
 import { useAuth } from "../../../../stores/auth-store";
 import { companyBrandingUpdated } from "../../../../components/brand/branding-logo";
 import { CompanyProfileCard, type CompanyProfile } from "../../../../features/settings/company-profile-card";
+import { readCompanyImage } from "../../../../features/settings/company-logo-field";
 import { AppLoading } from "../../../../components/feedback/app-loading";
 import { notify } from "../../../../components/feedback/notifications";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../../../components/ui/card";
@@ -51,6 +52,7 @@ interface CompanyBankAccount {
   accountNumber: string;
   branchName?: string;
   promptpayId?: string;
+  qrCodeUrl?: string | null;
   isDefault: boolean;
 }
 
@@ -153,13 +155,19 @@ export default function CompanyBankingPage() {
       accountName: company.companyName || "",
       accountNumber: "",
       branchName: "",
+      promptpayId: company.taxId || "",
+      qrCodeUrl: null,
       isDefault: bankAccounts.length === 0,
     });
     setBankModalOpen(true);
   };
 
   const handleOpenEditBank = (bank: CompanyBankAccount) => {
-    setEditingBank(bank);
+    setEditingBank({
+      ...bank,
+      promptpayId: bank.promptpayId || "",
+      qrCodeUrl: bank.qrCodeUrl ?? null,
+    });
     setBankModalOpen(true);
   };
 
@@ -347,6 +355,56 @@ export default function CompanyBankingPage() {
                   placeholder={locale === "th" ? "เช่น สาขาสุขุมวิท" : "e.g. Sukhumvit branch"}
                   className="h-10 text-xs"
                 />
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs font-medium">{locale === "th" ? "PromptPay ID (เบอร์โทร หรือ เลขประจำตัวผู้เสียภาษี)" : "PromptPay ID (Phone or Tax ID)"}</Label>
+                <Input
+                  value={editingBank.promptpayId || ""}
+                  onChange={(e) => setEditingBank({ ...editingBank, promptpayId: e.target.value })}
+                  placeholder={locale === "th" ? "เช่น 0812345678 หรือ 01055xxxxxxxx" : "e.g. 0812345678"}
+                  className="h-10 text-xs font-mono"
+                />
+              </div>
+
+              <div className="space-y-2 pt-1 border-t border-border/40">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-medium">{locale === "th" ? "ภาพ QR Code รับชำระเงิน" : "Payment QR Code Image"}</Label>
+                  {editingBank.qrCodeUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setEditingBank({ ...editingBank, qrCodeUrl: null })}
+                      className="text-[11px] text-destructive hover:underline"
+                    >
+                      {locale === "th" ? "ลบรูป QR" : "Remove QR"}
+                    </button>
+                  )}
+                </div>
+                {editingBank.qrCodeUrl ? (
+                  <div className="flex items-center gap-3 p-2 rounded-lg border bg-muted/20">
+                    <img src={editingBank.qrCodeUrl} alt="QR Code Preview" className="size-16 rounded-md object-contain border bg-white p-1" />
+                    <span className="text-xs text-muted-foreground">{locale === "th" ? "อัปโหลดภาพ QR Code แล้ว" : "QR Code image uploaded"}</span>
+                  </div>
+                ) : (
+                  <Input
+                    type="file"
+                    accept="image/png,image/jpeg"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      try {
+                        const dataUri = await readCompanyImage(file, locale);
+                        setEditingBank({ ...editingBank, qrCodeUrl: dataUri });
+                      } catch (err: any) {
+                        notify.error(err.message || (locale === "th" ? "ไม่สามารถโหลดรูปภาพได้" : "Unable to read image"));
+                      }
+                    }}
+                    className="h-10 text-xs"
+                  />
+                )}
+                <p className="text-[11px] text-muted-foreground">
+                  {locale === "th" ? "รองรับไฟล์ PNG หรือ JPEG ขนาดไม่เกิน 1 MB สำหรับแสดงให้ลูกค้าสแกนในหน้าต่างชำระเงิน" : "PNG or JPEG up to 1 MB for customer payment modal"}
+                </p>
               </div>
 
               <div className="flex items-center justify-between pt-2 border-t border-border/40">

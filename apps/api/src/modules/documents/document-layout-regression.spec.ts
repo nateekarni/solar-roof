@@ -22,7 +22,7 @@ test("ordinary financial references use one A4 page and bottom blank-date signat
     assert.ok(sig.every((l) => l.y > 690));
     assert.doesNotMatch(lines.map(lineText).join("\n"), /Page 1 \/ 1/);
     assert.equal(
-      lines.filter((l) => lineText(l).includes("วันที่ลงนาม:")).length,
+      lines.filter((l) => lineText(l).includes(name === "receipt" ? "วันที่อนุมัติ:" : "วันที่ลงนาม:")).length,
       name === "receipt" ? 1 : 2,
     );
   }
@@ -134,8 +134,8 @@ test("numeric columns fit exact large values and return unused space to ordinary
     pageLines,
   );
   for (const value of [
-    "90071992547409.123",
-    "12345.6789",
+    "90,071,992,547,409.123",
+    "12,345.6789",
     "90,071,992,547,409.91",
   ]) {
     const line = large.find((l) => lineText(l) === value);

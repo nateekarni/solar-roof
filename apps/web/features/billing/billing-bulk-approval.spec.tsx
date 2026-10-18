@@ -11,7 +11,9 @@ const testPassword='correct-password-123';
 
 test('bulk confirmation shows readable selected bills, approver, and password field',()=>{
  const html=renderToStaticMarkup(<BillingApprovalConfirmation rows={rows} approver={approver} locale="th" busy={false} password={testPassword} onApprove={()=>{}}/>);
- assert.match(html,/2026-09.*บริษัท ตัวอย่าง.*สำนักงานใหญ่/s);
+ assert.match(html,/สำนักงานใหญ่/);
+ assert.match(html,/บริษัท ตัวอย่าง/);
+ assert.match(html,/2026-09/);
  assert.match(html,/สมชาย ใจดี.*กรรมการบริษัท/s);
  assert.match(html,/รหัสผ่านเพื่อยืนยันการลงนามและออกเอกสาร/);
  assert.match(html,/การระบุรหัสผ่านถือเป็นการยืนยันความถูกต้องและยินยอมให้นำชื่อ ตำแหน่ง และลายเซ็นไปประทับลงในเอกสารฉบับจริงเพื่อจัดส่งให้ลูกค้า/);

@@ -40,7 +40,7 @@ test('staff user in billing view retains export and bulk approval buttons', () =
   );
 
   assert.match(html, /นำออกข้อมูล/);
-  assert.match(html, /อนุมัติและออกเอกสารทั้งหมด/);
+  assert.match(html, /อนุมัติเอกสาร/);
 });
 
 test('customer_user sees cardless financial table without summary metric cards', () => {
@@ -94,6 +94,7 @@ test('customer_user billing query table renders exactly 5 status tabs and hides 
                     pending_issue_approval: 2,
                     awaiting_payment: 3,
                     pending_verification: 2,
+                    partially_paid: 1,
                     overdue: 1,
                     paid: 2,
                     unsuccessful: 0,
@@ -107,9 +108,10 @@ test('customer_user billing query table renders exactly 5 status tabs and hides 
     </AppRouterContext.Provider>
   );
 
-  assert.equal((html.match(/role="tab"/g) ?? []).length, 5);
+  assert.equal((html.match(/role="tab"/g) ?? []).length, 6);
   assert.match(html, /รอชำระเงิน/);
   assert.match(html, /รอตรวจหลักฐาน/);
+  assert.match(html, /ชำระบางส่วน/);
   assert.match(html, /เกินกำหนดชำระ/);
   assert.match(html, /ชำระแล้ว/);
   assert.doesNotMatch(html, /รออนุมัติออกเอกสาร/);

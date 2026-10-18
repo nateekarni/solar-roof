@@ -47,14 +47,10 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/alerts",
   },
   {
-    key: "contractsAndDocs",
-    labelKey: "navigation.contractsAndDocs",
+    key: "billing",
+    labelKey: "navigation.documents",
     icon: ScrollText,
-    href: "",
-    subItems: [
-      { href: "/billing", labelKey: "navigation.billing" },
-      { href: "/receipts", labelKey: "navigation.receipts" },
-    ],
+    href: "/billing",
   },
   {
     key: "settings",
@@ -77,8 +73,7 @@ export function getNavItems(role: string,authorization?:AuthorizationSnapshot): 
  const allowed=(href:string)=>effectivePageAccess({role,...(authorization?{authorization}:{})},href);
  if (role === "customer_user") return [
    { key: "dashboard", labelKey: "dashboard", icon: LayoutDashboard, href: "/" },
-   { key: "billing", labelKey: "navigation.billing", icon: ScrollText, href: "/billing" },
-   { key: "receipts", labelKey: "navigation.receipts", icon: ScrollText, href: "/receipts" },
+   { key: "billing", labelKey: "navigation.documents", icon: ScrollText, href: "/billing" },
    { key: "settings", labelKey: "navigation.customerSettings", icon: Settings2, href: "/settings" },
  ].filter(item => canVisitPage(role, item.href));
  return NAV_ITEMS.flatMap(item => {
@@ -89,7 +84,7 @@ export function getNavItems(role: string,authorization?:AuthorizationSnapshot): 
  });
 }
 export function getBottomNavItems(role: string,authorization?:AuthorizationSnapshot): NavItem[] {
- const keys = role === "customer_user" ? ["dashboard","billing","receipts","settings"] : role === "owner" ? ["dashboard","sites","contractsAndDocs","settings"] : ["dashboard","gateways","alerts","settings"];
+ const keys = role === "customer_user" ? ["dashboard","billing","settings"] : role === "owner" ? ["dashboard","sites","billing","settings"] : ["dashboard","gateways","alerts","settings"];
  return getNavItems(role,authorization).filter(item => keys.includes(item.key)).map(item => ({...item, href:item.href || item.subItems?.find(sub => sub.href === "/billing")?.href || item.subItems?.[0]?.href}));
 }
 

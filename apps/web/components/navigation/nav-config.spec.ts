@@ -6,10 +6,11 @@ test('Owner destinations include business staff management and omit a separate c
   assert.equal(paths('owner').includes('/sites'), true);
   assert.equal(paths('owner').includes('/settings/users'), true);
   assert.equal(paths('owner').includes('/customers'), false);
-  for (const path of ['/','/sites','/billing','/receipts','/settings/company','/settings/account','/settings/rates']) assert.ok(paths('owner').includes(path));
+  for (const path of ['/','/sites','/billing','/settings/company','/settings/account','/settings/rates']) assert.ok(paths('owner').includes(path));
+  assert.equal(paths('owner').includes('/receipts'), false);
 });
 test('Customer has scoped documents and account destinations without configuration', () => {
-  assert.deepEqual(getNavItems('customer_user').map(item => item.href), ['/', '/billing', '/receipts', '/settings']); assert.deepEqual(getBottomNavItems('customer_user').map(item => item.href), ['/', '/billing', '/receipts', '/settings']);
+  assert.deepEqual(getNavItems('customer_user').map(item => item.href), ['/', '/billing', '/settings']); assert.deepEqual(getBottomNavItems('customer_user').map(item => item.href), ['/', '/billing', '/settings']);
   assert.equal(paths('customer_user').includes('/settings/company'), false);
   assert.equal(getBottomNavItems('customer_user').some(item => item.href === '/production'),false);
 });
@@ -23,6 +24,9 @@ test('Customer navigation labels the settings route as ข้อมูลอง�
 test('Unknown roles get no navigation and Admin retains technical destinations', () => {
   assert.deepEqual(getNavItems('unknown'), []);
   assert.equal(paths('admin').includes('/sites'), false);
+  assert.equal(paths('admin').includes('/billing'), false);
+  assert.equal(paths('operator').includes('/billing'), true);
+  assert.equal(paths('accountant').includes('/billing'), true);
   assert.ok(paths('admin').includes('/settings/users'));
 });
 

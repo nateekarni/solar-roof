@@ -23,15 +23,15 @@ function renderAction(locale: 'th' | 'en' = 'th', count = 0) {
 
 test('header bulk action button shows count and is disabled when 0 items', () => {
   const htmlTh = renderAction('th', 0);
-  assert.match(htmlTh, /อนุมัติและออกเอกสารทั้งหมด \(0 รายการ\)/);
+  assert.match(htmlTh, /อนุมัติเอกสาร \(0\)/);
   assert.match(htmlTh, /disabled=""/);
 
   const htmlEn = renderAction('en', 0);
-  assert.match(htmlEn, /Approve and issue all \(0\)/);
+  assert.match(htmlEn, /Approve documents \(0\)/);
   assert.match(htmlEn, /disabled=""/);
 });
 
 test('header bulk action button displays active label with count', () => {
   const html = renderAction('th', 5);
-  assert.match(html, /อนุมัติและออกเอกสารทั้งหมด \(5 รายการ\)/);
+  assert.match(html, /อนุมัติเอกสาร \(5\)/);
 });

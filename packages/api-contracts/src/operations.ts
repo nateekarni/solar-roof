@@ -1,4 +1,4 @@
-export type BillingStatusView = 'all' | 'pending_issue_approval' | 'awaiting_payment' | 'pending_verification' | 'overdue' | 'paid' | 'unsuccessful';
+export type BillingStatusView = 'all' | 'pending_issue_approval' | 'awaiting_payment' | 'pending_verification' | 'partially_paid' | 'overdue' | 'paid' | 'unsuccessful';
 
 export interface OperationFacets {
   /** Full scoped result before pagination, excluding only the selected billing tab; all is the total. */

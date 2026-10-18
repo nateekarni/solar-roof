@@ -52,7 +52,7 @@ export function SiteDeleteDialog({
       const msg = err.message || "ไม่สามารถลบไซต์งานได้";
       setErrorMessage(msg);
       // If error indicates linked contracts/billing cycles, offer archive
-      if (msg.includes("สัญญา") || msg.includes("รอบบิล") || msg.includes("Archive")) {
+      if (msg.includes("สัญญา") || msg.includes("รอบบิล") || msg.includes("Archive") || msg.includes("ระงับการใช้งาน")) {
         setHasLinkedError(true);
       } else {
         notify.error(msg);

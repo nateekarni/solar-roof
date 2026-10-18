@@ -52,14 +52,17 @@ export function AppSidebar() {
   return (
     <Sidebar collapsible="icon" variant="sidebar">
       <SidebarHeader>
-        <div className="flex items-center gap-2.5 px-3 py-2.5 group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:py-2 group-data-[collapsible=icon]:justify-center">
+        <Link
+          href="/"
+          className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg hover:bg-sidebar-accent/50 transition-colors cursor-pointer group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:py-2 group-data-[collapsible=icon]:justify-center"
+        >
           <BrandMark className="size-8" label={isCollapsed ? BRAND_NAME : undefined}/>
           <div className="flex flex-col min-w-0 group-data-[collapsible=icon]:hidden">
             <span className="font-bold text-[15px] leading-tight text-sidebar-foreground">
               {BRAND_NAME}
             </span>
           </div>
-        </div>
+        </Link>
       </SidebarHeader>
 
       <SidebarContent className="px-2 group-data-[collapsible=icon]:px-0">

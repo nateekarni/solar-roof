@@ -195,8 +195,8 @@ test('approval freezes all approved transfer metadata, excludes rejected history
  const service=new FinancialApplicationService(db as unknown as DatabaseService,{assertEnabled:async()=>{}} as unknown as FinancialReadinessService);
  await service.verifyPayment('cycle','approved',undefined,'accountant',{paymentId:'a',verifiedAmount:'57.00',verifiedTransferAt:'2026-10-08T01:00:00Z'});
  const result=await service.verifyPayment('cycle','approved',undefined,'accountant',{paymentId:'b',verifiedAmount:'50.00',verifiedTransferAt:'2026-10-08T02:00:00Z'});
- assert.deepEqual(result.receipt.snapshot.payments.map((p:any)=>p.id),['a','b']);assert.equal(result.receipt.snapshot.payments[0].payer_name,'Payer');assert.equal(result.receipt.snapshot.payments[0].origin_account,'00123');assert.equal(result.receipt.snapshot.payments[1].payer_name,undefined);assert.equal(artifactCount,1);
- transfers[0]!.payer_name='Changed later';const retry=await service.verifyPayment('cycle','approved',undefined,'accountant',{paymentId:'b',verifiedAmount:'50.00',verifiedTransferAt:'2026-10-08T02:00:00Z'});assert.equal(retry.receipt.snapshot.payments[0].payer_name,'Payer');assert.equal(artifactCount,1);assert.equal(retry.receipt.id,result.receipt.id);
+ assert.deepEqual(result.receipt.snapshot.payments.map((p:any)=>p.id),['a','b']);assert.equal(result.receipt.snapshot.payments[0].payer_name,'Payer');assert.equal(result.receipt.snapshot.payments[0].origin_account,'00123');assert.equal(result.receipt.snapshot.payments[1].payer_name,undefined);assert.equal(artifactCount,2);
+ transfers[0]!.payer_name='Changed later';const retry=await service.verifyPayment('cycle','approved',undefined,'accountant',{paymentId:'b',verifiedAmount:'50.00',verifiedTransferAt:'2026-10-08T02:00:00Z'});assert.equal(retry.receipt.snapshot.payments[0].payer_name,'Payer');assert.equal(artifactCount,2);assert.equal(retry.receipt.id,result.receipt.id);
 });
 
 test('additional TEST evidence retains each transfer metadata independently without overwriting prior submissions',async()=>{

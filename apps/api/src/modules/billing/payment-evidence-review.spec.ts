@@ -21,21 +21,25 @@ test('approval requires a selected transfer and reviewer confirmed transaction f
  await assert.rejects(()=>service.verifyPayment('bill','approved',undefined,'accountant'),(error:any)=>error.getStatus?.()===400);
 });
 
-function reviewHarness(confirmed='40.00'){
+function reviewHarness(confirmed='40.00', withIdentity=true){
  const transfers=[{id:'previous',status:'paid',verified_amount:confirmed},{id:'first',status:'pending_verification',verified_amount:null},{id:'second',status:'pending_verification',verified_amount:null}];
  const client={query:async(sql:string,args:any[]=[])=>{
+  if(withIdentity&&sql.includes('p.name AS position'))return {rows:[{id:'accountant',display_name:'ผู้ตรวจหลักฐาน',position:'ฝ่ายบัญชี',signature_data:null}]};
+  if(sql==='SELECT now() AS value')return {rows:[{value:new Date('2026-10-14T01:00:00.000Z')}]};
   if(sql.includes('SELECT employee_can_access'))return {rows:[{allowed:true}]}; if(sql.includes('SELECT role,status'))return {rows:[{role:'accountant',status:'active'}]};
   if(sql.includes('SELECT * FROM billing_cycles'))return {rows:[{id:'bill',amount:'100.00',status:'pending_verification'}]};
   if(sql.includes('SELECT * FROM payments'))return {rows:transfers};
-  if(sql.includes('UPDATE payments')){const payment=transfers.find(p=>p.id===args[0])!;payment.status=args[1];payment.verified_amount=args[4];}
+  if(sql.includes('UPDATE payments')&&!sql.includes('receipt_document_id')){const payment=transfers.find(p=>p.id===args[0])!;payment.status=args[1];payment.verified_amount=args[4];}
   return {rows:[]};
  }};
- return {transfers,service:new FinancialApplicationService({transaction:async(fn:any)=>fn(client)} as any,{assertEnabled:async()=>{}} as any)};
+ const service=new FinancialApplicationService({transaction:async(fn:any)=>fn(client)} as any,{assertEnabled:async()=>{}} as any);
+ (service as any).issue=async()=>({id:'receipt',document_number:'REC-001/1'});
+ return {transfers,service};
 }
 test('partial approval accepts one transfer and retains other pending evidence',async()=>{
  const {service,transfers}=reviewHarness();
  const result=await service.verifyPayment('bill','approved',undefined,'accountant',{paymentId:'first',verifiedAmount:'20.00',verifiedTransferAt:'2026-10-08T04:00:00Z'});
- assert.equal(result.billingCycleStatus,'pending_verification');assert.equal(result.receipt,null);assert.equal(transfers[1]!.status,'paid');assert.equal(transfers[2]!.status,'pending_verification');
+ assert.equal(result.billingCycleStatus,'pending_verification');assert.ok(result.receipt);assert.equal(transfers[1]!.status,'paid');assert.equal(transfers[2]!.status,'pending_verification');
 });
 test('overpayment fails without approving evidence',async()=>{
  const {service,transfers}=reviewHarness();
@@ -44,7 +48,7 @@ test('overpayment fails without approving evidence',async()=>{
 });
 
 test('missing reviewer identity blocks settlement before changing evidence or allocating a receipt',async()=>{
- const {service,transfers}=reviewHarness();
+ const {service,transfers}=reviewHarness('40.00',false);
  await assert.rejects(()=>service.verifyPayment('bill','approved',undefined,'accountant',{paymentId:'first',verifiedAmount:'60.00',verifiedTransferAt:'2026-10-08T04:00:00Z'}));
  assert.equal(transfers[1]!.status,'pending_verification');
 });
@@ -58,7 +62,7 @@ test('reviewer payer details persist before receipt issuance and enter audit sna
   if(sql.includes('SELECT employee_can_access'))return {rows:[{allowed:true}]}; if(sql.includes('SELECT role,status'))return {rows:[{role:'accountant',status:'active'}]};
   if(sql.includes('SELECT * FROM billing_cycles'))return {rows:[{id:'bill',amount:'100.00',status:'pending_verification'}]};
   if(sql.includes('SELECT * FROM payments'))return {rows:[payment]};
-  if(sql.includes('UPDATE payments')){saved=args;Object.assign(payment,{status:args[1],verified_amount:args[4],payer_name:args[7],origin_bank:args[9],origin_account:args[10]});}
+  if(sql.includes('UPDATE payments')&&!sql.includes('receipt_document_id')){saved=args;Object.assign(payment,{status:args[1],verified_amount:args[4],payer_name:args[7],origin_bank:args[9],origin_account:args[10]});}
   if(sql.includes('INSERT INTO audit_events'))audit=JSON.parse(args[5]);return {rows:[]};
  }};
  const service=new FinancialApplicationService({transaction:async(fn:any)=>fn(client)} as any,{assertEnabled:async()=>{}} as any);

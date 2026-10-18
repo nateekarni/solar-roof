@@ -54,7 +54,16 @@ export function RateSettingsWorkspace(){
  const actions=(site:SiteRate)=><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" aria-label={t('เมนู ','Site actions: ')+site.siteName}><MoreHorizontal/></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuGroup><DropdownMenuItem onSelect={()=>edit([site.siteId])}>{t('แก้ไขเรตไซต์นี้','Edit site rate')}</DropdownMenuItem><DropdownMenuItem onSelect={()=>setHistory(site)}>{t('ประวัติเรต','Rate history')}</DropdownMenuItem></DropdownMenuGroup></DropdownMenuContent></DropdownMenu>;
  const selectPage=(rows:SiteRate[]) => <Checkbox aria-label={t('เลือกไซต์ในหน้านี้','Select sites on this page')} disabled={!rows.length} checked={pageSelection(selected,rows.map(s=>s.siteId))} onCheckedChange={checked=>setSelected(ids=>togglePageSelection(ids,rows.map(s=>s.siteId),checked===true))}/>;
  const columns:ColumnDef<SiteRate>[]=[
-  {id:'selection',enableSorting:false,header:({table})=>selectPage(table.getRowModel().rows.map(row=>row.original)),cell:({row})=>check(row.original)},
+  {
+   id:'selection',
+   size: 48,
+   minSize: 48,
+   maxSize: 48,
+   enableSorting:false,
+   enableHiding:false,
+   header:({table})=><div className="flex items-center justify-center size-4 min-h-4 min-w-4 shrink-0 mx-auto">{selectPage(table.getRowModel().rows.map(row=>row.original))}</div>,
+   cell:({row})=><div className="flex items-center justify-center size-4 min-h-4 min-w-4 shrink-0 mx-auto">{check(row.original)}</div>
+  },
   {accessorKey:'siteName',header:t('ไซต์งาน','Site')},
   {accessorKey:'customerName',header:t('ลูกค้า','Customer')},
   {id:'rate',accessorFn:site=>site.rate===null?undefined:Number(site.rate),header:t('เรตปัจจุบัน','Current rate'),cell:({row})=>row.original.rate===null?t('ยังไม่กำหนด','Unassigned'):`${row.original.rate} ${unit}`},

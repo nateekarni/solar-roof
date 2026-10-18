@@ -136,3 +136,20 @@ export type { FinancialAction, Capabilities } from './capabilities.js';
 export type { FinancialScope, ReadinessResponsibility, FinancialReadinessItem, FinancialReadinessStatus, FinancialReadinessContext } from './financial-readiness.js';
 export type { JobRecord, JobStatus } from './jobs.js';
 export type {ArchiveManifest,HistoryRestoreRequest,HistoryRestoreAccepted} from './history.js';
+
+export interface DiscoveredGatewayRow {
+  id: string;
+  externalGatewayId: string;
+  reportedSiteId?: string | null;
+  reportedDeviceId?: string | null;
+  manufacturer?: string | null;
+  model?: string | null;
+  profileId?: string | null;
+  protocol?: string | null;
+  status: 'unassigned' | 'assigned' | 'ignored';
+  assignedSiteId?: string | null;
+  assignedGatewayId?: string | null;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  rawPayload: Record<string, unknown>;
+}

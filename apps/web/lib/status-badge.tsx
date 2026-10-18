@@ -12,6 +12,7 @@ export const STATUS_MAP: Record<
 > = {
   pending_issue_approval: {th:'รออนุมัติออกเอกสาร',en:'Awaiting issuance approval',variant:'secondary',className:'bg-info/15 text-info border-info/30'},
   awaiting_payment: {th:'รอชำระเงิน',en:'Awaiting payment',variant:'secondary',className:'bg-warning/15 text-warning-emphasis border-warning/30'},
+  partially_paid: {th:'ชำระบางส่วน',en:'Partially paid',variant:'secondary',className:'bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30 font-medium'},
   unsuccessful: {th:'ถูกยกเลิก',en:'Cancelled',variant:'destructive'},
   complete: {th:'ข้อมูลครบถ้วน',en:'Complete data',variant:'secondary',className:'bg-success/15 text-success border-success/30'},
   partial: {th:'ข้อมูลบางส่วน',en:'Partial data',variant:'secondary',className:'bg-warning/15 text-warning-emphasis border-warning/30'},
@@ -165,6 +166,7 @@ export const STATUS_MAP: Record<
   "ฉบับร่าง": { th: "ฉบับร่าง", en: "Draft", variant: "secondary", className: "bg-muted text-muted-foreground border-border" },
   "ร่าง": { th: "ฉบับร่าง", en: "Draft", variant: "secondary", className: "bg-muted text-muted-foreground border-border" },
   "ชำระแล้ว": { th: "ชำระแล้ว", en: "Paid", variant: "secondary", className: "bg-success/15 text-success border-success/30 font-medium" },
+  "ชำระบางส่วน": { th: "ชำระบางส่วน", en: "Partially paid", variant: "secondary", className: "bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30 font-medium" },
   "รอชำระ": { th: "รอชำระ", en: "Pending", variant: "secondary", className: "bg-warning/15 text-warning-emphasis border-warning/30" },
   "เกินกำหนดชำระ": { th: "เกินกำหนดชำระ", en: "Overdue", variant: "destructive", className: "font-medium" },
   "ออนไลน์": { th: "ออนไลน์", en: "Online", variant: "secondary", className: "bg-success/15 text-success border-success/30 font-medium" },

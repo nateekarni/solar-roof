@@ -40,7 +40,7 @@ export function apiErrorMessage(status:number,message:unknown,locale:'th'|'en'){
   if(status===429)return 'Too many requests. Wait a moment and try again.';
   return 'The request could not be completed. Check the information and try again.';
  }
- if(/[ก-๙]/.test(text)&&!/[A-Za-z]{3,}/.test(text))return text;
+ if(/[ก-๙]/.test(text)&&!/(?:prisma|sql|select|insert|update|delete|table|column|databaseerror|syntaxerror)/i.test(text))return text;
  if(status===401&&text==='Current password is incorrect')return 'รหัสผ่านปัจจุบันไม่ถูกต้อง';
  if(status===401&&text==='Invalid second factor')return 'รหัสยืนยันไม่ถูกต้องหรือถูกใช้แล้ว กรุณาใช้รหัสใหม่';
  if(status===401&&text==='Valid second factor is required')return 'กรุณาใช้รหัสยืนยันสองขั้นตอนหรือรหัสกู้คืนที่ยังไม่ได้ใช้';

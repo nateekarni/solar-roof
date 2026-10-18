@@ -255,6 +255,27 @@ export function isActionValidForResource(resource: string, action: string): bool
   return actions ? actions.includes(action as ('view' | 'edit' | 'approve' | 'download')) : false;
 }
 
+export const ROLE_POSITION_PRESETS: Record<string, readonly { th: string; en: string }[]> = {
+  accountant: [
+    { th: 'เจ้าหน้าที่บัญชีและการเงิน', en: 'Accounting & Finance Officer' },
+    { th: 'ผู้ตรวจสอบบัญชี', en: 'Internal Auditor' },
+    { th: 'ผู้จัดการฝ่ายบัญชี', en: 'Accounting Manager' },
+  ],
+  operator: [
+    { th: 'วิศวกรควบคุมระบบ', en: 'Operations Engineer' },
+    { th: 'เจ้าหน้าที่เทคนิค', en: 'Technical Specialist' },
+    { th: 'วิศวกรบำรุงรักษา', en: 'Maintenance Engineer' },
+  ],
+  owner: [
+    { th: 'กรรมการผู้จัดการ', en: 'Managing Director' },
+    { th: 'ประธานเจ้าหน้าที่บริหาร', en: 'Chief Executive Officer' },
+  ],
+  admin: [
+    { th: 'ผู้ดูแลระบบอาวุโส', en: 'Senior System Administrator' },
+    { th: 'ผู้ดูแลระบบสารสนเทศ', en: 'IT Administrator' },
+  ],
+};
+
 export function applyPositionPreset(
   domain: string,
   permissions: readonly string[],

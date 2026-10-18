@@ -18,7 +18,7 @@ import type {ColumnDef} from '@tanstack/react-table';
 import {Table,TableHeader,TableHead,TableBody,TableRow,TableCell} from '../../components/ui/table';
 import {Tabs,TabsList,TabsTrigger,TabsContent} from '../../components/ui/tabs';
 import {Empty,EmptyHeader,EmptyMedia,EmptyTitle,EmptyDescription} from '../../components/ui/empty';
-import {effectiveRule,domainOverrides,filterEmployees,filterPositions,staffDraftChanged,positionRulesChanged,canDismissStaffDialog,staffStatusLabel,employeePositionDraft,employeePositionLabel,isActionValidForResource,applyPositionPreset,buildInvitePayload,ACTIVE_DISPLAY_RESOURCES,resourceLabel,bundleSubPermissions,isArchivedInvitationStatus,maskPersonalEmail,maskPersonalPhone,type RuleValue,type PositionChoice} from './staff-permissions-model';
+import {effectiveRule,domainOverrides,filterEmployees,filterPositions,staffDraftChanged,positionRulesChanged,canDismissStaffDialog,staffStatusLabel,employeePositionDraft,employeePositionLabel,isActionValidForResource,applyPositionPreset,buildInvitePayload,ACTIVE_DISPLAY_RESOURCES,resourceLabel,bundleSubPermissions,isArchivedInvitationStatus,maskPersonalEmail,maskPersonalPhone,ROLE_POSITION_PRESETS,type RuleValue,type PositionChoice} from './staff-permissions-model';
 import {formatAppDateTime} from '../../lib/date-format';
 import {Dialog,DialogContent,DialogHeader,DialogTitle,DialogDescription} from '../../components/ui/dialog';
 import {ConfirmDialog} from '../../components/feedback/confirm-action';
@@ -793,7 +793,7 @@ export function EmployeeEditor({employee,domain,positions,permissions,sites,onSa
         </div>
         <div className="grid gap-2 sm:grid-cols-[140px_minmax(0,1fr)] sm:items-center sm:gap-4">
          <Label htmlFor="staff-position" className="text-sm text-muted-foreground">{th ? 'ตำแหน่ง' : 'Position'}</Label>
-         <div id="edit-staff-position" className="w-full">
+         <div id="edit-staff-position" className="w-full space-y-1.5">
           <PositionCombobox
            id="staff-position"
            value={choice}
@@ -801,6 +801,36 @@ export function EmployeeEditor({employee,domain,positions,permissions,sites,onSa
            onChange={choosePosition}
            disabled={busy||!!conflict}
           />
+          {(() => {
+           const presets = ROLE_POSITION_PRESETS[employee.role];
+           if (!presets?.length) return null;
+           return (
+            <div className="flex flex-wrap items-center gap-1.5 pt-1">
+             <span className="text-[11px] text-muted-foreground">{th ? 'แนะนำ:' : 'Suggested:'}</span>
+             {presets.map((preset) => {
+              const text = th ? preset.th : preset.en;
+              return (
+               <button
+                key={text}
+                type="button"
+                disabled={busy||!!conflict}
+                onClick={() => {
+                 const existing = currentPositions.find(p => p.name.trim().toLowerCase() === text.trim().toLowerCase());
+                 if (existing) {
+                  choosePosition({ kind: 'existing', id: existing.id, name: existing.name });
+                 } else {
+                  choosePosition({ kind: 'new', name: text });
+                 }
+                }}
+                className="rounded-md border border-border/80 bg-muted/30 px-2 py-0.5 text-[11px] font-medium text-foreground hover:bg-primary/10 hover:border-primary/40 hover:text-primary transition-colors cursor-pointer"
+               >
+                {text}
+               </button>
+              );
+             })}
+            </div>
+           );
+          })()}
          </div>
         </div>
        </div>
@@ -1176,16 +1206,45 @@ export function StaffInvitation({
                 </div>
                 <div className="grid gap-2 sm:grid-cols-[140px_minmax(0,1fr)] sm:items-center sm:gap-4">
                   <Label htmlFor="staff-position" className="text-sm text-muted-foreground">{th ? 'ตำแหน่ง' : 'Position'}</Label>
-                  <FreeformPositionCombobox
-                    id="staff-position"
-                    value={position}
-                    positions={positions}
-                    onChange={setPosition}
-                    onSelectPreset={(pos) => {
-                      setOverrides(applyPositionPreset(domain, permissions, pos.rules));
-                    }}
-                    placeholder={th ? 'ค้นหาหรือพิมพ์ตำแหน่ง…' : 'Search or type a position…'}
-                  />
+                  <div className="space-y-1.5">
+                    <FreeformPositionCombobox
+                      id="staff-position"
+                      value={position}
+                      positions={positions}
+                      onChange={setPosition}
+                      onSelectPreset={(pos) => {
+                        setOverrides(applyPositionPreset(domain, permissions, pos.rules));
+                      }}
+                      placeholder={th ? 'ค้นหาหรือพิมพ์ตำแหน่ง…' : 'Search or type a position…'}
+                    />
+                    {(() => {
+                      const domainPresets = (domain === 'business' ? ROLE_POSITION_PRESETS.accountant : ROLE_POSITION_PRESETS.operator) ?? [];
+                      return (
+                        <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                          <span className="text-[11px] text-muted-foreground">{th ? 'แนะนำ:' : 'Suggested:'}</span>
+                          {domainPresets.map((preset) => {
+                            const text = th ? preset.th : preset.en;
+                            return (
+                              <button
+                                key={text}
+                                type="button"
+                                onClick={() => {
+                                  setPosition(text);
+                                  const pos = positions.find(p => p.name.trim().toLowerCase() === text.trim().toLowerCase());
+                                  if (pos?.rules) {
+                                    setOverrides(applyPositionPreset(domain, permissions, pos.rules));
+                                  }
+                                }}
+                                className="rounded-md border border-border/80 bg-muted/30 px-2 py-0.5 text-[11px] font-medium text-foreground hover:bg-primary/10 hover:border-primary/40 hover:text-primary transition-colors cursor-pointer"
+                              >
+                                {text}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+                  </div>
                 </div>
               </div>
             </section>

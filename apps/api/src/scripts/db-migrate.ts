@@ -69,6 +69,8 @@ try {
     "infra/migrations/060_payload_samples_generation_energy_idx.sql",
     "infra/migrations/061_user_phone_number.sql",
     "infra/migrations/062_retire_contracts_trigger_and_feed.sql",
+    "infra/migrations/063_discovered_gateways_and_partial_receipts.sql",
+    "infra/migrations/064_safe_site_deletion_and_bank_qr.sql",
   ];
   for (const file of migrationFiles) {
     const sql = await readFile(new URL(`../../../../${file}`, import.meta.url), "utf8");

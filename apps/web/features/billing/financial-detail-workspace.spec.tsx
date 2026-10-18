@@ -21,10 +21,10 @@ test('rejection reason is requested only after choosing reject',()=>{
 test('invoice, receipt and every slip remain individually selectable, pending evidence opens first',()=>{
  const bill={id:'bill',invoiceId:'invoice-doc',receiptId:'receipt-doc',payments:[{id:'old',amount:null,status:'rejected'},{id:'pending',amount:null,status:'pending_verification'}]};
  const documents=financialDocuments('billing',bill,bill);
- assert.deepEqual(documents.map(document=>document.id),['invoice','receipt','payment:old','payment:pending']);
+ assert.deepEqual(documents.map(document=>document.id),['payment:pending','invoice','payment:old','receipt']);
  assert.equal(initialFinancialDocument(documents),'payment:pending');
- assert.equal(documents[0]?.source?.documentId,'invoice-doc');
- assert.equal(documents[1]?.source?.documentId,'receipt-doc');
+ assert.equal(documents[1]?.source?.documentId,'invoice-doc');
+ assert.equal(documents[3]?.source?.documentId,'receipt-doc');
  const html=renderToStaticMarkup(<FinancialDocumentList documents={documents} selected={null} onSelect={()=>{}} disabled={false} locale="en"/>);
  assert.equal((html.match(/aria-expanded="false"/g)||[]).length,8);
  assert.match(html,/Select a document to preview/);
@@ -55,12 +55,12 @@ test('expanded evidence preview stays inside the selected list item',()=>{
  const html=renderToStaticMarkup(<FinancialDocumentList documents={documents} selected="payment:second" onSelect={()=>{}} disabled={false} locale="en"/>);
  const items=html.match(/<li\b[\s\S]*?<\/li>/g)??[];
  assert.equal(items.length,3);
- assert.match(items[2]!,/<img[^>]+second\.png/);
+ assert.match(items[0]!,/<img[^>]+second\.png/);
  assert.doesNotMatch(items[1]!,/<img/);
- const controlledId=/aria-controls="([^"]+)"/.exec(items[2]!)?.[1];
+ const controlledId=/aria-controls="([^"]+)"/.exec(items[0]!)?.[1];
  assert.ok(controlledId);
- assert.ok(items[2]!.includes(`id="${controlledId}"`));
- assert.doesNotMatch(items[2]!,/payment:second/);
+ assert.ok(items[0]!.includes(`id="${controlledId}"`));
+ assert.doesNotMatch(items[0]!,/payment:second/);
 });
 
 test('split review has only one document selector owned by the workspace',()=>{

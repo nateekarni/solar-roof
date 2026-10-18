@@ -28,11 +28,12 @@ import {
 } from "../../components/ui/select";
 import { apiClient } from "../../lib/api-client";
 import { useLocale, useT } from "../../providers/locale-provider";
+import { ROLE_POSITION_PRESETS } from "../settings/staff-permissions-model";
 
 const userSchema = z.object({
   email: z.string().min(1, "กรุณาระบุอีเมล").email("รูปแบบอีเมลไม่ถูกต้อง"),
   displayName: z.string().min(2, "ชื่อผู้ใช้งานต้องมีอย่างน้อย 2 ตัวอักษร"),
-  role: z.enum(["owner", "admin", "customer_user"]),
+  role: z.enum(["owner", "admin", "accountant", "operator", "customer_user"]),
   companyPosition: z.string().max(120).optional(),
   customerId: z.string().optional(),
 });
@@ -59,7 +60,7 @@ export function InviteUserDialog({
   const [lookupMessage, setLookupMessage] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [customers, setCustomers] = React.useState<CustomerOption[]>([]);
-  const [selectedRole, setSelectedRole] = React.useState<"owner" | "admin" | "customer_user">("customer_user");
+  const [selectedRole, setSelectedRole] = React.useState<"owner" | "admin" | "accountant" | "operator" | "customer_user">("customer_user");
   const [invitedResult, setInvitedResult] = React.useState<{
     email: string;
     invitationId: string;
@@ -235,6 +236,28 @@ export function InviteUserDialog({
                 className="text-xs h-10"
                 {...register("companyPosition")}
               />
+              {(() => {
+                const presets = ROLE_POSITION_PRESETS[selectedRole];
+                if (!presets?.length) return null;
+                return (
+                  <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                    <span className="text-[11px] text-muted-foreground">{locale === 'th' ? 'แนะนำ:' : 'Suggested:'}</span>
+                    {presets.map((preset) => {
+                      const text = locale === 'th' ? preset.th : preset.en;
+                      return (
+                        <button
+                          key={text}
+                          type="button"
+                          onClick={() => setValue("companyPosition", text, { shouldValidate: true })}
+                          className="rounded-md border border-border/80 bg-muted/30 px-2 py-0.5 text-[11px] font-medium text-foreground hover:bg-primary/10 hover:border-primary/40 hover:text-primary transition-colors cursor-pointer"
+                        >
+                          {text}
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
               {errors.companyPosition && (
                 <p className="text-[11px] text-destructive">{errors.companyPosition.message}</p>
               )}
@@ -246,7 +269,7 @@ export function InviteUserDialog({
               </Label>
               <Select
 
-                onValueChange={(val: "owner" | "admin" | "customer_user") => {
+                onValueChange={(val: "owner" | "admin" | "accountant" | "operator" | "customer_user") => {
                   setSelectedRole(val);
                   setValue("role", val);
                 }}
@@ -257,6 +280,12 @@ export function InviteUserDialog({
                 <SelectContent>
                   <SelectItem value="customer_user" className="text-xs">
                     {t("profile.customerUser")}
+                  </SelectItem>
+                  <SelectItem value="accountant" className="text-xs">
+                    {locale === "th" ? "เจ้าหน้าที่บัญชี" : "Accountant"}
+                  </SelectItem>
+                  <SelectItem value="operator" className="text-xs">
+                    {locale === "th" ? "เจ้าหน้าที่ปฏิบัติการ" : "Operator"}
                   </SelectItem>
                   <SelectItem value="admin" className="text-xs">
                     {t("profile.admin")}

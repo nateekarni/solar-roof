@@ -11,9 +11,10 @@ import {OperationQueryTable} from '../shared/operation-query-table';
 test('billing tabs expose translated names and scoped counts with the selected view',()=>{
  const html=renderToStaticMarkup(<BillingStatusTabs value="pending_verification" counts={{all:120,pending_verification:37}} locale="th" onValueChange={()=>{}}/>);
  assert.match(html,/role="tablist"/);
- assert.equal((html.match(/role="tab"/g)??[]).length,7);
+ assert.equal((html.match(/role="tab"/g)??[]).length,8);
  assert.match(html,/รออนุมัติออกเอกสาร/);
  assert.match(html,/รอตรวจหลักฐาน/);
+ assert.match(html,/ชำระบางส่วน/);
  assert.match(html,/120/);
  assert.match(html,/aria-selected="true"[^>]*>รอตรวจหลักฐาน/);
  assert.match(html,/37/);
@@ -29,7 +30,7 @@ test('billing toolbar replaces both status dropdowns with tabs below search and 
  const html=renderToStaticMarkup(<AppRouterContext.Provider value={{bfcacheId:'test',back(){},forward(){},refresh(){},push(){},replace(){},prefetch(){}}}>
   <SearchParamsContext.Provider value={new URLSearchParams('search=school&billingStatusView=paid')}><PathnameContext.Provider value="/billing">
    <SessionUserProvider user={{id:'session-user',email:'user@example.test',displayName:'Officer',role:'owner'}}>
-    <OperationQueryTable resource="billing" title="ใบวางบิล" summary={[]} initial={{idKey:'id',columns:[],rows:[],page:{limit:25,nextCursor:null,hasMore:false},facets:{billingStatusCounts:{all:120,pending_issue_approval:20,awaiting_payment:30,pending_verification:37,overdue:12,paid:15,unsuccessful:6}}}}/>
+    <OperationQueryTable resource="billing" title="ใบวางบิล" summary={[]} initial={{idKey:'id',columns:[],rows:[],page:{limit:25,nextCursor:null,hasMore:false},facets:{billingStatusCounts:{all:120,pending_issue_approval:20,awaiting_payment:30,pending_verification:37,partially_paid:5,overdue:12,paid:15,unsuccessful:6}}}}/>
    </SessionUserProvider>
   </PathnameContext.Provider></SearchParamsContext.Provider>
  </AppRouterContext.Provider>);
@@ -49,8 +50,9 @@ test('English billing tabs have human names and default missing counts to zero',
  assert.match(html,/Billing statement status/);
  assert.match(html,/Awaiting issuance approval/);
  assert.match(html,/Awaiting evidence review/);
+ assert.match(html,/Partially paid/);
  assert.match(html,/Cancelled/);
- assert.equal((html.match(/>0<\/span>/g)??[]).length,7);
+ assert.equal((html.match(/>0<\/span>/g)??[]).length,8);
 });
 
 test('customer views limit billing tabs to 5 active lifecycle views',()=>{
@@ -81,6 +83,6 @@ test('display-safe tab values produce the public billing status view',()=>{
  const selected:string[]=[];
  const element=BillingStatusTabs({value:'all',onValueChange:value=>selected.push(value)});
  element.props.onValueChange('1');
- element.props.onValueChange('5');
+ element.props.onValueChange('6');
  assert.deepEqual(selected,['pending_issue_approval','paid']);
 });

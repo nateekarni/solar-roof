@@ -7,10 +7,17 @@ import {useLocale} from '../../providers/locale-provider';
 const englishLabels:Record<string,string>={detail:'View Billing Details',approve_issuance:'Approve and issue',pay:'Pay with Slip',verify:'Verify Payment Slip',invoice:'View Invoice',receipt:'View Receipt'};
 export function OperationActionList({actions,onAction,menu=false}:{actions:OperationAction[];onAction:(id:string)=>void;menu?:boolean}) {
  const locale=useLocale();
- return actions.map(action=>{
+ const visibleActions = actions.filter(action => action.enabled);
+ return visibleActions.map(action=>{
   const label=locale==='en'?(englishLabels[action.id]??action.label):action.label;
-  const reason=action.reason&&locale==='en'?'No issued document is available for this record.':action.reason;
-  const content=<><span>{label}</span>{reason&&<span className="text-xs"> · {reason}</span>}</>;
-  return menu?<DropdownMenuItem className="min-h-11 whitespace-normal" key={action.id} disabled={!action.enabled} title={reason} onClick={()=>onAction(action.id)}>{content}</DropdownMenuItem>:<Button className="min-h-11 h-auto whitespace-normal py-2" key={action.id} size="sm" variant="outline" disabled={!action.enabled} title={reason} onClick={()=>onAction(action.id)}>{content}</Button>;
+  return menu ? (
+    <DropdownMenuItem className="min-h-9 whitespace-normal cursor-pointer" key={action.id} onClick={()=>onAction(action.id)}>
+      <span>{label}</span>
+    </DropdownMenuItem>
+  ) : (
+    <Button className="min-h-9 h-auto whitespace-normal py-1.5 cursor-pointer" key={action.id} size="sm" variant="outline" onClick={()=>onAction(action.id)}>
+      <span>{label}</span>
+    </Button>
+  );
  });
 }

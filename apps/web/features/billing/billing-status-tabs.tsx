@@ -10,6 +10,7 @@ export const DEFAULT_STAFF_VIEWS: readonly BillingStatusView[] = [
   'pending_issue_approval',
   'awaiting_payment',
   'pending_verification',
+  'partially_paid',
   'overdue',
   'paid',
   'unsuccessful',
@@ -19,6 +20,7 @@ export const CUSTOMER_VIEWS: readonly BillingStatusView[] = [
   'all',
   'awaiting_payment',
   'pending_verification',
+  'partially_paid',
   'overdue',
   'paid',
 ];

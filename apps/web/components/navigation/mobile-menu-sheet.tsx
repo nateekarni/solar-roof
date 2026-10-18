@@ -143,12 +143,16 @@ export function MobileMenuSheet({ open, onOpenChange }: MobileMenuSheetProps) {
     <div className="fixed inset-0 z-50 flex flex-col bg-sidebar text-sidebar-foreground animate-in fade-in duration-200">
       {/* Top Header of Mobile Menu */}
       <div className="flex h-14 shrink-0 items-center justify-between border-b border-sidebar-border px-4">
-        <div className="flex items-center gap-2.5">
+        <Link
+          href="/"
+          onClick={() => onOpenChange(false)}
+          className="flex items-center gap-2.5 rounded-lg py-1 px-1.5 hover:bg-sidebar-accent/50 transition-colors cursor-pointer"
+        >
           <BrandMark className="size-8" />
           <span className="font-bold text-base text-sidebar-foreground tracking-tight">
             {BRAND_NAME}
           </span>
-        </div>
+        </Link>
 
         <Button
           variant="ghost"

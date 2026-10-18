@@ -47,6 +47,15 @@ interface SavedFinancialDocument {
     logoDataUri?: string;
     banks: { bank_name: string; account_name: string; account_number: string }[];
     payments: { note?:string|null; payer_name?: string | null; payment_method?: 'bank_transfer' | 'promptpay' | null; origin_bank?: string | null; origin_account?: string | null; status: string; paid_at: string | Date; amount: string; evidence_key?: string; slip_url?: string }[];
+    outstandingBills?: {
+      bills: {
+        period: string;
+        billedAmount: string;
+        paidAmount: string;
+        remainingAmount: string;
+      }[];
+      totalOutstanding: string;
+    };
   };
 }
 function partySnapshot(party: SavedFinancialParty, customer: boolean): DocumentParty {
@@ -77,16 +86,24 @@ export function financialDocumentSnapshot(document: SavedFinancialDocument): Doc
       quantity: line.consumedKwh, rate: line.rate, amount: line.subtotal,
     })),
     totals: { subtotal: s.cycle.subtotal, tax: s.cycle.simulated_tax, taxLabel: s.policy?.taxRate !== undefined ? `ภาษี ${s.policy.taxRate}%` : s.policy?.taxPercent !== undefined ? `ภาษี ${s.policy.taxPercent}%` : 'ภาษี', total: s.cycle.amount },
-    approvedTransfers: s.payments.filter(p => p.status === 'paid' || p.status === 'approved').map(p => ({
-      status: p.status as 'paid' | 'approved', paidAt: typeof p.paid_at === 'string' ? p.paid_at : p.paid_at.toISOString(), amount: p.amount,
-      ...(p.evidence_key && !p.evidence_key.startsWith('data:') && p.evidence_key.length<=160 ? {evidence:p.evidence_key}:{}),
-      ...(p.payer_name ? { payerName: p.payer_name } : {}),
-      ...(p.payment_method ? { paymentMethod: p.payment_method } : {}),
-      ...(p.origin_bank ? { originBank: p.origin_bank } : {}),
-      ...(p.origin_account ? { originAccount: p.origin_account } : {}),
-    })),
+    approvedTransfers: s.payments.filter(p => p.status === 'paid' || p.status === 'approved').map(p => {
+      const ev = (p.evidence_key && !p.evidence_key.startsWith('data:') && p.evidence_key.length <= 160)
+        ? p.evidence_key
+        : p.slip_url
+        ? (p.slip_url.split('/').pop() || undefined)
+        : undefined;
+      return {
+        status: p.status as 'paid' | 'approved', paidAt: typeof p.paid_at === 'string' ? p.paid_at : p.paid_at.toISOString(), amount: p.amount,
+        ...(ev ? { evidence: ev } : {}),
+        ...(p.payer_name ? { payerName: p.payer_name } : {}),
+        ...(p.payment_method ? { paymentMethod: p.payment_method } : {}),
+        ...(p.origin_bank ? { originBank: p.origin_bank } : {}),
+        ...(p.origin_account ? { originAccount: p.origin_account } : {}),
+      };
+    }),
+    ...(s.outstandingBills ? { outstandingBills: s.outstandingBills } : {}),
     paymentAccounts: s.banks.map(bank => ({ bankName: bank.bank_name, accountName: bank.account_name, accountNumber: bank.account_number })),
-    ...(s.dueDate ? { dueDate: s.dueDate } : {}), logoDataUri: s.logoDataUri ?? s.logo, templateVersion: s.templateVersion ?? 'sarabun-a4-v6', syntheticTest: s.policy?.scope==='TEST',
+    ...(s.dueDate ? { dueDate: s.dueDate } : {}), ...(s.approver ? { approver: s.approver } : {}), logoDataUri: s.logoDataUri ?? s.logo, templateVersion: s.templateVersion ?? 'sarabun-a4-v6', syntheticTest: s.policy?.scope==='TEST',
   };
 }
 export async function renderFinancialDocumentPdf(document: SavedFinancialDocument): Promise<Buffer> {

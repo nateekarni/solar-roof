@@ -347,26 +347,6 @@ export function OperationTable({
                 ) : resource === "contracts" ? (<DropdownMenuItem onClick={()=>openDocumentPreview('contract',item)}>{locale==='th'?'ดูเอกสารสัญญา (PPA)':'View Contract (PPA)'}</DropdownMenuItem>
                 ) : resource === "sites" ? (
                   <>
-                    <DropdownMenuItem
-                      onClick={() => openDocumentPreview("handover", item)}
-                      className="gap-2 cursor-pointer font-medium text-foreground"
-                    >
-                      <Award className="size-3.5 text-foreground" />
-                      <span>{locale === "th" ? "ดูหนังสือส่งมอบระบบ" : "Handover Certificate"}</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => {
-                        setSelectedTelemetrySite({
-                          id: itemId,
-                          name: String(item.name || item["ชื่อไซต์"] || item["ชื่อไซต์งาน"] || "ไซต์งาน"),
-                        });
-                        setTelemetryDialogOpen(true);
-                      }}
-                      className="gap-2 cursor-pointer font-medium text-foreground"
-                    >
-                      <Radio className="size-3.5 text-foreground" />
-                      <span>{locale === "th" ? "ข้อมูลสดและค่ารีจิสเตอร์" : "Live Telemetry & Registers"}</span>
-                    </DropdownMenuItem>
                     {user?.role === "owner" && (
                       <>
                         <DropdownMenuItem
@@ -733,7 +713,7 @@ const COLUMN_SIZES: Record<string, { size: number; minSize?: number; maxSize?: n
           data={rows}
           getRowId={row=>row.id}
           searchPlaceholder={searchPlaceholder}
-          pageSize={10}
+          pageSize={50}
           {...(resource==='billing'?{onViewChange:resetSelection}:{})}
           onRowClick={(row) => openResourceDetail(resource, row)}
         />

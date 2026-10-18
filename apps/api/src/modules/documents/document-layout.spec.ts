@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
-import { documentDefinition, formatDocumentDate, formatDocumentMoney, thaiAmountWords, renderDocumentPdf, type DocumentSnapshot } from './document-layout.js';
+import { documentDefinition, formatDocumentDate, formatDocumentMoney, formatDisplayDecimal, thaiAmountWords, renderDocumentPdf, type DocumentSnapshot } from './document-layout.js';
 
 const fixture: DocumentSnapshot = {
   type: 'invoice', documentNumber: 'INV2026100001', issueDate: '2026-10-08',
@@ -36,9 +36,14 @@ test('invoice uses exact saved rate rows and totals without changing the snapsho
   const saved = JSON.stringify(fixture);
   const text = serialized(documentDefinition({ ...fixture, totals: { subtotal: '90071992547409.91', total: '90071992547409.91' } }));
   assert.match(text, /90,071,992,547,409.91/);
-  assert.match(text, /1000.125/);
+  assert.match(text, /1,000.125/);
   assert.match(text, /4.1234/);
   assert.equal(JSON.stringify(fixture), saved);
+  assert.equal(formatDisplayDecimal('14100'), '14,100.00');
+  assert.equal(formatDisplayDecimal('3.5'), '3.50');
+  assert.equal(formatDisplayDecimal('3.50'), '3.50');
+  assert.equal(formatDisplayDecimal('3.5412'), '3.5412');
+  assert.equal(formatDisplayDecimal('1000.125'), '1,000.125');
   assert.equal(formatDocumentMoney('4623.45000000'), '4,623.45');
   assert.throws(() => formatDocumentMoney('4623.450001'));
   assert.equal(thaiAmountWords('21.01'), 'ยี่สิบเอ็ดบาทหนึ่งสตางค์');

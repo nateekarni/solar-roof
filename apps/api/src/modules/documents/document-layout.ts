@@ -15,6 +15,7 @@ export interface DocumentSignatory {
   name?: string;
   title?: string;
   signatureDataUri?: string;
+  signatureDate?: string;
 }
 /** Frozen input only: never fetch current settings, identities or rates during rendering. */
 export interface DocumentSnapshot {
@@ -57,6 +58,15 @@ export interface DocumentSnapshot {
     evidence?: string;
     status: "paid" | "approved";
   }[];
+  outstandingBills?: {
+    bills: {
+      period: string;
+      billedAmount: string;
+      paidAmount: string;
+      remainingAmount: string;
+    }[];
+    totalOutstanding: string;
+  };
   paymentAccounts: {
     bankName: string;
     accountName: string;
@@ -64,6 +74,7 @@ export interface DocumentSnapshot {
   }[];
   dueDate?: string;
   paymentTerms?: string;
+  approver?: { name?: string; role?: string; approvedAt?: string } | null;
   logoDataUri: string;
   templateVersion: string;
   syntheticTest: boolean;
@@ -96,6 +107,17 @@ function moneyParts(value: string): [string, string] {
 export function formatDocumentMoney(value: string): string {
   const [whole, fraction] = moneyParts(value);
   return `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${fraction}`;
+}
+export function formatDisplayDecimal(value: string): string {
+  if (typeof value !== "string" || !/^\d+(\.\d+)?$/.test(value))
+    throw new Error("Exact nonnegative decimal required");
+  const [whole = "0", fraction = ""] = value.split(".");
+  const formattedWhole = (whole.replace(/^0+(?=\d)/, "") || "0").replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  let formattedFraction = fraction;
+  if (fraction.length < 2) {
+    formattedFraction = fraction.padEnd(2, "0");
+  }
+  return `${formattedWhole}.${formattedFraction}`;
 }
 function exactDecimal(value: string): string {
   if (typeof value !== "string" || !/^\d+(\.\d+)?$/.test(value))
@@ -272,6 +294,12 @@ function signatures(s: DocumentSnapshot): any {
     bodyText(text, { alignment: "center", ...(margin ? { margin } : {}) });
   const left = (text: string, margin?: number[]) =>
     receipt ? { text: "" } : centered(text, margin);
+  const issuerDate = issuer?.signatureDate || s.approver?.approvedAt || (s.type === 'invoice' && s.approver ? s.issueDate : undefined);
+  const formatSignatoryDate = (dateStr?: string) => {
+    if (!dateStr) return "____________________";
+    const dateOnly = dateStr.slice(0, 10);
+    return formatDocumentDate(dateOnly) || dateOnly;
+  };
   return {
     fontSize: 14,
     table: {
@@ -319,8 +347,24 @@ function signatures(s: DocumentSnapshot): any {
           ? [[centered(s.issuer.name), centered(s.customer.name)]]
           : []),
         [
-          left("วันที่ลงนาม: ____________________", [0, 4, 0, 0]),
-          centered("วันที่ลงนาม: ____________________", [0, 4, 0, 0]),
+          left(
+            receipt
+              ? ""
+              : issuerDate
+                ? `วันที่ลงนาม: ${formatSignatoryDate(issuerDate)}`
+                : "วันที่ลงนาม: ____________________",
+            [0, 4, 0, 0],
+          ),
+          centered(
+            receipt
+              ? issuerDate
+                ? `วันที่อนุมัติ: ${formatSignatoryDate(issuerDate)}`
+                : "วันที่อนุมัติ: ____________________"
+              : customer?.signatureDate
+                ? `วันที่ลงนาม: ${formatSignatoryDate(customer.signatureDate)}`
+                : "วันที่ลงนาม: ____________________",
+            [0, 4, 0, 0],
+          ),
         ],
       ],
     },
@@ -398,23 +442,52 @@ function financialDefinition(s: DocumentSnapshot): DocumentDefinition {
   const financialParty=(p:DocumentParty)=>({stack:[bodyText(p.name,{bold:true}),bodyText(`เลขประจำตัวผู้เสียภาษี: ${p.taxId}${p.branch?` (${p.branch})`:''}`),bodyText(p.address),...(p.phone||p.email?[bodyText([p.phone?`โทร: ${p.phone}`:'',p.email||''].filter(Boolean).join(' / '))]:[])]});
   content.push({columns:[{width:'*',stack:[bodyText('ข้อมูลบริษัท',{bold:true}),financialParty(s.issuer)]},{width:'*',stack:[bodyText('ข้อมูลลูกค้า',{bold:true}),financialParty(s.customer)]}],fontSize:10.3,columnGap:16,margin:[0,0,0,5]});
   content.push({columns:[bodyText(`ไซต์งาน: ${s.siteName||'-'}`),bodyText(`รอบบิล: ${s.period?formatDocumentDate(s.period):'-'}`,{alignment:'right'})],margin:[0,0,0,4]});
-  const rule={hLineWidth:()=>0.28,vLineWidth:()=>0.28,hLineColor:()=>border,vLineColor:()=>border,paddingLeft:()=>4.8,paddingRight:()=>4.8,paddingTop:()=>2,paddingBottom:()=>2};
+  const rule={hLineWidth:()=>0.28,vLineWidth:()=>0.28,hLineColor:()=>primary,vLineColor:()=>primary,paddingLeft:()=>4.8,paddingRight:()=>4.8,paddingTop:()=>2,paddingBottom:()=>2};
   // Fixed ordinary widths keep the reference rhythm. Exceptionally large exact numbers
   // claim measured space rather than overflowing or rounding the frozen values.
   const widthFor=(values:string[],minimum:number)=>Math.max(minimum,...values.map(text=>blockWidth(text,11)+9.6));
-  const quantityWidth=widthFor(s.items.map(i=>exactDecimal(i.quantity)),40);
-  const rateWidth=widthFor(s.items.map(i=>exactDecimal(i.rate)),65);
-  const amountWidth=widthFor(s.items.map(i=>formatDocumentMoney(i.amount)),65);
-  const grid:any={margin:[0,0,0,0],table:{headerRows:1,keepWithHeaderRows:0,dontBreakRows:false,widths:[20,'*',quantityWidth,45,rateWidth,amountWidth],body:[['ลำดับ','รายการ','จำนวน','หน่วย','ราคาต่อหน่วย','จำนวนเงิน'].map(text=>bodyText(text,{bold:true,fontSize:9.7,fillColor:'#f5f5f7'})),...s.items.map((i,index)=>[right(String(index+1)),bodyText(`${i.description}${i.period?`\n${formatDocumentDate(i.period)}`:''}`),right(exactDecimal(i.quantity)),bodyText(i.unit||'—',{alignment:'center'}),right(exactDecimal(i.rate)),right(formatDocumentMoney(i.amount))])]},layout:{...rule,hLineWidth:(i:number)=>i===0?1.19:0.28,hLineColor:(i:number)=>i===0?primary:border}};
+  const quantityWidth=widthFor(s.items.map(i=>formatDisplayDecimal(i.quantity)),55);
+  const totalsLabels = s.totals ? ['ยอดก่อนภาษี', 'ภาษี', s.type === 'receipt' ? 'ยอดชำระเงินทั้งสิ้น' : 'ยอดรวม', ...(s.totals.taxLabel ? [s.totals.taxLabel.split(' / ')[0]!] : [])] : [];
+  const rateWidth=Math.max(
+    widthFor(s.items.map(i=>formatDisplayDecimal(i.rate)), 65),
+    ...totalsLabels.map(text => blockWidth(text, 11) + 9.6)
+  );
+  const totalsValues = s.totals ? [s.totals.subtotal, s.totals.tax ?? '', s.totals.total].filter(Boolean).map(v => `${formatDocumentMoney(v)} บาท`) : [];
+  const amountWidth=Math.max(
+    widthFor(s.items.map(i=>formatDocumentMoney(i.amount)), 65),
+    ...totalsValues.map(text => blockWidth(text, 11) + 9.6)
+  );
+  const grid:any={
+    margin:[0,0,0,0],
+    table:{
+      headerRows:1,
+      keepWithHeaderRows:0,
+      dontBreakRows:false,
+      widths:[28,'*',quantityWidth,38,rateWidth,amountWidth],
+      body:[
+        ['ลำดับ','รายการ','จำนวน','หน่วย','ราคาต่อหน่วย','จำนวนเงิน'].map((text, idx)=>bodyText(text,{bold:true,fontSize:9.7,fillColor:'#f5f5f7',alignment:idx===1?'left':'center'})),
+        ...s.items.map((i,index)=>[
+          bodyText(String(index+1),{alignment:'center'}),
+          bodyText(`${i.description}${i.period?` (${formatDocumentDate(i.period)})`:''}`),
+          right(formatDisplayDecimal(i.quantity)),
+          bodyText(i.unit||'—',{alignment:'center'}),
+          right(formatDisplayDecimal(i.rate)),
+          right(formatDocumentMoney(i.amount))
+        ])
+      ]
+    },
+    layout:{...rule,hLineWidth:(i:number)=>i===0?1.19:0.28,hLineColor:()=>primary}
+  };
   content.push(grid);
   let totals:any;
   if(s.totals){
     const rows:any[][]=[['ยอดก่อนภาษี',s.totals.subtotal],...(s.totals.tax===undefined?[]:[[s.totals.taxLabel?.split(' / ')[0]||'ภาษี',s.totals.tax]]),[s.type==='receipt'?'ยอดชำระเงินทั้งสิ้น':'ยอดรวม',s.totals.total]].map(([label,value],index,all)=>[
       index===0?bodyText(thaiAmountWords(s.totals!.total),{rowSpan:all.length,fillColor:'#edf0f2',bold:true,margin:[0,4,0,0]}):{},
-      bodyText(label!,{bold:index===all.length-1,fillColor:index===all.length-1?primary:'#fafafa',color:index===all.length-1?'#ffffff':'#000000'}),
+      bodyText(label!,{bold:index===all.length-1,fillColor:index===all.length-1?primary:'#fafafa',color:index===all.length-1?'#ffffff':'#000000',alignment:'right'}),
       {...right(`${formatDocumentMoney(value!)} บาท`),bold:index===all.length-1,fillColor:index===all.length-1?primary:'#fafafa',color:index===all.length-1?'#ffffff':'#000000'}
     ]);
-    totals={unbreakable:true,table:{widths:['*',105,110],body:rows},layout:rule,margin:[0,0,0,0]};content.push(totals);
+    totals={unbreakable:true,table:{widths:['*',rateWidth,amountWidth],body:rows},layout:rule,margin:[0,0,0,0]};
+    content.push(totals);
   }
   const heading=(text:string)=>bodyText(text,{bold:true,fontSize:11,margin:[0,0,0,2]});
   const remarks=[heading('หมายเหตุ'),...(s.remarks?.length?s.remarks.map(r=>bodyText(r)):[bodyText(s.paymentTerms||'-')])];
@@ -426,14 +499,6 @@ function financialDefinition(s: DocumentSnapshot): DocumentDefinition {
   const continuation={columns:[{width:32,image:s.logoDataUri,fit:[32,26]},{width:'*',alignment:'right',stack:[bodyText(title,{bold:true}),bodyText(s.documentNumber)]}],columnGap:12};
   const topMargin=Math.max(10,12+blockHeight(continuation,defaultStyle,10)+8);
   head.margin=[0,10-topMargin,0,5];
-  const bodyHeight=blockHeight(content,defaultStyle,10);
-  const targetBottom=Math.min(590,841.89-bottomMargin-blockHeight(lower,defaultStyle,10)-blockHeight(totals||[],defaultStyle,10)-25);
-  const preTotalsHeight=blockHeight(content.slice(0,content.indexOf(grid)+1),defaultStyle,10);
-  if(bodyHeight<841.89-bottomMargin-20 && preTotalsHeight<targetBottom){
-    // Account for the actual page origin and the empty cell's measured line.
-    const spacer=Math.max(0,targetBottom-preTotalsHeight-topMargin-blockHeight(bodyText(' '),defaultStyle,10)-8);
-    grid.table.body.push(Array.from({length:6},()=>({text:'',margin:[0,spacer-4,0,0]})));
-  }
   return {pageSize:'A4',pageOrientation:'portrait',pageMargins:[10,topMargin,10,bottomMargin],defaultStyle,content,info:{title:s.documentNumber,subject:s.templateVersion},header:page=>page===1?null:{...continuation,margin:[10,12,10,0]},footer:(page,total)=>({margin:[10,8,10,0],stack:[...(page===total?[sign]:[{canvas:[],margin:[0,signatureSpace,0,0]}]),bodyText(`หน้า ${page} / ${total}`,{fontSize:8,alignment:'right',margin:[0,4,0,0]})]})};
 }
 function blockWidth(text:string,size:number):number {
@@ -672,10 +737,8 @@ function contractDefinition(s: DocumentSnapshot): DocumentDefinition {
         ...(transfers.length > 1
           ? [bodyText(`การชำระ ${i + 1}`, { bold: true })]
           : []),
-        {columns:[bodyText(`ช่องทาง: ${p.paymentMethod === "promptpay" ? "พร้อมเพย์" : p.paymentMethod === "bank_transfer" ? "โอนเงินผ่านธนาคาร" : "-"}`),bodyText(`ผู้ชำระ: ${p.payerName || "-"}`)],columnGap:12},
-        {columns:[bodyText(`ธนาคารต้นทาง: ${p.originBank || "-"}`),bodyText(`บัญชีต้นทาง: ${p.originAccount || "-"}`)],columnGap:12},
-        {columns:[bodyText(`ชำระ: ${formatDocumentDate(p.paidAt)}`),bodyText(`จำนวนเงิน: ${formatDocumentMoney(p.amount)} บาท`)],columnGap:12},
-        bodyText(`หลักฐาน: ${p.evidence || "-"}`),
+        {columns:[bodyText(`ช่องทาง: ${p.paymentMethod === "promptpay" ? "พร้อมเพย์" : p.paymentMethod === "bank_transfer" ? "โอนเงินผ่านธนาคาร" : "-"}`),bodyText(`วัน/เวลา: ${p.paidAt ? formatDocumentDate(p.paidAt) : "-"}`)],columnGap:12},
+        {columns:[bodyText(`จำนวนเงิน: ${formatDocumentMoney(p.amount)} บาท`),bodyText(`หลักฐาน: ${p.evidence || "-"}`)],columnGap:12},
       ],
       fontSize: 14,
       margin: [0, i ? 5 : 0, 0, 0],
@@ -774,6 +837,27 @@ function contractDefinition(s: DocumentSnapshot): DocumentDefinition {
         ],
         margin: [0, 0, 0, 2],
       });
+    }
+    if (s.type === "receipt" && s.outstandingBills && s.outstandingBills.bills.length > 0) {
+      content.push(
+        section("รายการค้างชำระ / Outstanding Balances"),
+        table(
+          ["ลำดับ", "รอบบิล", "ยอดเรียกเก็บ (บาท)", "ชำระแล้ว (บาท)", "ยอดค้างชำระ (บาท)"],
+          s.outstandingBills.bills.map((bill, i) => [
+            right(String(i + 1)),
+            bodyText(bill.period),
+            right(formatDocumentMoney(bill.billedAmount)),
+            right(formatDocumentMoney(bill.paidAmount)),
+            right(formatDocumentMoney(bill.remainingAmount)),
+          ]),
+          ["auto", "*", "auto", "auto", "auto"],
+          primary,
+        ),
+        bodyText(
+          `คงเหลืออีก ${s.outstandingBills.bills.length} บิล รวมยอดค้างชำระ ${formatDocumentMoney(s.outstandingBills.totalOutstanding)} บาท`,
+          { bold: true, margin: [0, 4, 0, 6] }
+        )
+      );
     }
     if(s.type === "receipt")content.push({stack:[{...section("ข้อมูลการชำระเงิน"),fontSize:16},...transferBlocks],margin:[0,2,0,3]});
     const remarks = [

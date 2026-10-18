@@ -53,6 +53,7 @@ export interface CompanyBankAccount {
   accountNumber: string;
   branchName: string;
   promptpayId: string;
+  qrCodeUrl?: string | null;
   isDefault: boolean;
   isConfigured: boolean;
   createdAt?: string;
@@ -174,7 +175,8 @@ export class SettingsService {
     const res = await client.query<CompanyBankAccount>(
       `SELECT id, bank_name AS "bankName", bank_code AS "bankCode", account_name AS "accountName",
               account_number AS "accountNumber", branch_name AS "branchName", promptpay_id AS "promptpayId",
-              is_default AS "isDefault", is_configured AS "isConfigured", created_at AS "createdAt", updated_at AS "updatedAt"
+              qr_code_url AS "qrCodeUrl", is_default AS "isDefault", is_configured AS "isConfigured",
+              created_at AS "createdAt", updated_at AS "updatedAt"
        FROM company_bank_accounts
        ORDER BY is_default DESC, created_at ASC, id ASC ${lock ? 'FOR UPDATE' : ''}`
     );
@@ -193,9 +195,9 @@ export class SettingsService {
       if(!next.bankName?.trim() || !next.accountName?.trim() || !next.accountNumber?.trim()) throw new BadRequestException('Bank name, account name and account number are required');
       if(data.isDefault) await client.query('UPDATE company_bank_accounts SET is_default = false');
       let id = data.id;
-      if(id) await client.query(`UPDATE company_bank_accounts SET bank_name=coalesce($1,bank_name),bank_code=coalesce($2,bank_code),account_name=coalesce($3,account_name),account_number=coalesce($4,account_number),branch_name=coalesce($5,branch_name),promptpay_id=coalesce($6,promptpay_id),is_default=coalesce($7,is_default),updated_at=now() WHERE id=$8`,[data.bankName,data.bankCode,data.accountName,data.accountNumber,data.branchName,data.promptpayId,data.isDefault,id]);
+      if(id) await client.query(`UPDATE company_bank_accounts SET bank_name=coalesce($1,bank_name),bank_code=coalesce($2,bank_code),account_name=coalesce($3,account_name),account_number=coalesce($4,account_number),branch_name=coalesce($5,branch_name),promptpay_id=coalesce($6,promptpay_id),qr_code_url=coalesce($7,qr_code_url),is_default=coalesce($8,is_default),updated_at=now() WHERE id=$9`,[data.bankName,data.bankCode,data.accountName,data.accountNumber,data.branchName,data.promptpayId,data.qrCodeUrl!==undefined?data.qrCodeUrl:null,data.isDefault,id]);
       else {
-        const inserted = await client.query<{id:string}>(`INSERT INTO company_bank_accounts(bank_name,bank_code,account_name,account_number,branch_name,promptpay_id,is_default) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id`,[next.bankName,next.bankCode??'',next.accountName,next.accountNumber,next.branchName??'',next.promptpayId??'',data.isDefault??false]);
+        const inserted = await client.query<{id:string}>(`INSERT INTO company_bank_accounts(bank_name,bank_code,account_name,account_number,branch_name,promptpay_id,qr_code_url,is_default) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,[next.bankName,next.bankCode??'',next.accountName,next.accountNumber,next.branchName??'',next.promptpayId??'',next.qrCodeUrl??null,data.isDefault??false]);
         id = inserted.rows[0]!.id;
       }
       const after = await this.ensureDefaultBank(client,data.isDefault ? id : undefined);

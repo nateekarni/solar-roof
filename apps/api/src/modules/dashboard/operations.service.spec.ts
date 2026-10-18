@@ -21,7 +21,7 @@ test('billing list and detail expose persisted tax for issuance review',async()=
 test('billing returns complete zero facets without querying an empty customer scope',async()=>{
  const service=new OperationsService({query:async()=>{assert.fail('empty scope must not query');}} as unknown as DatabaseService);
  const page=await service.list('billing',{role:'customer_user'},{billingStatusView:'paid'});
- assert.deepEqual(page.facets,{billingStatusCounts:{all:0,pending_issue_approval:0,awaiting_payment:0,pending_verification:0,overdue:0,paid:0,unsuccessful:0}});
+ assert.deepEqual(page.facets,{billingStatusCounts:{all:0,pending_issue_approval:0,awaiting_payment:0,pending_verification:0,partially_paid:0,overdue:0,paid:0,unsuccessful:0}});
 });
 
 test('billing status mapping and scoped facet counts execute against isolated PostgreSQL',{

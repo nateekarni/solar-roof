@@ -37,7 +37,7 @@ export function routeAllowed(role: string, method: string, rawPath: string): boo
   if(/^\/v1\/alert-rules(?:\/|$)/.test(path))return ['admin','operator'].includes(role)&&['GET','HEAD','POST','DELETE'].includes(method);
   if (role === 'admin' && /^\/v1\/(?:contracts|billing-cycles|documents|operations\/(?:contracts|billing|invoices|receipts|documents)|dashboard\/revenue|settings\/(?:company|bank-accounts))(?:\/|$)/.test(path)) return false;
   if (path === "/v1/sites/identity-draft") return role === "admin" && method === "POST";
-  if (role === 'owner' && (/^\/v1\/customers(?:\/|$)/.test(path) || /^\/v1\/sites(?:\/[^/]+)?$/.test(path))) return ['GET','HEAD','POST','PATCH','PUT'].includes(method);
+  if (role === 'owner' && (/^\/v1\/customers(?:\/|$)/.test(path) || /^\/v1\/sites(?:\/[^/]+)?$/.test(path))) return ['GET','HEAD','POST','PATCH','PUT','DELETE'].includes(method);
   if (/^\/v1\/sites\/[^/]+\/customer-users(?:\/|$)/.test(path)) return role === 'owner';
   if (/^\/v1\/mqtt-brokers(?:\/|$)/.test(path)) return role === "admin";
   if (/^\/v1\/sites\/[^/]+\/billing-source(?:\/|$)/.test(path)) return role === 'admin' && /^\/v1\/sites\/[^/]+\/billing-source$/.test(path) && ['GET','POST'].includes(method);

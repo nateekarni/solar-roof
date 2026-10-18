@@ -85,8 +85,8 @@ export function BillingHeaderBulkAction({initialCount = 0}: {initialCount?: numb
         <FileCheck2 className="size-4 shrink-0" />
         <span>
           {locale === 'th'
-            ? `อนุมัติและออกเอกสารทั้งหมด (${count} รายการ)`
-            : `Approve and issue all (${count})`}
+            ? `อนุมัติเอกสาร (${count})`
+            : `Approve documents (${count})`}
         </span>
       </Button>
 

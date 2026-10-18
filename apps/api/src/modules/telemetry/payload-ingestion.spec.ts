@@ -29,7 +29,7 @@ function fixture(options: {configurationProfileRevision?:string;assignedProfiles
 }
 test('canonical acceptance waits for commit and duplicate returns original acceptedAt without samples',async()=>{
  let unblock!:()=>void;let committing=false;const f=fixture({commit:async()=>{if(!committing){committing=true;await new Promise<void>(r=>unblock=r);}}});
- const state:{ack:any}={ack:undefined};const pending=f.ingest.accept(topic,examples.pm2230Energy).then(a=>{state.ack=a;return a;});
+ const state:{ack:any}={ack:undefined};const pending=f.ingest.accept(topic,examples.pm2230Energy).then((a: any)=>{state.ack=a;return a;});
  for(let i=0;!committing && i<100;i++)await new Promise(r=>setImmediate(r));assert.equal(committing,true);assert.equal(state.ack,undefined);unblock();const ack=await pending;assert.ok(ack);assert.equal(ack.messageType,'dataAcept');assert.equal(f.raws[0]?.[6],152430.275);
  const count=f.samples.length;const dup=await f.ingest.accept(topic,{...examples.pm2230Energy,timestamps:{...examples.pm2230Energy.timestamps,sentAt:'2026-10-05T09:00:00+07:00'}});assert.ok(dup);assert.equal(dup.acceptedAt,ack.acceptedAt);assert.equal(f.samples.length,count);
 });

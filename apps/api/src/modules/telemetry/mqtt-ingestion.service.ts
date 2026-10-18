@@ -86,8 +86,9 @@ export class MqttIngestionService implements OnModuleInit, OnModuleDestroy {
     this.client.on('message', (topic, payload) => {
       if (this.stopping || !this.subscriptionsReady) { observeValue('ingress_rejected', 1); return; }
       const matching = [...this.subscribedTopics].filter(filter => telemetryTopicMatches(filter, topic));
-      if (matching.length !== 1) { observeValue('ingress_rejected', 1); return; }
-      this.limiter.submit(matching[0]!, payload.length, () => this.handleIncomingMessage(topic, payload));
+      if (matching.length === 0) { observeValue('ingress_rejected', 1); return; }
+      const target = matching.find(f => !f.includes('+') && !f.includes('#')) ?? matching[0]!;
+      this.limiter.submit(target, payload.length, () => this.handleIncomingMessage(topic, payload));
     });
     this.client.on('error', () => { this.subscriptionsReady = false; this.scheduleRestore(this.connectionGeneration); this.logger.warn('MQTT connection failed; retrying'); });
   }
@@ -184,8 +185,9 @@ export class MqttIngestionService implements OnModuleInit, OnModuleDestroy {
         client.on('message',(topic,payload)=>{
           if(this.stopping||!current.ready)return;
           const matching=[...current.topics].filter(filter=>telemetryTopicMatches(filter,topic));
-          if(matching.length!==1)return;
-          this.limiter.submit(broker.id+':'+matching[0],payload.length,()=>this.handleIncomingMessage(topic,payload,client,broker.id));
+          if(matching.length===0)return;
+          const target = matching.find(f => !f.includes('+') && !f.includes('#')) ?? matching[0]!;
+          this.limiter.submit(broker.id+':'+target,payload.length,()=>this.handleIncomingMessage(topic,payload,client,broker.id));
         });
       }
       session.desired=broker.topics;
@@ -215,9 +217,15 @@ export class MqttIngestionService implements OnModuleInit, OnModuleDestroy {
       if (result.rows.length > 1024 || result.rows.some(row => typeof row.endpoint !== 'string' || Buffer.byteLength(row.endpoint) > 1024)) throw new Error('Gateway subscription resource limit');
       if (generation !== this.connectionGeneration || !client.connected) return;
       const topics = new Set<string>(result.rows.flatMap(row => row.endpoint.startsWith('solar/v1/')?[row.endpoint,row.endpoint.replace(/\/devices\/[^/]+\/telemetry$/,'/configAck')]:[row.endpoint]));
-      for (const topic of this.subscribedTopics) if (!topics.has(topic)) client.unsubscribe(topic);
-      for (const topic of topics) if (!this.subscribedTopics.has(topic)) {
-        await new Promise<void>((resolve, reject) => client.subscribe(topic, { qos: 1 }, (error,granted) => error||granted?.some(item=>item.qos===128) ? reject(error||Error('Subscription refused')) : resolve()));
+      const hasStandard = result.rows.some(row => typeof row.endpoint === 'string' && row.endpoint.startsWith('solar/v1/'))
+        || (await this.ingress.query("SELECT 1 FROM sites WHERE status <> 'archived' LIMIT 1")).rows.length > 0;
+      if (hasStandard) {
+        topics.add('solar/v1/sites/+/gateways/+/devices/+/telemetry');
+        topics.add('solar/v1/sites/+/gateways/+/configAck');
+      }
+      for (const topic of this.subscribedTopics) if (!topics.has(topic) && typeof client.unsubscribe === 'function') client.unsubscribe(topic);
+      for (const topic of topics) if (!this.subscribedTopics.has(topic) && typeof client.subscribe === 'function') {
+        await new Promise<void>((resolve, reject) => client.subscribe!(topic, { qos: 1 }, (error,granted) => error||granted?.some(item=>item.qos===128) ? reject(error||Error('Subscription refused')) : resolve()));
         if (generation !== this.connectionGeneration || !client.connected) return;
       }
       this.subscribedTopics = topics;
@@ -243,6 +251,8 @@ async handleIncomingMessage(topic: string, messageStr: string | Buffer, sourceCl
       await new PayloadIngestion(this.ingress).acceptMany(topic,data,brokerId,ack=>{
         accepted++;
         if (this.acknowledgmentsEnabled && this.limiter.withinDrainDeadline() && sourceClient?.connected) sourceClient.publish(gatewayPrefix(ack.siteId,ack.gatewayId)+'/dataAcept',JSON.stringify(ack),{qos:1});
+      }, (siteId, gatewayId, configPayload) => {
+        if (this.acknowledgmentsEnabled && this.limiter.withinDrainDeadline() && sourceClient?.connected) sourceClient.publish(gatewayPrefix(siteId, gatewayId)+'/config', JSON.stringify(configPayload), {qos:1});
       });
       observeValue(accepted?'ingress_accepted':'ingress_rejected',accepted||1);return;
     }

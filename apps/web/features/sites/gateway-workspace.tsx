@@ -13,8 +13,10 @@ import { GatewayIndex,type GatewayRow } from './gateway-index';
 import { GatewayDetailModal } from './gateway-detail-modal';
 import { GatewayFormDialog } from './gateway-form-dialog';
 import { GatewayEditDialog } from './gateway-edit-dialog';
+import { PairDiscoveredGatewayDialog } from './pair-discovered-gateway-dialog';
 import type { MetricSources } from './dashboard-source-model';
 import type { PayloadConfig } from './payload-contracts';
+import type { DiscoveredGatewayRow } from '@solar/api-contracts';
 
 export type GatewayConfig = PayloadConfig & {
   metricSources?: MetricSources;
@@ -42,10 +44,13 @@ export function GatewayWorkspace() {
   }
   const locale = useLocale(), th = locale === 'th', permissions = gatewayPermissions(useSessionUser());
   const [rows, setRows] = useState<GatewayRow[]>([]);
+  const [discoveredRows, setDiscoveredRows] = useState<DiscoveredGatewayRow[]>([]);
   const [detailRow, setDetailRow] = useState<GatewayRow | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [editRow, setEditRow] = useState<GatewayRow | null>(null);
   const [editOpen, setEditOpen] = useState(false);
+  const [pairGateway, setPairGateway] = useState<DiscoveredGatewayRow | null>(null);
+  const [pairOpen, setPairOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
@@ -55,6 +60,10 @@ export function GatewayWorkspace() {
     apiClient.get<GatewayRow[]>('/v1/gateways')
       .then(data => { if (active) setRows(data); })
       .catch(e => { if (active) setError(e.message); });
+
+    apiClient.get<DiscoveredGatewayRow[]>('/v1/gateways/discovered?status=unassigned')
+      .then(data => { if (active) setDiscoveredRows(data); })
+      .catch(() => {});
     return () => { active = false; };
   }, [revision]);
 
@@ -65,6 +74,11 @@ export function GatewayWorkspace() {
   const handleOpenEdit = (row: GatewayRow) => {
     setEditRow(row);
     setEditOpen(true);
+  };
+
+  const handleOpenPair = (row: DiscoveredGatewayRow) => {
+    setPairGateway(row);
+    setPairOpen(true);
   };
 
   return (
@@ -87,9 +101,11 @@ export function GatewayWorkspace() {
 
       <GatewayIndex
         rows={rows}
+        discoveredRows={discoveredRows}
         locale={locale}
         onSelect={handleOpenEdit}
         onViewDetail={handleOpenDetail}
+        onPairDiscovered={handleOpenPair}
       />
 
       <GatewayDetailModal
@@ -100,6 +116,13 @@ export function GatewayWorkspace() {
           setDetailOpen(false);
           handleOpenEdit(row);
         } : undefined}
+      />
+
+      <PairDiscoveredGatewayDialog
+        open={pairOpen}
+        onOpenChange={setPairOpen}
+        discovered={pairGateway}
+        onSuccess={() => setRevision(n => n + 1)}
       />
 
       <GatewayFormDialog

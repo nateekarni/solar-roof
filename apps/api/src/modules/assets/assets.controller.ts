@@ -73,6 +73,120 @@ export class AssetsController {
     return (await this.db.query(`SELECT s.id,s.name,s.external_site_id AS code,true AS active,g.id AS "assignedGatewayId" FROM sites s LEFT JOIN gateways g ON g.site_id=s.id AND g.retired_at IS NULL WHERE s.status<>'archived' AND ($3 OR g.id IS NULL OR g.id::text=$1) AND ($2::uuid[] IS NULL OR s.id=ANY($2::uuid[])) ORDER BY s.name,s.id`,[gatewayId??null,siteScope(req?.user,'technical'),includeAssigned==='true'])).rows;
   }
 
+  @Get('gateways/discovered')
+  async listDiscoveredGateways(@Query('status') status?: string) {
+    const filter = status && ['unassigned', 'assigned', 'ignored'].includes(status) ? status : null;
+    const result = await this.db.query(
+      `SELECT id,
+              external_gateway_id AS "externalGatewayId",
+              reported_site_id AS "reportedSiteId",
+              reported_device_id AS "reportedDeviceId",
+              manufacturer,
+              model,
+              profile_id AS "profileId",
+              protocol,
+              status,
+              assigned_site_id AS "assignedSiteId",
+              assigned_gateway_id AS "assignedGatewayId",
+              assigned_at AS "assignedAt",
+              raw_payload AS "rawPayload",
+              first_seen_at AS "firstSeenAt",
+              last_seen_at AS "lastSeenAt"
+       FROM discovered_gateways
+       WHERE ($1::text IS NULL OR status = $1)
+       ORDER BY last_seen_at DESC`,
+      [filter]
+    );
+    return result.rows;
+  }
+
+  @Post('gateways/assign-discovered')
+  async assignDiscoveredGateway(
+    @Body() body: { discoveredGatewayId?: string; externalGatewayId?: string; siteId?: string; name?: string }
+  ) {
+    const targetId = body.discoveredGatewayId || body.externalGatewayId;
+    if (!targetId || !body.siteId) {
+      throw new BadRequestException('discoveredGatewayId and siteId are required');
+    }
+    const client = await this.db.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const discovered = (await client.query<{
+        id: string;
+        external_gateway_id: string;
+        reported_site_id: string | null;
+        reported_device_id: string | null;
+        manufacturer: string | null;
+        model: string | null;
+        status: string;
+        last_seen_at: Date;
+      }>(
+        `SELECT id, external_gateway_id, reported_site_id, reported_device_id, manufacturer, model, status, last_seen_at
+         FROM discovered_gateways
+         WHERE id::text = $1 OR external_gateway_id = $1
+         FOR UPDATE`,
+        [targetId]
+      )).rows[0];
+
+      if (!discovered) {
+        throw new NotFoundException('Discovered gateway not found');
+      }
+
+      const site = (await client.query<{ id: string; external_site_id: string; name: string }>(
+        `SELECT id, external_site_id, name FROM sites WHERE id = $1 AND status <> 'archived' FOR UPDATE`,
+        [body.siteId]
+      )).rows[0];
+
+      if (!site) {
+        throw new NotFoundException('Site not found');
+      }
+
+      const gatewayId = randomUUID();
+      const gatewayName = body.name?.trim() || `Gateway ${discovered.external_gateway_id}`;
+      const endpoint = `solar/v1/sites/${site.external_site_id}/gateways/${discovered.external_gateway_id}/devices/+/telemetry`;
+
+      await client.query(
+        `INSERT INTO gateways (id, site_id, name, protocol, endpoint, status, external_gateway_id, polling_interval_seconds, last_seen_at)
+         VALUES ($1, $2, $3, 'mqtt', $4, 'online', $5, 60, $6)`,
+        [gatewayId, site.id, gatewayName, endpoint, discovered.external_gateway_id, discovered.last_seen_at]
+      );
+
+      if (discovered.reported_device_id) {
+        const deviceId = randomUUID();
+        const deviceName = `${discovered.model || 'Device'} (${discovered.reported_device_id})`;
+        const modelName = discovered.model || 'Generic';
+        await client.query(
+          `INSERT INTO devices (id, gateway_id, site_id, name, model, serial_number, device_type, slave_id, status, external_device_id, expected_interval_seconds)
+           VALUES ($1, $2, $3, $4, $5, $6, 'meter', 1, 'online', $7, 60)
+           ON CONFLICT DO NOTHING`,
+          [deviceId, gatewayId, site.id, deviceName, modelName, discovered.reported_device_id, discovered.reported_device_id]
+        );
+      }
+
+      await client.query(
+        `UPDATE discovered_gateways
+         SET status = 'assigned', assigned_site_id = $1, assigned_gateway_id = $2, assigned_at = now()
+         WHERE id = $3`,
+        [site.id, gatewayId, discovered.id]
+      );
+
+      await client.query('COMMIT');
+      void this.mqttService.refreshSubscriptions().catch(() => {});
+
+      return {
+        success: true,
+        gatewayId,
+        siteId: site.id,
+        externalGatewayId: discovered.external_gateway_id,
+      };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   @Get('gateways/:id/configuration')
   async gatewayConfiguration(@Param('id') id:string) {
     const gateway=(await this.db.query(`SELECT site_id AS "siteId",desired_config_version AS "desiredVersion",published_config_version AS "publishedVersion",acknowledged_config_version AS "acknowledgedVersion",applied_config_version AS "appliedVersion" FROM gateways WHERE id::text=$1 AND retired_at IS NULL`,[id])).rows[0];
@@ -553,16 +667,27 @@ export class AssetsController {
         const paymentTermDays = (body as any).paymentTermDays !== undefined ? Number((body as any).paymentTermDays) : 30;
         const taxRate = (body as any).taxRate !== undefined ? Number((body as any).taxRate) : 7.0;
         const pricesIncludeTax = Boolean((body as any).pricesIncludeTax);
-        const taxConfirmed = (body as any).taxConfirmed !== undefined ? Boolean((body as any).taxConfirmed) : false;
+        const taxConfirmed = (body as any).taxConfirmed !== undefined ? Boolean((body as any).taxConfirmed) : true;
         const remindersEnabled = Boolean((body as any).remindersEnabled);
         const reminderStartDays = (body as any).reminderStartDays !== undefined ? Number((body as any).reminderStartDays) : 7;
         const reminderIntervalDays = (body as any).reminderIntervalDays !== undefined ? Number((body as any).reminderIntervalDays) : 7;
 
+        // Auto-assign existing customer users if any
+        const custUsers = (await client.query(`SELECT id FROM users WHERE customer_id = $1 AND role = 'customer_user' AND status = 'active' ORDER BY created_at`, [customerId])).rows;
+        for (const u of custUsers) {
+          await client.query(`
+            INSERT INTO site_account_assignments (id, site_id, user_id, assigned_at)
+            VALUES ($1, $2, $3, now())
+            ON CONFLICT (user_id) WHERE revoked_at IS NULL DO NOTHING
+          `, [randomUUID(), id, u.id]);
+        }
+        const recipientUserIds: string[] = (body as any).recipientUserIds?.length ? (body as any).recipientUserIds : custUsers.map((u: any) => u.id);
+
         await client.query(`
           INSERT INTO site_billing_settings (
             site_id, version, service_start_date, payment_term_days, tax_rate,
-            prices_include_tax, tax_confirmed, reminders_enabled, reminder_start_days, reminder_interval_days
-          ) VALUES ($1, 1, $2, $3, $4, $5, $6, $7, $8, $9)
+            prices_include_tax, tax_confirmed, reminders_enabled, reminder_start_days, reminder_interval_days, recipient_user_ids
+          ) VALUES ($1, 1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
           ON CONFLICT (site_id) DO UPDATE SET
             service_start_date = EXCLUDED.service_start_date,
             payment_term_days = EXCLUDED.payment_term_days,
@@ -571,10 +696,11 @@ export class AssetsController {
             tax_confirmed = EXCLUDED.tax_confirmed,
             reminders_enabled = EXCLUDED.reminders_enabled,
             reminder_start_days = EXCLUDED.reminder_start_days,
-            reminder_interval_days = EXCLUDED.reminder_interval_days
-        `, [id, serviceStartDate, paymentTermDays, taxRate, pricesIncludeTax, taxConfirmed, remindersEnabled, reminderStartDays, reminderIntervalDays]);
+            reminder_interval_days = EXCLUDED.reminder_interval_days,
+            recipient_user_ids = CASE WHEN array_length(site_billing_settings.recipient_user_ids, 1) > 0 THEN site_billing_settings.recipient_user_ids ELSE EXCLUDED.recipient_user_ids END
+        `, [id, serviceStartDate, paymentTermDays, taxRate, pricesIncludeTax, taxConfirmed, remindersEnabled, reminderStartDays, reminderIntervalDays, recipientUserIds]);
 
-        const ratePerKwh = (body as any).ratePerKwh !== undefined ? Number((body as any).ratePerKwh) : (body as any).rate !== undefined ? Number((body as any).rate) : null;
+        const ratePerKwh = (body as any).ratePerKwh !== undefined ? Number((body as any).ratePerKwh) : (body as any).rate !== undefined ? Number((body as any).rate) : 4.5;
         if (ratePerKwh !== null && Number.isFinite(ratePerKwh) && ratePerKwh >= 0) {
           await client.query(`
             INSERT INTO rate_versions (id, site_id, effective_from, rate_type, rate, currency, change_reason)
@@ -685,12 +811,57 @@ export class AssetsController {
       }
       if (receiveConfig) await client.query('INSERT INTO gateway_payload_receive_revisions(id,gateway_id,version,config) VALUES($1,$2,1,$3::jsonb)',[randomUUID(),gwId,JSON.stringify(receiveConfig)]);
 
+      const bMeterId = randomUUID();
+      let bindingId: string | null = null;
+      if (payloadRevision?.config?.fields?.some((f: any) => f.role === 'billing-import')) {
+        bindingId = randomUUID();
+        await client.query(`
+          INSERT INTO billing_source_bindings (
+            id, meter_id, site_id, device_id, profile_revision_id,
+            source_tag, canonical_tag, source_unit, target_unit, conversion,
+            measurement_purpose
+          ) VALUES (
+            $1, $2, $3, $4, $5,
+            'energy.active.import.total', 'energy.active.import.total', 'Wh', 'kWh', 'wh-to-kwh',
+            'solar-delivered'
+          )
+        `, [bindingId, bMeterId, siteId, deviceId, payloadRevision.id]);
+      }
+
       await client.query(
-        `INSERT INTO billing_meters (id, site_id, device_id, semantic_field, active)
-         VALUES ($1, $2, $3, 'total_energy', true)
-         ON CONFLICT (site_id, device_id, semantic_field) DO NOTHING`,
-        [randomUUID(), siteId, deviceId]
+        `INSERT INTO billing_meters (id, site_id, device_id, semantic_field, active, billing_source_binding_id)
+         VALUES ($1, $2, $3, 'total_energy', true, $4)
+         ON CONFLICT (site_id, device_id, semantic_field) DO UPDATE SET billing_source_binding_id = coalesce(EXCLUDED.billing_source_binding_id, billing_meters.billing_source_binding_id)`,
+        [bMeterId, siteId, deviceId, bindingId]
       );
+
+      // Auto-assign existing customer users if any
+      const hwCustUsers = (await client.query(`SELECT id FROM users WHERE customer_id = $1 AND role = 'customer_user' AND status = 'active' ORDER BY created_at`, [customerId])).rows;
+      for (const u of hwCustUsers) {
+        await client.query(`
+          INSERT INTO site_account_assignments (id, site_id, user_id, assigned_at)
+          VALUES ($1, $2, $3, now())
+          ON CONFLICT (user_id) WHERE revoked_at IS NULL DO NOTHING
+        `, [randomUUID(), siteId, u.id]);
+      }
+      const hwServiceStartDate = (body as any).serviceStartDate || new Date().toISOString().slice(0, 10);
+      const hwRecipientUserIds: string[] = (body as any).recipientUserIds?.length ? (body as any).recipientUserIds : hwCustUsers.map((u: any) => u.id);
+
+      await client.query(`
+        INSERT INTO site_billing_settings (
+          site_id, version, service_start_date, payment_term_days, tax_rate,
+          prices_include_tax, tax_confirmed, reminders_enabled, reminder_start_days, reminder_interval_days, recipient_user_ids
+        ) VALUES ($1, 1, $2, 30, 7.0000, false, true, true, 7, 7, $3)
+        ON CONFLICT (site_id) DO UPDATE SET
+          recipient_user_ids = CASE WHEN array_length(site_billing_settings.recipient_user_ids, 1) > 0 THEN site_billing_settings.recipient_user_ids ELSE EXCLUDED.recipient_user_ids END
+      `, [siteId, hwServiceStartDate, hwRecipientUserIds]);
+
+      const hwRate = (body as any).ratePerKwh !== undefined ? Number((body as any).ratePerKwh) : (body as any).rate !== undefined ? Number((body as any).rate) : 4.5;
+      await client.query(`
+        INSERT INTO rate_versions (id, site_id, effective_from, rate_type, rate, currency, change_reason)
+        VALUES ($1, $2, $3, 'fixed_kwh', $4, 'THB', 'Initial site tariff')
+        ON CONFLICT (id) DO NOTHING
+      `, [randomUUID(), siteId, hwServiceStartDate, hwRate]);
 
       // 5. Clone Preset Registers if selected
       if (body.meterPresetId) {
@@ -993,15 +1164,45 @@ export class AssetsController {
       }
 
       // Safe hard delete unlinked site & cascaded records
+      await client.query(
+        "DELETE FROM operational_delivery_attempts WHERE outbox_id IN (SELECT id FROM operational_delivery_outbox WHERE site_id = $1) OR outbox_id IN (SELECT id FROM payment_decision_outbox WHERE site_id = $1)",
+        [id]
+      );
+      await client.query("DELETE FROM operational_delivery_outbox WHERE site_id = $1", [id]);
+      await client.query("DELETE FROM payment_decision_outbox WHERE site_id = $1", [id]);
+      await client.query("DELETE FROM operational_alert_rules WHERE site_id = $1", [id]);
+      await client.query(
+        "DELETE FROM operational_event_recipients WHERE notification_id IN (SELECT id FROM notification_feed WHERE site_id = $1)",
+        [id]
+      );
+      await client.query("DELETE FROM notification_feed WHERE site_id = $1", [id]);
+      await client.query("DELETE FROM notification_feed_events WHERE site_id = $1", [id]);
+      await client.query("DELETE FROM financial_staff_notices WHERE site_id = $1", [id]);
+      await client.query("DELETE FROM financial_month_jobs WHERE site_id = $1", [id]);
+      await client.query("DELETE FROM site_account_assignments WHERE site_id = $1", [id]);
+      await client.query("DELETE FROM rate_versions WHERE site_id = $1", [id]);
+      await client.query("DELETE FROM site_billing_settings WHERE site_id = $1", [id]);
+      await client.query(
+        "UPDATE discovered_gateways SET assigned_site_id = NULL, assigned_gateway_id = NULL, status = 'unassigned' WHERE assigned_site_id = $1",
+        [id]
+      );
+      await client.query("DELETE FROM gateway_installation_history WHERE site_id = $1", [id]);
       await client.query("DELETE FROM telemetry_raw WHERE site_id = $1", [id]);
       await client.query("DELETE FROM telemetry_aggregate WHERE site_id = $1", [id]);
       await client.query("DELETE FROM alerts WHERE site_id = $1", [id]);
       await client.query("DELETE FROM billing_meters WHERE site_id = $1", [id]);
+      await client.query("DELETE FROM billing_source_bindings WHERE site_id = $1", [id]);
       await client.query(
         "DELETE FROM register_mapping_versions WHERE device_id IN (SELECT id FROM devices WHERE site_id = $1)",
         [id]
       );
+      await client.query("DELETE FROM payload_samples WHERE site_id = $1", [id]);
+      await client.query("DELETE FROM payload_rejections WHERE site_id = $1", [id]);
       await client.query("DELETE FROM devices WHERE site_id = $1", [id]);
+      await client.query(
+        "DELETE FROM gateway_payload_receive_revisions WHERE gateway_id IN (SELECT id FROM gateways WHERE site_id = $1)",
+        [id]
+      );
       await client.query("DELETE FROM gateways WHERE site_id = $1", [id]);
       // Raw deletion can enqueue archive dirty days through its trigger. Clear them last.
       await client.query("DELETE FROM telemetry_archive_dirty WHERE site_id = $1", [id]);

@@ -72,7 +72,7 @@ export class FinancialApplicationService {
   });
  }
  /** Read-only snapshot facts, shared by review and the issuance transaction. */
- private async documentFacts(client:PoolClient,cycle:any,type:'invoice'|'receipt',review=false) {
+ private async documentFacts(client:PoolClient,cycle:any,type:'invoice'|'receipt',review=false,options?:{payment?:any;outstandingBills?:any;issueDate?:string;settled?:boolean}) {
   const policy=validateFinancialPolicy(cycle);
   if(cycle.quality!=='complete'||!cycle.meter_snapshot)throw new ConflictException('Verified financial calculation required');
   const customer=(await client.query(`SELECT cfg.*,sc.id AS customer_id,sc.legal_name AS company_name,sc.tax_id,sc.tax_branch AS branch,sc.tax_address,sc.document_email AS billing_email,sc.phone AS billing_phone,s.name AS site_name,s.external_site_id,sc.name AS customer_name FROM site_billing_settings cfg JOIN sites s ON s.id=cfg.site_id JOIN customers sc ON sc.id=s.customer_id WHERE cfg.site_id=$1`,[cycle.site_id])).rows[0];
@@ -88,15 +88,15 @@ export class FinancialApplicationService {
   const recipients=(await client.query(`SELECT u.id,u.email,u.display_name AS name FROM users u JOIN site_account_assignments sa ON sa.user_id=u.id AND sa.revoked_at IS NULL JOIN sites s ON s.id=sa.site_id JOIN customers sc ON sc.id=s.customer_id WHERE s.id=$1 AND u.id=ANY($2::uuid[]) AND u.role='customer_user' AND u.status='active' AND sc.status='active' AND u.email_verified_at IS NOT NULL AND u.verified_email=u.email ORDER BY u.id`,[cycle.site_id,customer.recipient_user_ids])).rows;
   if(!recipients.length||recipients.length!==customer.recipient_user_ids.length)throw new ConflictException('Selected verified organization recipients required');
   const payments=type==='receipt'?(await client.query("SELECT * FROM payments WHERE billing_cycle_id=$1 AND status='paid' ORDER BY submitted_at,id",[cycle.id])).rows:[];
-  if(type==='receipt')requireTestSettlement(payments.map(p=>p.verified_amount),cycle.amount);
-  const day=(await client.query("SELECT to_char(now() AT TIME ZONE 'Asia/Bangkok','YYYY-MM-DD') AS day")).rows[0].day;
+  if(type==='receipt'&&(options?.settled ?? true))requireTestSettlement(payments.map(p=>p.verified_amount),cycle.amount);
+  const day=options?.issueDate ?? (await client.query("SELECT to_char(now() AT TIME ZONE 'Asia/Bangkok','YYYY-MM-DD') AS day")).rows[0].day;
   const invoiceOriginal=type==='receipt'?(await client.query("SELECT document_number,snapshot FROM documents WHERE billing_cycle_id=$1 AND document_type='invoice' AND is_current",[cycle.id])).rows[0]:undefined;const invoiceNumber=invoiceOriginal?.document_number;
   if(type==='receipt'&&!invoiceNumber)throw new ConflictException('Issued invoice reference required');
   const logo=await readFile(fileURLToPath(new URL('../../../../web/public/brand/solar-roof-document-stacked.png',import.meta.url)));
   const logoDataUri=frozenFinancialLogo(invoiceOriginal?.snapshot?.logoDataUri??invoiceOriginal?.snapshot?.logo,company.logo_url,`data:image/png;base64,${logo.toString('base64')}`);
   const cycleDates=(await client.query(`SELECT to_char(period_start,'YYYY-MM-DD') AS starts,to_char(period_end,'YYYY-MM-DD') AS ends,to_char(due_date,'YYYY-MM-DD') AS due FROM billing_cycles WHERE id=$1`,[cycle.id])).rows[0];
   cycle={...cycle,period_start:cycleDates.starts,period_end:cycleDates.ends,due_date:cycle.due_date&&typeof cycle.due_date==='string'?cycle.due_date:cycleDates.due};
-  const snapshot={brandPrimary:BRAND_PRIMARY,...(invoiceNumber?{invoiceNumber}:{}),templateVersion:FINANCIAL_TEMPLATE_VERSION,policy:invoiceOriginal?.snapshot?.policy??(policy.scope==='TEST'?{...policy,...frozenFinancialTax(undefined,customer.tax_rate,customer.prices_include_tax)}:policy),policyHash:invoiceOriginal?.snapshot?.policyHash??cycle.policy_hash,cycle,customer:invoiceOriginal?.snapshot?.customer??customer,company:invoiceOriginal?.snapshot?.company??company,banks:invoiceOriginal?.snapshot?.banks??banks,payments,recipients:invoiceOriginal?.snapshot?.recipients??recipients,logo:logoDataUri,logoDataUri,language:'th',issueDate:day,dueDate:cycle.due_date?(typeof cycle.due_date==='string'?cycle.due_date.slice(0,10):cycle.due_date.toISOString().slice(0,10)):new Date(Date.parse(day)+customer.payment_term_days*86400000).toISOString().slice(0,10)};
+  const snapshot={brandPrimary:BRAND_PRIMARY,...(invoiceNumber?{invoiceNumber}:{}),templateVersion:FINANCIAL_TEMPLATE_VERSION,policy:invoiceOriginal?.snapshot?.policy??(policy.scope==='TEST'?{...policy,...frozenFinancialTax(undefined,customer.tax_rate,customer.prices_include_tax)}:policy),policyHash:invoiceOriginal?.snapshot?.policyHash??cycle.policy_hash,cycle,customer:invoiceOriginal?.snapshot?.customer??customer,company:invoiceOriginal?.snapshot?.company??company,banks:invoiceOriginal?.snapshot?.banks??banks,payments:payments.length?payments:(options?.payment?[options.payment]:[]),recipients:invoiceOriginal?.snapshot?.recipients??recipients,logo:logoDataUri,logoDataUri,language:'th',issueDate:day,dueDate:cycle.due_date?(typeof cycle.due_date==='string'?cycle.due_date.slice(0,10):cycle.due_date.toISOString().slice(0,10)):new Date(Date.parse(day)+customer.payment_term_days*86400000).toISOString().slice(0,10),...(options?.outstandingBills?{outstandingBills:options.outstandingBills}:{})};
   return snapshot;
  }
  private reviewToken(snapshot:any,identity:DocumentIdentity){
@@ -120,18 +120,24 @@ export class FinancialApplicationService {
    return {period:label.period,customerName:label.customer,siteName:label.site,rate:String(proposed.rate),subtotal:String(proposed.subtotal),tax:String(proposed.simulated_tax),amount:String(proposed.amount),dueDate:snapshot.dueDate,replacement:!!replacement,recipients:snapshot.recipients.map((recipient:any)=>({name:recipient.name,email:recipient.email})),approver:{displayName:identity.displayName,position:identity.position,hasSignature:!!identity.signatureDataUri},reviewToken:this.reviewToken(snapshot,identity)};
   });
  }
- private async issue(client:PoolClient,cycle:any,type:'invoice'|'receipt',actorId?:string,approver?:FinancialApprover,reviewToken?:string) {
-  const existing=(await client.query('SELECT * FROM documents WHERE billing_cycle_id=$1 AND document_type=$2 AND is_current',[cycle.id,type])).rows;
-  if(existing.length&&!cycle.supersedes_document_id){if(existing.length!==1||!existing[0].snapshot?.policy||!['issued','finalized'].includes(existing[0].status))throw new ConflictException('Legacy document requires explicit reconciliation');return existing[0];}
-  const snapshot=await this.documentFacts(client,cycle,type);
+ private async issue(client:PoolClient,cycle:any,type:'invoice'|'receipt',actorId?:string,approver?:FinancialApprover,reviewToken?:string,options?:{payment?:any;outstandingBills?:any;installmentIndex?:number;issueDate?:string;settled?:boolean}) {
+  if(type==='invoice'){
+    const existing=(await client.query('SELECT * FROM documents WHERE billing_cycle_id=$1 AND document_type=$2 AND is_current',[cycle.id,type])).rows;
+    if(existing.length&&!cycle.supersedes_document_id){if(existing.length!==1||!existing[0].snapshot?.policy||!['issued','finalized'].includes(existing[0].status))throw new ConflictException('Legacy document requires explicit reconciliation');return existing[0];}
+  }
+  const snapshot=await this.documentFacts(client,cycle,type,false,options);
   if(reviewToken&&approver){const {approvedAt:_time,...identity}=approver;if(reviewToken!==this.reviewToken(snapshot,identity))throw new ConflictException('Issuance review changed; refresh before approval');}
   const {number,issueDate:day}=await allocateDocumentNumber(client,type);
-  const document={id:randomUUID(),document_number:number,document_type:type,snapshot:{...snapshot,...(approver?{approver:{...approver}}:{})},amount:cycle.amount};
+  const docNumber = (type === 'receipt' && (options?.installmentIndex || !(options?.settled ?? true)))
+    ? `${number}/${options?.installmentIndex ?? 1}`
+    : number;
+  const docIssueDate = options?.issueDate ?? day;
+  const document={id:randomUUID(),document_number:docNumber,document_type:type,snapshot:{...snapshot,issueDate:docIssueDate,...(approver?{approver:{...approver}}:{})},amount:options?.payment?.verified_amount ?? cycle.amount};
   const bytes=await this.render(document);const sha256=createHash('sha256').update(bytes).digest('hex');
   // A replacement is staged only inside approval. The old original remains
   // current through rendering/artifact/outbox/audit failures; no staging commits.
   const replacing=type==='invoice'&&!!cycle.supersedes_document_id;
-  const doc=(await client.query(`INSERT INTO documents(id,site_id,billing_cycle_id,document_type,document_number,status,issue_date,amount,snapshot,content_hash,file_key,template_version,revision,supersedes_document_id,is_current) VALUES($1,$2,$3,$4,$5,$14,$6,$7,$8,$9,$10,$11,$12,$13,$15) RETURNING *`,[document.id,cycle.site_id,cycle.id,type,number,day,cycle.amount,JSON.stringify(document.snapshot),sha256,`local-artifact:${document.id}`,FINANCIAL_TEMPLATE_VERSION,cycle.document_revision??1,cycle.supersedes_document_id??null,replacing?'draft':'issued',!replacing])).rows[0];
+  const doc=(await client.query(`INSERT INTO documents(id,site_id,billing_cycle_id,document_type,document_number,status,issue_date,amount,snapshot,content_hash,file_key,template_version,revision,supersedes_document_id,is_current) VALUES($1,$2,$3,$4,$5,$14,$6,$7,$8,$9,$10,$11,$12,$13,$15) RETURNING *`,[document.id,cycle.site_id,cycle.id,type,docNumber,docIssueDate,document.amount,JSON.stringify(document.snapshot),sha256,`local-artifact:${document.id}`,FINANCIAL_TEMPLATE_VERSION,cycle.document_revision??1,cycle.supersedes_document_id??null,replacing?'draft':'issued',!replacing])).rows[0];
   if(type==='invoice')await client.query('UPDATE billing_cycles SET due_date=$2 WHERE id=$1 AND due_date IS NULL',[cycle.id,snapshot.dueDate]);
   await client.query('INSERT INTO document_artifacts(document_id,pdf_bytes,sha256) VALUES($1,$2,$3)',[doc.id,bytes,sha256]);
   await client.query('INSERT INTO financial_delivery_outbox(id,document_id,artifact_sha256) VALUES($1,$2,$3)',[randomUUID(),doc.id,sha256]);await this.audit(client,actorId,'finance.issue_'+type,cycle.id,{documentId:doc.id,contentHash:sha256,policyHash:cycle.policy_hash});return doc;
@@ -263,7 +269,7 @@ export class FinancialApplicationService {
    await client.query("SELECT pg_advisory_xact_lock(hashtext('production-financial-configuration'))");
    const cycle=(await client.query('SELECT * FROM billing_cycles WHERE id=$1 FOR UPDATE',[id])).rows[0];if(!cycle)throw new NotFoundException('Billing cycle not found');
    const policy=validateFinancialPolicy(cycle);if(policy.scope==='PRODUCTION')await this.readiness.assertEnabled('submit_payment',{billingCycleId:id,siteId:cycle.site_id},client);
-   if(!['approved','pending_verification'].includes(cycle.status))throw new ConflictException('Issued unpaid invoice required');
+   if(!['approved','pending_verification','partially_paid'].includes(cycle.status))throw new ConflictException('Issued unpaid invoice required');
    const invoice=(await client.query("SELECT id FROM documents WHERE billing_cycle_id=$1 AND document_type='invoice' AND status='issued'",[id])).rows[0];if(!invoice)throw new ConflictException('Issued invoice required');
    const duplicate=await client.query(`SELECT 1 FROM payments WHERE submitted_by IS NOT NULL AND status IN('pending_verification','paid') AND (payment_evidence_sha256(evidence_key)=payment_evidence_sha256($1::text) OR payment_evidence_sha256(slip_url)=payment_evidence_sha256($2::text))`,[body.evidenceKey??null,body.slipUrl??null]);if(duplicate.rowCount)throw new ConflictException('Transfer evidence already submitted');
    const paymentId=randomUUID();await client.query(`INSERT INTO payments(id,billing_cycle_id,amount,status,paid_at,slip_url,evidence_key,note,submitted_by,payer_name,payment_method,origin_bank,origin_account,declared_amount,declared_transfer_at) VALUES($1,$2,$3,'pending_verification',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,[paymentId,id,null,null,body.slipUrl??null,body.evidenceKey??null,body.note??null,actorId,metadata.payerName??null,metadata.paymentMethod??null,metadata.originBank??null,metadata.originAccount??null,amount,paidAt]);
@@ -300,15 +306,55 @@ export class FinancialApplicationService {
    }
    const settled=total===minor(cycle.amount);
    let approver:FinancialApprover|undefined;
-   if(settled){
+   if(status==='approved'){
     const identity=await this.documentIdentity.resolve(client,actorId);
     const approvedAt=(await client.query('SELECT now() AS value')).rows[0].value.toISOString();
     approver={...identity,approvedAt};
    }
    await client.query('UPDATE payments SET status=$2,verified_at=now(),verified_by=$3,rejection_reason=$4,verified_amount=$5,verified_transfer_at=$6,amount=$5,paid_at=$6,transfer_reference=$7,payer_name=coalesce($8,payer_name),payment_method=coalesce($9,payment_method),origin_bank=coalesce($10,origin_bank),origin_account=coalesce($11,origin_account) WHERE id=$1',[payment.id,status==='approved'?'paid':'rejected',actorId,reason?.trim()??null,verifiedAmount,verifiedTransferAt,review.transferReference?.trim()||null,metadata.payerName??null,metadata.paymentMethod??null,metadata.originBank??null,metadata.originAccount??null]);
    const pending=payments.some(p=>p.id!==payment.id&&p.status==='pending_verification');
-   const cycleStatus=settled?'paid':pending?'pending_verification':'approved';
-   const receipt=settled?await this.issue(client,cycle,'receipt',actorId,approver):null;
+   const cycleStatus=settled?'paid':pending?'pending_verification':'partially_paid';
+
+   let receipt = null;
+   if(status==='approved'){
+    const existingReceiptCount = Number((await client.query("SELECT count(*)::int AS count FROM documents WHERE billing_cycle_id=$1 AND document_type='receipt'",[cycle.id])).rows?.[0]?.count ?? 0);
+    const receiptDay = (await client.query("SELECT to_char($1::timestamptz AT TIME ZONE 'Asia/Bangkok','YYYY-MM-DD') AS day",[verifiedTransferAt])).rows?.[0]?.day ?? (verifiedTransferAt ? verifiedTransferAt.toISOString().slice(0, 10) : undefined);
+
+    const outstandingRows = (await client.query(`
+      SELECT bc.id, to_char(bc.period_start, 'YYYY-MM') AS period, bc.amount,
+        coalesce((SELECT sum(coalesce(p.verified_amount, p.amount)) FROM payments p WHERE p.billing_cycle_id = bc.id AND p.status = 'paid'), 0) AS paid_amount
+      FROM billing_cycles bc
+      JOIN sites s ON s.id = bc.site_id
+      WHERE s.customer_id = (SELECT customer_id FROM sites WHERE id = $1)
+        AND bc.status IN ('approved', 'pending_verification', 'partially_paid')
+        AND EXISTS (SELECT 1 FROM documents d WHERE d.billing_cycle_id = bc.id AND d.document_type = 'invoice' AND d.status IN ('issued', 'finalized'))
+      ORDER BY bc.period_start ASC
+    `, [cycle.site_id])).rows ?? [];
+
+    const outstandingList = outstandingRows.map(r => {
+      const bM = minor(String(r.amount));
+      const pM = minor(String(r.paid_amount));
+      const rem = bM > pM ? bM - pM : 0n;
+      return { cycleId: r.id, period: r.period, billedAmount: decimal(bM, 2), paidAmount: decimal(pM, 2), remainingAmount: decimal(rem, 2), rem };
+    }).filter(b => b.rem > 0n);
+
+    const totalOutstanding = outstandingList.reduce((acc, b) => acc + b.rem, 0n);
+    const outstandingBills = outstandingList.length > 0 ? {
+      bills: outstandingList.map(({ rem, ...rest }) => rest),
+      totalOutstanding: decimal(totalOutstanding, 2),
+    } : undefined;
+
+    const updatedPayment = { ...payment, status: 'paid', verified_amount: verifiedAmount, amount: verifiedAmount, paid_at: verifiedTransferAt };
+    receipt = await this.issue(client, cycle, 'receipt', actorId, approver, undefined, {
+      payment: updatedPayment,
+      outstandingBills,
+      installmentIndex: existingReceiptCount + 1,
+      issueDate: receiptDay,
+      settled,
+    });
+
+    await client.query('UPDATE payments SET receipt_document_id=$1 WHERE id=$2', [receipt.id, payment.id]);
+   }
    await client.query('UPDATE billing_cycles SET status=$2 WHERE id=$1',[id,cycleStatus]);
    await client.query("INSERT INTO audit_events(id,actor_id,action,entity_type,entity_id,before_json,after_json,reason,correlation_id) VALUES($1,$2,$3,'payment',$4,$5,$6,$7,$8)",[randomUUID(),actorId,'payment.verify_'+status,payment.id,JSON.stringify(payment),JSON.stringify({status,verifiedAmount,verifiedTransferAt,cycleStatus,...metadata}),reason?.trim()??'Transfer approved',randomUUID()]);
    return {success:true,billingCycleStatus:cycleStatus,receipt};
@@ -353,7 +399,7 @@ export class FinancialApplicationService {
     if(!cycles.length){const cfg=(await this.db.query("SELECT to_char(service_start_date,'YYYY-MM-DD') AS starts FROM site_billing_settings WHERE site_id=$1",[job.site_id])).rows[0];if(!cfg)throw new ConflictException('Site billing configuration required');cycles=(await this.calculate(job.site_id,[sqlCalendarPeriod(job).start,cfg.starts].sort().at(-1)!,sqlCalendarPeriod(job).end)).cycles;}
     for(const cycle of cycles){
      // A job replay after human approval must not reopen an issued cycle.
-     if(['approved','pending_verification','paid'].includes(cycle.status)){
+     if(['approved','pending_verification','paid','partially_paid'].includes(cycle.status)){
       const current=(await this.db.query("SELECT id FROM documents WHERE billing_cycle_id=$1 AND document_type='invoice' AND is_current AND status IN('issued','finalized')",[cycle.id])).rows;
       if(current.length!==1)throw new ConflictException('Current issued invoice required');
       continue;
