@@ -219,14 +219,51 @@ export class AssetsController {
       WHERE g.id::text=$1 AND g.retired_at IS NULL`, [id])).rows[0];
     if (!gateway) throw new NotFoundException('Gateway not found');
 
-    const samples = await this.db.query(`SELECT DISTINCT ON (ps.device_id, ps.tag)
-      ps.device_id AS "deviceId", d.external_device_id AS "externalDeviceId", d.name AS "deviceName",
+    const samples = await this.db.query(`SELECT
+      d.id AS "deviceId", d.external_device_id AS "externalDeviceId", d.name AS "deviceName",
       ps.tag, ps.value, ps.unit, ps.raw_value AS "rawValue", ps.raw_unit AS "rawUnit",
       ps.polled_at AS "polledAt", coalesce(ps.measured_at, ps.polled_at) AS "sourceTime",
       ps.received_at AS "receivedAt", ps.quality, ps.communication, ps.poll_group AS "pollGroup"
-      FROM payload_samples ps JOIN devices d ON d.id=ps.device_id
-      WHERE d.gateway_id=$1
-      ORDER BY ps.device_id, ps.tag, coalesce(ps.measured_at, ps.polled_at) DESC, ps.received_at DESC, ps.id DESC`, [id]);
+      FROM devices d
+      CROSS JOIN LATERAL (
+        SELECT DISTINCT tag FROM (
+          SELECT (f->>'tag')::text AS tag
+          FROM payload_profile_revisions p,
+               jsonb_array_elements(CASE WHEN jsonb_typeof(p.config->'fields') = 'array' THEN p.config->'fields' ELSE '[]'::jsonb END) f
+          WHERE p.id = d.payload_profile_revision_id
+             OR p.id IN (SELECT profile_revision_id FROM device_profile_assignments WHERE device_id = d.id)
+          UNION
+          SELECT ps_recent.tag
+          FROM (
+            SELECT ps_inner.tag
+            FROM payload_samples ps_inner
+            WHERE ps_inner.device_id = d.id
+            ORDER BY coalesce(ps_inner.measured_at, ps_inner.polled_at) DESC, ps_inner.received_at DESC, ps_inner.id DESC
+            LIMIT 50
+          ) ps_recent
+        ) t
+        WHERE tag IS NOT NULL
+      ) tags
+      CROSS JOIN LATERAL (
+        SELECT
+          ps_sample.tag,
+          ps_sample.value,
+          ps_sample.unit,
+          ps_sample.raw_value,
+          ps_sample.raw_unit,
+          ps_sample.polled_at,
+          ps_sample.measured_at,
+          ps_sample.received_at,
+          ps_sample.quality,
+          ps_sample.communication,
+          ps_sample.poll_group
+        FROM payload_samples ps_sample
+        WHERE ps_sample.device_id = d.id AND ps_sample.tag = tags.tag
+        ORDER BY coalesce(ps_sample.measured_at, ps_sample.polled_at) DESC, ps_sample.received_at DESC, ps_sample.id DESC
+        LIMIT 1
+      ) ps
+      WHERE d.gateway_id = $1
+      ORDER BY d.id, ps.tag`, [gateway.id]);
 
     return {
       gateway,
