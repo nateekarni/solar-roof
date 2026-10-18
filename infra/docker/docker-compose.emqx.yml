@@ -10,11 +10,29 @@ services:
       - '18083:18083'
     environment:
       - EMQX_NODE__NAME=emqx@127.0.0.1
+      - EMQX_NODE__COOKIE=solar_emqx_secret_cookie
       - EMQX_DASHBOARD__DEFAULT_USERNAME=${EMQX_DASHBOARD_USER:-admin}
       - EMQX_DASHBOARD__DEFAULT_PASSWORD=${EMQX_DASHBOARD_PASSWORD:-admin123456}
+      # Listeners
+      - EMQX_LISTENERS__TCP__DEFAULT__BIND=0.0.0.0:1883
+      - EMQX_LISTENERS__TCP__DEFAULT__MAX_CONNECTIONS=102400
+      - EMQX_LISTENERS__SSL__DEFAULT__BIND=0.0.0.0:8883
+      - EMQX_LISTENERS__SSL__DEFAULT__MAX_CONNECTIONS=102400
+      - EMQX_LISTENERS__SSL__DEFAULT__SSL_OPTIONS__CACERTFILE=/opt/emqx/certs/fullchain.pem
+      - EMQX_LISTENERS__SSL__DEFAULT__SSL_OPTIONS__CERTFILE=/opt/emqx/certs/fullchain.pem
+      - EMQX_LISTENERS__SSL__DEFAULT__SSL_OPTIONS__KEYFILE=/opt/emqx/certs/privkey.pem
+      - EMQX_LISTENERS__SSL__DEFAULT__SSL_OPTIONS__VERIFY=verify_none
+      - EMQX_LISTENERS__SSL__DEFAULT__SSL_OPTIONS__FAIL_IF_NO_PEER_CERT=false
+      # Dynamic HTTP Authentication
+      - >-
+        EMQX_AUTHENTICATION=[{"mechanism":"password_based","backend":"http","enable":true,"method":"post","url":"https://solar.fowir.com/v1/internal/mqtt/auth","headers":{"content-type":"application/json"},"body":{"username":"$${username}","password":"$${password}","clientid":"$${clientid}","peerhost":"$${peerhost}"},"pool_size":8,"connect_timeout":"5s","request_timeout":"5s","ssl":{"enable":true,"verify":"verify_none"}}]
+      # Dynamic HTTP Authorization (ACL)
+      - EMQX_AUTHORIZATION__NO_MATCH=deny
+      - EMQX_AUTHORIZATION__DENY_ACTION=ignore
+      - >-
+        EMQX_AUTHORIZATION__SOURCES=[{"type":"http","enable":true,"method":"post","url":"https://solar.fowir.com/v1/internal/mqtt/acl","headers":{"content-type":"application/json"},"body":{"username":"$${username}","clientid":"$${clientid}","topic":"$${topic}","action":"$${action}"},"pool_size":8,"connect_timeout":"5s","request_timeout":"5s","ssl":{"enable":true,"verify":"verify_none"}}]
     volumes:
       - ${MQTT_CERTS_DIR:-/data/mqtt-certs}:/opt/emqx/certs:ro
-      - ./infra/docker/emqx/emqx.conf:/opt/emqx/etc/emqx.conf:ro
       - emqx-data:/opt/emqx/data
     healthcheck:
       test: ['CMD', '/opt/emqx/bin/emqx', 'ping']
