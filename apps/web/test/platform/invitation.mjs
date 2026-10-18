@@ -31,7 +31,7 @@ try {
   await page.waitForURL(web+'/activate');assert.equal(page.url().includes('token'),false);
   await page.locator('#activate-password').fill(password);await page.locator('#activate-confirm').fill(password);
   await page.getByRole('button',{name:/เปิดใช้งานบัญชี|Activate account/i}).click();await page.getByRole('status').filter({hasText:/Your account is ready|บัญชีของคุณได้รับการตั้งค่าและเปิดใช้งานเรียบร้อยแล้ว/}).waitFor();
-  await page.getByRole('link',{name:/เข้าสู่ระบบ|Sign in/i}).click();await page.getByLabel(/อีเมล|Email/i).fill(first.email);await page.getByLabel(/รหัสผ่าน|Password/i).fill(password);await page.getByRole('button',{name:/เข้าสู่ระบบ|Sign in/i}).click();await page.waitForURL(web+'/');
+  await page.getByRole('link',{name:/เข้าสู่ระบบ|Sign in/i}).click();await page.getByLabel(/อีเมล|Email/i).fill(first.email);await page.locator('#password').fill(password);await page.getByRole('button',{name:/เข้าสู่ระบบ|Sign in/i}).click();await page.waitForURL(web+'/');
   assert.equal((await page.request.get(web+'/v1/auth/me')).status(),200);
   const invalidPage=await browser.newPage({extraHTTPHeaders:{'X-Forwarded-For':fixtureIp}});invalidPage.on('pageerror',error=>errors.push(error.message));
   const checkUnavailable=async link=>{await invalidPage.goto(link);await invalidPage.waitForURL(web+'/activate');await invalidPage.locator('#activate-password').fill(password);await invalidPage.locator('#activate-confirm').fill(password);await invalidPage.getByRole('button',{name:/เปิดใช้งานบัญชี|Activate account/i}).click();await invalidPage.getByRole('alert').filter({hasText:/Ask your administrator to resend|ติดต่อผู้ดูแลเพื่อส่งคำเชิญใหม่|ติดต่อผู้ดูแลเพื่อส่งใหม่|Invitation is invalid or expired/}).waitFor();};
