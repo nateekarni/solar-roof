@@ -20,7 +20,7 @@ import { siteHistoryFilter } from "./site-history.js";
 import { randomUUID } from "node:crypto";
 import { validateCadence } from './gateway-reconciliation.js';
 import { hasPermission, siteScope, type AuthorizationPrincipal } from '../../common/auth/authorization.js';
-import { snapshotGatewayConfiguration, recordGatewayPublished } from './gateway-lifecycle.js';
+import { snapshotGatewayConfiguration, recordGatewayPublished, reserveGatewayIdentity, guardLegacyGatewayConfiguration, lockGatewayForMutation } from './gateway-lifecycle.js';
 import { MeasurementComparisons } from './measurement-comparisons.js';
 import { z } from 'zod';
 import { identityDraft, operationalCode, identityConflict, retryGeneratedIdentity, type IdentityDraftInput } from "./identity-allocation.js";
@@ -71,120 +71,6 @@ export class AssetsController {
       return this.assetsService.getGatewaySiteOptions(gatewayId ?? null, siteScope(req?.user, 'technical'), includeAssigned === 'true');
     }
     return (await this.db.query(`SELECT s.id,s.name,s.external_site_id AS code,true AS active,g.id AS "assignedGatewayId" FROM sites s LEFT JOIN gateways g ON g.site_id=s.id AND g.retired_at IS NULL WHERE s.status<>'archived' AND ($3 OR g.id IS NULL OR g.id::text=$1) AND ($2::uuid[] IS NULL OR s.id=ANY($2::uuid[])) ORDER BY s.name,s.id`,[gatewayId??null,siteScope(req?.user,'technical'),includeAssigned==='true'])).rows;
-  }
-
-  @Get('gateways/discovered')
-  async listDiscoveredGateways(@Query('status') status?: string) {
-    const filter = status && ['unassigned', 'assigned', 'ignored'].includes(status) ? status : null;
-    const result = await this.db.query(
-      `SELECT id,
-              external_gateway_id AS "externalGatewayId",
-              reported_site_id AS "reportedSiteId",
-              reported_device_id AS "reportedDeviceId",
-              manufacturer,
-              model,
-              profile_id AS "profileId",
-              protocol,
-              status,
-              assigned_site_id AS "assignedSiteId",
-              assigned_gateway_id AS "assignedGatewayId",
-              assigned_at AS "assignedAt",
-              raw_payload AS "rawPayload",
-              first_seen_at AS "firstSeenAt",
-              last_seen_at AS "lastSeenAt"
-       FROM discovered_gateways
-       WHERE ($1::text IS NULL OR status = $1)
-       ORDER BY last_seen_at DESC`,
-      [filter]
-    );
-    return result.rows;
-  }
-
-  @Post('gateways/assign-discovered')
-  async assignDiscoveredGateway(
-    @Body() body: { discoveredGatewayId?: string; externalGatewayId?: string; siteId?: string; name?: string }
-  ) {
-    const targetId = body.discoveredGatewayId || body.externalGatewayId;
-    if (!targetId || !body.siteId) {
-      throw new BadRequestException('discoveredGatewayId and siteId are required');
-    }
-    const client = await this.db.pool.connect();
-    try {
-      await client.query('BEGIN');
-      const discovered = (await client.query<{
-        id: string;
-        external_gateway_id: string;
-        reported_site_id: string | null;
-        reported_device_id: string | null;
-        manufacturer: string | null;
-        model: string | null;
-        status: string;
-        last_seen_at: Date;
-      }>(
-        `SELECT id, external_gateway_id, reported_site_id, reported_device_id, manufacturer, model, status, last_seen_at
-         FROM discovered_gateways
-         WHERE id::text = $1 OR external_gateway_id = $1
-         FOR UPDATE`,
-        [targetId]
-      )).rows[0];
-
-      if (!discovered) {
-        throw new NotFoundException('Discovered gateway not found');
-      }
-
-      const site = (await client.query<{ id: string; external_site_id: string; name: string }>(
-        `SELECT id, external_site_id, name FROM sites WHERE id = $1 AND status <> 'archived' FOR UPDATE`,
-        [body.siteId]
-      )).rows[0];
-
-      if (!site) {
-        throw new NotFoundException('Site not found');
-      }
-
-      const gatewayId = randomUUID();
-      const gatewayName = body.name?.trim() || `Gateway ${discovered.external_gateway_id}`;
-      const endpoint = `solar/v1/sites/${site.external_site_id}/gateways/${discovered.external_gateway_id}/devices/+/telemetry`;
-
-      await client.query(
-        `INSERT INTO gateways (id, site_id, name, protocol, endpoint, status, external_gateway_id, polling_interval_seconds, last_seen_at)
-         VALUES ($1, $2, $3, 'mqtt', $4, 'online', $5, 60, $6)`,
-        [gatewayId, site.id, gatewayName, endpoint, discovered.external_gateway_id, discovered.last_seen_at]
-      );
-
-      if (discovered.reported_device_id) {
-        const deviceId = randomUUID();
-        const deviceName = `${discovered.model || 'Device'} (${discovered.reported_device_id})`;
-        const modelName = discovered.model || 'Generic';
-        await client.query(
-          `INSERT INTO devices (id, gateway_id, site_id, name, model, serial_number, device_type, slave_id, status, external_device_id, expected_interval_seconds)
-           VALUES ($1, $2, $3, $4, $5, $6, 'meter', 1, 'online', $7, 60)
-           ON CONFLICT DO NOTHING`,
-          [deviceId, gatewayId, site.id, deviceName, modelName, discovered.reported_device_id, discovered.reported_device_id]
-        );
-      }
-
-      await client.query(
-        `UPDATE discovered_gateways
-         SET status = 'assigned', assigned_site_id = $1, assigned_gateway_id = $2, assigned_at = now()
-         WHERE id = $3`,
-        [site.id, gatewayId, discovered.id]
-      );
-
-      await client.query('COMMIT');
-      void this.mqttService.refreshSubscriptions().catch(() => {});
-
-      return {
-        success: true,
-        gatewayId,
-        siteId: site.id,
-        externalGatewayId: discovered.external_gateway_id,
-      };
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
   }
 
   @Get('gateways/:id/configuration')
@@ -299,7 +185,8 @@ export class AssetsController {
     const parsed=z.object({impactConfirmed:z.literal(true),sources:z.object({energy:source.optional(),power:source.optional()}).strict().refine(value=>Object.keys(value).length>0)}).strict().safeParse(body);
     if(!parsed.success)throw new BadRequestException('Confirm the production source impact and specify energy or power');
     return this.db.transaction(async client=>{
-      const gateway=(await client.query(`SELECT id,site_id FROM gateways WHERE id::text=$1 AND retired_at IS NULL FOR UPDATE`,[id])).rows[0];if(!gateway)throw new NotFoundException('Gateway not found');
+      const candidate=(await client.query(`SELECT id,site_id FROM gateways WHERE id::text=$1 AND retired_at IS NULL`,[id])).rows[0];if(!candidate)throw new NotFoundException('Gateway not found');
+      const gateway=await lockGatewayForMutation(client,candidate.id,candidate.site_id);
       const before=(await client.query(`SELECT metric,device_id AS "deviceId",tag FROM gateway_dashboard_sources WHERE gateway_id=$1 ORDER BY metric`,[id])).rows;
       // Validate every source before any mutation, preserving partial-update atomicity.
       for(const [metric,selection] of Object.entries(parsed.data.sources))if(selection){
@@ -322,6 +209,7 @@ export class AssetsController {
   async publishGatewayConfiguration(@Param('id') id:string,@Body() body:{baseVersion:number}) {
     if(!Number.isSafeInteger(body.baseVersion)||body.baseVersion<0)throw new BadRequestException('Configuration baseVersion required');
     const revision=await this.db.transaction(async client=>{
+      await guardLegacyGatewayConfiguration(client,id);
       const g=(await client.query(`SELECT name,desired_config_version AS version FROM gateways WHERE id::text=$1 AND retired_at IS NULL FOR UPDATE`,[id])).rows[0];
       if(!g)throw new NotFoundException('Gateway not found');
       if(Number(g.version)!==body.baseVersion)throw new ConflictException('Configuration changed; reload before publishing');
@@ -336,9 +224,10 @@ export class AssetsController {
   async saveDeviceCadence(@Param('id') id:string,@Body() body:unknown) {
     const cadence=validateCadence(body);
     return this.db.transaction(async client=>{
-      const device=(await client.query(`SELECT gateway_id FROM devices WHERE id::text=$1`,[id])).rows[0];if(!device)throw new NotFoundException('Device not found');
-      await client.query('SELECT id FROM gateways WHERE id=$1 AND retired_at IS NULL FOR UPDATE',[device.gateway_id]);
-      const result=await client.query(`UPDATE devices SET expected_interval_seconds=$2,poll_group_cadence=$3::jsonb WHERE id::text=$1 RETURNING id,expected_interval_seconds AS "expectedIntervalSeconds",poll_group_cadence AS "pollGroups"`,[id,cadence.expectedIntervalSeconds,JSON.stringify(cadence.pollGroups)]);
+      const device=(await client.query(`SELECT gateway_id,site_id FROM devices WHERE id::text=$1`,[id])).rows[0];if(!device)throw new NotFoundException('Device not found');
+      await guardLegacyGatewayConfiguration(client,device.gateway_id,device.site_id);
+      const result=await client.query(`UPDATE devices SET expected_interval_seconds=$2,poll_group_cadence=$3::jsonb WHERE id::text=$1 AND gateway_id=$4 AND site_id=$5 RETURNING id,expected_interval_seconds AS "expectedIntervalSeconds",poll_group_cadence AS "pollGroups"`,[id,cadence.expectedIntervalSeconds,JSON.stringify(cadence.pollGroups),device.gateway_id,device.site_id]);
+      if(!result.rows[0])throw new NotFoundException('Device changed; reload configuration');
       const revision=await snapshotGatewayConfiguration(client,device.gateway_id);
       await client.query(`INSERT INTO measurement_comparison_dirty(pair_id,from_time) SELECT p.id,min(coalesce(s.measured_at,s.polled_at)) FROM measurement_comparison_pairs p JOIN payload_samples s ON s.device_id IN (p.left_device_id,p.right_device_id) WHERE p.left_device_id=$1 OR p.right_device_id=$1 GROUP BY p.id ON CONFLICT(pair_id) DO UPDATE SET from_time=LEAST(measurement_comparison_dirty.from_time,EXCLUDED.from_time)`,[id]);
       return {...result.rows[0],desiredVersion:revision.version};
@@ -368,10 +257,15 @@ export class AssetsController {
     if(!body.name?.trim()||/[/+#]/.test(body.name))throw new BadRequestException('Gateway name required without MQTT separators');
     const code=operationalCode(body.externalGatewayId,'GW');externalIdentifier(code);const interval=validatedInterval(body.pollingIntervalSeconds??10);
     const replacement=await this.db.transaction(async client=>{
-      const previous=(await client.query(`SELECT g.site_id,s.external_site_id FROM gateways g JOIN sites s ON s.id=g.site_id WHERE g.id::text=$1 AND g.retired_at IS NULL AND s.status<>'archived' FOR UPDATE OF g,s`,[id])).rows[0];
+      const previous=(await client.query(`SELECT g.site_id,s.external_site_id,
+        EXISTS(SELECT 1 FROM gateway_configuration_revisions managed WHERE managed.gateway_id=g.id AND managed.config->>'messageType'='config') AS "controlManaged"
+        FROM gateways g JOIN sites s ON s.id=g.site_id WHERE g.id::text=$1 AND g.retired_at IS NULL AND s.status<>'archived'`,[id])).rows[0];
       if(!previous)throw new NotFoundException('Active gateway not found');
+      await guardLegacyGatewayConfiguration(client,id,previous.site_id);
+      if(previous.controlManaged)throw new ConflictException('Managed gateway replacement requires gateway onboarding approval');
       if(!previous.external_site_id)throw new BadRequestException('Register a site code before replacing the gateway');
       if(body.mqttBrokerId&&!(await client.query('SELECT id FROM mqtt_brokers WHERE id=$1',[body.mqttBrokerId])).rows[0])throw new BadRequestException('Broker not found');
+      await reserveGatewayIdentity(client,code);
       await client.query(`UPDATE gateways SET retired_at=now(),status='offline' WHERE id=$1`,[id]);
       const newId=randomUUID(),endpoint=payloadTopic(previous.external_site_id,code);
       const saved=(await client.query(`INSERT INTO gateways(id,site_id,name,protocol,endpoint,status,external_gateway_id,mqtt_broker_id,polling_interval_seconds) VALUES($1,$2,$3,'mqtt',$4,'offline',$5,$6,$7) RETURNING id,site_id AS "siteId",name,external_gateway_id AS "externalGatewayId",endpoint`,[newId,previous.site_id,body.name.trim(),endpoint,code,body.mqttBrokerId||null,interval])).rows[0];
@@ -642,6 +536,7 @@ export class AssetsController {
       const site=(await client.query('SELECT id,external_site_id FROM sites WHERE id=$1 FOR UPDATE',[id])).rows[0];if(!site)throw new NotFoundException('ไม่พบไซต์งาน');
       const existing=(await client.query('SELECT * FROM gateways WHERE site_id=$1 AND retired_at IS NULL FOR UPDATE',[id])).rows;
       if(existing.length>1)throw new ConflictException('ไซต์งานมีเกตเวย์เกินหนึ่งรายการ กรุณาจัดการก่อนตั้งค่า');
+      if(existing[0])await guardLegacyGatewayConfiguration(client,existing[0].id,id);
       if(body.mqttBrokerId&&!(await client.query('SELECT id FROM mqtt_brokers WHERE id=$1',[body.mqttBrokerId])).rows.length)throw new BadRequestException('ไม่พบ broker');
       const interval=validatedInterval(body.pollingIntervalSeconds??existing[0]?.polling_interval_seconds??10);
       const brokerId=body.mqttBrokerId===undefined?existing[0]?.mqtt_broker_id??null:body.mqttBrokerId||null;
@@ -650,6 +545,7 @@ export class AssetsController {
       const contract=body.topicContract??(existing[0]?.endpoint?.startsWith('energy/')||existing[0]?.endpoint?.startsWith('/')?'legacy-energy':'solar-v1');
       const endpoint=contract==='legacy-energy'?gatewayTopic(body.name.trim(),body.subscriptionTopic??(existing[0]?.name===body.name.trim()&&!existing[0]?.endpoint?.startsWith('solar/v1/')?existing[0]?.endpoint:undefined)):payloadSubscription(site.external_site_id,code,body.subscriptionTopic??(existing[0]?.endpoint?.startsWith('solar/v1/')?existing[0]?.endpoint:undefined));
       const gatewayId=existing[0]?.id||randomUUID();
+      await reserveGatewayIdentity(client,code,existing[0]?.id??null);
       const saved=(await client.query(`INSERT INTO gateways(id,site_id,name,protocol,endpoint,status,external_gateway_id,mqtt_broker_id,polling_interval_seconds) VALUES($1,$2,$3,'mqtt',$4,'offline',$5,$6,$7) ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,endpoint=EXCLUDED.endpoint,mqtt_broker_id=EXCLUDED.mqtt_broker_id,polling_interval_seconds=EXCLUDED.polling_interval_seconds RETURNING id,name,external_gateway_id AS "externalGatewayId",endpoint,polling_interval_seconds AS "pollingIntervalSeconds"`,[gatewayId,id,body.name.trim(),endpoint,code,brokerId,interval])).rows[0];
       const revision=await snapshotGatewayConfiguration(client,gatewayId);return {...saved,configurationVersion:revision.version,configuration:revision.config};
     });
@@ -828,6 +724,7 @@ export class AssetsController {
     try {
       await client.query("BEGIN");
 
+      await reserveGatewayIdentity(client,body.externalGatewayId);
       customerId = await resolveSiteOrganization(client,body);
       // 1. Create Site
       const siteSql = `
@@ -1014,8 +911,25 @@ export class AssetsController {
           );
         }
       }
-      const gateway = await client.query(`SELECT g.id,g.name,g.endpoint,g.external_gateway_id AS "externalGatewayId",s.external_site_id AS "externalSiteId" FROM gateways g JOIN sites s ON s.id=g.site_id WHERE g.site_id = $1 AND g.retired_at IS NULL FOR UPDATE OF g`, [id]);
+      const gateway = await client.query(`SELECT g.id,g.name,g.endpoint,g.external_gateway_id AS "externalGatewayId",s.external_site_id AS "externalSiteId",
+        EXISTS(SELECT 1 FROM gateway_configuration_revisions managed WHERE managed.gateway_id=g.id AND managed.config->>'messageType'='config') AS "controlManaged"
+        FROM gateways g JOIN sites s ON s.id=g.site_id WHERE g.site_id = $1 AND g.retired_at IS NULL FOR UPDATE OF g`, [id]);
       const gw = gateway.rows[0];
+      // The site and gateway are already locked in parent order, including an
+      // archived site being restored. Read history in a fresh statement after
+      // the gateway lock so concurrent approval cannot become a bypass.
+      if(gw)gw.controlManaged=(await client.query(`SELECT EXISTS(SELECT 1 FROM gateway_configuration_revisions
+        WHERE gateway_id=$1 AND config->>'messageType'='config') AS "controlManaged"`,[gw.id])).rows[0]?.controlManaged===true;
+      const technicalFields = new Set(['mqttBrokerId','gatewayName','protocol','endpoint','pollingIntervalSeconds','alertRules',
+        'deviceId','deviceName','deviceModel','deviceSerial','externalGatewayId','externalDeviceId','slaveId','deviceSlaveId',
+        'payloadProfileRevisionId','localOverrideConfig','sourcePresetRevisionId','meterPresetId','registers','parameters',
+        'devices','additionalDevices','receiveConfig','expectedIntervalSeconds','pollGroups']);
+      if (gw?.controlManaged && Object.entries(body).some(([key,value])=>value!==undefined&&technicalFields.has(key))) {
+        throw new ConflictException('Use gateway configuration proposal approval for this gateway');
+      }
+      if(gw&&Object.entries(body).some(([key,value])=>value!==undefined&&technicalFields.has(key))) {
+        await guardLegacyGatewayConfiguration(client,gw.id,id);
+      }
       if (gw && (body.gatewayName !== undefined || body.endpoint !== undefined)) {
         body.gatewayName = body.gatewayName?.trim() || gw.name;
         if(gw.endpoint?.startsWith("solar/v1/")) {
@@ -1075,14 +989,14 @@ export class AssetsController {
       }
 
       // 2. Update Gateway
-      if (
+      if (!gw?.controlManaged && (
         body.mqttBrokerId !== undefined ||
         body.gatewayName !== undefined ||
         body.protocol !== undefined ||
         body.endpoint !== undefined ||
         body.pollingIntervalSeconds !== undefined || body.alertRules !== undefined ||
         body.status !== undefined
-      ) {
+      )) {
         const gwUpdates: string[] = [];
         const gwValues: unknown[] = [];
         let gIdx = 1;
@@ -1127,11 +1041,11 @@ export class AssetsController {
         if (!meters.rows.some(meter => meter.id === body.deviceId)) throw new BadRequestException("Meter does not belong to this site");
       }
       // 3. Update Meter Device
-      if (
+      if (!gw?.controlManaged && (
         body.deviceModel !== undefined ||
         body.deviceSerial !== undefined ||
         body.status !== undefined
-      ) {
+      )) {
         const devUpdates: string[] = [];
         const devValues: unknown[] = [];
         let dIdx = 1;
@@ -1297,8 +1211,9 @@ export class AssetsController {
     const client = await this.db.pool.connect();
     try {
       await client.query("BEGIN");
-      const gateway = await client.query(`SELECT g.id,g.endpoint,s.external_site_id AS "externalSiteId",g.external_gateway_id AS "externalGatewayId" FROM gateways g JOIN sites s ON s.id=g.site_id WHERE g.site_id = $1 AND g.retired_at IS NULL FOR UPDATE OF g`, [siteId]);
+      const gateway = await client.query(`SELECT g.id,g.endpoint,s.external_site_id AS "externalSiteId",g.external_gateway_id AS "externalGatewayId" FROM gateways g JOIN sites s ON s.id=g.site_id WHERE g.site_id = $1 AND g.retired_at IS NULL`, [siteId]);
       if (gateway.rows.length !== 1) throw new BadRequestException("Site must have one configured gateway");
+      await guardLegacyGatewayConfiguration(client,gateway.rows[0].id,siteId);
       if (!revision && gateway.rows[0].endpoint?.startsWith("solar/v1/")) throw new BadRequestException("Standard gateway devices require a payload profile");
       if (revision && (!gateway.rows[0].endpoint?.startsWith("solar/v1/") || !gateway.rows[0].externalSiteId || !gateway.rows[0].externalGatewayId)) throw new BadRequestException("Legacy gateway requires coordinated standard commissioning before adding a payload profile");
       const deviceId = randomUUID();
@@ -1358,7 +1273,10 @@ export class AssetsController {
     const client=await this.db.pool.connect();
     try {
       await client.query('BEGIN');
-      const device=(await client.query(`SELECT d.*,(SELECT p.config->>'deviceType' FROM payload_profile_revisions p WHERE p.id=d.payload_profile_revision_id) AS profile_device_type,EXISTS(SELECT 1 FROM billing_meters b WHERE b.device_id=d.id AND b.active) AS billing FROM devices d WHERE d.id=$1 FOR UPDATE`,[id])).rows[0];
+      const candidate=(await client.query('SELECT id,gateway_id,site_id FROM devices WHERE id=$1',[id])).rows[0];
+      if(!candidate)throw new NotFoundException('Device not found');
+      await guardLegacyGatewayConfiguration(client,candidate.gateway_id,candidate.site_id);
+      const device=(await client.query(`SELECT d.*,(SELECT p.config->>'deviceType' FROM payload_profile_revisions p WHERE p.id=d.payload_profile_revision_id) AS profile_device_type,EXISTS(SELECT 1 FROM billing_meters b WHERE b.device_id=d.id AND b.active) AS billing FROM devices d WHERE d.id=$1 AND d.gateway_id=$2 AND d.site_id=$3 FOR UPDATE`,[id,candidate.gateway_id,candidate.site_id])).rows[0];
       if(!device)throw new NotFoundException("Device not found");
       if(device.billing && !revision.config.fields.some(f=>f.role==='billing-import'))throw new BadRequestException("Billing meter requires billing-import profile");
       if(!device.external_device_id)throw new BadRequestException("Device has no payload identity");
@@ -1414,8 +1332,9 @@ export class AssetsController {
     const client=await this.db.pool.connect();
     try {
       await client.query('BEGIN');
-      const gateway=(await client.query(`SELECT g.id FROM gateways g JOIN sites s ON s.id=g.site_id WHERE s.id=$1 AND s.status<>'archived' AND s.external_site_id IS NOT NULL AND g.external_gateway_id IS NOT NULL AND g.endpoint LIKE 'solar/v1/%' AND g.retired_at IS NULL FOR UPDATE OF g`,[siteId])).rows[0];
+      const gateway=(await client.query(`SELECT g.id FROM gateways g JOIN sites s ON s.id=g.site_id WHERE s.id=$1 AND s.status<>'archived' AND s.external_site_id IS NOT NULL AND g.external_gateway_id IS NOT NULL AND g.endpoint LIKE 'solar/v1/%' AND g.retired_at IS NULL`,[siteId])).rows[0];
       if(!gateway)throw new BadRequestException('Standard gateway not found');
+      await guardLegacyGatewayConfiguration(client,gateway.id,siteId);
       const previous=(await client.query('SELECT version FROM gateway_payload_receive_revisions WHERE gateway_id=$1 ORDER BY version DESC LIMIT 1',[gateway.id])).rows[0];
       if((previous?.version??0)!==body.baseVersion)throw new BadRequestException('Configuration changed; reload before importing');
       const existing=(await client.query(`SELECT d.external_device_id AS "externalDeviceId",d.payload_profile_revision_id AS "profileRevisionId",p.config FROM devices d JOIN payload_profile_revisions p ON p.id=d.payload_profile_revision_id WHERE d.gateway_id=$1 FOR SHARE OF d`,[gateway.id])).rows;
@@ -1452,28 +1371,19 @@ export class AssetsController {
       parameters?: Record<string, unknown>;
     }
   ) {
-    const gwRes = await this.db.query(
-      "SELECT id, name, site_id FROM gateways WHERE name = $1 OR id::text = $1 LIMIT 1",
-      [gatewayName]
-    );
-    const gw = gwRes.rows[0];
-    if (!gw) {
-      throw new NotFoundException(`ไม่พบ Gateway "${gatewayName}"`);
-    }
     const interval = validatedInterval(body.pollingIntervalSeconds ?? body.interval ?? 10);
     validateAlertRules(body.alertRules);
-
-    if (body.alertRules) {
-      await this.db.query(
-        "UPDATE gateways SET polling_interval_seconds = $1, alert_rules = $2 WHERE id = $3",
-        [interval, JSON.stringify(body.alertRules), gw.id]
-      );
-    } else {
-      await this.db.query(
-        "UPDATE gateways SET polling_interval_seconds = $1 WHERE id = $2",
-        [interval, gw.id]
-      );
-    }
+    const gw = await this.db.transaction(async client => {
+      const row = (await client.query(`SELECT id,name,site_id,
+        EXISTS(SELECT 1 FROM gateway_configuration_revisions managed WHERE managed.gateway_id=gateways.id AND managed.config->>'messageType'='config') AS "controlManaged"
+        FROM gateways WHERE (name=$1 OR id::text=$1) AND retired_at IS NULL LIMIT 1`, [gatewayName])).rows[0];
+      if (!row) throw new NotFoundException(`ไม่พบ Gateway "${gatewayName}"`);
+      await guardLegacyGatewayConfiguration(client,row.id,row.site_id);
+      if (row.controlManaged) throw new ConflictException('Use gateway configuration proposal approval for this gateway');
+      if (body.alertRules) await client.query('UPDATE gateways SET polling_interval_seconds=$1,alert_rules=$2 WHERE id=$3', [interval, JSON.stringify(body.alertRules), row.id]);
+      else await client.query('UPDATE gateways SET polling_interval_seconds=$1 WHERE id=$2', [interval, row.id]);
+      return row;
+    });
 
     const payload = {
       gateway: gw.name,

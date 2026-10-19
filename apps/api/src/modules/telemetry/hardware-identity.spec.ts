@@ -7,6 +7,7 @@ for(const standard of [true,false])test(`hardware config retains ${standard?'sta
  const gateway={brokerId:null,endpoint:standard?'solar/v1/sites/SITE-001/gateways/GW-001/devices/+/telemetry':'energy/Display-Gateway/#',externalSiteId:'SITE-001',externalGatewayId:'GW-001'};
  const db={query:async()=>({rows:[gateway]})};
  const service=new MqttIngestionService(db as never,db as never);
+ if(standard)Object.assign(service,{legacyConfigEnabled:true});
  (service as unknown as {client:unknown}).client={connected:true,publish:(topic:string,body:string,_options:unknown,callback:(error?:Error)=>void)=>{sent.push({topic,body:JSON.parse(body)});callback();}};
  assert.equal(await service.publishHardwareConfig('Display-Gateway',{pollingInterval:10}),true);
  assert.equal(sent[0]?.topic,standard?'solar/v1/sites/SITE-001/gateways/GW-001/config':'energy/Display-Gateway/config');

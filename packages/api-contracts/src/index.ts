@@ -1,4 +1,11 @@
 export { normalizePaymentMetadata } from './payments.js';
+export type {
+  GatewayControlKind, GatewayConfigApplyStatus, GatewayLifecycleState, GatewayConfigState,
+  GatewayConnectionState, GatewayJsonValue, GatewayRegisterMapping, GatewayReportedDevice,
+  GatewayDeviceConfig, GatewayRegisterPayload, GatewayConfigPayload, GatewayConfigUpdatePayload,
+  GatewayConfigStatusPayload, GatewayStatusPayload, GatewayControlPayloads, DiscoveredGatewayDetail,
+  ConfirmGatewayRequest, ConfirmGatewayResponse, GatewaySyncState, GatewayConfigProposal,
+} from './gateway-control.js';
 export type {FinancialInsights,DashboardSiteContext,MaintenanceInsights} from './dashboard-insights.js';
 export type { PaymentMetadata, PaymentSubmission, PaymentTransferRow, TransferPaymentMethod } from './payments.js';
 export type { OperationQuery, OperationPage, OperationRow, OperationFacets, BillingStatusView, BillingRow, BillingReplacementProposal, IssuancePreview, IssuancePreviewResponse, OperationAction, PersistedDocumentRow } from './operations.js';

@@ -5,8 +5,8 @@ import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 
-for(const migration of ['infra/migrations/058_user_document_identity.sql','infra/migrations/059_billing_issuance_approval.sql','infra/migrations/060_payload_samples_generation_energy_idx.sql'])
-for(const scenario of ['fresh','duplicate','already-applied'] as const)test(`supported migration runner handles ${migration}: ${scenario}`, async () => {
+for(const migration of ['infra/migrations/058_user_document_identity.sql','infra/migrations/059_billing_issuance_approval.sql','infra/migrations/060_payload_samples_generation_energy_idx.sql','infra/migrations/066_gateway_onboarding_control_plane.sql','infra/migrations/067_gateway_configuration_publication_fence.sql'])
+for(const scenario of ['fresh','duplicate','already-applied','matching-applied'] as const)test(`supported migration runner handles ${migration}: ${scenario}`, async () => {
   const root = new URL('../../../../', import.meta.url);
   const entry = new URL('./db-migrate.ts', import.meta.url);
   const sql = await readFile(new URL(migration, root), 'utf8');
@@ -22,7 +22,7 @@ for(const scenario of ['fresh','duplicate','already-applied'] as const)test(`sup
       const client = {
         async query(sql, params) {
           if (sql.startsWith('SELECT checksum')) {
-            if (params[0] === ${JSON.stringify(migration)}) return {rows: ${scenario==='already-applied'?'[{checksum:"unreleased-previous-checksum"}]':'[]'}};
+            if (params[0] === ${JSON.stringify(migration)} && ${JSON.stringify(scenario)} !== 'matching-applied') return {rows: ${scenario==='already-applied'?'[{checksum:"unreleased-previous-checksum"}]':'[]'}};
             const content = await readFile(new URL(params[0], root), 'utf8');
             return {rows: [{checksum: createHash('sha256').update(content.replaceAll('\\r\\n', '\\n')).digest('hex')}]};
           }
@@ -57,10 +57,14 @@ for(const scenario of ['fresh','duplicate','already-applied'] as const)test(`sup
     env: {...process.env, DATABASE_URL: 'postgresql://unused@127.0.0.1:1/test_migration_runner', TSX_TSCONFIG_PATH: fileURLToPath(new URL('../../tsconfig.json', import.meta.url))},
     encoding: 'utf8', timeout: 20000,
   });
-  assert.equal(result.status, scenario==='fresh'?0:1, result.stderr);
+  assert.equal(result.status, scenario==='fresh'||scenario==='matching-applied'?0:1, result.stderr);
   const eventLine = result.stdout.split(/\r?\n/).find(line => line.startsWith('MIGRATION_EVENTS:'));
   assert.ok(eventLine, result.stdout);
   const events=JSON.parse(eventLine.slice('MIGRATION_EVENTS:'.length));
+  if(scenario==='matching-applied'){
+    assert.ok(result.stdout.includes(`Already applied ${migration}`), result.stdout);
+    assert.deepEqual(events,[]);return;
+  }
   if(scenario==='duplicate'){
     assert.match(result.stderr,/Migration SQL rejected/);
     assert.deepEqual(events,[{sql:'BEGIN'},{sql},{sql:'ROLLBACK'}]);return;
