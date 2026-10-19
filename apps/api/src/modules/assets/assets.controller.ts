@@ -219,7 +219,22 @@ export class AssetsController {
       WHERE g.id::text=$1 AND g.retired_at IS NULL`, [id])).rows[0];
     if (!gateway) throw new NotFoundException('Gateway not found');
 
-    const samples = await this.db.query(`SELECT
+    const samples = await this.db.query<{
+      deviceId: string;
+      externalDeviceId: string;
+      deviceName: string;
+      tag: string;
+      value: number | string;
+      unit: string;
+      rawValue: number | string | null;
+      rawUnit: string;
+      polledAt: string | Date | null;
+      sourceTime: string | Date | null;
+      receivedAt: string | Date | null;
+      quality: string;
+      communication: string;
+      pollGroup: string;
+    }>(`SELECT
       d.id AS "deviceId", d.external_device_id AS "externalDeviceId", d.name AS "deviceName",
       ps.tag, ps.value, ps.unit, ps.raw_value AS "rawValue", ps.raw_unit AS "rawUnit",
       ps.polled_at AS "polledAt", coalesce(ps.measured_at, ps.polled_at) AS "sourceTime",

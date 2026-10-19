@@ -8,6 +8,9 @@ export function isAllowedMutation({method,origin,hasCookie,hasBearer}:{method:st
 }
 
 export function isAllowedRequestOrigin(request:Request,webOrigin:string):boolean {
+  if (typeof request.path === 'string' && /^\/v1\/internal\/mqtt\/(auth|acl)\/?$/i.test(request.path)) {
+    return true;
+  }
   const origin=request.headers.origin;
   const allowed=isAllowedMutation({method:request.method,origin,hasCookie:!!request.headers.cookie,hasBearer:/^Bearer\s+\S+$/i.test(request.headers.authorization ?? '')},webOrigin);
   // Match Express's case-insensitive public routes, including a trailing slash.
