@@ -5,6 +5,7 @@ import type { PoolClient } from 'pg';
 import { z } from 'zod';
 import type { ConfirmGatewayRequest, ConfirmGatewayResponse, GatewayConfigPayload, GatewayDeviceConfig, GatewaySyncState,
   GatewayConfigProposal, GatewayControlKind, GatewayControlPayloads } from '@solar/api-contracts';
+import { gatewayConnectionIssue, gatewayRegisterMappingIssue } from '@solar/api-contracts';
 import { DatabaseService } from '../../database/database.service.js';
 import { GatewayCredentialService } from './gateway-credential.service.js';
 import { gatewayConfigHash, parseGatewayControlPayload } from './gateway-control-payload.js';
@@ -30,18 +31,11 @@ interface GatewayRow {id:string;site_id:string;external_site_id:string;external_
   desired_config_version:number;desired_config_hash:string|null;active_config_hash:string|null;lifecycle_state:string;mqtt_broker_id:string|null;config_publication_epoch:string}
 function deviceClassification(type:string) { return type==='energy-meter'?'meter':type==='solar-logger'?'logger':type; }
 function validateRegisterStorage(mapping:GatewayDeviceConfig['mappings'][number]) {
-  // pg serializes JS numbers using their decimal string. Validate that exact
-  // decimal, including exponent notation, rather than rounding via float math.
-  if(mapping.scale!==undefined) {
-    const [coefficient,exponent='0']=mapping.scale.toString().toLowerCase().split('e');
-    const decimals=Math.max(0,(coefficient!.split('.')[1]?.length??0)-Number(exponent));
-    if(!Number.isFinite(mapping.scale)||Math.abs(mapping.scale)>=1e12||decimals>8)throw new BadRequestException('Register scale must be exactly representable as numeric(20,8)');
-  }
-  if(mapping.registerCount!==undefined&&(!Number.isInteger(mapping.registerCount)||mapping.registerCount<1||mapping.registerCount>2147483647)) {
-    throw new BadRequestException('Register count exceeds PostgreSQL integer storage');
-  }
-  // Offset is JSONB numeric with no typmod, not numeric(20,8). The payload parser
-  // already requires finite values; all finite JS decimal exponents fit JSONB.
+  const issue=gatewayRegisterMappingIssue(mapping);
+  if(issue==='invalid_scale')throw new BadRequestException('Register scale must be exactly representable as numeric(20,8)');
+  if(issue==='invalid_register_count')throw new BadRequestException('Register count exceeds PostgreSQL integer storage');
+  if(issue==='invalid_offset')throw new BadRequestException('Register offset must be finite');
+  if(issue==='incomplete_decoder')throw new BadRequestException('Physical mappings require explicit decoder details');
 }
 export interface GatewayControlInput { brokerId?: string | null | undefined; gatewayId: string; payload: unknown }
 
@@ -515,14 +509,13 @@ export class GatewayConfigurationService {
         || !device.connection || Object.keys(device.connection).length === 0 || device.pollGroups.length === 0 || device.mappings.length === 0) {
         throw new BadRequestException('Enabled devices require type, model, serial, protocol, connection, groups and mappings');
       }
+      const connectionIssue=gatewayConnectionIssue(device.protocol,device.connection);
+      if(connectionIssue==='unsupported_protocol')throw new BadRequestException('Supported device protocols are modbus-tcp and modbus-rtu');
+      if(connectionIssue)throw new BadRequestException('Invalid device connection');
       if(device.protocol==='modbus-tcp')device.connection=badInput(()=>tcpConnection.parse(device.connection));
-      else if(device.protocol==='modbus-rtu')device.connection=badInput(()=>serialConnection.parse(device.connection));
-      else throw new BadRequestException('Supported device protocols are modbus-tcp and modbus-rtu');
+      else device.connection=badInput(()=>serialConnection.parse(device.connection));
       for (const mapping of device.mappings) {
         if (/^modbus/i.test(device.protocol) && !mapping.registerAddress) throw new BadRequestException('Modbus mapping requires a register address');
-        if (mapping.registerAddress !== undefined && [mapping.registerCount, mapping.dataType, mapping.byteOrder, mapping.wordOrder, mapping.scale].some(v => v === undefined)) {
-          throw new BadRequestException('Physical mappings require explicit decoder details');
-        }
         validateRegisterStorage(mapping);
       }
       const id = randomUUID(), profileId = randomUUID();

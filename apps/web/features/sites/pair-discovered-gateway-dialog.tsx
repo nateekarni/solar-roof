@@ -20,11 +20,13 @@ interface SiteOption {
 }
 
 export function PairDiscoveredGatewayDialog({
+  canOnboard,
   open,
   onOpenChange,
   discovered,
   onSuccess,
 }: {
+  canOnboard: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   discovered: DiscoveredGatewayRow | null;
@@ -40,7 +42,7 @@ export function PairDiscoveredGatewayDialog({
   const [error, setError] = React.useState('');
 
   React.useEffect(() => {
-    if (open && discovered) {
+    if (canOnboard && open && discovered) {
       setError('');
       setGatewayName(`Gateway ${discovered.externalGatewayId}`);
       setSelectedSiteId('');
@@ -64,11 +66,11 @@ export function PairDiscoveredGatewayDialog({
         .catch((e) => setError((e as Error).message))
         .finally(() => setLoadingSites(false));
     }
-  }, [open, discovered]);
+  }, [canOnboard, open, discovered]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!discovered || !selectedSiteId || submitting) return;
+    if (!canOnboard || !discovered || !selectedSiteId || submitting) return;
     setSubmitting(true);
     setError('');
     try {
@@ -86,7 +88,7 @@ export function PairDiscoveredGatewayDialog({
     }
   };
 
-  if (!discovered) return null;
+  if (!canOnboard || !discovered) return null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

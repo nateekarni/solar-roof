@@ -6,6 +6,8 @@ export type {
   GatewayConfigStatusPayload, GatewayStatusPayload, GatewayControlPayloads, DiscoveredGatewayDetail,
   ConfirmGatewayRequest, ConfirmGatewayResponse, GatewaySyncState, GatewayConfigProposal,
 } from './gateway-control.js';
+export {gatewayConnectionIssue,gatewayRegisterMappingIssue} from './gateway-control.js';
+export type {GatewayConnectionIssue,GatewayRegisterMappingIssue} from './gateway-control.js';
 export type {FinancialInsights,DashboardSiteContext,MaintenanceInsights} from './dashboard-insights.js';
 export type { PaymentMetadata, PaymentSubmission, PaymentTransferRow, TransferPaymentMethod } from './payments.js';
 export type { OperationQuery, OperationPage, OperationRow, OperationFacets, BillingStatusView, BillingRow, BillingReplacementProposal, IssuancePreview, IssuancePreviewResponse, OperationAction, PersistedDocumentRow } from './operations.js';

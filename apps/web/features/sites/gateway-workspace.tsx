@@ -1,6 +1,6 @@
 'use client';
 import {useSessionUser} from '../../providers/session-user-provider';
-import {gatewayPermissions} from './gateway-permissions';
+import {canManageGatewayOnboarding,gatewayPermissions} from './gateway-permissions';
 
 import { useRouter } from 'next/navigation';
 import { useEffect,useState,type FormEvent } from 'react';
@@ -14,9 +14,11 @@ import { GatewayDetailModal } from './gateway-detail-modal';
 import { GatewayFormDialog } from './gateway-form-dialog';
 import { GatewayEditDialog } from './gateway-edit-dialog';
 import { PairDiscoveredGatewayDialog } from './pair-discovered-gateway-dialog';
+import { Alert,AlertAction,AlertDescription,AlertTitle } from '../../components/ui/alert';
 import type { MetricSources } from './dashboard-source-model';
 import type { PayloadConfig } from './payload-contracts';
 import type { DiscoveredGatewayRow } from '@solar/api-contracts';
+import { useDiscoveredGateways,useRegisteredGateways } from './gateway-onboarding-api';
 
 export type GatewayConfig = PayloadConfig & {
   metricSources?: MetricSources;
@@ -35,6 +37,16 @@ export type GatewayConfig = PayloadConfig & {
   }[];
 };
 
+export interface GatewayOnboardingAccessState {
+  pairOpen:boolean;
+  pairGateway:DiscoveredGatewayRow|null;
+  discoveredRows:DiscoveredGatewayRow[];
+}
+
+export function gatewayOnboardingAccessState(canOnboard:boolean,state:GatewayOnboardingAccessState):GatewayOnboardingAccessState {
+  return canOnboard?state:{pairOpen:false,pairGateway:null,discoveredRows:[]};
+}
+
 export function GatewayWorkspace() {
   let router: { push: (url: string) => void };
   try {
@@ -42,9 +54,11 @@ export function GatewayWorkspace() {
   } catch {
     router = { push: (url: string) => { if (typeof window !== 'undefined') window.location.href = url; } };
   }
-  const locale = useLocale(), th = locale === 'th', permissions = gatewayPermissions(useSessionUser());
-  const [rows, setRows] = useState<GatewayRow[]>([]);
-  const [discoveredRows, setDiscoveredRows] = useState<DiscoveredGatewayRow[]>([]);
+  const locale = useLocale(), th = locale === 'th', user=useSessionUser(), permissions = gatewayPermissions(user);
+  const canOnboard=canManageGatewayOnboarding(user);
+  const registeredQuery=useRegisteredGateways();
+  const rows=registeredQuery.data??[];
+  const discoveredQuery=useDiscoveredGateways(canOnboard);
   const [detailRow, setDetailRow] = useState<GatewayRow | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [editRow, setEditRow] = useState<GatewayRow | null>(null);
@@ -52,20 +66,11 @@ export function GatewayWorkspace() {
   const [pairGateway, setPairGateway] = useState<DiscoveredGatewayRow | null>(null);
   const [pairOpen, setPairOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
-  const [error, setError] = useState('');
-  const [revision, setRevision] = useState(0);
+  const onboardingAccess=gatewayOnboardingAccessState(canOnboard,{pairOpen,pairGateway,discoveredRows:discoveredQuery.data??[]});
 
-  useEffect(() => {
-    let active = true;
-    apiClient.get<GatewayRow[]>('/v1/gateways')
-      .then(data => { if (active) setRows(data); })
-      .catch(e => { if (active) setError(e.message); });
-
-    apiClient.get<DiscoveredGatewayRow[]>('/v1/gateways/discovered?status=unassigned')
-      .then(data => { if (active) setDiscoveredRows(data); })
-      .catch(() => {});
-    return () => { active = false; };
-  }, [revision]);
+  useEffect(()=>{
+    if(!canOnboard){setPairOpen(false);setPairGateway(null);}
+  },[canOnboard]);
 
   const handleOpenDetail = (row: GatewayRow) => {
     router.push(`/gateways/${row.id}`);
@@ -77,6 +82,7 @@ export function GatewayWorkspace() {
   };
 
   const handleOpenPair = (row: DiscoveredGatewayRow) => {
+    if(!canOnboard)return;
     setPairGateway(row);
     setPairOpen(true);
   };
@@ -97,15 +103,19 @@ export function GatewayWorkspace() {
         )}
       </header>
 
-      {error && <p role="alert" className="text-destructive">{error}</p>}
+      {registeredQuery.isError && <p role="alert" className="text-destructive">{registeredQuery.error instanceof Error?registeredQuery.error.message:(th?'โหลดรายการเกตเวย์ไม่สำเร็จ':'Could not load gateways')}</p>}
+
+      {canOnboard&&discoveredQuery.isError&&<GatewayDiscoveryError locale={locale} error={discoveredQuery.error} onRetry={()=>{void discoveredQuery.refetch();}}/>}
 
       <GatewayIndex
         rows={rows}
-        discoveredRows={discoveredRows}
+        discoveredRows={onboardingAccess.discoveredRows}
+        discoveryLoading={canOnboard&&discoveredQuery.isPending}
+        discoveryUnavailable={canOnboard&&discoveredQuery.isError&&discoveredQuery.data===undefined}
         locale={locale}
         onSelect={handleOpenEdit}
         onViewDetail={handleOpenDetail}
-        onPairDiscovered={handleOpenPair}
+        {...(canOnboard?{onPairDiscovered:handleOpenPair}:{})}
       />
 
       <GatewayDetailModal
@@ -119,10 +129,11 @@ export function GatewayWorkspace() {
       />
 
       <PairDiscoveredGatewayDialog
-        open={pairOpen}
+        canOnboard={canOnboard}
+        open={onboardingAccess.pairOpen}
         onOpenChange={setPairOpen}
-        discovered={pairGateway}
-        onSuccess={() => setRevision(n => n + 1)}
+        discovered={onboardingAccess.pairGateway}
+        onSuccess={() => {void registeredQuery.refetch();}}
       />
 
       <GatewayFormDialog
@@ -130,7 +141,7 @@ export function GatewayWorkspace() {
         onOpenChange={setAddOpen}
         brokerAccess={permissions.brokerView}
         onSaved={() => {
-          setRevision(n => n + 1);
+          void registeredQuery.refetch();
           setAddOpen(false);
         }}
       />
@@ -140,15 +151,24 @@ export function GatewayWorkspace() {
         open={editOpen}
         onOpenChange={setEditOpen}
         permissions={permissions}
-        onSaved={() => setRevision(n => n + 1)}
+        onSaved={() => {void registeredQuery.refetch();}}
         onReplaced={() => {
           setEditOpen(false);
           setEditRow(null);
-          setRevision(n => n + 1);
+          void registeredQuery.refetch();
         }}
       />
     </main>
   );
+}
+
+export function GatewayDiscoveryError({locale,error,onRetry}:{locale:string;error:unknown;onRetry:()=>void}){
+  const th=locale==='th';
+  return <Alert variant="destructive">
+    <AlertTitle>{th?'รีเฟรชเกตเวย์ที่ตรวจพบไม่สำเร็จ':'Could not refresh discovered gateways'}</AlertTitle>
+    <AlertDescription>{error instanceof Error?error.message:(th?'เกิดข้อผิดพลาดระหว่างโหลดข้อมูล':'Discovery request failed')}</AlertDescription>
+    <AlertAction><Button type="button" size="sm" variant="outline" onClick={onRetry}>{th?'ลองอีกครั้ง':'Retry'}</Button></AlertAction>
+  </Alert>;
 }
 
 export function DeviceCadences({config,onSaved}:{config:GatewayConfig;onSaved:()=>void}){

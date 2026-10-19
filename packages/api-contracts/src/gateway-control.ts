@@ -130,3 +130,71 @@ export interface GatewayConfigProposal {
   reviewedAt?: string | null;
   reviewedBy?: string | null;
 }
+
+export type GatewayConnectionIssue = 'unsupported_protocol' | 'invalid_connection';
+export type GatewayRegisterMappingIssue = 'incomplete_decoder' | 'invalid_register_count' | 'invalid_scale' | 'invalid_offset';
+
+const exactKeys=(value:unknown,keys:readonly string[]):value is Record<string,unknown>=>{
+  if(!value||typeof value!=='object'||Array.isArray(value))return false;
+  const actual=Object.keys(value).sort();
+  return actual.length===keys.length&&actual.every((key,index)=>key===keys[index]);
+};
+const integerIn=(value:unknown,min:number,max:number)=>typeof value==='number'&&Number.isInteger(value)&&value>=min&&value<=max;
+
+function isIpv4(host:string):boolean {
+  const pieces=host.split('.');
+  return pieces.length===4&&pieces.every(piece=>/^\d{1,3}$/.test(piece)&&Number(piece)<=255&&String(Number(piece))===piece);
+}
+
+function isIpv6(host:string):boolean {
+  if(!host.includes(':')||!/^[\dA-Fa-f:.]+$/.test(host))return false;
+  const halves=host.split('::');
+  if(halves.length>2)return false;
+  const groups=(part:string)=>part===''?[]:part.split(':');
+  const left=groups(halves[0]!),right=groups(halves[1]??'');
+  const all=[...left,...right];
+  if(all.some((group,index)=>group.includes('.')
+    ? index!==all.length-1||!isIpv4(group)
+    : !/^[\dA-Fa-f]{1,4}$/.test(group)))return false;
+  const count=all.reduce((sum,group)=>sum+(group.includes('.')?2:1),0);
+  return halves.length===2?count<8:count===8;
+}
+
+function isGatewayHost(host:string):boolean {
+  if(isIpv4(host)||isIpv6(host))return true;
+  return !/^[\d.]+$/.test(host)&&host.split('.').every(label=>/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/.test(label));
+}
+
+/** Browser-safe validation shared by onboarding and the server's strict decoder preparation. */
+export function gatewayConnectionIssue(protocol:string|undefined,connection:unknown):GatewayConnectionIssue|null {
+  if(protocol==='modbus-tcp'){
+    const keys=['host','port','slaveId'] as const;
+    if(!exactKeys(connection,[...keys].sort()))return 'invalid_connection';
+    const {host,port,slaveId}=connection;
+    return typeof host==='string'&&host.trim().length>=1&&host.trim().length<=253&&isGatewayHost(host.trim())&&
+      integerIn(port,1,65535)&&integerIn(slaveId,1,247)?null:'invalid_connection';
+  }
+  if(protocol==='modbus-rtu'){
+    const keys=['baudRate','dataBits','parity','serialPort','slaveId','stopBits'] as const;
+    if(!exactKeys(connection,[...keys].sort()))return 'invalid_connection';
+    const {serialPort,baudRate,dataBits,parity,stopBits,slaveId}=connection;
+    return typeof serialPort==='string'&&serialPort.trim().length>=1&&serialPort.trim().length<=256&&
+      integerIn(baudRate,50,4_000_000)&&[5,6,7,8].includes(dataBits as number)&&
+      ['none','even','odd','mark','space'].includes(parity as string)&&[1,1.5,2].includes(stopBits as number)&&
+      integerIn(slaveId,1,247)?null:'invalid_connection';
+  }
+  return 'unsupported_protocol';
+}
+
+/** Storage and physical-decoder checks shared by browser preflight and API persistence. */
+export function gatewayRegisterMappingIssue(mapping:GatewayRegisterMapping):GatewayRegisterMappingIssue|null {
+  if(mapping.registerAddress!==undefined&&[mapping.registerCount,mapping.dataType,mapping.byteOrder,mapping.wordOrder,mapping.scale].some(value=>value===undefined))return 'incomplete_decoder';
+  if(mapping.registerCount!==undefined&&!integerIn(mapping.registerCount,1,2_147_483_647))return 'invalid_register_count';
+  if(mapping.scale!==undefined){
+    const [coefficient,exponent='0']=mapping.scale.toString().toLowerCase().split('e');
+    const decimals=Math.max(0,(coefficient!.split('.')[1]?.length??0)-Number(exponent));
+    if(!Number.isFinite(mapping.scale)||Math.abs(mapping.scale)>=1e12||decimals>8)return 'invalid_scale';
+  }
+  if(mapping.offset!==undefined&&!Number.isFinite(mapping.offset))return 'invalid_offset';
+  return null;
+}

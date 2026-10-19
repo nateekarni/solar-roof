@@ -17,8 +17,9 @@ import {
 } from '../../components/ui/dropdown-menu';
 import { Tabs, TabsList, TabsTrigger } from '../../components/ui/tabs';
 import { Badge } from '../../components/ui/badge';
+import { Skeleton } from '../../components/ui/skeleton';
 import { cn } from '../../lib/utils';
-import type { DiscoveredGatewayRow } from '@solar/api-contracts';
+import type { DiscoveredGatewayRow, GatewayConfigState, GatewayLifecycleState } from '@solar/api-contracts';
 
 export interface GatewayRow {
   id: string;
@@ -39,6 +40,8 @@ export interface GatewayRow {
   publishedVersion: number | null;
   acknowledgedVersion: number | null;
   appliedVersion: number | null;
+  lifecycleState?: GatewayLifecycleState;
+  configState?: GatewayConfigState;
 }
 
 export type GatewayTab = 'all' | 'connected' | 'unconnected';
@@ -54,9 +57,12 @@ export interface DisplayGatewayItem {
   currentProductionKw: number | null;
   lastReceivedAt: string | null;
   isDiscovered: boolean;
+  isConnected: boolean;
   discoveredRow?: DiscoveredGatewayRow;
   originalRow?: GatewayRow;
 }
+
+export type GatewayIndexLifecycle='draft'|'pending_sync'|'failed'|'online'|'offline'|'unknown';
 
 const canonicalStatus = (val?: string) =>
   val === 'online' || val === 'ออนไลน์'
@@ -65,9 +71,43 @@ const canonicalStatus = (val?: string) =>
     ? 'offline'
     : val || '';
 
+export function gatewayIndexLifecycle(item:DisplayGatewayItem):GatewayIndexLifecycle {
+  if(item.isDiscovered)return 'draft';
+  if(item.originalRow?.configState==='failed'||item.originalRow?.configState==='drifted')return 'failed';
+  if(item.originalRow?.configState==='draft')return 'draft';
+  if(item.originalRow?.configState==='pending_sync'||item.originalRow?.lifecycleState==='configuring'||
+    (item.originalRow?.desiredVersion??0)>(item.originalRow?.appliedVersion??0))return 'pending_sync';
+  const status=canonicalStatus(item.status);
+  return status==='online'||status==='offline'?status:'unknown';
+}
+
+const persistedDisplayItem=(row:GatewayRow):DisplayGatewayItem=>({
+  id:row.id,name:row.name,externalGatewayId:row.externalGatewayId,siteName:row.siteName,siteCode:row.siteCode,status:row.status,
+  deviceCount:row.deviceCount??0,currentProductionKw:row.currentProductionKw??null,lastReceivedAt:row.lastReceivedAt??null,
+  isDiscovered:false,isConnected:false,originalRow:row,
+});
+
+export function gatewayIndexPartitions(rows:readonly GatewayRow[],discoveredRows:readonly DiscoveredGatewayRow[],th:boolean){
+  const persisted=rows.map(persistedDisplayItem).map(item=>({...item,isConnected:item.originalRow?.lifecycleState==='active'}));
+  const persistedIds=new Set(rows.map(row=>row.id));
+  const persistedExternalIds=new Set(rows.map(row=>row.externalGatewayId));
+  const discovered=discoveredRows.filter(row=>!(row.assignedGatewayId&&persistedIds.has(row.assignedGatewayId))&&
+    !persistedExternalIds.has(row.externalGatewayId)).map((d):DisplayGatewayItem=>({
+      id:d.id,name:d.model?`${d.model} (${d.externalGatewayId})`:`Gateway ${d.externalGatewayId}`,externalGatewayId:d.externalGatewayId,
+      siteName:d.reportedSiteId?`${th?'ไซต์ที่ระบุ':'Reported'}: ${d.reportedSiteId}`:th?'ยังไม่เชื่อมต่อไซต์':'Unassigned site',
+      siteCode:d.reportedSiteId||'—',status:'unconnected',deviceCount:d.reportedDeviceId?1:0,currentProductionKw:null,
+      lastReceivedAt:d.lastSeenAt,isDiscovered:true,isConnected:false,discoveredRow:d,
+    }));
+  const connectedItems=persisted.filter(item=>item.isConnected);
+  const unconnectedItems=[...persisted.filter(item=>!item.isConnected),...discovered];
+  return {connectedItems,unconnectedItems,allItems:[...connectedItems,...unconnectedItems]};
+}
+
 export function GatewayIndex({
   rows,
   discoveredRows = [],
+  discoveryLoading = false,
+  discoveryUnavailable = false,
   locale,
   onSelect,
   onViewDetail,
@@ -75,6 +115,8 @@ export function GatewayIndex({
 }: {
   rows: GatewayRow[];
   discoveredRows?: DiscoveredGatewayRow[];
+  discoveryLoading?: boolean;
+  discoveryUnavailable?: boolean;
   locale: string;
   onSelect: (row: GatewayRow) => void;
   onViewDetail?: (row: GatewayRow) => void;
@@ -85,81 +127,38 @@ export function GatewayIndex({
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('all');
 
-  // Unified items
-  const connectedItems: DisplayGatewayItem[] = rows.map((r) => ({
-    id: r.id,
-    name: r.name,
-    externalGatewayId: r.externalGatewayId,
-    siteName: r.siteName,
-    siteCode: r.siteCode,
-    status: r.status,
-    deviceCount: r.deviceCount ?? 0,
-    currentProductionKw: r.currentProductionKw ?? null,
-    lastReceivedAt: r.lastReceivedAt ?? null,
-    isDiscovered: false,
-    originalRow: r,
-  }));
-
-  const unconnectedItems: DisplayGatewayItem[] = discoveredRows.map((d) => ({
-    id: d.id,
-    name: d.model ? `${d.model} (${d.externalGatewayId})` : `Gateway ${d.externalGatewayId}`,
-    externalGatewayId: d.externalGatewayId,
-    siteName: d.reportedSiteId ? `${th ? 'ไซต์ที่ระบุ' : 'Reported'}: ${d.reportedSiteId}` : th ? 'ยังไม่เชื่อมต่อไซต์' : 'Unassigned site',
-    siteCode: d.reportedSiteId || '—',
-    status: 'unconnected',
-    deviceCount: d.reportedDeviceId ? 1 : 0,
-    currentProductionKw: null,
-    lastReceivedAt: d.lastSeenAt,
-    isDiscovered: true,
-    discoveredRow: d,
-  }));
+  const {connectedItems,unconnectedItems,allItems}=gatewayIndexPartitions(rows,discoveredRows,th);
+  const discoveryEmptyContent=discoveryLoading?<div className="flex items-center justify-center gap-3 text-sm text-muted-foreground" role="status">
+    <Skeleton className="h-8 w-32"/><span>{th?'กำลังโหลดเกตเวย์ที่ตรวจพบ':'Loading discovered gateways'}</span>
+  </div>:discoveryUnavailable?<div className="text-sm text-muted-foreground" role="status">
+    {th?'ข้อมูลเกตเวย์ที่ตรวจพบไม่พร้อมใช้งาน':'Discovered gateways unavailable'}
+  </div>:null;
 
   const baseItems =
     activeTab === 'connected'
       ? connectedItems
       : activeTab === 'unconnected'
       ? unconnectedItems
-      : [...connectedItems, ...unconnectedItems];
+      : allItems;
 
   const filtered = baseItems.filter((item) => {
     const matchesStatus =
       status === 'all' ||
-      (status === 'unconnected' && item.isDiscovered) ||
-      (!item.isDiscovered && canonicalStatus(item.status) === status);
+      (status === 'unconnected' && !item.isConnected) ||
+      gatewayIndexLifecycle(item)===status;
     const query = `${item.name} ${item.externalGatewayId} ${item.siteName} ${item.siteCode}`.toLocaleLowerCase();
     return matchesStatus && query.includes(search.trim().toLocaleLowerCase());
   });
 
   const badge = (item: DisplayGatewayItem) => {
-    if (item.isDiscovered || item.status === 'unconnected') {
-      return (
-        <span className="inline-flex rounded-full px-2 py-1 text-xs font-medium bg-amber-500/10 text-amber-700 dark:text-amber-400">
-          {th ? 'ยังไม่เชื่อมต่อ' : 'Not connected'}
-        </span>
-      );
-    }
-    const cStatus = canonicalStatus(item.status);
-    return (
-      <span
-        className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${
-          cStatus === 'online'
-            ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
-            : cStatus === 'offline'
-            ? 'bg-red-500/10 text-red-700 dark:text-red-400'
-            : 'bg-muted text-muted-foreground'
-        }`}
-      >
-        {cStatus === 'online'
-          ? th
-            ? 'ออนไลน์'
-            : 'Online'
-          : cStatus === 'offline'
-          ? th
-            ? 'ออฟไลน์'
-            : 'Offline'
-          : item.status}
-      </span>
-    );
+    const lifecycle=gatewayIndexLifecycle(item);
+    const copy={
+      draft:th?'ฉบับร่าง':'Draft',pending_sync:th?'รอซิงก์การตั้งค่า':'Pending synchronization',
+      failed:th?'ตั้งค่าไม่สำเร็จ':'Configuration failed',online:th?'ออนไลน์':'Online',offline:th?'ออฟไลน์':'Offline',
+      unknown:th?'ไม่ทราบสถานะ':'Unknown',
+    } as const;
+    const variant=lifecycle==='failed'?'destructive':lifecycle==='online'?'default':lifecycle==='pending_sync'||lifecycle==='draft'?'secondary':'outline';
+    return <Badge variant={variant}>{copy[lifecycle]}</Badge>;
   };
 
   const received = (item: DisplayGatewayItem) => (
@@ -176,7 +175,7 @@ export function GatewayIndex({
         })} kW`;
 
   const actions = (item: DisplayGatewayItem) => {
-    if (item.isDiscovered && item.discoveredRow) {
+    if (item.isDiscovered && item.discoveredRow && onPairDiscovered) {
       return (
         <Button
           size="sm"
@@ -184,7 +183,7 @@ export function GatewayIndex({
           className="text-xs font-medium border-primary/40 hover:bg-primary/10 hover:text-primary whitespace-nowrap"
           onClick={(e) => {
             e.stopPropagation();
-            onPairDiscovered?.(item.discoveredRow!);
+            onPairDiscovered(item.discoveredRow!);
           }}
         >
           {th ? 'เชื่อมต่อไซต์งาน' : 'Pair site'}
@@ -305,6 +304,9 @@ export function GatewayIndex({
             <option value="all">{th ? 'ทุกสถานะ' : 'All statuses'}</option>
             <option value="online">{th ? 'ออนไลน์' : 'Online'}</option>
             <option value="offline">{th ? 'ออฟไลน์' : 'Offline'}</option>
+            <option value="draft">{th ? 'ฉบับร่าง' : 'Draft'}</option>
+            <option value="pending_sync">{th ? 'รอซิงก์การตั้งค่า' : 'Pending synchronization'}</option>
+            <option value="failed">{th ? 'ตั้งค่าไม่สำเร็จ' : 'Configuration failed'}</option>
             {activeTab === 'all' && (
               <option value="unconnected">{th ? 'ยังไม่เชื่อมต่อ' : 'Not connected'}</option>
             )}
@@ -336,7 +338,7 @@ export function GatewayIndex({
                   : 'bg-muted text-foreground border border-border/70'
               )}
             >
-              {rows.length + discoveredRows.length}
+              {discoveryLoading?'…':discoveryUnavailable?<span aria-label={th?'ข้อมูลเกตเวย์ที่ตรวจพบไม่พร้อมใช้งาน':'Discovered gateways unavailable'}>—</span>:allItems.length}
             </Badge>
           </TabsTrigger>
           <TabsTrigger
@@ -353,7 +355,7 @@ export function GatewayIndex({
                   : 'bg-muted text-foreground border border-border/70'
               )}
             >
-              {rows.length}
+              {connectedItems.length}
             </Badge>
           </TabsTrigger>
           <TabsTrigger
@@ -370,11 +372,15 @@ export function GatewayIndex({
                   : 'bg-muted text-foreground border border-border/70'
               )}
             >
-              {discoveredRows.length}
+              {discoveryLoading?'…':discoveryUnavailable?<span aria-label={th?'ข้อมูลเกตเวย์ที่ตรวจพบไม่พร้อมใช้งาน':'Discovered gateways unavailable'}>—</span>:unconnectedItems.length}
             </Badge>
           </TabsTrigger>
         </TabsList>
       </Tabs>
+
+      {discoveryLoading&&<div className="flex items-center gap-3 text-sm text-muted-foreground md:hidden" role="status">
+        <Skeleton className="h-8 flex-1"/><span>{th?'กำลังโหลดเกตเวย์ที่ตรวจพบ':'Loading discovered gateways'}</span>
+      </div>}
 
       {/* Desktop Table */}
       <div className="hidden md:block [&_table]:table-fixed [&_th]:whitespace-normal [&_td]:whitespace-normal [&_td]:break-words">
@@ -384,6 +390,7 @@ export function GatewayIndex({
           getRowId={(row) => row.id}
           onRowClick={handleRowClick}
           hideSearch
+          {...(discoveryEmptyContent?{emptyContent:discoveryEmptyContent}:{})}
         />
       </div>
 
@@ -430,7 +437,7 @@ export function GatewayIndex({
             </dl>
           </article>
         ))}
-        {!filtered.length && (
+        {!discoveryLoading&&!discoveryUnavailable&&!filtered.length && (
           <p className="rounded-xl border p-4 text-sm text-muted-foreground">
             {th ? 'ไม่พบเกตเวย์' : 'No gateways found'}
           </p>
