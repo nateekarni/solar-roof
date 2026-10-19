@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "1.1",
+  "messageType": "status",
+  "messageId": "GW-TEST-001-status-0001",
+  "gatewayId": "GW-TEST-001",
+  "sessionId": "GW-TEST-001-boot-0001",
+  "firmwareVersion": "test-1.0.0",
+  "status": "online",
+  "appliedConfigVersion": 1,
+  "appliedConfigHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "reportedAt": "2026-10-19T10:12:00+07:00"
+}
