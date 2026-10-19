@@ -20,6 +20,7 @@ import { Badge } from '../../components/ui/badge';
 import { Skeleton } from '../../components/ui/skeleton';
 import { cn } from '../../lib/utils';
 import type { DiscoveredGatewayRow, GatewayConfigState, GatewayLifecycleState } from '@solar/api-contracts';
+import {GatewayOperationalStatus,gatewayConnectionState} from './gateway-operational-status';
 
 export interface GatewayRow {
   id: string;
@@ -42,6 +43,7 @@ export interface GatewayRow {
   appliedVersion: number | null;
   lifecycleState?: GatewayLifecycleState;
   configState?: GatewayConfigState;
+  connectionState?: 'online'|'offline'|'unknown';
 }
 
 export type GatewayTab = 'all' | 'connected' | 'unconnected';
@@ -112,6 +114,7 @@ export function GatewayIndex({
   onSelect,
   onViewDetail,
   onPairDiscovered,
+  now,
 }: {
   rows: GatewayRow[];
   discoveredRows?: DiscoveredGatewayRow[];
@@ -121,6 +124,7 @@ export function GatewayIndex({
   onSelect: (row: GatewayRow) => void;
   onViewDetail?: (row: GatewayRow) => void;
   onPairDiscovered?: (row: DiscoveredGatewayRow) => void;
+  now?:number;
 }) {
   const th = locale === 'th';
   const [activeTab, setActiveTab] = useState<GatewayTab>('all');
@@ -145,21 +149,12 @@ export function GatewayIndex({
     const matchesStatus =
       status === 'all' ||
       (status === 'unconnected' && !item.isConnected) ||
-      gatewayIndexLifecycle(item)===status;
+      gatewayIndexLifecycle(item)===status||(!item.isDiscovered&&gatewayConnectionState(item.originalRow!)===status);
     const query = `${item.name} ${item.externalGatewayId} ${item.siteName} ${item.siteCode}`.toLocaleLowerCase();
     return matchesStatus && query.includes(search.trim().toLocaleLowerCase());
   });
 
-  const badge = (item: DisplayGatewayItem) => {
-    const lifecycle=gatewayIndexLifecycle(item);
-    const copy={
-      draft:th?'ฉบับร่าง':'Draft',pending_sync:th?'รอซิงก์การตั้งค่า':'Pending synchronization',
-      failed:th?'ตั้งค่าไม่สำเร็จ':'Configuration failed',online:th?'ออนไลน์':'Online',offline:th?'ออฟไลน์':'Offline',
-      unknown:th?'ไม่ทราบสถานะ':'Unknown',
-    } as const;
-    const variant=lifecycle==='failed'?'destructive':lifecycle==='online'?'default':lifecycle==='pending_sync'||lifecycle==='draft'?'secondary':'outline';
-    return <Badge variant={variant}>{copy[lifecycle]}</Badge>;
-  };
+  const badge = (item: DisplayGatewayItem) => <GatewayOperationalStatus compact locale={locale} {...(now===undefined?{}:{now})} gateway={item.isDiscovered?{lifecycleState:'discovered',configState:'draft',connectionState:'unknown',lastReceivedAt:item.lastReceivedAt}:{...item.originalRow!,connectionState:item.originalRow?.connectionState??gatewayConnectionState(item.originalRow!)}}/>;
 
   const received = (item: DisplayGatewayItem) => (
     <span title={item.lastReceivedAt ? formatAppDateTime(item.lastReceivedAt, th ? 'th' : 'en') : undefined}>
@@ -245,7 +240,7 @@ export function GatewayIndex({
       size: 110,
       minSize: 95,
       maxSize: 125,
-      header: th ? 'สถานะ' : 'Status',
+      header: th ? 'สถานะการทำงาน' : 'Operational status',
       cell: ({ row }) => badge(row.original),
     },
     {

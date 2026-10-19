@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { GatewayDetailPageView } from './gateway-detail-page-view';
+import { GatewayDetailPageView,GatewayOperationalStatus } from './gateway-detail-page-view';
 import { getTelemetryTagLabel, TELEMETRY_TAG_LABELS } from './telemetry-tag-labels';
 import { LocaleProvider } from '../../providers/locale-provider';
 import { SessionUserProvider } from '../../providers/session-user-provider';
@@ -47,4 +47,9 @@ test('GatewayDetailPageView renders initial loading skeleton without crashing', 
   assert.ok(html.includes('animate-pulse'));
   assert.ok(html.includes('ops-content'));
   assert.ok(html.includes('ring-1 ring-foreground/10 rounded-xl'));
+});
+
+test('operational view separates assignment, configuration, connection and telemetry freshness',()=>{
+  const html=renderToStaticMarkup(<LocaleProvider initialLocale="en"><GatewayOperationalStatus gateway={{status:'offline',connectionState:'offline',lifecycleState:'active',configState:'drifted',appliedVersion:4,lastReceivedAt:'2026-10-19T00:00:00Z',pollingIntervalSeconds:10}} now={new Date('2026-10-19T00:10:00Z').getTime()}/></LocaleProvider>);
+  for(const label of ['Assignment','Active','Configuration','Drifted','Connection','Offline','Telemetry','Stale','Last received'])assert.match(html,new RegExp(label));
 });

@@ -2,6 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { NotFoundException } from '@nestjs/common';
 import { AssetsController } from './assets.controller.js';
+import { AssetsService } from './assets.service.js';
+
+const gatewayColumns=new Set(['id','site_id','name','external_gateway_id','endpoint','last_seen_at','polling_interval_seconds','status',
+  'desired_config_version','published_config_version','acknowledged_config_version','applied_config_version','lifecycle_state','config_state','retired_at']);
+function assertKnownGatewayColumns(sql:string){
+  for(const [,column] of sql.matchAll(/\bg\.([a-z_]+)/g))if(!gatewayColumns.has(column!))throw new Error(`column gateways.${column} does not exist`);
+}
 
 test('gatewayTelemetry throws NotFoundException when gateway does not exist', async () => {
   const db = {
@@ -21,6 +28,7 @@ test('gatewayTelemetry returns gateway details and formatted telemetry samples',
   const db = {
     query: async (sql: string, values: unknown[] = []) => {
       queries.push({ sql, values });
+      assertKnownGatewayColumns(sql);
       if (sql.includes('FROM gateways g JOIN sites s')) {
         return {
           rows: [
@@ -35,6 +43,7 @@ test('gatewayTelemetry returns gateway details and formatted telemetry samples',
               lastSeenAt: '2026-10-18T08:00:00.000Z',
               pollingIntervalSeconds: 10,
               status: 'online',
+              connectionState: 'online',
               desiredVersion: 1,
               publishedVersion: 1,
               acknowledgedVersion: 1,
@@ -78,6 +87,7 @@ test('gatewayTelemetry returns gateway details and formatted telemetry samples',
 
   assert.equal(result.gateway.id, gatewayId);
   assert.equal(result.gateway.status, 'online');
+  assert.equal(result.gateway.connectionState, 'online');
   assert.equal(result.samples.length, 1);
   assert.equal(result.samples[0]?.value, 5500);
   assert.equal(result.samples[0]?.rawValue, 5500);
@@ -90,4 +100,11 @@ test('gatewayTelemetry returns gateway details and formatted telemetry samples',
   assert.equal(queries.length, 2);
   assert.ok(queries[1]?.sql.includes('CROSS JOIN LATERAL'));
   assert.deepEqual(queries[1]?.values, [gatewayId]);
+});
+
+test('gateway collection queries stay inside the migrated gateway schema',async()=>{
+  const query=async(sql:string)=>{assertKnownGatewayColumns(sql);return {rows:[]};};
+  const db={query} as any;
+  await new AssetsController(db,{} as any).listGateways({user:{role:'admin'}});
+  await new AssetsService(db).listGateways(null);
 });

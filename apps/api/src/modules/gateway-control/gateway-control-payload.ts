@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
-import type { GatewayControlKind, GatewayControlPayloads } from '@solar/api-contracts';
+import {GATEWAY_REGISTER_BYTE_ORDERS,GATEWAY_REGISTER_DATA_TYPES,GATEWAY_REGISTER_WORD_ORDERS,gatewayRegisterMappingCollectionIssue,gatewayRegisterMappingValueIssue,type GatewayControlKind,type GatewayControlPayloads,type GatewayDisabledRegisterMapping} from '@solar/api-contracts';
 
 const gatewayId = z.string().min(1).max(128).regex(/^[A-Za-z0-9_-]+$/);
 const text = z.string().min(1).max(128);
@@ -17,20 +17,14 @@ const mapping = z.object({
   conversion: z.enum(['identity', 'wh-to-kwh', 'varh-to-kvarh', 'auto-v1']),
   role: z.enum(['billing-import', 'active-power', 'none']).optional(),
   registerCount: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER).optional(),
-  dataType: z.enum(['uint16', 'int16', 'uint32', 'int32', 'float32']).optional(),
-  byteOrder: z.enum(['big_endian', 'little_endian']).optional(),
-  wordOrder: z.enum(['little_word_first', 'big_word_first', 'cdab', 'abcd']).optional(),
+  dataType: z.enum(GATEWAY_REGISTER_DATA_TYPES).optional(),
+  byteOrder: z.enum(GATEWAY_REGISTER_BYTE_ORDERS).optional(),
+  wordOrder: z.enum(GATEWAY_REGISTER_WORD_ORDERS).optional(),
   scale: z.number().finite().optional(), offset: z.number().finite().optional(),
 }).strict();
 
 function unique(values: string[], label: string) {
   if (new Set(values).size !== values.length) throw new Error(`Duplicate ${label}`);
-}
-function registerIdentity(address: string): string {
-  const value = address.trim();
-  if (/^r\d+$/i.test(value)) return BigInt(value.slice(1)).toString();
-  if (/^(?:\d+|0x[\da-f]+)$/i.test(value)) return BigInt(value).toString();
-  return value;
 }
 const deviceShape = {
   deviceId: gatewayId, deviceType: text.optional(), manufacturer: text.optional(), model: text.optional(),
@@ -38,21 +32,37 @@ const deviceShape = {
   protocol: text.optional(), connection: connection.optional(),
   pollGroups: z.array(text).max(16).optional(), mappings: z.array(mapping).max(256).optional(),
 };
-function validateDevices(devices: z.infer<typeof reportedDevice>[]) {
+function validateDevices(devices: Array<{deviceId:string;pollGroups?:string[]|undefined;
+  mappings?:Array<{tag?:string|undefined;registerAddress?:string|undefined}>|undefined}>) {
   unique(devices.map(d => d.deviceId), 'device ID');
   for (const device of devices) {
-    unique(device.pollGroups ?? [], 'poll group');
-    unique((device.mappings ?? []).map(m => m.tag), 'tag');
-    // An address identifies a physical register within this device, independent of decoding.
-    unique((device.mappings ?? []).flatMap(m => m.registerAddress === undefined ? [] : [registerIdentity(m.registerAddress)]), 'register identity');
+    unique((device.pollGroups ?? []).filter(Boolean), 'poll group');
+    const issue=gatewayRegisterMappingCollectionIssue(device.mappings??[]);
+    if(issue)throw new Error(`Invalid mapping collection: ${issue}`);
   }
 }
 const reportedDevice = z.object(deviceShape).strict();
-const configuredDevice = z.object({
-  ...deviceShape, enabled: z.boolean(), mappingSource: z.enum(['preset', 'manual', 'gateway']),
+const configuredDeviceBase = {
+  ...deviceShape, mappingSource: z.enum(['preset', 'manual', 'gateway']),
   presetId: text.optional(), presetVersion: text.optional(),
+};
+const enabledConfiguredDevice = z.object({
+  ...configuredDeviceBase, enabled: z.literal(true),
   pollGroups: z.array(text).max(16), mappings: z.array(mapping).max(256),
 }).strict();
+const draftText=z.string().max(128);
+const disabledMapping=mapping.partial().extend({
+  tag:draftText.optional(),sourceTag:draftText.optional(),registerAddress:draftText.optional(),displayName:draftText.optional(),
+  pollGroup:draftText.optional(),sourceUnit:draftText.optional(),targetUnit:draftText.optional(),
+}).strict().superRefine((value,context)=>{
+  const issue=gatewayRegisterMappingValueIssue(value as GatewayDisabledRegisterMapping);
+  if(issue)context.addIssue({code:'custom',message:`Invalid disabled mapping decoder: ${issue}`});
+});
+const disabledConfiguredDevice = z.object({
+  ...configuredDeviceBase, enabled: z.literal(false),
+  pollGroups:z.array(draftText).max(16),mappings:z.array(disabledMapping).max(256),
+}).strict();
+const configuredDevice=z.discriminatedUnion('enabled',[enabledConfiguredDevice,disabledConfiguredDevice]);
 const envelope = { schemaVersion: z.literal('1.1'), messageId };
 const schemas = {
   register: z.object({

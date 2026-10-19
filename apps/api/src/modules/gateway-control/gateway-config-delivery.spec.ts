@@ -117,7 +117,8 @@ for(const operation of ['confirm','approve'] as const)test(`admin ${operation} p
   let proposal:string|undefined;
   if(operation==='approve'){await f.confirm();await until(()=>f.state.gateway?.published_config_version===1);proposal=await f.propose();f.publications.length=0;}
   let release!:()=>void,committing=false;f.commitGate=async()=>{committing=true;await new Promise<void>(r=>release=r);};
-  const result=operation==='confirm'?f.confirm():f.controller.approve(f.state.gateway.id,proposal!,{},admin);
+  const row=proposal?f.state.proposals.get(proposal):undefined;
+  const result=operation==='confirm'?f.confirm():f.controller.approve(f.state.gateway.id,proposal!,{expectedProposalId:row.proposal_id,expectedBaseConfigVersion:row.base_config_version},admin);
   await until(()=>committing);assert.equal(f.publications.length,0);f.commitGate=undefined;release();await result;
   await until(()=>f.publications.length===1);await until(()=>f.state.gateway.published_config_version===(operation==='confirm'?1:2));
   const sent=f.publications[0]!;assert.equal(sent.scope,brokerId);assert.equal(sent.topic,'solar/v1/gateways/GW-DELIVERY/config');assert.deepEqual(sent.options,{qos:1,retain:true});
@@ -136,8 +137,8 @@ for(const mode of ['offline','failure'] as const)test(`${mode} admin publication
 
 test('new ingress instance recovers only current desired revision from database without in-memory notification',async context=>{
  const f=fixture(context);await f.start();
- try{await f.confirm();let proposal=await f.propose();await f.controller.approve(f.state.gateway.id,proposal,{},admin);
-  proposal=await f.propose();await f.controller.approve(f.state.gateway.id,proposal,{},admin);assert.equal(f.state.gateway.desired_config_version,3);assert.equal(f.publications.length,0);
+ try{await f.confirm();let proposal=await f.propose(),row=f.state.proposals.get(proposal);await f.controller.approve(f.state.gateway.id,proposal,{expectedProposalId:row.proposal_id,expectedBaseConfigVersion:row.base_config_version},admin);
+  proposal=await f.propose();row=f.state.proposals.get(proposal);await f.controller.approve(f.state.gateway.id,proposal,{expectedProposalId:row.proposal_id,expectedBaseConfigVersion:row.base_config_version},admin);assert.equal(f.state.gateway.desired_config_version,3);assert.equal(f.publications.length,0);
   await f.restart();await f.connect();await until(()=>f.state.gateway.published_config_version===3);
   assert.deepEqual(f.publications.map(p=>[p.scope,p.payload.configVersion]),[[null,3]]);assert.equal(f.state.revisions.get(1).published_at,null);assert.equal(f.state.revisions.get(2).published_at,null);
  }finally{await f.close();}
@@ -164,11 +165,11 @@ for(const timedOut of [false,true])test(`two instances repair retained v3 after 
  const f=fixture(context,brokerId);await f.start();await f.connect();
  try{await f.confirm();f.holdPublication=true;
   if(timedOut)context.mock.timers.enable({apis:['setTimeout']});
-  const proposal2=await f.propose(),approval2=f.controller.approve(f.state.gateway.id,proposal2,{},admin);
+  const proposal2=await f.propose(),row2=f.state.proposals.get(proposal2),approval2=f.controller.approve(f.state.gateway.id,proposal2,{expectedProposalId:row2.proposal_id,expectedBaseConfigVersion:row2.base_config_version},admin);
   await until(()=>f.publications.length===2);
   if(timedOut){context.mock.timers.tick(5000);await approval2;assert.equal(f.state.attempts.size,1,'timed out packet remains durable uncertain work');}
-  const proposal3=await f.propose();const web=new GatewayConfigurationService(f.db,new GatewayCredentialService(f.db));
-  await web.approveProposal(f.state.gateway.id,proposal3,admin.user.id);
+  const proposal3=await f.propose(),row3=f.state.proposals.get(proposal3);const web=new GatewayConfigurationService(f.db,new GatewayCredentialService(f.db));
+  await web.approveProposal(f.state.gateway.id,proposal3,{expectedProposalId:row3.proposal_id,expectedBaseConfigVersion:row3.base_config_version},admin.user.id);
   await f.peer();await f.connect();await until(()=>f.publications.length===3);
   f.completePublication(2);await until(()=>f.state.revisions.get(3).published_at!==null);
   assert.equal(f.retained.get(brokerId).configVersion,3);
@@ -185,9 +186,9 @@ for(const timedOut of [false,true])test(`two instances repair retained v3 after 
 test('delayed newer bookkeeping cannot certify retained state invalidated by an older completion',async context=>{
  const f=fixture(context,brokerId);await f.start();await f.connect();
  try{await f.confirm();f.holdPublication=true;
-  const proposal2=await f.propose(),approval2=f.controller.approve(f.state.gateway.id,proposal2,{},admin);
+  const proposal2=await f.propose(),row2=f.state.proposals.get(proposal2),approval2=f.controller.approve(f.state.gateway.id,proposal2,{expectedProposalId:row2.proposal_id,expectedBaseConfigVersion:row2.base_config_version},admin);
   await until(()=>f.publications.length===2);
-  const proposal3=await f.propose();await new GatewayConfigurationService(f.db,new GatewayCredentialService(f.db)).approveProposal(f.state.gateway.id,proposal3,admin.user.id);
+  const proposal3=await f.propose(),row3=f.state.proposals.get(proposal3);await new GatewayConfigurationService(f.db,new GatewayCredentialService(f.db)).approveProposal(f.state.gateway.id,proposal3,{expectedProposalId:row3.proposal_id,expectedBaseConfigVersion:row3.base_config_version},admin.user.id);
   await f.peer();await f.connect();await until(()=>f.publications.length===3);
   f.receivePublication(2);assert.equal(f.retained.get(brokerId).configVersion,3);
   f.completePublication(1);await until(()=>f.publications.length===4);assert.equal(f.retained.get(brokerId).configVersion,2);
@@ -201,9 +202,9 @@ test('delayed newer bookkeeping cannot certify retained state invalidated by an 
 test('failed stale completion transaction remains durable recovery work even when latest revision was published',async context=>{
  const f=fixture(context,brokerId);await f.start();await f.connect();
  try{await f.confirm();f.holdPublication=true;
-  const proposal2=await f.propose(),approval2=f.controller.approve(f.state.gateway.id,proposal2,{},admin);
+  const proposal2=await f.propose(),row2=f.state.proposals.get(proposal2),approval2=f.controller.approve(f.state.gateway.id,proposal2,{expectedProposalId:row2.proposal_id,expectedBaseConfigVersion:row2.base_config_version},admin);
   await until(()=>f.publications.length===2);
-  const proposal3=await f.propose();await new GatewayConfigurationService(f.db,new GatewayCredentialService(f.db)).approveProposal(f.state.gateway.id,proposal3,admin.user.id);
+  const proposal3=await f.propose(),row3=f.state.proposals.get(proposal3);await new GatewayConfigurationService(f.db,new GatewayCredentialService(f.db)).approveProposal(f.state.gateway.id,proposal3,{expectedProposalId:row3.proposal_id,expectedBaseConfigVersion:row3.base_config_version},admin.user.id);
   await f.peer();await f.connect();await until(()=>f.publications.length===3);
   f.completePublication(2);await until(()=>f.state.revisions.get(3).published_at!==null);
   f.failCompletion=true;f.completePublication(1);await approval2;f.failCompletion=false;

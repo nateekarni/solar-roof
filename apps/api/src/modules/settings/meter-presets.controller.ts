@@ -10,7 +10,7 @@ export class MeterPresetsController {
   @Get()
   async listPresets() {
     const res = await this.db.query(
-      "SELECT id, brand, model, device_type AS \"deviceType\", registers, created_at AS \"createdAt\" FROM meter_presets ORDER BY brand, model"
+      "SELECT id, brand, model, device_type AS \"deviceType\", registers, created_at AS \"createdAt\", updated_at AS \"updatedAt\" FROM meter_presets ORDER BY brand, model"
     );
     return res.rows;
   }
@@ -18,7 +18,7 @@ export class MeterPresetsController {
   @Get(":id")
   async getPreset(@Param("id") id: string) {
     const res = await this.db.query(
-      "SELECT id, brand, model, device_type AS \"deviceType\", registers, created_at AS \"createdAt\" FROM meter_presets WHERE id = $1",
+      "SELECT id, brand, model, device_type AS \"deviceType\", registers, created_at AS \"createdAt\", updated_at AS \"updatedAt\" FROM meter_presets WHERE id = $1",
       [id]
     );
     if (res.rows.length === 0) {
@@ -48,7 +48,7 @@ export class MeterPresetsController {
     const sql = `
       INSERT INTO meter_presets (id, brand, model, device_type, registers, created_at, updated_at)
       VALUES ($1, $2, $3, $4, $5::jsonb, NOW(), NOW())
-      RETURNING id, brand, model, device_type AS "deviceType", registers, created_at AS "createdAt"
+      RETURNING id, brand, model, device_type AS "deviceType", registers, created_at AS "createdAt", updated_at AS "updatedAt"
     `;
 
     try {

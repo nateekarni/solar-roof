@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
+import {gatewayRegisterMappingCollectionIssue} from '@solar/api-contracts';
 import { gatewayConfigHash, gatewayControlTopic, parseGatewayControlPayload, parseGatewayControlTopic } from './gateway-control-payload.js';
 
 const sentAt = '2026-10-19T08:00:00+07:00';
@@ -46,6 +47,30 @@ test('accepts discovery without mappings and requires structural configuration a
   assert.throws(() => parseGatewayControlPayload('config', { ...config, devices: [{ ...device, mappings: [{ ...mapping, sourceUnit: undefined }] }] }));
 });
 
+test('disabled mappings allow bounded partial drafts but reject every invalid provided decoder value', () => {
+  const disabled = { deviceId: 'M2', enabled: false, mappingSource: 'manual', pollGroups: [], mappings: [{ registerAddress: '3204', scale: 0.01 }] };
+  for (const kind of ['config', 'configUpdate'] as const) {
+    const payload = kind === 'config' ? config : update;
+    assert.deepEqual(parseGatewayControlPayload(kind, { ...payload, devices: [disabled] }).devices[0]?.mappings, disabled.mappings);
+    for (const patch of [
+      { registerCount: 2_147_483_648 },
+      { scale: 1e12 },
+      { scale: 0.123456789 },
+      { offset: Number.POSITIVE_INFINITY },
+      { dataType: 'uint64' },
+      { byteOrder: 'middle_endian' },
+      { wordOrder: 'dcba' },
+      { registerAddress: '1'.repeat(129) },
+      { decoderNote: 'unsupported' },
+    ]) {
+      assert.throws(() => parseGatewayControlPayload(kind, {
+        ...payload,
+        devices: [{ ...disabled, mappings: [{ ...disabled.mappings[0], ...patch }] }],
+      }), `${kind}: ${JSON.stringify(patch)}`);
+    }
+  }
+});
+
 test('enforces snapshot device limit at 32 and rejects duplicate device IDs', () => {
   const devices = Array.from({ length: 32 }, (_, i) => ({ deviceId: `M${i}` }));
   assert.equal(parseGatewayControlPayload('register', { ...register, devices }).devices.length, 32);
@@ -75,6 +100,20 @@ test('rejects duplicate groups, tags, and physical register identities on each s
 
 test('rejects numeric address aliases identifying the same physical register', () => {
   for (const registerAddress of ['R3204', '0xC84', '03204']) assert.throws(() => parseGatewayControlPayload('config', { ...config, devices: [{ ...device, mappings: [mapping, { ...mapping, tag: 'another.tag', registerAddress }] }] }));
+});
+
+test('shared mapping collection validator rejects duplicate tags and every canonical address alias',()=>{
+  assert.equal(gatewayRegisterMappingCollectionIssue([mapping,{...mapping,registerAddress:'3206'}]),'duplicate_tag');
+  for(const registerAddress of ['R1','0x1','0001'])assert.equal(gatewayRegisterMappingCollectionIssue([
+    {...mapping,registerAddress:'1'},
+    {...mapping,tag:'another.tag',registerAddress},
+  ]),'duplicate_register_address');
+  assert.equal(gatewayRegisterMappingCollectionIssue([
+    {...mapping,registerAddress:'0x0C84'},
+    {...mapping,tag:'another.tag',registerAddress:'0C84h'},
+  ]),'duplicate_register_address');
+  assert.doesNotThrow(()=>gatewayRegisterMappingCollectionIssue([{...mapping,registerAddress:{}} as never]));
+  assert.equal(gatewayRegisterMappingCollectionIssue([{...mapping,registerAddress:{}} as never]),'invalid_register_address');
 });
 
 test('requires valid versions, hashes, timestamps and apply/connection status values', () => {

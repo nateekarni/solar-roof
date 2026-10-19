@@ -3,9 +3,9 @@ import { randomUUID } from 'node:crypto';
 import { isIP } from 'node:net';
 import type { PoolClient } from 'pg';
 import { z } from 'zod';
-import type { ConfirmGatewayRequest, ConfirmGatewayResponse, GatewayConfigPayload, GatewayDeviceConfig, GatewaySyncState,
-  GatewayConfigProposal, GatewayControlKind, GatewayControlPayloads } from '@solar/api-contracts';
-import { gatewayConnectionIssue, gatewayRegisterMappingIssue } from '@solar/api-contracts';
+import type { ApproveGatewayProposalRequest, ConfirmGatewayRequest, ConfirmGatewayResponse, GatewayConfigPayload, GatewayDeviceConfig, GatewayEnabledDeviceConfig,
+  GatewayRegisterMapping, GatewaySyncState, GatewayConfigProposal, GatewayControlKind, GatewayControlPayloads } from '@solar/api-contracts';
+import { applyGatewayRegisterPresetMappings, gatewayConnectionIssue, gatewayRegisterMappingIssue } from '@solar/api-contracts';
 import { DatabaseService } from '../../database/database.service.js';
 import { GatewayCredentialService } from './gateway-credential.service.js';
 import { gatewayConfigHash, parseGatewayControlPayload } from './gateway-control-payload.js';
@@ -20,27 +20,33 @@ const serialConnection = z.object({ serialPort:z.string().trim().min(1).max(256)
 const tcpConnection = z.object({ host:z.string().trim().min(1).max(253).refine(host=>isIP(host)!==0 ||
   !/^[\d.]+$/.test(host)&&host.split('.').every(label=>/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/.test(label))),
   port:z.number().int().min(1).max(65535), slaveId }).strict();
-interface PreparedDevice { device: GatewayDeviceConfig; id: string; profileId: string;
+interface PreparedDevice { device: GatewayEnabledDeviceConfig; id: string; profileId: string;
   profile: PayloadProfile; sourcePresetId: string | null }
 interface ExistingDevice {
   id:string;external_device_id:string;payload_profile_revision_id:string|null;device_type:string;
   model:string;serial_number:string;slave_id:number|null;profile_config:PayloadProfile|null;
-  registers:GatewayDeviceConfig['mappings'];billing:boolean;billing_bound:boolean;
+  registers:GatewayRegisterMapping[];billing:boolean;billing_bound:boolean;
 }
 interface GatewayRow {id:string;site_id:string;external_site_id:string;external_gateway_id:string;applied_config_version:number;
   desired_config_version:number;desired_config_hash:string|null;active_config_hash:string|null;lifecycle_state:string;mqtt_broker_id:string|null;config_publication_epoch:string}
 function deviceClassification(type:string) { return type==='energy-meter'?'meter':type==='solar-logger'?'logger':type; }
-function validateRegisterStorage(mapping:GatewayDeviceConfig['mappings'][number]) {
+function validateRegisterStorage(mapping:GatewayRegisterMapping) {
   const issue=gatewayRegisterMappingIssue(mapping);
   if(issue==='invalid_scale')throw new BadRequestException('Register scale must be exactly representable as numeric(20,8)');
   if(issue==='invalid_register_count')throw new BadRequestException('Register count exceeds PostgreSQL integer storage');
   if(issue==='invalid_offset')throw new BadRequestException('Register offset must be finite');
   if(issue==='incomplete_decoder')throw new BadRequestException('Physical mappings require explicit decoder details');
+  if(issue)throw new BadRequestException('Physical mapping decoder enum is invalid');
 }
 export interface GatewayControlInput { brokerId?: string | null | undefined; gatewayId: string; payload: unknown }
 
 function badInput<T>(work: () => T): T {
   try { return work(); } catch (error) { throw new BadRequestException(error instanceof Error ? error.message : 'Invalid configuration'); }
+}
+function timestamp(value:unknown):number|null {
+  if(typeof value!=='string'&&!(value instanceof Date))return null;
+  const parsed=new Date(value).getTime();
+  return Number.isFinite(parsed)?parsed:null;
 }
 export function validateConfirmation(input: unknown): ConfirmGatewayRequest {
   return badInput(() => {
@@ -156,11 +162,14 @@ export class GatewayConfigurationService {
     });
   }
 
-  async approveProposal(id: string, proposalId: string, actor: string): Promise<{ configVersion: number; configHash: string }> {
+  async approveProposal(id: string, proposalId: string, expected:ApproveGatewayProposalRequest, actor: string): Promise<{ configVersion: number; configHash: string }> {
     badInput(() => { uuid.parse(id); uuid.parse(proposalId); uuid.parse(actor); });
     const result=await this.conflicts(() => this.db.transaction(async client => {
       const gateway = await this.mutationGateway(client, id);
       const proposal = await this.proposal(client, id, proposalId);
+      if(proposal.proposal_id!==expected.expectedProposalId||proposal.base_config_version!==expected.expectedBaseConfigVersion){
+        throw new ConflictException('Proposal changed; refresh before approval');
+      }
       if (gateway.lifecycle_state !== 'active' || proposal.status !== 'pending'
         || proposal.base_config_version !== gateway.applied_config_version) throw new ConflictException('Proposal is stale or no longer pending');
       const payload = badInput(() => parseGatewayControlPayload('configUpdate', proposal.payload));
@@ -273,11 +282,13 @@ export class GatewayConfigurationService {
   async proposals(id: string): Promise<GatewayConfigProposal[]> {
     badInput(() => uuid.parse(id));
     await this.gateway(this.db, id);
-    const rows = (await this.db.query(`SELECT p.*,g.applied_config_version FROM gateway_config_proposals p JOIN gateways g ON g.id=p.gateway_id
+    const rows = (await this.db.query(`SELECT p.*,g.applied_config_version,active.config AS active_config FROM gateway_config_proposals p JOIN gateways g ON g.id=p.gateway_id
+      LEFT JOIN gateway_configuration_revisions active ON active.gateway_id=g.id AND active.version=g.applied_config_version
       WHERE p.gateway_id=$1 ORDER BY p.received_at DESC,p.id DESC LIMIT 100`, [id])).rows;
     return rows.map(row => ({ id: row.id, gatewayId: row.gateway_id, proposalId: row.proposal_id,
       baseConfigVersion: row.base_config_version, status: row.status === 'pending' && row.base_config_version !== row.applied_config_version ? 'stale' : row.status,
-      approvalMode: 'manual', snapshot: row.payload, receivedAt: row.received_at, reviewedAt: row.reviewed_at ?? null, reviewedBy: row.reviewed_by ?? null }));
+      activeConfigVersion:row.applied_config_version??null,approvalMode: 'manual', snapshot: row.payload,activeSnapshot:row.active_config??null,
+      receivedAt: row.received_at, reviewedAt: row.reviewed_at ?? null, reviewedBy: row.reviewed_by ?? null }));
   }
 
   async rotateCredential(id: string, actor: string): Promise<{ username: string; password: string }> {
@@ -391,7 +402,7 @@ export class GatewayConfigurationService {
       source:profile.sourceProfile??{id:profile.id,version:profile.version},pollGroups:[...profile.pollGroups].sort(),
       fields:profile.fields.map(({displayName:_name,...field})=>({...field,sourceTag:field.sourceTag??field.tag,
         required:field.required??false,role:field.role??'none'})).sort((a,b)=>a.tag<b.tag?-1:a.tag>b.tag?1:0)});
-    const physical=(mappings:GatewayDeviceConfig['mappings'])=>mappings.filter(m=>m.registerAddress!==undefined).map(m=>({tag:m.tag,
+    const physical=(mappings:GatewayRegisterMapping[])=>mappings.filter(m=>m.registerAddress!==undefined).map(m=>({tag:m.tag,
       registerAddress:m.registerAddress,registerCount:m.registerCount,dataType:m.dataType,byteOrder:m.byteOrder,wordOrder:m.wordOrder,
       scale:m.scale,sourceUnit:m.sourceUnit,pollGroup:m.pollGroup,offset:m.offset??0})).sort((a,b)=>a.tag<b.tag?-1:a.tag>b.tag?1:0);
     return gatewayConfigHash(semanticProfile(previous.profile_config))===gatewayConfigHash(semanticProfile(next.profile))
@@ -432,9 +443,10 @@ export class GatewayConfigurationService {
     const result=await this.conflicts<ConfirmGatewayResponse>(() => this.db.transaction(async client => {
       const discovery = (await client.query(`SELECT * FROM discovered_gateways WHERE id=$1 FOR UPDATE`, [id])).rows[0];
       if (!discovery) throw new NotFoundException('Discovered gateway not found');
-      if (discovery.discovery_revision !== body.discoveryRevision || discovery.status !== 'unassigned') {
-        throw new ConflictException('Discovery changed; reload before confirming');
-      }
+      if (discovery.discovery_revision !== body.discoveryRevision) throw new ConflictException({
+        statusCode:409,code:'GATEWAY_DISCOVERY_STALE',message:'Discovery changed; reload before confirming',
+      });
+      if (discovery.status !== 'unassigned') throw new ConflictException('Discovery is no longer available for confirmation');
       if (discovery.client_id !== discovery.external_gateway_id) throw new BadRequestException('Discovery client identity mismatch');
       const site = (await client.query(`SELECT id,external_site_id FROM sites WHERE id=$1 AND status<>'archived' FOR UPDATE`, [body.siteId])).rows[0];
       if (!site) throw new NotFoundException('Active site not found');
@@ -470,7 +482,7 @@ export class GatewayConfigurationService {
 
   private async prepare(client: PoolClient, devices: GatewayDeviceConfig[], resolvePresets = true): Promise<PreparedDevice[]> {
     const prepared: PreparedDevice[] = [];
-    for (const input of devices.filter(d => d.enabled)) {
+    for (const input of devices.filter((device):device is GatewayEnabledDeviceConfig=>device.enabled)) {
       const device = structuredClone(input);
       let source: { id: string; config: PayloadProfile } | undefined;
       if (device.mappingSource === 'preset' && resolvePresets) {
@@ -479,17 +491,17 @@ export class GatewayConfigurationService {
         source = (await client.query(`SELECT p.id,p.config FROM payload_profile_revisions p WHERE p.id=$1 AND p.owner_device_id IS NULL
           AND NOT EXISTS(SELECT 1 FROM payload_preset_archives a WHERE a.profile_id=p.profile_id)`, [sourceId])).rows[0];
         if (!source) {
-          const registerPreset = (await client.query('SELECT id,registers FROM meter_presets WHERE id=$1 FOR SHARE', [sourceId])).rows[0];
+          const registerPreset = (await client.query('SELECT id,registers,updated_at FROM meter_presets WHERE id=$1 FOR SHARE', [sourceId])).rows[0];
           if (!registerPreset) throw new BadRequestException('Preset not found');
+          const reviewedAt=timestamp(device.presetVersion),lockedAt=timestamp(registerPreset.updated_at);
+          if(reviewedAt===null||lockedAt===null||reviewedAt!==lockedAt){
+            throw new ConflictException('Register preset changed; review the latest revision before confirmation');
+          }
           // A register preset alone cannot supply semantic tags/units/poll groups.
           // Resolve only decoder details for addresses explicitly selected by the admin.
-          for (const mapping of device.mappings) {
-            const register = registerPreset.registers.find((r: { registerAddress?: string }) => r.registerAddress === mapping.registerAddress);
-            if (!register) throw new BadRequestException('Mapping address is absent from selected preset');
-            for (const key of ['registerCount', 'dataType', 'byteOrder', 'wordOrder', 'scale'] as const) {
-              if (mapping[key] === undefined && register[key] !== undefined) Object.assign(mapping, { [key]: register[key] });
-            }
-          }
+          const applied=applyGatewayRegisterPresetMappings(device.mappings,registerPreset.registers);
+          if(!applied.ok)throw new BadRequestException(`Register preset cannot cover the selected mappings (${applied.issue})`);
+          device.mappings=applied.mappings;
         } else {
           const profile = badInput(() => validatePayloadProfile(source!.config));
           if (device.deviceType && profile.deviceType !== device.deviceType) throw new BadRequestException('Preset device type mismatch');
@@ -541,7 +553,7 @@ export class GatewayConfigurationService {
     await this.registers(client, id, device);
   }
 
-  private async registers(client: PoolClient, id: string, device: GatewayDeviceConfig) {
+  private async registers(client: PoolClient, id: string, device: GatewayEnabledDeviceConfig) {
     for (const mapping of device.mappings.filter(m => m.registerAddress !== undefined)) {
       await client.query(`INSERT INTO register_mapping_versions(id,device_id,semantic_field,register_address,data_type,byte_order,word_order,register_count,scale,unit,quality_rule,effective_from,signed)
         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,now(),$12)`, [randomUUID(), id, mapping.tag,

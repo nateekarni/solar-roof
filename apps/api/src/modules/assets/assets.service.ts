@@ -172,7 +172,7 @@ export class AssetsService {
     if (!this.db) return [];
     return (await this.db.query(`SELECT g.id,g.site_id AS "siteId",s.name AS "siteName",s.external_site_id AS "siteCode",g.name,g.external_gateway_id AS "externalGatewayId",g.endpoint AS "subscriptionTopic",g.last_seen_at AS "lastSeenAt",g.polling_interval_seconds AS "pollingIntervalSeconds",
       CASE WHEN g.last_seen_at BETWEEN now()-make_interval(secs=>greatest(120,g.polling_interval_seconds*2)) AND now() THEN 'online' ELSE 'offline' END AS status,
-      g.desired_config_version AS "desiredVersion",g.published_config_version AS "publishedVersion",g.acknowledged_config_version AS "acknowledgedVersion",g.applied_config_version AS "appliedVersion",g.lifecycle_state AS "lifecycleState",g.config_state AS "configState",
+      g.desired_config_version AS "desiredVersion",g.published_config_version AS "publishedVersion",g.acknowledged_config_version AS "acknowledgedVersion",g.applied_config_version AS "appliedVersion",g.lifecycle_state AS "lifecycleState",g.config_state AS "configState",g.status AS "connectionState",
       (SELECT count(*)::int FROM devices WHERE gateway_id=g.id) AS "deviceCount",latest.measured AS "lastMeasuredAt",latest.received AS "lastReceivedAt",pv.kw AS "currentProductionKw"
       FROM gateways g JOIN sites s ON s.id=g.site_id LEFT JOIN LATERAL (
         SELECT max(sample.measured) AS measured,max(sample.received) AS received FROM devices d

@@ -5,8 +5,10 @@ import type {PayloadRevision} from './payload-contracts';
 import {
   gatewayConfirmationRequest,
   gatewayOnboardingDraftFromDetail,
+  selectGatewayRegisterPreset,
   selectGatewayDevicePreset,
   validateGatewayOnboardingDraft,
+  isStaleDiscoveryConflict,
 } from './gateway-onboarding-draft';
 
 const siteId = '11111111-1111-4111-8111-111111111111';
@@ -53,7 +55,7 @@ test('reported site is only a matched preselection and confirmation keeps the di
 
 test('preset suggestion stays optional and must be explicitly selected',()=>{
   const draft=gatewayOnboardingDraftFromDetail(detail,[]);
-  assert.equal(draft.devices[0]!.suggestedPresetId,preset.id);
+  assert.deepEqual(draft.devices[0]!.suggestedPreset,{id:preset.id,kind:'profile',rank:190});
   assert.equal(draft.devices[0]!.mappingSource,'gateway');
   const selected=selectGatewayDevicePreset(draft.devices[0]!,preset,true);
   assert.equal(selected.mappingSource,'preset');
@@ -63,10 +65,138 @@ test('preset suggestion stays optional and must be explicitly selected',()=>{
   assert.equal(selected.profileVersion,'v3');
 });
 
+test('register-preset suggestions preserve their kind and can be selected without replacing semantic mappings',()=>{
+  const registerDetail={...detail,presetSuggestions:[{deviceId:'METER-01',suggestions:[{id:'44444444-4444-4444-8444-444444444444',kind:'register' as const,rank:80}]},{deviceId:'INV-01',suggestions:[]}]};
+  const draft=gatewayOnboardingDraftFromDetail(registerDetail,[]);
+  assert.equal(draft.devices[0]!.suggestedPreset?.kind,'register');
+  const selection=selectGatewayRegisterPreset(draft.devices[0]!,{
+    id:'44444444-4444-4444-8444-444444444444',brand:'Schneider',model:'PM2230',deviceType:'energy-meter',
+    updatedAt:'2026-10-19T01:02:03.000Z',
+    registers:[{registerAddress:'3204',registerCount:2,dataType:'uint32',byteOrder:'little_endian',wordOrder:'cdab',scale:0.01,offset:2}],
+  });
+  assert.equal(selection.ok,true);
+  if(!selection.ok)return;
+  const selected=selection.device;
+  assert.equal(selected.mappingSource,'preset');
+  assert.equal(selected.presetId,'44444444-4444-4444-8444-444444444444');
+  assert.equal(selected.presetVersion,'2026-10-19T01:02:03.000Z');
+  assert.equal(selected.config.fields[0]!.tag,'energy.active.import.total');
+  assert.deepEqual(
+    (({registerCount,dataType,byteOrder,wordOrder,scale,offset})=>({registerCount,dataType,byteOrder,wordOrder,scale,offset}))(selected.config.fields[0]!),
+    {registerCount:2,dataType:'uint32',byteOrder:'little_endian',wordOrder:'cdab',scale:0.01,offset:2},
+  );
+  selected.enabled=true;
+  draft.devices[0]=selected;
+  draft.devices[1]!.enabled=false;
+  draft.selectedSiteId=siteId;
+  assert.equal(gatewayConfirmationRequest(draft).devices[0]!.presetId,'44444444-4444-4444-8444-444444444444');
+  assert.equal(gatewayConfirmationRequest(draft).devices[0]!.presetVersion,'2026-10-19T01:02:03.000Z');
+});
+
+test('client preflight uses canonical register-address validation for enabled and disabled mappings',()=>{
+  for(const enabled of [true,false]){
+    const draft=gatewayOnboardingDraftFromDetail(detail,[{id:siteId,code:'SITE-ALPHA'}]);
+    draft.devices[1]!.enabled=false;
+    if(!enabled)draft.devices.push({...structuredClone(draft.devices[0]!),key:'METER-02',externalDeviceId:'METER-02'});
+    draft.devices[0]!.enabled=enabled;
+    draft.devices[0]!.config.fields[0]!.registerAddress='holding:3204';
+    assert.match(validateGatewayOnboardingDraft(draft,'en')??'',/METER-01.*mapping/i,`enabled=${enabled}`);
+    assert.throws(()=>gatewayConfirmationRequest(draft),/METER-01.*mapping/i);
+  }
+});
+
+test('client preflight rejects duplicate tags and canonical register aliases for enabled and disabled mappings',()=>{
+  for(const enabled of [true,false])for(const duplicate of [
+    {...snapshot.devices[0]!.mappings![0]!,registerAddress:'3206'},
+    {...snapshot.devices[0]!.mappings![0]!,tag:'another.tag',registerAddress:'R3204'},
+  ]){
+    const draft=gatewayOnboardingDraftFromDetail(detail,[{id:siteId,code:'SITE-ALPHA'}]);
+    draft.devices[1]!.enabled=false;
+    if(!enabled)draft.devices.push({...structuredClone(draft.devices[0]!),key:'METER-02',externalDeviceId:'METER-02'});
+    draft.devices[0]!.enabled=enabled;
+    draft.devices[0]!.config.fields.push(duplicate);
+    assert.match(validateGatewayOnboardingDraft(draft,'en')??'',/METER-01.*mapping/i,`enabled=${enabled}`);
+  }
+});
+
+test('malformed register preset decoder values return bounded issues and never throw',()=>{
+  const device=gatewayOnboardingDraftFromDetail(detail,[]).devices[0]!;
+  const malformed=[
+    {registerAddress:'3204',registerCount:{},dataType:'uint32',byteOrder:'big_endian',wordOrder:'big_word_first',scale:1},
+    {registerAddress:'3204',registerCount:2,dataType:'uint32',byteOrder:'big_endian',wordOrder:'big_word_first',scale:{toString(){throw new Error('must not execute');}}},
+    {registerAddress:{},registerCount:2,dataType:'uint32',byteOrder:'big_endian',wordOrder:'big_word_first',scale:1},
+    {registerAddress:'9'.repeat(10_000),registerCount:2,dataType:'uint32',byteOrder:'big_endian',wordOrder:'big_word_first',scale:1},
+  ];
+  for(const register of malformed){
+    let result:ReturnType<typeof selectGatewayRegisterPreset>|undefined;
+    assert.doesNotThrow(()=>{result=selectGatewayRegisterPreset(device,{id:'44444444-4444-4444-8444-444444444444',model:'PM2230',registers:[register]});});
+    assert.equal(result?.ok,false);
+    if(result&&!result.ok)assert.ok(result.issue.length<=96,result.issue);
+  }
+});
+
+test('register preset selection refuses invalid decoders and incomplete address coverage without marking the device preset',()=>{
+  const draft=gatewayOnboardingDraftFromDetail(detail,[]);
+  const device=draft.devices[0]!;
+  for(const registers of [
+    [{registerAddress:'9999',registerCount:2,dataType:'uint32',byteOrder:'big_endian',wordOrder:'big_word_first',scale:1}],
+    [{registerAddress:'3204',registerCount:2,dataType:'not-a-decoder',byteOrder:'big_endian',wordOrder:'big_word_first',scale:1}],
+    [{registerAddress:'3204',registerCount:2,dataType:'uint32',byteOrder:'big_endian',wordOrder:'big_word_first'}],
+    [{registerAddress:'3204',registerCount:2,dataType:'uint32',byteOrder:'big_endian',wordOrder:'big_word_first',scale:1},{registerAddress:'3204',registerCount:2,dataType:'uint32',byteOrder:'big_endian',wordOrder:'big_word_first',scale:1}],
+    [{registerAddress:'3204',registerCount:2,dataType:'uint32',byteOrder:'big_endian',wordOrder:'big_word_first',scale:1},{registerAddress:'9999',registerCount:2,dataType:'invalid',byteOrder:'big_endian',wordOrder:'big_word_first',scale:1}],
+    [{registerAddress:'3204',registerCount:2,dataType:'uint32',byteOrder:'big_endian',wordOrder:'big_word_first',scale:1},{registerAddress:'R3204',registerCount:2,dataType:'uint32',byteOrder:'big_endian',wordOrder:'big_word_first',scale:1}],
+    [{registerAddress:'1',registerCount:2,dataType:'uint32',byteOrder:'big_endian',wordOrder:'big_word_first',scale:1},{registerAddress:'R1',registerCount:2,dataType:'uint32',byteOrder:'big_endian',wordOrder:'big_word_first',scale:1},{registerAddress:'0x1',registerCount:2,dataType:'uint32',byteOrder:'big_endian',wordOrder:'big_word_first',scale:1},{registerAddress:'0001',registerCount:2,dataType:'uint32',byteOrder:'big_endian',wordOrder:'big_word_first',scale:1}],
+    [{registerAddress:'0x0C84',registerCount:2,dataType:'uint32',byteOrder:'big_endian',wordOrder:'big_word_first',scale:1},{registerAddress:'0C84h',registerCount:2,dataType:'uint32',byteOrder:'big_endian',wordOrder:'big_word_first',scale:1}],
+  ]){
+    const selected=selectGatewayRegisterPreset(device,{id:'44444444-4444-4444-8444-444444444444',model:'PM2230',registers});
+    assert.equal(selected.ok,false,JSON.stringify(registers));
+    if(!selected.ok){
+      assert.match(selected.issue,/preset|address|decoder|mapping/i);
+      assert.equal(selected.device.mappingSource,'gateway');
+      assert.equal(selected.device.presetId,undefined);
+    }
+  }
+});
+
+test('register preset address matching uses the same strict canonical identity as decoding',()=>{
+  const draft=gatewayOnboardingDraftFromDetail(detail,[]);
+  const device=structuredClone(draft.devices[0]!);
+  device.config.fields[0]!.registerAddress='1';
+  const selected=selectGatewayRegisterPreset(device,{id:'44444444-4444-4444-8444-444444444444',model:'PM2230',registers:[
+    {registerAddress:'R1',registerCount:2,dataType:'uint32',byteOrder:'big_endian',wordOrder:'big_word_first',scale:1},
+  ]});
+  assert.equal(selected.ok,true);
+});
+
+test('register preset selection rejects duplicate canonical identities in selected mappings',()=>{
+  const draft=gatewayOnboardingDraftFromDetail(detail,[]);
+  const device=structuredClone(draft.devices[0]!);
+  device.config.fields.push({...device.config.fields[0]!,tag:'another.field',registerAddress:'R3204'});
+  const selected=selectGatewayRegisterPreset(device,{id:'44444444-4444-4444-8444-444444444444',model:'PM2230',registers:[
+    {registerAddress:'3204',registerCount:2,dataType:'uint32',byteOrder:'big_endian',wordOrder:'big_word_first',scale:1},
+  ]});
+  assert.equal(selected.ok,false);
+});
+
+test('only the stable stale-discovery API code is classified as a reload conflict',()=>{
+  assert.equal(isStaleDiscoveryConflict({status:409,code:'GATEWAY_DISCOVERY_STALE'}),true);
+  assert.equal(isStaleDiscoveryConflict({status:409,code:'SITE_GATEWAY_OCCUPIED'}),false);
+  assert.equal(isStaleDiscoveryConflict({status:409}),false);
+});
+
+test('an invalid local decoder or preset-selection draft blocks confirmation until corrected',()=>{
+  const draft=gatewayOnboardingDraftFromDetail(detail,[{id:siteId,code:'SITE-ALPHA'}]);
+  draft.devices[1]!.enabled=false;
+  draft.devices[0]!.decoderDraftIssues={'preset-selection':'invalid preset'};
+  assert.match(validateGatewayOnboardingDraft(draft,'en')??'',/invalid decoder draft/i);
+  delete draft.devices[0]!.decoderDraftIssues;
+  assert.equal(validateGatewayOnboardingDraft(draft,'en'),null);
+});
+
 test('device without a suggestion falls back to manual configuration without fabricated mappings',()=>{
   const draft=gatewayOnboardingDraftFromDetail(detail,[]);
   const logger=draft.devices[1]!;
-  assert.equal(logger.suggestedPresetId,undefined);
+  assert.equal(logger.suggestedPreset,undefined);
   assert.equal(logger.mappingSource,'manual');
   assert.deepEqual(logger.config.fields,[]);
   assert.deepEqual(logger.config.pollGroups,[]);
@@ -75,9 +205,29 @@ test('device without a suggestion falls back to manual configuration without fab
 test('disabled incomplete devices are allowed while enabled incomplete mappings block confirmation',()=>{
   const draft=gatewayOnboardingDraftFromDetail(detail,[{id:siteId,code:'SITE-ALPHA'}]);
   assert.match(validateGatewayOnboardingDraft(draft,'en')??'',/INV-01.*mapping/i);
+  const partialMapping={tag:'admin-note',displayName:'Reported but not configured'};
+  draft.devices[1]!.config.fields=[partialMapping as never];
   draft.devices[1]!.enabled=false;
   assert.equal(validateGatewayOnboardingDraft(draft,'en'),null);
-  assert.equal(gatewayConfirmationRequest(draft).devices[1]!.enabled,false);
+  const disabled=gatewayConfirmationRequest(draft).devices[1]!;
+  assert.equal(disabled.enabled,false);
+  assert.deepEqual(disabled.mappings,[partialMapping]);
+});
+
+test('disabled devices retain valid partial decoders but reject invalid provided storage values',()=>{
+  const valid=gatewayOnboardingDraftFromDetail(detail,[{id:siteId,code:'SITE-ALPHA'}]);
+  valid.devices[1]!.enabled=false;
+  valid.devices[1]!.config.fields=[{registerAddress:'3204',scale:0.01} as never];
+  assert.equal(validateGatewayOnboardingDraft(valid,'en'),null);
+  assert.deepEqual(gatewayConfirmationRequest(valid).devices[1]!.mappings,[{registerAddress:'3204',scale:0.01}]);
+
+  for(const patch of [{registerCount:2147483648},{scale:1e12},{scale:0.123456789}]){
+    const draft=gatewayOnboardingDraftFromDetail(detail,[{id:siteId,code:'SITE-ALPHA'}]);
+    draft.devices[1]!.enabled=false;
+    draft.devices[1]!.config.fields=[{registerAddress:'3204',...patch} as never];
+    assert.match(validateGatewayOnboardingDraft(draft,'en')??'',/INV-01.*mapping/i,JSON.stringify(patch));
+    assert.throws(()=>gatewayConfirmationRequest(draft),/INV-01.*mapping/i);
+  }
 });
 
 test('confirmation rejects a stale discovery revision before submitting edits',()=>{

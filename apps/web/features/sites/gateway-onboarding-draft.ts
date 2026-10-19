@@ -7,7 +7,7 @@ import type {
   GatewayRegisterPayload,
   GatewayReportedDevice,
 } from '@solar/api-contracts';
-import {gatewayConnectionIssue,gatewayRegisterMappingIssue} from '@solar/api-contracts';
+import {applyGatewayRegisterPresetMappings,gatewayConnectionIssue,gatewayRegisterMappingCollectionIssue,gatewayRegisterMappingIssue,gatewayRegisterMappingValueIssue} from '@solar/api-contracts';
 import type {PayloadRevision} from './payload-contracts';
 import {
   deviceProfilePayload,
@@ -21,6 +21,15 @@ export interface GatewayPresetSuggestion {
   id:string;
   kind:'register'|'profile';
   rank:number;
+}
+
+export interface GatewayRegisterPreset {
+  id:string;
+  brand?:string;
+  model:string;
+  deviceType?:string;
+  registers?:unknown[];
+  updatedAt?:string;
 }
 
 export interface GatewayDiscoveryDetail extends DiscoveredGatewayDetail {
@@ -37,7 +46,7 @@ export interface GatewayOnboardingDeviceDraft extends DeviceDraft {
   reported:Readonly<GatewayReportedDevice>;
   enabled:boolean;
   mappingSource:'preset'|'manual'|'gateway';
-  suggestedPresetId?:string;
+  suggestedPreset?:GatewayPresetSuggestion;
   presetId?:string;
   presetVersion?:string;
   manufacturer?:string;
@@ -46,6 +55,7 @@ export interface GatewayOnboardingDeviceDraft extends DeviceDraft {
   profileVersion?:string;
   protocol:string;
   connection:{[key:string]:GatewayJsonValue};
+  decoderDraftIssues?:Record<string,string>;
 }
 
 export interface GatewayOnboardingDraft {
@@ -67,7 +77,7 @@ function deepFreeze<T>(value:T):T {
   return value;
 }
 
-function reportedDeviceDraft(device:GatewayReportedDevice,suggestedPresetId?:string):GatewayOnboardingDeviceDraft {
+function reportedDeviceDraft(device:GatewayReportedDevice,suggestedPreset?:GatewayPresetSuggestion):GatewayOnboardingDeviceDraft {
   const mappings=clone(device.mappings??[]);
   const base=newDeviceDraft(device.deviceType??'');
   const profileId=device.profileId?.trim();
@@ -97,7 +107,7 @@ function reportedDeviceDraft(device:GatewayReportedDevice,suggestedPresetId?:str
     profileDirty:true,
     dirty:false,
     reported:deepFreeze(clone(device)),
-    ...(suggestedPresetId?{suggestedPresetId}:{}),
+    ...(suggestedPreset?{suggestedPreset:clone(suggestedPreset)}:{}),
     ...(device.manufacturer!==undefined?{manufacturer:device.manufacturer}:{}),
     ...(device.firmwareVersion!==undefined?{firmwareVersion:device.firmwareVersion}:{}),
     ...(device.profileId!==undefined?{profileId:device.profileId}:{}),
@@ -110,7 +120,7 @@ export function gatewayOnboardingDraftFromDetail(detail:GatewayDiscoveryDetail,s
   const reportedSiteId=detail.snapshot.reportedSiteId?.trim()||null;
   const normalized=reportedSiteId?.toLocaleLowerCase();
   const matched=normalized?sites.find(site=>[site.code,site.externalSiteId,site.id].some(value=>value?.toLocaleLowerCase()===normalized)):undefined;
-  const suggestions=new Map((detail.presetSuggestions??[]).map(row=>[row.deviceId,row.suggestions[0]?.id]));
+  const suggestions=new Map((detail.presetSuggestions??[]).map(row=>[row.deviceId,row.suggestions[0]]));
   const reported=deepFreeze(clone(detail.snapshot)) as Readonly<GatewayRegisterPayload & {assignedSiteId?:never}>;
   return {
     discoveryId:detail.id,
@@ -138,15 +148,25 @@ export function selectGatewayDevicePreset(device:GatewayOnboardingDeviceDraft,pr
   };
 }
 
+/** Register presets provide physical decoder details, never semantic field identity. */
+export function selectGatewayRegisterPreset(device:GatewayOnboardingDeviceDraft,preset:GatewayRegisterPreset):
+  {ok:true;device:GatewayOnboardingDeviceDraft}|{ok:false;device:GatewayOnboardingDeviceDraft;issue:string} {
+  const applied=applyGatewayRegisterPresetMappings(device.config.fields as GatewayRegisterMapping[],preset.registers??[]);
+  if(!applied.ok)return {ok:false,device,issue:`Register preset cannot cover this mapping (${applied.issue}).`};
+  return {ok:true,device:{
+    ...device,
+    mappingSource:'preset',presetId:preset.id,...(preset.updatedAt?{presetVersion:preset.updatedAt}:{}),dirty:true,profileDirty:true,
+    config:{...device.config,fields:applied.mappings as GatewayOnboardingDeviceDraft['config']['fields']},
+  }};
+}
+
 function asMapping(field:GatewayOnboardingDeviceDraft['config']['fields'][number]):GatewayRegisterMapping {
   return clone(field) as GatewayRegisterMapping;
 }
 
 function deviceConfig(device:GatewayOnboardingDeviceDraft):GatewayDeviceConfig {
-  const selected=deviceProfilePayload(device);
-  return {
+  const common={
     deviceId:device.externalDeviceId.trim(),
-    enabled:device.enabled,
     mappingSource:device.mappingSource,
     pollGroups:clone(device.config.pollGroups),
     mappings:device.config.fields.map(asMapping),
@@ -159,21 +179,29 @@ function deviceConfig(device:GatewayOnboardingDeviceDraft):GatewayDeviceConfig {
     ...(device.config.deviceType.trim()?{deviceType:device.config.deviceType.trim()}:{}),
     ...(device.protocol.trim()?{protocol:device.protocol.trim()}:{}),
     ...(Object.keys(device.connection).length?{connection:clone(device.connection)}:{}),
-    ...(device.mappingSource==='preset'&&selected.payloadProfileRevisionId?{presetId:selected.payloadProfileRevisionId}:{}),
+    ...(device.mappingSource==='preset'&&device.presetId?{presetId:device.presetId}:{}),
     ...(device.mappingSource==='preset'&&device.presetVersion?{presetVersion:device.presetVersion}:{}),
   };
+  return device.enabled?{...common,enabled:true}:{...common,enabled:false};
 }
 
 function deviceProblem(device:GatewayOnboardingDeviceDraft,locale:string):string|null {
-  if(!device.enabled)return null;
   const th=locale==='th';
+  const collectionIssue=gatewayRegisterMappingCollectionIssue(device.config.fields);
+  if(collectionIssue)return th?`อุปกรณ์ ${device.externalDeviceId||device.key} มี mapping ที่ซ้ำหรือไม่ถูกต้อง`:`Device ${device.externalDeviceId||device.key} has duplicate or invalid mappings.`;
+  if(!device.enabled){
+    const invalid=device.config.fields.some(mapping=>gatewayRegisterMappingValueIssue(mapping));
+    return invalid?(th?`อุปกรณ์ ${device.externalDeviceId||device.key} มี mapping ที่ไม่ถูกต้อง`:`Device ${device.externalDeviceId||device.key} has an invalid mapping.`):null;
+  }
   const required=!device.externalDeviceId.trim()||!device.model.trim()||!device.serialNumber.trim()||!device.config.deviceType.trim()
     ||!device.protocol.trim()||Object.keys(device.connection).length===0||device.config.pollGroups.length===0||device.config.fields.length===0;
   if(required)return th?`อุปกรณ์ ${device.externalDeviceId||device.key} ต้องมีข้อมูลและ mapping ครบถ้วน`:`Device ${device.externalDeviceId||device.key} requires complete details and mappings.`;
-  if(device.mappingSource==='preset'&&!deviceProfilePayload(device).payloadProfileRevisionId)return th?`อุปกรณ์ ${device.externalDeviceId} ต้องเลือก Preset`:`Device ${device.externalDeviceId} requires an explicit preset.`;
+  if(device.mappingSource==='preset'&&!device.presetId)return th?`อุปกรณ์ ${device.externalDeviceId} ต้องเลือก Preset`:`Device ${device.externalDeviceId} requires an explicit preset.`;
+  if(device.decoderDraftIssues&&Object.keys(device.decoderDraftIssues).length)return th?`อุปกรณ์ ${device.externalDeviceId} มีค่าตัวถอดรหัสที่ยังไม่ถูกต้อง`:`Device ${device.externalDeviceId} has an invalid decoder draft.`;
   if(gatewayConnectionIssue(device.protocol,device.connection))return th?`อุปกรณ์ ${device.externalDeviceId} มีข้อมูลการเชื่อมต่อไม่ถูกต้อง`:`Device ${device.externalDeviceId} has an invalid connection.`;
   const mappings=device.config.fields as GatewayRegisterMapping[];
-  if(/^modbus/i.test(device.protocol)&&mappings.some(mapping=>!mapping.registerAddress||gatewayRegisterMappingIssue(mapping))){
+  if(mappings.some(mapping=>gatewayRegisterMappingValueIssue(mapping))||
+    /^modbus/i.test(device.protocol)&&mappings.some(mapping=>!mapping.registerAddress||gatewayRegisterMappingIssue(mapping))){
     return th?`อุปกรณ์ ${device.externalDeviceId} มี mapping ของ Modbus ไม่ครบถ้วน`:`Device ${device.externalDeviceId} has an incomplete Modbus mapping.`;
   }
   const profileProblem=validateDeviceProfile(device.config,false,locale);
@@ -199,5 +227,6 @@ export function gatewayConfirmationRequest(draft:GatewayOnboardingDraft,currentD
 }
 
 export function isStaleDiscoveryConflict(error:unknown):boolean {
-  return typeof error==='object'&&error!==null&&(error as {status?:unknown}).status===409;
+  return typeof error==='object'&&error!==null&&(error as {status?:unknown}).status===409
+    &&(error as {code?:unknown}).code==='GATEWAY_DISCOVERY_STALE';
 }

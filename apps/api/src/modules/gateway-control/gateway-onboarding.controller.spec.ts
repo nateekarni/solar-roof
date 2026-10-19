@@ -26,8 +26,9 @@ function fixture() {
   };
   const db = { query, transaction: DatabaseService.prototype.transaction,
     pool: { connect: async () => ({ query, release() {} }) } } as unknown as DatabaseService;
-  return { controller: new GatewayOnboardingController(new GatewayRegistrationService(db),
-    new GatewayConfigurationService(db, new GatewayCredentialService(db))), get reads() { return reads; } };
+  const configuration = new GatewayConfigurationService(db, new GatewayCredentialService(db));
+  return { controller: new GatewayOnboardingController(new GatewayRegistrationService(db), configuration),
+    configuration, get reads() { return reads; } };
 }
 
 // Break caught: relying only on broad technical permission middleware would admit
@@ -58,8 +59,27 @@ test('validates UUIDs, discovery filters and request shapes before reaching SQL'
   assert.equal(f.reads, 0);
 });
 
+test('approval validates and forwards both optimistic concurrency fields', async () => {
+  const f = fixture();
+  let forwarded:unknown[]=[];
+  f.configuration.approveProposal=(async(...args:unknown[])=>{forwarded=args;return {configVersion:2,configHash:'a'.repeat(64)};}) as typeof f.configuration.approveProposal;
+  const expected={expectedProposalId:'proposal-1',expectedBaseConfigVersion:1};
+  await f.controller.approve(id,id,expected,admin);
+  assert.deepEqual(forwarded,[id,id,expected,actor]);
+  for(const invalid of [
+    {expectedProposalId:'proposal-1'},
+    {expectedBaseConfigVersion:1},
+    {...expected,expectedBaseConfigVersion:0},
+    {...expected,unexpected:true},
+  ])await assert.rejects(f.controller.approve(id,id,invalid,admin),http(400));
+});
+
 test('confirmation preserves service conflict status for a stale discovery revision', async () => {
-  const f = fixture(); await assert.rejects(f.controller.confirm(id, body, admin), http(409));
+  const f = fixture(); await assert.rejects(f.controller.confirm(id, body, admin),(error:unknown)=>{
+    if(!(error instanceof HttpException)||error.getStatus()!==409)return false;
+    assert.equal((error.getResponse() as {code?:string}).code,'GATEWAY_DISCOVERY_STALE');
+    return true;
+  });
   assert.equal(f.reads, 1);
 });
 

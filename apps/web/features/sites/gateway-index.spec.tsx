@@ -41,6 +41,14 @@ assert.match(html,/Pending synchronization/);
 assert.match(html,/Configuration failed/);
 });
 
+test('active gateway with a later pending config stays connected and shows separate operational indicators',()=>{
+ const row:GatewayRow={id:'active-pending',siteId:'s',siteName:'Roof',siteCode:'S',name:'Gateway',externalGatewayId:'GW-1',status:'offline',connectionState:'offline',lifecycleState:'active',configState:'pending_sync',desiredVersion:5,publishedVersion:5,acknowledgedVersion:5,appliedVersion:4,lastReceivedAt:'2026-10-19T00:00:00Z',pollingIntervalSeconds:10};
+ const partitions=gatewayIndexPartitions([row],[],false);
+ assert.deepEqual(partitions.connectedItems.map(item=>item.id),['active-pending']);
+ const html=renderToStaticMarkup(<GatewayIndex rows={[row]} locale="en" now={new Date('2026-10-19T00:10:00Z').getTime()} onSelect={()=>{}}/>);
+ for(const label of ['Active','Pending synchronization','Offline','Stale'])assert.match(html,new RegExp(label));
+});
+
 test('discovery failures render a retryable system alert instead of looking like an empty result',()=>{
 let retried=false;
 const html=renderToStaticMarkup(<GatewayDiscoveryError locale="en" error={new Error('broker unavailable')} onRetry={()=>{retried=true;}}/>);

@@ -27,6 +27,10 @@ export interface GatewayRegisterMapping {
   offset?: number;
 }
 
+export const GATEWAY_REGISTER_DATA_TYPES=['uint16','int16','uint32','int32','float32'] as const;
+export const GATEWAY_REGISTER_BYTE_ORDERS=['big_endian','little_endian'] as const;
+export const GATEWAY_REGISTER_WORD_ORDERS=['little_word_first','big_word_first','cdab','abcd'] as const;
+
 export interface GatewayReportedDevice {
   deviceId: string;
   deviceType?: string;
@@ -42,14 +46,25 @@ export interface GatewayReportedDevice {
   mappings?: GatewayRegisterMapping[];
 }
 
-export interface GatewayDeviceConfig extends GatewayReportedDevice {
-  enabled: boolean;
+interface GatewayDeviceConfigBase extends Omit<GatewayReportedDevice,'mappings'> {
   mappingSource: 'preset' | 'manual' | 'gateway';
   presetId?: string;
   presetVersion?: string;
   pollGroups: string[];
+}
+
+export interface GatewayEnabledDeviceConfig extends GatewayDeviceConfigBase {
+  enabled: true;
   mappings: GatewayRegisterMapping[];
 }
+
+/** Disabled devices retain incomplete admin/reported drafts but are never materialized. */
+export type GatewayDisabledRegisterMapping = Partial<GatewayRegisterMapping>;
+export interface GatewayDisabledDeviceConfig extends GatewayDeviceConfigBase {
+  enabled: false;
+  mappings: GatewayDisabledRegisterMapping[];
+}
+export type GatewayDeviceConfig = GatewayEnabledDeviceConfig | GatewayDisabledDeviceConfig;
 
 export interface GatewayRegisterPayload {
   schemaVersion: '1.1'; messageType: 'register'; messageId: string; sentAt: string;
@@ -123,16 +138,22 @@ export interface GatewayConfigProposal {
   gatewayId: string;
   proposalId: string;
   baseConfigVersion: number;
+  activeConfigVersion: number | null;
   status: 'pending' | 'approved' | 'rejected' | 'stale';
   approvalMode: 'manual';
   snapshot: GatewayConfigUpdatePayload;
+  activeSnapshot?: GatewayConfigPayload | null;
   receivedAt: string;
   reviewedAt?: string | null;
   reviewedBy?: string | null;
 }
+export interface ApproveGatewayProposalRequest {
+  expectedProposalId: string;
+  expectedBaseConfigVersion: number;
+}
 
 export type GatewayConnectionIssue = 'unsupported_protocol' | 'invalid_connection';
-export type GatewayRegisterMappingIssue = 'incomplete_decoder' | 'invalid_register_count' | 'invalid_scale' | 'invalid_offset';
+export type GatewayRegisterMappingIssue = 'invalid_register_address' | 'incomplete_decoder' | 'invalid_register_count' | 'invalid_data_type' | 'invalid_byte_order' | 'invalid_word_order' | 'invalid_scale' | 'invalid_offset';
 
 const exactKeys=(value:unknown,keys:readonly string[]):value is Record<string,unknown>=>{
   if(!value||typeof value!=='object'||Array.isArray(value))return false;
@@ -187,14 +208,117 @@ export function gatewayConnectionIssue(protocol:string|undefined,connection:unkn
 }
 
 /** Storage and physical-decoder checks shared by browser preflight and API persistence. */
+export function gatewayRegisterMappingValueIssue(mapping:Partial<GatewayRegisterMapping>):GatewayRegisterMappingIssue|null {
+  try{
+    if(!mapping||typeof mapping!=='object'||Array.isArray(mapping))return 'invalid_register_address';
+    if(mapping.registerAddress!==undefined&&mapping.registerAddress.trim()!==''&&!gatewayRegisterIdentity(mapping.registerAddress))return 'invalid_register_address';
+    if(mapping.registerCount!==undefined&&!integerIn(mapping.registerCount,1,2_147_483_647))return 'invalid_register_count';
+    if(mapping.dataType!==undefined&&(typeof mapping.dataType!=='string'||!GATEWAY_REGISTER_DATA_TYPES.includes(mapping.dataType)))return 'invalid_data_type';
+    if(mapping.byteOrder!==undefined&&(typeof mapping.byteOrder!=='string'||!GATEWAY_REGISTER_BYTE_ORDERS.includes(mapping.byteOrder)))return 'invalid_byte_order';
+    if(mapping.wordOrder!==undefined&&(typeof mapping.wordOrder!=='string'||!GATEWAY_REGISTER_WORD_ORDERS.includes(mapping.wordOrder)))return 'invalid_word_order';
+    if(mapping.scale!==undefined){
+      if(typeof mapping.scale!=='number'||!Number.isFinite(mapping.scale)||Math.abs(mapping.scale)>=1e12)return 'invalid_scale';
+      const [coefficient,exponent='0']=String(mapping.scale).toLowerCase().split('e');
+      const decimals=Math.max(0,(coefficient!.split('.')[1]?.length??0)-Number(exponent));
+      if(decimals>8)return 'invalid_scale';
+    }
+    if(mapping.offset!==undefined&&(typeof mapping.offset!=='number'||!Number.isFinite(mapping.offset)))return 'invalid_offset';
+    return null;
+  }catch{return 'invalid_register_address';}
+}
+
+/** Complete mappings additionally require the full physical decoder group. */
 export function gatewayRegisterMappingIssue(mapping:GatewayRegisterMapping):GatewayRegisterMappingIssue|null {
   if(mapping.registerAddress!==undefined&&[mapping.registerCount,mapping.dataType,mapping.byteOrder,mapping.wordOrder,mapping.scale].some(value=>value===undefined))return 'incomplete_decoder';
-  if(mapping.registerCount!==undefined&&!integerIn(mapping.registerCount,1,2_147_483_647))return 'invalid_register_count';
-  if(mapping.scale!==undefined){
-    const [coefficient,exponent='0']=mapping.scale.toString().toLowerCase().split('e');
-    const decimals=Math.max(0,(coefficient!.split('.')[1]?.length??0)-Number(exponent));
-    if(!Number.isFinite(mapping.scale)||Math.abs(mapping.scale)>=1e12||decimals>8)return 'invalid_scale';
+  return gatewayRegisterMappingValueIssue(mapping);
+}
+
+export type GatewayRegisterMappingCollectionIssue='duplicate_tag'|'invalid_register_address'|'duplicate_register_address';
+
+/** Collection invariants shared by browser review and API parsing. */
+export function gatewayRegisterMappingCollectionIssue(mappings:readonly {tag?:unknown;registerAddress?:unknown}[]):GatewayRegisterMappingCollectionIssue|null {
+  const tags=new Set<string>(),addresses=new Set<string>();
+  for(const mapping of mappings){
+    if(mapping.tag!==undefined){
+      const tag=typeof mapping.tag==='string'?mapping.tag.trim():'';
+      if(tag&&tags.has(tag))return 'duplicate_tag';
+      if(tag)tags.add(tag);
+    }
+    if(mapping.registerAddress!==undefined){
+      if(typeof mapping.registerAddress!=='string')return 'invalid_register_address';
+      if(mapping.registerAddress.trim()==='')continue;
+      const identity=gatewayRegisterIdentity(mapping.registerAddress);
+      if(!identity)return 'invalid_register_address';
+      if(addresses.has(identity))return 'duplicate_register_address';
+      addresses.add(identity);
+    }
   }
-  if(mapping.offset!==undefined&&!Number.isFinite(mapping.offset))return 'invalid_offset';
   return null;
+}
+
+const decoderKeys=['registerCount','dataType','byteOrder','wordOrder','scale','offset'] as const;
+function presetValue(register:Record<string,unknown>,key:(typeof decoderKeys)[number]):unknown {
+  const snake=key.replace(/[A-Z]/g,letter=>`_${letter.toLowerCase()}`);
+  return register[key]??register[snake];
+}
+
+export type GatewayRegisterPresetApplyResult =
+  | {ok:true;mappings:GatewayRegisterMapping[]}
+  | {ok:false;issue:'no_mappings'|'empty_preset'|'invalid_register'|'duplicate_address'|'missing_mapping_address'|'address_not_found'|'invalid_decoder'};
+
+/** Strict address identity matching the numeric notations understood by the decoder. */
+export function gatewayRegisterIdentity(address:unknown):string|null {
+  if(typeof address!=='string'||address.length>128)return null;
+  const value=address.trim();
+  let digits:string,radix:10|16;
+  if(/^r\d+$/i.test(value)){digits=value.slice(1);radix=10;}
+  else if(/^0x[\da-f]+$/i.test(value)){digits=value.slice(2);radix=16;}
+  else if(/^[\da-f]+h$/i.test(value)){digits=value.slice(0,-1);radix=16;}
+  else if(/^\d+$/.test(value)){digits=value;radix=10;}
+  else return null;
+  const parsed=BigInt(radix===16?`0x${digits}`:digits);
+  return parsed<=BigInt(Number.MAX_SAFE_INTEGER)?parsed.toString():null;
+}
+
+/** Validate and apply physical decoder values without ever inventing or retaining unmatched mappings. */
+export function applyGatewayRegisterPresetMappings(mappings:readonly GatewayRegisterMapping[],registers:unknown):GatewayRegisterPresetApplyResult {
+  try{
+    if(mappings.length===0)return {ok:false,issue:'no_mappings'};
+    if(!Array.isArray(registers)||registers.length===0)return {ok:false,issue:'empty_preset'};
+    const byAddress=new Map<string,Record<string,unknown>>();
+    for(const candidate of registers){
+      if(!candidate||typeof candidate!=='object'||Array.isArray(candidate))return {ok:false,issue:'invalid_register'};
+      const register=candidate as Record<string,unknown>;
+      const rawAddress=register.registerAddress??register.register_address;
+      if(typeof rawAddress!=='string')return {ok:false,issue:'invalid_register'};
+      const address=rawAddress.trim();
+      const identity=gatewayRegisterIdentity(address);
+      if(!identity)return {ok:false,issue:'invalid_register'};
+      const decoder={registerAddress:address} as Record<string,unknown>;
+      for(const key of decoderKeys){const value=presetValue(register,key);if(value!==undefined)decoder[key]=value;}
+      if(gatewayRegisterMappingIssue(decoder as unknown as GatewayRegisterMapping))return {ok:false,issue:'invalid_decoder'};
+      if(byAddress.has(identity))return {ok:false,issue:'duplicate_address'};
+      byAddress.set(identity,register);
+    }
+    const result:GatewayRegisterMapping[]=[];
+    const selectedAddresses=new Set<string>();
+    for(const mapping of mappings){
+      const address=mapping.registerAddress?.trim();
+      if(!address)return {ok:false,issue:'missing_mapping_address'};
+      const identity=gatewayRegisterIdentity(address);
+      if(!identity)return {ok:false,issue:'address_not_found'};
+      if(selectedAddresses.has(identity))return {ok:false,issue:'duplicate_address'};
+      selectedAddresses.add(identity);
+      const register=byAddress.get(identity);
+      if(!register)return {ok:false,issue:'address_not_found'};
+      const next={...mapping,registerAddress:address} as Record<string,unknown>;
+      for(const key of decoderKeys){
+        const value=presetValue(register,key);
+        if(value===undefined)delete next[key];else next[key]=value;
+      }
+      if(gatewayRegisterMappingIssue(next as unknown as GatewayRegisterMapping))return {ok:false,issue:'invalid_decoder'};
+      result.push(next as unknown as GatewayRegisterMapping);
+    }
+    return {ok:true,mappings:result};
+  }catch{return {ok:false,issue:'invalid_register'};}
 }

@@ -3,7 +3,7 @@ import test from 'node:test';
 import { HttpException } from '@nestjs/common';
 import * as argon2 from 'argon2';
 import { createHash } from 'node:crypto';
-import type { GatewayDeviceConfig } from '@solar/api-contracts';
+import type { GatewayDeviceConfig, GatewayEnabledDeviceConfig } from '@solar/api-contracts';
 import { DatabaseService } from '../../database/database.service.js';
 import { GatewayCredentialService } from './gateway-credential.service.js';
 import { GatewayConfigurationService } from './gateway-configuration.service.js';
@@ -24,7 +24,7 @@ const gatewayId = '55555555-5555-4555-8555-555555555555';
 const presetId = '66666666-6666-4666-8666-666666666666';
 const now = '2026-10-19T01:00:00Z';
 const http = (status: number) => (e: unknown) => e instanceof HttpException && e.getStatus() === status;
-function device(): GatewayDeviceConfig {
+function device(): GatewayEnabledDeviceConfig {
   return { deviceId: 'M1', enabled: true, mappingSource: 'manual', deviceType: 'energy-meter',
     model: 'Verified Model', serialNumber: 'SERIAL-1', protocol: 'modbus-tcp',
     connection: { host: '192.0.2.10', port: 502, slaveId: 3 }, pollGroups: ['energy'],
@@ -35,7 +35,7 @@ function device(): GatewayDeviceConfig {
 }
 type Write = { sql: string; values: unknown[] };
 function fixture(options: { revision?: number; status?: string; occupied?: boolean; duplicate?: boolean; fail?: RegExp;
-  preset?: unknown; active?: number; desired?: number; hash?: string; proposalStatus?: string; base?: number;
+  preset?: unknown; registerPreset?:unknown; active?: number; desired?: number; hash?: string; proposalStatus?: string; base?: number;
   duplicateEvent?: boolean; existingDevice?: boolean; missing?: boolean; connection?: string; retiredDuplicate?: boolean;
   proposalDevices?: GatewayDeviceConfig[]; desiredDevices?: GatewayDeviceConfig[]; activeDevices?: GatewayDeviceConfig[];
   existingRows?: Record<string, unknown>[] } = {}) {
@@ -62,10 +62,13 @@ function fixture(options: { revision?: number; status?: string; occupied?: boole
       status: options.status ?? 'unassigned', reported_site_id: 'REPORTED', raw_payload: { reportedSiteId: 'REPORTED' } }] };
     if (/FROM sites/.test(sql)) return { rows: [{ id: siteId, external_site_id: 'SELECTED', status: 'online' }] };
     if (/FROM payload_profile_revisions/.test(sql)) return { rows: options.preset ? [options.preset] : [] };
-    if (/FROM meter_presets/.test(sql)) return { rows: [] };
+    if (/FROM meter_presets/.test(sql)) return { rows: options.registerPreset?[options.registerPreset]:[] };
     if (/FROM gateway_config_proposals/.test(sql)) return { rows: [{ id: presetId, gateway_id: gatewayId,
       proposal_id: 'proposal-1', base_config_version: options.base ?? 1, status: options.proposalStatus ?? 'pending',
-      payload: { ...proposal(), devices: options.proposalDevices ?? [device()] }, received_at: now }] };
+      payload: { ...proposal(), devices: options.proposalDevices ?? [device()] }, received_at: now,
+      applied_config_version:options.active??1,active_config:{schemaVersion:'1.1',messageType:'config',messageId:'active-1',
+        gatewayId:'GW-001',siteId:'SELECTED',configVersion:options.active??1,configHash:'a'.repeat(64),issuedAt:now,
+        approvedBy:actor,devices:options.activeDevices??[device()]} }] };
     if (/FROM gateway_configuration_revisions/.test(sql)) return { rows: [{ version: options.desired ?? 1,
       config_hash: options.hash ?? 'a'.repeat(64), config: { schemaVersion: '1.1', messageType: 'config', messageId: 'cfg-1',
         gatewayId: 'GW-001', siteId: 'SELECTED', configVersion: options.desired ?? 1, configHash: 'a'.repeat(64), issuedAt: now,
@@ -87,7 +90,7 @@ function fixture(options: { revision?: number; status?: string; occupied?: boole
   return { service: new GatewayConfigurationService(db, new GatewayCredentialService(db)), db, calls, committed,
     get rolledBack() { return rolledBack; } };
 }
-const confirm = (devices = [device()]) => ({ discoveryRevision: 2, siteId, devices });
+const confirm = (devices:GatewayDeviceConfig[] = [device()]) => ({ discoveryRevision: 2, siteId, devices });
 function proposal() { return { schemaVersion: '1.1', messageType: 'configUpdate', messageId: 'update-1', gatewayId: 'GW-001',
   siteId: 'SELECTED', proposalId: 'proposal-1', baseConfigVersion: 1, sentAt: now, devices: [device()] }; }
 const write = (f: ReturnType<typeof fixture>, pattern: RegExp) => {
@@ -182,6 +185,77 @@ for (const options of [{ revision: 3 }, { status: 'configuring' }, { occupied: t
   });
 }
 
+test('only a stale discovery revision uses the stable stale code; other conflicts retain their own errors',async()=>{
+  const stale=fixture({revision:3});
+  await assert.rejects(stale.service.confirm(discoveryId,confirm(),actor),(error:unknown)=>{
+    if(!(error instanceof HttpException))return false;
+    assert.equal((error.getResponse() as {code?:string}).code,'GATEWAY_DISCOVERY_STALE');return true;
+  });
+  const occupied=fixture({occupied:true});
+  await assert.rejects(occupied.service.confirm(discoveryId,confirm(),actor),(error:unknown)=>{
+    if(!(error instanceof HttpException))return false;
+    assert.notEqual((error.getResponse() as {code?:string}).code,'GATEWAY_DISCOVERY_STALE');
+    assert.match(String((error.getResponse() as {message?:string}).message),/active gateway|identity is already registered/i);return true;
+  });
+});
+
+test('register presets reject invalid enum values and never accept a partial address match',async()=>{
+  const revision='2026-10-19T01:00:00.000Z';
+  for(const registers of [
+    [{registerAddress:'9999',registerCount:2,dataType:'uint32',byteOrder:'big_endian',wordOrder:'big_word_first',scale:1}],
+    [{registerAddress:'3204',registerCount:2,dataType:'invalid',byteOrder:'big_endian',wordOrder:'big_word_first',scale:1}],
+    [{registerAddress:'3204',registerCount:2,dataType:'uint32',byteOrder:'big_endian',wordOrder:'big_word_first',scale:1},{registerAddress:'9999',registerCount:2,dataType:'invalid',byteOrder:'big_endian',wordOrder:'big_word_first',scale:1}],
+    [{registerAddress:'3204',registerCount:2,dataType:'uint32',byteOrder:'big_endian',wordOrder:'big_word_first',scale:1},{registerAddress:'R3204',registerCount:2,dataType:'uint32',byteOrder:'big_endian',wordOrder:'big_word_first',scale:1}],
+    [{registerAddress:'1',registerCount:2,dataType:'uint32',byteOrder:'big_endian',wordOrder:'big_word_first',scale:1},{registerAddress:'R1',registerCount:2,dataType:'uint32',byteOrder:'big_endian',wordOrder:'big_word_first',scale:1},{registerAddress:'0x1',registerCount:2,dataType:'uint32',byteOrder:'big_endian',wordOrder:'big_word_first',scale:1},{registerAddress:'0001',registerCount:2,dataType:'uint32',byteOrder:'big_endian',wordOrder:'big_word_first',scale:1}],
+    [{registerAddress:'0x0C84',registerCount:2,dataType:'uint32',byteOrder:'big_endian',wordOrder:'big_word_first',scale:1},{registerAddress:'0C84h',registerCount:2,dataType:'uint32',byteOrder:'big_endian',wordOrder:'big_word_first',scale:1}],
+    'not-an-array',
+  ]){
+    const f=fixture({registerPreset:{id:presetId,updated_at:revision,registers}});
+    await assert.rejects(f.service.confirm(discoveryId,confirm([{...device(),mappingSource:'preset',presetId,presetVersion:revision}]),actor),http(400));
+    assert.deepEqual(f.committed,[]);
+  }
+});
+
+test('register presets reject duplicate canonical identities in selected mappings',async()=>{
+  const revision='2026-10-19T01:00:00.000Z';
+  const duplicate=device();
+  duplicate.mappingSource='preset';duplicate.presetId=presetId;duplicate.presetVersion=revision;
+  duplicate.mappings.push({...duplicate.mappings[0]!,tag:'another.field',registerAddress:'R3204'});
+  const f=fixture({registerPreset:{id:presetId,updated_at:revision,registers:[{registerAddress:'3204',registerCount:2,dataType:'uint32',byteOrder:'big_endian',wordOrder:'big_word_first',scale:1}]}});
+  await assert.rejects(f.service.confirm(discoveryId,confirm([duplicate]),actor),http(400));
+  assert.deepEqual(f.committed,[]);
+});
+
+test('confirmation rejects a changed register preset revision instead of applying values not reviewed by the admin',async()=>{
+  const reviewed={...device(),mappingSource:'preset' as const,presetId,presetVersion:'2026-10-19T01:00:00.000Z'};
+  const f=fixture({registerPreset:{id:presetId,updated_at:'2026-10-19T01:01:00.000Z',registers:[
+    {registerAddress:'3204',registerCount:2,dataType:'uint32',byteOrder:'big_endian',wordOrder:'big_word_first',scale:2},
+  ]}});
+  await assert.rejects(f.service.confirm(discoveryId,confirm([reviewed]),actor),http(409));
+  assert.deepEqual(f.committed,[]);
+});
+
+test('confirmation rejects a malformed register preset revision without throwing an internal error',async()=>{
+  const reviewed={...device(),mappingSource:'preset' as const,presetId,presetVersion:'not-a-date'};
+  const f=fixture({registerPreset:{id:presetId,updated_at:'2026-10-19T01:01:00.000Z',registers:[
+    {registerAddress:'3204',registerCount:2,dataType:'uint32',byteOrder:'big_endian',wordOrder:'big_word_first',scale:2},
+  ]}});
+  await assert.rejects(f.service.confirm(discoveryId,confirm([reviewed]),actor),http(409));
+  assert.deepEqual(f.committed,[]);
+});
+
+test('confirmation accepts the locked register preset revision and snapshots its reviewed decoder values',async()=>{
+  const revision='2026-10-19T01:00:00.000Z';
+  const reviewed={...device(),mappingSource:'preset' as const,presetId,presetVersion:revision};
+  const f=fixture({registerPreset:{id:presetId,updated_at:revision,registers:[
+    {registerAddress:'3204',registerCount:2,dataType:'uint32',byteOrder:'big_endian',wordOrder:'big_word_first',scale:0.01,offset:2},
+  ]}});
+  await f.service.confirm(discoveryId,confirm([reviewed]),actor);
+  const snapshot=JSON.parse(String(write(f,/INSERT INTO gateway_configuration_revisions/).values[3]));
+  assert.equal(snapshot.devices[0].presetVersion,revision);
+  assert.equal(snapshot.devices[0].mappings[0].scale,0.01);
+});
+
 // Each late SQL failure must discard every previously written resource, including credentials.
 for (const fail of [/INSERT INTO gateways/, /INSERT INTO payload_profile_revisions/, /INSERT INTO devices/,
   /INSERT INTO register_mapping_versions/, /INSERT INTO gateway_configuration_revisions/,
@@ -195,12 +269,21 @@ for (const fail of [/INSERT INTO gateways/, /INSERT INTO payload_profile_revisio
 }
 
 test('retains disabled incomplete devices in the snapshot without creating device rows', async () => {
-  const f = fixture(); const disabled: GatewayDeviceConfig = { deviceId: 'UNKNOWN', enabled: false,
-    mappingSource: 'gateway', pollGroups: [], mappings: [] };
+  const f = fixture(); const disabled:GatewayDeviceConfig = { deviceId: 'UNKNOWN', enabled: false,
+    mappingSource: 'gateway', pollGroups: [], mappings: [{tag:'admin-note',displayName:'Reported but not configured'}] };
   await f.service.confirm(discoveryId, confirm([device(), disabled]), actor);
   assert.equal(f.committed.filter(w => /INSERT INTO devices/.test(w.sql)).length, 1);
   const snapshot = JSON.parse(String(write(f, /INSERT INTO gateway_configuration_revisions/).values[3]));
   assert.deepEqual(snapshot.devices[1], disabled);
+});
+
+test('rejects out-of-storage disabled decoder values before any onboarding writes', async () => {
+  for (const patch of [{registerCount:2_147_483_648},{scale:1e12},{scale:0.123456789}]) {
+    const f=fixture();
+    const disabled:GatewayDeviceConfig={deviceId:'UNKNOWN',enabled:false,mappingSource:'manual',pollGroups:[],mappings:[{registerAddress:'3204',...patch}]};
+    await assert.rejects(f.service.confirm(discoveryId,confirm([device(),disabled]),actor),http(400),JSON.stringify(patch));
+    assert.deepEqual(f.committed,[]);
+  }
 });
 
 for (const [name, change] of [
@@ -264,7 +347,7 @@ test('rejects control identity mismatch before SQL and unknown trusted broker sc
 });
 
 test('approval uses active base and writes only the next desired revision plus reviewer evidence', async () => {
-  const f = fixture({ desired: 3, active: 1 }); await f.service.approveProposal(gatewayId, presetId, actor);
+  const f = fixture({ desired: 3, active: 1 }); await f.service.approveProposal(gatewayId, presetId,{expectedProposalId:'proposal-1',expectedBaseConfigVersion:1}, actor);
   const revision = write(f, /INSERT INTO gateway_configuration_revisions/);
   assert.equal(revision.values[2], 4); assert.equal(revision.values[5], actor);
   const update = write(f, /UPDATE gateway_config_proposals/);
@@ -273,9 +356,17 @@ test('approval uses active base and writes only the next desired revision plus r
   assert.ok(!f.committed.some(w => /UPDATE gateways/.test(w.sql) && /active_config_hash|applied_config_version/.test(w.sql)));
 });
 
+test('approval rejects optimistic proposal identity or base mismatches before writing a revision',async()=>{
+  for(const expected of [{expectedProposalId:'other',expectedBaseConfigVersion:1},{expectedProposalId:'proposal-1',expectedBaseConfigVersion:2}]){
+    const f=fixture();
+    await assert.rejects(f.service.approveProposal(gatewayId,presetId,expected,actor),http(409));
+    assert.deepEqual(f.committed,[]);
+  }
+});
+
 for (const options of [{ base: 2 }, { proposalStatus: 'approved' }, { proposalStatus: 'rejected' }]) {
   test(`rejects stale/nonpending proposal approval ${JSON.stringify(options)}`, async () => {
-    const f = fixture(options); await assert.rejects(f.service.approveProposal(gatewayId, presetId, actor), http(409));
+    const f = fixture(options); await assert.rejects(f.service.approveProposal(gatewayId, presetId,{expectedProposalId:'proposal-1',expectedBaseConfigVersion:options.base??1}, actor), http(409));
     assert.deepEqual(f.committed, []);
   });
 }
@@ -348,7 +439,10 @@ test('sync state separates desired and active and computes proposal staleness wi
   const sync = await f.service.syncState(gatewayId);
   assert.equal(sync.desiredConfigVersion, 3); assert.equal(sync.activeConfigVersion, 1);
   assert.equal(sync.connectionState, 'offline');
-  await f.service.proposals(gatewayId);
+  const proposals=await f.service.proposals(gatewayId);
+  assert.equal(proposals[0]?.activeConfigVersion,1);
+  assert.equal(proposals[0]?.activeSnapshot?.messageId,'active-1');
+  assert.equal(proposals[0]?.status,'pending');
   assert.match(f.calls.find(c => /FROM gateway_config_proposals/.test(c.sql))!.sql, /ORDER BY[\s\S]*received_at DESC[\s\S]*id[\s\S]*LIMIT 100/);
 });
 
@@ -431,9 +525,9 @@ const invalidConnections: { protocol: string; connection: GatewayDeviceConfig['c
 ];
 for (const [index, connection] of invalidConnections.entries()) {
   test(`confirmation and approval reject invalid explicit connection ${index}`, async () => {
-    const d = { ...device(), ...connection } as GatewayDeviceConfig;
+    const d = { ...device(), ...connection } as GatewayEnabledDeviceConfig;
     const f = fixture(); await assert.rejects(f.service.confirm(discoveryId, confirm([d]), actor), http(400));
-    const p = fixture({ proposalDevices: [d] }); await assert.rejects(p.service.approveProposal(gatewayId, presetId, actor), http(400));
+    const p = fixture({ proposalDevices: [d] }); await assert.rejects(p.service.approveProposal(gatewayId, presetId,{expectedProposalId:'proposal-1',expectedBaseConfigVersion:1}, actor), http(400));
     assert.deepEqual(f.committed, []); assert.deepEqual(p.committed, []);
   });
 }
@@ -494,12 +588,12 @@ test('a change to another device preserves unchanged meter profile and billing s
 
 for(const mutation of ['mapping','connection','disable'] as const){
   test(`bound billing device ${mutation} change rejects approval and application without rebinding history`,async()=>{
-    const changed=meter();
-    if(mutation==='mapping')changed.mappings[0]!.scale=0.02;
+    let changed:GatewayDeviceConfig=structuredClone(meter());
+    if(mutation==='mapping'&&changed.enabled)changed.mappings[0]!.scale=0.02;
     if(mutation==='connection')changed.connection!.host='192.0.2.11';
-    if(mutation==='disable')changed.enabled=false;
+    if(mutation==='disable')changed={...changed,enabled:false};
     const approval=fixture({existingRows:[existingMeter()],activeDevices:[meter()],proposalDevices:[changed]});
-    await assert.rejects(approval.service.approveProposal(gatewayId,presetId,actor),http(409));
+    await assert.rejects(approval.service.approveProposal(gatewayId,presetId,{expectedProposalId:'proposal-1',expectedBaseConfigVersion:1},actor),http(409));
     assert.deepEqual(approval.committed,[]);
     const applied=fixture({active:1,desired:2,existingRows:[existingMeter()],activeDevices:[meter()],desiredDevices:[changed]});
     await assert.rejects(applied.service.recordConfigStatus(control(status('applied','a'.repeat(64),2))),http(409));
@@ -510,7 +604,7 @@ for(const mutation of ['mapping','connection','disable'] as const){
 test('existing external device identity cannot change its deployed payload type on approval or apply',async()=>{
  const changed={...meter(),deviceType:'solar-logger'};
  const approval=fixture({existingRows:[{...existingMeter(),billing:false,billing_bound:false}],proposalDevices:[changed]});
- await assert.rejects(approval.service.approveProposal(gatewayId,presetId,actor),http(400));
+ await assert.rejects(approval.service.approveProposal(gatewayId,presetId,{expectedProposalId:'proposal-1',expectedBaseConfigVersion:1},actor),http(400));
  const applied=fixture({active:1,desired:2,existingRows:[{...existingMeter(),billing:false,billing_bound:false}],desiredDevices:[changed]});
  await assert.rejects(applied.service.recordConfigStatus(control(status('applied','a'.repeat(64),2))),http(400));
  assert.deepEqual(approval.committed,[]);assert.deepEqual(applied.committed,[]);
@@ -526,7 +620,7 @@ for(const value of [0.123456789,1e-9,1000000000000,-1000000000000])for(const pha
   const d=meter();d.mappings[0]!.scale=value;
   const f=fixture({active:1,desired:2,proposalDevices:[d],desiredDevices:[d]});
   const operation=phase==='confirm'?f.service.confirm(discoveryId,confirm([d]),actor):phase==='approve'?
-    f.service.approveProposal(gatewayId,presetId,actor):f.service.recordConfigStatus(control(status('applied','a'.repeat(64),2)));
+    f.service.approveProposal(gatewayId,presetId,{expectedProposalId:'proposal-1',expectedBaseConfigVersion:1},actor):f.service.recordConfigStatus(control(status('applied','a'.repeat(64),2)));
   await assert.rejects(operation,http(400));assert.deepEqual(f.committed,[]);
  });
 }
@@ -546,7 +640,7 @@ for(const phase of ['confirm','approve','apply'] as const)test(`${phase} rejects
  const d=meter();d.mappings[0]!.registerCount=2147483648;
  const f=fixture({active:1,desired:2,proposalDevices:[d],desiredDevices:[d]});
  const operation=phase==='confirm'?f.service.confirm(discoveryId,confirm([d]),actor):phase==='approve'?
-  f.service.approveProposal(gatewayId,presetId,actor):f.service.recordConfigStatus(control(status('applied','a'.repeat(64),2)));
+  f.service.approveProposal(gatewayId,presetId,{expectedProposalId:'proposal-1',expectedBaseConfigVersion:1},actor):f.service.recordConfigStatus(control(status('applied','a'.repeat(64),2)));
  await assert.rejects(operation,http(400));assert.deepEqual(f.committed,[]);
 });
 
@@ -730,7 +824,7 @@ for(const operation of ['proposal','approve','reject','applied','connection','ro
    }};
   }) as typeof f.db.pool.connect;
   if(operation==='proposal')await f.service.recordProposal(control(proposal()));
-  if(operation==='approve')await f.service.approveProposal(gatewayId,presetId,actor);
+  if(operation==='approve')await f.service.approveProposal(gatewayId,presetId,{expectedProposalId:'proposal-1',expectedBaseConfigVersion:1},actor);
   if(operation==='reject')await f.service.rejectProposal(gatewayId,presetId,'Not accepted',actor);
   if(operation==='applied')await f.service.recordConfigStatus(control(status('applied')));
   if(operation==='connection')await f.service.recordConnectionStatus(control({schemaVersion:'1.1',messageType:'status',messageId:'presence',
@@ -843,7 +937,7 @@ function legacyControlRace(route:'upgrade'|'register'|'reception'|'ingestion'|'c
    device:{deviceId:'M1',deviceType:'energy-meter',profileId:'sender-meter',profileVersion:'1.0.0'},pollGroup:'energy',
    timestamps:{polledAt:now,sentAt:now},data:{values:{'energy.active.import.total':123000},units:{'energy.active.import.total':'Wh'}},
    quality:{status:'good',communication:'online'}},broker),
-  control:()=>phase==='approve'?base.service.approveProposal(gatewayId,presetId,actor):base.service.recordConfigStatus(control(status('applied','a'.repeat(64),2))),
+  control:()=>phase==='approve'?base.service.approveProposal(gatewayId,presetId,{expectedProposalId:'proposal-1',expectedBaseConfigVersion:1},actor):base.service.recordConfigStatus(control(status('applied','a'.repeat(64),2))),
   firstLocked,secondWaiting,continueFirst,get legacyWrites(){return legacyWrites;},get controlCommitted(){return controlCommitted;}};
 }
 

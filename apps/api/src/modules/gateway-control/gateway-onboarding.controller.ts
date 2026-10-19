@@ -7,6 +7,7 @@ import { GatewayConfigurationService, validateConfirmation } from './gateway-con
 interface AdminRequest { user?: { id?: string | undefined; role?: string | undefined } | undefined }
 const uuid = z.uuid();
 const emptyBody = z.object({}).strict();
+const approveProposalBody=z.object({expectedProposalId:z.string().min(1).max(256),expectedBaseConfigVersion:z.number().int().min(1).max(Number.MAX_SAFE_INTEGER)}).strict();
 function parse<T>(schema: z.ZodType<T>, input: unknown): T {
   const result = schema.safeParse(input);
   if (!result.success) throw new BadRequestException('Invalid onboarding request');
@@ -53,8 +54,8 @@ export class GatewayOnboardingController {
 
   @Post(':id/config-proposals/:proposalId/approve')
   async approve(@Param('id') id: string, @Param('proposalId') proposalId: string, @Body() body: unknown, @Req() req: AdminRequest) {
-    const actor = this.admin(req); parse(emptyBody, body ?? {});
-    return this.configuration.approveProposal(parse(uuid, id), parse(uuid, proposalId), actor);
+    const actor = this.admin(req); const expected=parse(approveProposalBody,body);
+    return this.configuration.approveProposal(parse(uuid, id), parse(uuid, proposalId), expected,actor);
   }
 
   @Post(':id/config-proposals/:proposalId/reject')

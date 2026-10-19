@@ -1,7 +1,8 @@
 'use client';
 
-import {useMutation,useQuery,useQueryClient,type QueryClient} from '@tanstack/react-query';
+import {useQuery,type QueryClient} from '@tanstack/react-query';
 import type {
+  ApproveGatewayProposalRequest,
   ConfirmGatewayRequest,
   ConfirmGatewayResponse,
   DiscoveredGatewayRow,
@@ -64,13 +65,16 @@ export async function invalidateGatewayOnboarding(queryClient:QueryClient,discov
   ]);
 }
 
-export function useConfirmGateway(){
-  const queryClient=useQueryClient();
-  return useMutation({
-    mutationFn:({discoveryId,request}:{discoveryId:string;request:ConfirmGatewayRequest})=>
-      apiClient.post<ConfirmGatewayResponse>(`/v1/gateways/discovered/${encodeURIComponent(discoveryId)}/confirm`,request),
-    onSuccess:async(response,variables)=>invalidateGatewayOnboarding(queryClient,variables.discoveryId,response.gatewayId),
-  });
+/**
+ * Secret-returning requests deliberately bypass TanStack mutation/query state.
+ * The caller owns the one-time plaintext response in component-local memory only.
+ */
+export async function confirmGatewayWithoutCaching(queryClient:QueryClient,discoveryId:string,request:ConfirmGatewayRequest,signal?:AbortSignal){
+  const response=await apiClient.post<ConfirmGatewayResponse>(
+    `/v1/gateways/discovered/${encodeURIComponent(discoveryId)}/confirm`,request,signal?{signal}:undefined,
+  );
+  await invalidateGatewayOnboarding(queryClient,discoveryId,response.gatewayId);
+  return response;
 }
 
 export function useGatewaySyncState(id:string|null|undefined,active=true){
@@ -93,4 +97,23 @@ export function useGatewayConfigProposals(id:string|null|undefined,active=true){
     queryFn:()=>apiClient.get<GatewayConfigProposal[]>(`/v1/gateways/${encodeURIComponent(id!)}/config-proposals`),
     enabled:active&&Boolean(id),
   });
+}
+
+async function invalidateGatewayProposalState(queryClient:QueryClient,gatewayId:string){
+  await Promise.all([
+    queryClient.invalidateQueries({queryKey:gatewayOnboardingKeys.proposals(gatewayId)}),
+    queryClient.invalidateQueries({queryKey:gatewayOnboardingKeys.sync(gatewayId)}),
+    queryClient.invalidateQueries({queryKey:gatewayOnboardingKeys.registered()}),
+  ]);
+}
+
+export async function approveGatewayProposal(queryClient:QueryClient,gatewayId:string,proposalId:string,request:ApproveGatewayProposalRequest){
+  const result=await apiClient.post<{configVersion:number;configHash:string}>(`/v1/gateways/${encodeURIComponent(gatewayId)}/config-proposals/${encodeURIComponent(proposalId)}/approve`,request);
+  await invalidateGatewayProposalState(queryClient,gatewayId);
+  return result;
+}
+
+export async function rejectGatewayProposal(queryClient:QueryClient,gatewayId:string,proposalId:string,reason:string){
+  await apiClient.post(`/v1/gateways/${encodeURIComponent(gatewayId)}/config-proposals/${encodeURIComponent(proposalId)}/reject`,{reason});
+  await invalidateGatewayProposalState(queryClient,gatewayId);
 }
