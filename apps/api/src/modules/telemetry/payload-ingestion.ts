@@ -14,97 +14,25 @@ export interface TelemetryAck {
   status: 'accepted';
   acceptedAt: string;
 }
-interface RegisteredBinding {deviceId:string;siteId:string;gatewayId:string;externalSiteId:string;externalGatewayId:string;externalDeviceId:string;revisionId:string;config:PayloadProfile;billing:boolean;billingSource?:{id:string;siteId:string;deviceId:string;profileRevisionId:string;sourceTag:string;canonicalTag:string;sourceUnit:string;targetUnit:string;conversion:string}|null}
+interface RegisteredBinding {deviceId:string;siteId:string;gatewayId:string;externalSiteId:string;externalGatewayId:string;externalDeviceId:string;revisionId:string;config:PayloadProfile;billing:boolean;appliedConfigVersion:number;activeConfigHash:string|null;controlManagedAt:string|null;billingSource?:{id:string;siteId:string;deviceId:string;profileRevisionId:string;sourceTag:string;canonicalTag:string;sourceUnit:string;targetUnit:string;conversion:string}|null}
 export class PayloadIngestion {
  constructor(private readonly db: DatabaseService) {}
-  async recordDiscoveredGateway(
-    reportedSiteId: string,
-    externalGatewayId: string,
-    reportedDeviceId: string | null,
-    input: unknown
-  ): Promise<{ configPayload: Record<string, unknown> | null; ackPayload: TelemetryAck }> {
-    const raw = typeof input === 'object' && input !== null ? (input as Record<string, any>) : {};
-    const device = raw.device && typeof raw.device === 'object' ? raw.device : {};
-    const manufacturer = String(device.manufacturer ?? raw.manufacturer ?? '').trim() || null;
-    const model = String(device.model ?? raw.model ?? '').trim() || null;
-    const profileId = String(device.profileId ?? raw.profileId ?? '').trim() || null;
-    const deviceId = reportedDeviceId || (typeof device.deviceId === 'string' ? device.deviceId : null);
-
-    await this.db.query(
-      `INSERT INTO discovered_gateways (
-        external_gateway_id, reported_site_id, reported_device_id, manufacturer, model, profile_id, protocol, raw_payload, first_seen_at, last_seen_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, 'mqtt', $7::jsonb, now(), now())
-      ON CONFLICT (external_gateway_id) DO UPDATE SET
-        reported_site_id = COALESCE(EXCLUDED.reported_site_id, discovered_gateways.reported_site_id),
-        reported_device_id = COALESCE(EXCLUDED.reported_device_id, discovered_gateways.reported_device_id),
-        manufacturer = COALESCE(EXCLUDED.manufacturer, discovered_gateways.manufacturer),
-        model = COALESCE(EXCLUDED.model, discovered_gateways.model),
-        profile_id = COALESCE(EXCLUDED.profile_id, discovered_gateways.profile_id),
-        raw_payload = EXCLUDED.raw_payload,
-        last_seen_at = now()`,
-      [externalGatewayId, reportedSiteId, deviceId, manufacturer, model, profileId, JSON.stringify(raw)]
-    );
-
-    let configPayload: Record<string, unknown> | null = null;
-    if (model) {
-      const preset = (
-        await this.db.query<{ brand: string; model: string; device_type: string; registers: unknown }>(
-          `SELECT brand, model, device_type, registers FROM meter_presets WHERE model ILIKE $1 OR $1 ILIKE '%' || model || '%' LIMIT 1`,
-          [model]
-        )
-      ).rows[0];
-
-      if (preset && Array.isArray(preset.registers) && preset.registers.length > 0) {
-        configPayload = {
-          schemaVersion: '1.0',
-          command: 'configure_mapping',
-          siteId: reportedSiteId,
-          gatewayId: externalGatewayId,
-          deviceId: deviceId,
-          brand: preset.brand,
-          model: preset.model,
-          deviceType: preset.device_type ?? 'meter',
-          registers: preset.registers,
-          timestamp: new Date().toISOString(),
-        };
-      }
-    }
-
-    const ackPayload = {
-      schemaVersion: '1.1' as const,
-      messageType: 'dataAcept' as const,
-      siteId: reportedSiteId,
-      gatewayId: externalGatewayId,
-      lotNumber: typeof raw.lotNumber === 'string' ? raw.lotNumber : '1',
-      messageId: typeof raw.messageId === 'string' ? raw.messageId : randomUUID(),
-      status: 'accepted' as const,
-      acceptedAt: new Date().toISOString(),
-    };
-
-    return { configPayload, ackPayload };
-  }
-
   async acceptMany(
     topic: string,
     input: unknown,
     brokerId: string | null,
     acknowledged: (ack: TelemetryAck) => void,
-    onConfigPush?: (siteId: string, gatewayId: string, config: Record<string, unknown>) => void
+    _onConfigPush?: (siteId: string, gatewayId: string, config: Record<string, unknown>) => void
   ) {
    const match=/^solar\/v1\/sites\/([A-Za-z0-9_-]{1,128})\/gateways\/([A-Za-z0-9_-]{1,128})\/devices\/([A-Za-z0-9_-]{1,128})\/telemetry$/.exec(topic);
    if (!match || !match[1] || !match[2] || !match[3]) return;
-   const site=match[1], gateway=match[2], device=match[3];
+   const site=match[1], gateway=match[2], topicDevice=match[3];
    const context=(await this.db.query<{siteId:string;gatewayId:string;externalSiteId:string;externalGatewayId:string}>(`SELECT g.id AS "gatewayId",g.site_id AS "siteId",s.external_site_id AS "externalSiteId",g.external_gateway_id AS "externalGatewayId" FROM gateways g JOIN sites s ON s.id=g.site_id WHERE s.external_site_id=$1 AND g.external_gateway_id=$2 AND s.status<>'archived' AND g.protocol='mqtt' AND g.mqtt_broker_id IS NOT DISTINCT FROM $3::uuid`,[site,gateway,brokerId])).rows[0];
    // Existing single-envelope validation still verifies device, broker and topic scope.
    if(!context) {
-     const ack=await this.accept(topic,input,brokerId,undefined,true);
-     if(ack) { acknowledged(ack); return; }
-     const discovered = await this.recordDiscoveredGateway(site, gateway, device, input);
-     if (discovered.configPayload && onConfigPush) {
-       onConfigPush(site, gateway, discovered.configPayload);
-     }
-     acknowledged(discovered.ackPayload);
-     return;
+    const ack=await this.accept(topic,input,brokerId);
+    if(ack)acknowledged(ack);
+    return;
    }
   const receiveRevisions=(await this.db.query('SELECT id,version,config FROM gateway_payload_receive_revisions WHERE gateway_id=$1 ORDER BY version DESC',[context.gatewayId])).rows;
   let revision=receiveRevisions[0];
@@ -136,12 +64,11 @@ export class PayloadIngestion {
     if(original)envelope=original.rawPayload;
    }
    const device=envelope.device as {deviceId?:unknown}|undefined;
-   if(envelope.siteId!==context.externalSiteId || envelope.gatewayId!==context.externalGatewayId || !device || typeof device.deviceId!=='string' || !/^[A-Za-z0-9_-]{1,128}$/.test(device.deviceId)) {
+   if(envelope.siteId!==context.externalSiteId || envelope.gatewayId!==context.externalGatewayId || !device || typeof device.deviceId!=='string' || !/^[A-Za-z0-9_-]{1,128}$/.test(device.deviceId) || device.deviceId!==topicDevice) {
     await this.reject(topic,`${message.key}: Message identities do not match receiving gateway or registered aliases`,context);continue;
    }
-   const childTopic=decoded.batch?payloadTopic(context.externalSiteId,context.externalGatewayId,device.deviceId):topic;
    try {
-    const ack=await this.accept(childTopic,envelope,brokerId,{revisionId:revision?.id??null,original:message.original});
+    const ack=await this.accept(topic,envelope,brokerId,{revisionId:revision?.id??null,original:message.original});
     if(ack)acknowledged(ack);
    }catch(error){await this.reject(topic,`${message.key}: Unable to persist message; retry with the same messageId`,context);}
   }
@@ -152,22 +79,22 @@ export class PayloadIngestion {
   // Bound diagnostics to the last 100 rejections per registered gateway.
   await this.db.query(`DELETE FROM payload_rejections WHERE gateway_id=$1 AND id NOT IN (SELECT id FROM payload_rejections WHERE gateway_id=$1 ORDER BY received_at DESC,id DESC LIMIT 100)`,[context.gatewayId]);
  }
- async accept(topic: string, input: unknown, brokerId?: string | null, reception?: {revisionId:string|null;original:unknown}, skipDiscovery = false): Promise<TelemetryAck | null> {
+ async accept(topic: string, input: unknown, brokerId?: string | null, reception?: {revisionId:string|null;original:unknown}): Promise<TelemetryAck | null> {
   const segments=/^solar\/v1\/sites\/([A-Za-z0-9_-]{1,128})\/gateways\/([A-Za-z0-9_-]{1,128})\/devices\/([A-Za-z0-9_-]{1,128})\/telemetry$/.exec(topic);
   if (!segments) return null;
   const site=segments[1]!, gateway=segments[2]!, device=segments[3]!;
-  const found=await this.db.query<RegisteredBinding>(`SELECT d.id AS "deviceId",d.site_id AS "siteId",g.id AS "gatewayId",s.external_site_id AS "externalSiteId",g.external_gateway_id AS "externalGatewayId",d.external_device_id AS "externalDeviceId",p.id AS "revisionId",p.config,EXISTS(SELECT 1 FROM billing_meters b WHERE b.device_id=d.id AND b.site_id=d.site_id AND b.active) AS billing,
+  const found=await this.db.query<RegisteredBinding>(`SELECT d.id AS "deviceId",d.site_id AS "siteId",g.id AS "gatewayId",s.external_site_id AS "externalSiteId",g.external_gateway_id AS "externalGatewayId",d.external_device_id AS "externalDeviceId",p.id AS "revisionId",p.config,g.applied_config_version AS "appliedConfigVersion",g.active_config_hash AS "activeConfigHash",g.control_managed_at AS "controlManagedAt",EXISTS(SELECT 1 FROM billing_meters b WHERE b.device_id=d.id AND b.site_id=d.site_id AND b.active) AS billing,
    (SELECT jsonb_build_object('id',bs.id,'siteId',bs.site_id,'deviceId',bs.device_id,'profileRevisionId',bs.profile_revision_id,'sourceTag',bs.source_tag,'canonicalTag',bs.canonical_tag,'sourceUnit',bs.source_unit,'targetUnit',bs.target_unit,'conversion',bs.conversion) FROM billing_meters b JOIN billing_source_bindings bs ON bs.id=b.billing_source_binding_id AND bs.meter_id=b.id WHERE b.device_id=d.id AND b.site_id=d.site_id AND b.active AND bs.site_id=d.site_id AND bs.device_id=d.id LIMIT 1) AS "billingSource"
    FROM devices d JOIN gateways g ON g.id=d.gateway_id AND g.site_id=d.site_id JOIN sites s ON s.id=d.site_id JOIN payload_profile_revisions p ON p.id=d.payload_profile_revision_id
-   WHERE s.external_site_id=$1 AND g.external_gateway_id=$2 AND d.external_device_id=$3 AND s.status<>'archived' AND g.protocol='mqtt' AND ($4::boolean OR g.mqtt_broker_id IS NOT DISTINCT FROM $5::uuid)`,[site,gateway,device,brokerId===undefined,brokerId??null]);
+   WHERE s.external_site_id=$1 AND g.external_gateway_id=$2 AND d.external_device_id=$3 AND s.status<>'archived'
+    AND g.protocol='mqtt' AND g.retired_at IS NULL AND g.lifecycle_state='active' AND NOT g.mqtt_access_suspended
+    AND ((g.applied_config_version>0 AND g.active_config_hash IS NOT NULL) OR g.control_managed_at IS NULL)
+    AND d.status<>'disabled' AND d.payload_profile_revision_id IS NOT NULL
+    AND ($4::boolean OR g.mqtt_broker_id IS NOT DISTINCT FROM $5::uuid)`,[site,gateway,device,brokerId===undefined,brokerId??null]);
   const entity=found.rows.length===1?found.rows[0]:undefined;
   if (!entity) {
-   const context=await this.db.query<{siteId:string;gatewayId:string}>(`SELECT g.site_id AS "siteId",g.id AS "gatewayId" FROM gateways g JOIN sites s ON s.id=g.site_id WHERE s.external_site_id=$1 AND g.external_gateway_id=$2 AND s.status<>'archived'`,[site,gateway]);
-   if (!context.rows[0]) {
-     if (skipDiscovery) return null;
-     const discovered = await this.recordDiscoveredGateway(site, gateway, device, input);
-     return discovered.ackPayload;
-   }
+   const context=await this.db.query<{siteId:string;gatewayId:string}>(`SELECT g.site_id AS "siteId",g.id AS "gatewayId" FROM gateways g JOIN sites s ON s.id=g.site_id WHERE s.external_site_id=$1 AND g.external_gateway_id=$2 AND s.status<>'archived' AND g.retired_at IS NULL AND g.protocol='mqtt' AND ($3::boolean OR g.mqtt_broker_id IS NOT DISTINCT FROM $4::uuid)`,[site,gateway,brokerId===undefined,brokerId??null]);
+   if (!context.rows[0]) return null;
    await this.reject(topic,'No registered device/profile binding',context.rows[0]);return null;
   }
   // A committed retry is interpreted using its original immutable revision, even after upgrade.
@@ -181,10 +108,23 @@ export class PayloadIngestion {
    if(input&&typeof input==='object'&&'configurationVersion' in input){
     const version=input.configurationVersion;
     if(!Number.isSafeInteger(version)||Number(version)<1){await this.reject(topic,'Invalid configuration version',entity);return null;}
-    const configuration=(await this.db.query(`SELECT config FROM gateway_configuration_revisions WHERE gateway_id=$1 AND version=$2`,[entity.gatewayId,version])).rows[0];
-    const registered=configuration?.config?.devices?.find((d:{deviceId:string})=>d.deviceId===entity.externalDeviceId);
-    if(!registered?.profileRevisionId||revisionHint&&revisionHint!==registered.profileRevisionId){await this.reject(topic,'No registered device in configuration version',entity);return null;}
-    revisionHint=registered.profileRevisionId;
+    if(version!==entity.appliedConfigVersion){await this.reject(topic,'Telemetry configurationVersion is not the active configuration version',entity);return null;}
+    const bindings=(await this.db.query<{revisionId:string;config:PayloadProfile}>(`SELECT b.profile_revision_id AS "revisionId",p.config
+      FROM gateway_configuration_device_bindings b JOIN payload_profile_revisions p ON p.id=b.profile_revision_id
+      WHERE b.gateway_id=$1 AND b.config_version=$2 AND b.external_device_id=$3`,
+    [entity.gatewayId,version,entity.externalDeviceId])).rows;
+    let registered=bindings.length===1?bindings[0]:undefined;
+    let registeredRevisionId=registered?.revisionId;
+    if(!registered&&bindings.length===0&&entity.controlManagedAt===null){
+     const snapshots=(await this.db.query<{config:unknown}>('SELECT config FROM gateway_configuration_revisions WHERE gateway_id=$1 AND version=$2',[entity.gatewayId,version])).rows;
+     const config=snapshots.length===1&&snapshots[0]?.config&&typeof snapshots[0].config==='object'?snapshots[0].config as {devices?:unknown}:undefined;
+     const devices=Array.isArray(config?.devices)?config.devices.filter((candidate):candidate is {deviceId:string;profileRevisionId:string}=>Boolean(candidate&&typeof candidate==='object'
+      &&(candidate as {deviceId?:unknown}).deviceId===entity.externalDeviceId&&typeof (candidate as {profileRevisionId?:unknown}).profileRevisionId==='string'
+      &&(candidate as {profileRevisionId:string}).profileRevisionId.length>0)):[];
+     if(devices.length===1)registeredRevisionId=devices[0]!.profileRevisionId;
+    }
+    if(!registeredRevisionId||revisionHint&&revisionHint!==registeredRevisionId){await this.reject(topic,'No unambiguous registered device in configuration version',entity);return null;}
+    revisionHint=registeredRevisionId;
    }
    const candidates=assigned.filter(p=>{const source=p.config.sourceProfile??p.config;return (!revisionHint||revisionHint===p.revisionId)&&(!hint?.profileId||hint.profileId===source.id)&&(!hint?.profileVersion||hint.profileVersion===source.version);});
    if(candidates.length>1){
@@ -202,9 +142,24 @@ export class PayloadIngestion {
   const client=await this.db.pool.connect();let acceptedAt: Date|string=receivedAt, conflict=false;
   try {
    await client.query('BEGIN');
+   // Match archive/configuration's site -> gateway -> device order before any
+   // payload FK insert. Revalidate authoritative scope after normalization.
+   const siteRow=(await client.query(`SELECT id FROM sites WHERE id=$1 AND external_site_id=$2
+    AND status IN ('online','offline','active') FOR KEY SHARE`,[entity.siteId,entity.externalSiteId])).rows[0];
+   if(!siteRow)throw Error('Gateway site changed; retry message');
+   const gatewayRow=(await client.query(`SELECT id FROM gateways
+    WHERE id=$1 AND site_id=$2 AND external_gateway_id=$3 AND retired_at IS NULL AND protocol='mqtt'
+      AND lifecycle_state='active' AND status IN ('online','offline','active') AND NOT mqtt_access_suspended
+      AND ((applied_config_version=$6 AND active_config_hash=$7 AND active_config_hash IS NOT NULL) OR
+        (active_config_hash IS NULL AND control_managed_at IS NULL))
+      AND ($4::boolean OR mqtt_broker_id IS NOT DISTINCT FROM $5::uuid) FOR UPDATE`,
+   [entity.gatewayId,entity.siteId,entity.externalGatewayId,brokerId===undefined,brokerId??null,entity.appliedConfigVersion,entity.activeConfigHash])).rows[0];
+   if(!gatewayRow)throw Error('Gateway admission changed; retry message');
    // Binding/profile activation locks the same device. Recheck after acquiring the
    // lock so a concurrent edit cannot stamp stale provenance on a new message.
-   const pinned=(await client.query('SELECT payload_profile_revision_id AS "revisionId" FROM devices WHERE id=$1 FOR SHARE',[entity.deviceId])).rows[0];
+   const pinned=(await client.query(`SELECT payload_profile_revision_id AS "revisionId" FROM devices WHERE id=$1
+    AND gateway_id=$2 AND site_id=$3 AND external_device_id=$4 AND status<>'disabled' AND payload_profile_revision_id IS NOT NULL FOR SHARE`,
+   [entity.deviceId,entity.gatewayId,entity.siteId,entity.externalDeviceId])).rows[0];
    const active=(await client.query('SELECT billing_source_binding_id AS id FROM billing_meters WHERE site_id=$1 AND device_id=$2 AND active=true',[entity.siteId,entity.deviceId])).rows;
    if(pinned?.revisionId!==activeRevisionId||active.length>1||(active[0]?.id??null)!==(entity.billingSource?.id??null))throw Error('Profile or billing source changed; retry message');
    const inserted=await client.query(`INSERT INTO payload_messages (id,gateway_id,device_id,message_id,digest,accepted_at,profile_revision_id,lot_number,sequence,polled_at,sent_at,raw_payload,unmapped,receive_revision_id,source_payload)
@@ -228,8 +183,9 @@ export class PayloadIngestion {
     // Existing energy_raw_dirty trigger participates in this transaction.
     await client.query(`INSERT INTO telemetry_raw (id,device_id,site_id,source_time,received_time,raw_payload,normalized_value,unit,quality,ingestion_id,semantic_field,total_energy_kwh,payload_profile_revision_id,voltage_v,current_a,active_power_w,apparent_power_va,reactive_power_var,frequency_hz,power_factor,billing_source_binding_id)
      VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,'kWh',$8,$9,'total_energy',$7,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,[randomUUID(),entity.deviceId,entity.siteId,n.polledAt,receivedAt,JSON.stringify(n.raw),energy,quality,`payload:${messageId}`,entity.revisionId,find('electrical.voltage.l1_n'),find('electrical.current.l1'),n.samples.find(s=>s.role==='active-power'&&s.unit==='W')?.value??null,find('power.apparent.total'),find('power.reactive.total'),find('electrical.frequency'),find('power.factor.total'),bound&&field&&n.pollGroup===field.pollGroup?source!.id:null]);
-    await client.query(`UPDATE gateways SET last_seen_at=GREATEST(last_seen_at,$2::timestamptz),status=CASE WHEN $2::timestamptz>=now()-interval '120 seconds' THEN 'online' ELSE status END WHERE id=$1`,[entity.gatewayId,n.polledAt]);
    }
+   if(!conflict)await client.query(`UPDATE gateways SET last_seen_at=GREATEST(last_seen_at,$2::timestamptz),
+    status=CASE WHEN $2::timestamptz>=now()-interval '120 seconds' THEN 'online' ELSE status END WHERE id=$1`,[entity.gatewayId,n.polledAt]);
    await client.query('COMMIT');
   }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
   if(conflict){await this.reject(topic,'Conflicting reuse of messageId',entity);return null;}

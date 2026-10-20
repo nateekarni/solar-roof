@@ -1,45 +1,38 @@
-# Standalone EMQX Broker resource with Dynamic HTTP Auth, ACL, and TLS Certificates.
-# Gateways connect securely via mqtts://mqtt-solar.fowir.com:8883
+# Standalone EMQX 5.8.3 broker. Only MQTTS is published on the host.
+# TCP 1883 and the HTTPS dashboard remain reachable only on the Compose/private network.
 services:
   mqtt:
-    image: ${EMQX_IMAGE:-emqx/emqx:5.8.3}
+    image: emqx/emqx:5.8.3
     restart: unless-stopped
     ports:
       - '8883:8883'
-      - '1883:1883'
-      - '18083:18083'
+    expose:
+      - '1883'
+      - '18083'
     environment:
       - EMQX_NODE__NAME=emqx@127.0.0.1
-      - EMQX_NODE__COOKIE=solar_emqx_secret_cookie
-      - EMQX_DASHBOARD__DEFAULT_USERNAME=${EMQX_DASHBOARD_USER:-admin}
-      - EMQX_DASHBOARD__DEFAULT_PASSWORD=${EMQX_DASHBOARD_PASSWORD:-admin123456}
-      # Dashboard HTTPS Configuration
+      - 'EMQX_NODE__COOKIE="${EMQX_NODE_COOKIE:?required}"'
+      - 'EMQX_DASHBOARD__DEFAULT_USERNAME="${EMQX_DASHBOARD_USER:?required}"'
+      - 'EMQX_DASHBOARD__DEFAULT_PASSWORD="${EMQX_DASHBOARD_PASSWORD:?required}"'
       - EMQX_DASHBOARD__LISTENERS__HTTPS__ENABLE=true
       - EMQX_DASHBOARD__LISTENERS__HTTPS__BIND=0.0.0.0:18083
-      - EMQX_DASHBOARD__LISTENERS__HTTPS__SSL_OPTIONS__CERTFILE=/opt/emqx/certs/fullchain.pem
-      - EMQX_DASHBOARD__LISTENERS__HTTPS__SSL_OPTIONS__KEYFILE=/opt/emqx/certs/privkey.pem
-      - EMQX_DASHBOARD__LISTENERS__HTTPS__SSL_OPTIONS__CACERTFILE=/opt/emqx/certs/fullchain.pem
+      - EMQX_DASHBOARD__LISTENERS__HTTPS__SSL_OPTIONS__CERTFILE=/opt/emqx/certs/server/fullchain.pem
+      - EMQX_DASHBOARD__LISTENERS__HTTPS__SSL_OPTIONS__KEYFILE=/opt/emqx/certs/server/privkey.pem
+      - EMQX_DASHBOARD__LISTENERS__HTTPS__SSL_OPTIONS__CACERTFILE=/opt/emqx/certs/server/fullchain.pem
       - EMQX_DASHBOARD__LISTENERS__HTTP__BIND=0
-      # Listeners
-      - EMQX_LISTENERS__TCP__DEFAULT__BIND=0.0.0.0:1883
-      - EMQX_LISTENERS__TCP__DEFAULT__MAX_CONNECTIONS=102400
-      - EMQX_LISTENERS__SSL__DEFAULT__BIND=0.0.0.0:8883
-      - EMQX_LISTENERS__SSL__DEFAULT__MAX_CONNECTIONS=102400
-      - EMQX_LISTENERS__SSL__DEFAULT__SSL_OPTIONS__CACERTFILE=/opt/emqx/certs/fullchain.pem
-      - EMQX_LISTENERS__SSL__DEFAULT__SSL_OPTIONS__CERTFILE=/opt/emqx/certs/fullchain.pem
-      - EMQX_LISTENERS__SSL__DEFAULT__SSL_OPTIONS__KEYFILE=/opt/emqx/certs/privkey.pem
-      - EMQX_LISTENERS__SSL__DEFAULT__SSL_OPTIONS__VERIFY=verify_none
-      - EMQX_LISTENERS__SSL__DEFAULT__SSL_OPTIONS__FAIL_IF_NO_PEER_CERT=false
-      # Dynamic HTTP Authentication
-      - >-
-        EMQX_AUTHENTICATION=[{"mechanism":"password_based","backend":"http","enable":true,"method":"post","url":"https://solar.fowir.com/v1/internal/mqtt/auth","headers":{"content-type":"application/json"},"body":{"username":"$${username}","password":"$${password}","clientid":"$${clientid}","peerhost":"$${peerhost}"},"pool_size":8,"connect_timeout":"5s","request_timeout":"5s","ssl":{"enable":true,"verify":"verify_none"}}]
-      # Dynamic HTTP Authorization (ACL)
       - EMQX_AUTHORIZATION__NO_MATCH=deny
       - EMQX_AUTHORIZATION__DENY_ACTION=ignore
+      # EMQX 5.8.3 HOCON path: do not retain a positive ACL decision after
+      # credential rotation suspends the gateway in the authoritative API.
+      - EMQX_AUTHORIZATION__CACHE__ENABLE=false
       - >-
-        EMQX_AUTHORIZATION__SOURCES=[{"type":"http","enable":true,"method":"post","url":"https://solar.fowir.com/v1/internal/mqtt/acl","headers":{"content-type":"application/json"},"body":{"username":"$${username}","clientid":"$${clientid}","topic":"$${topic}","action":"$${action}"},"pool_size":8,"connect_timeout":"5s","request_timeout":"5s","ssl":{"enable":true,"verify":"verify_none"}}]
+        EMQX_AUTHENTICATION=[{"mechanism":"password_based","backend":"http","enable":true,"method":"post","url":"https://solar.fowir.com/v1/internal/mqtt/auth","headers":{"content-type":"application/json","x-internal-secret":"${INTERNAL_MQTT_SECRET:?required}"},"body":{"username":"$${username}","password":"$${password}","clientid":"$${clientid}","peerhost":"$${peerhost}"},"pool_size":8,"connect_timeout":"5s","request_timeout":"5s","ssl":{"enable":true,"verify":"verify_peer","cacertfile":"/opt/emqx/certs/webhook-ca.pem","server_name_indication":"solar.fowir.com"}}]
+      - >-
+        EMQX_AUTHORIZATION__SOURCES=[{"type":"http","enable":true,"method":"post","url":"https://solar.fowir.com/v1/internal/mqtt/acl","headers":{"content-type":"application/json","x-internal-secret":"${INTERNAL_MQTT_SECRET:?required}"},"body":{"username":"$${username}","clientid":"$${clientid}","topic":"$${topic}","action":"$${action}"},"pool_size":8,"connect_timeout":"5s","request_timeout":"5s","ssl":{"enable":true,"verify":"verify_peer","cacertfile":"/opt/emqx/certs/webhook-ca.pem","server_name_indication":"solar.fowir.com"}}]
     volumes:
-      - ${MQTT_CERTS_DIR:-/data/mqtt-certs}:/opt/emqx/certs:ro
+      - ./emqx/emqx.conf:/opt/emqx/etc/emqx.conf:ro
+      - ${MQTT_CERTS_DIR:?server certificate directory required}:/opt/emqx/certs/server:ro
+      - ${MQTT_WEBHOOK_CA_FILE:?required}:/opt/emqx/certs/webhook-ca.pem:ro
       - emqx-data:/opt/emqx/data
     healthcheck:
       test: ['CMD', '/opt/emqx/bin/emqx', 'ping']
@@ -47,5 +40,6 @@ services:
       timeout: 5s
       retries: 12
       start_period: 20s
+
 volumes:
   emqx-data:

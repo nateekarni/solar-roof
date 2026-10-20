@@ -10,6 +10,7 @@ import {GatewayInstallationHistory} from './gateway-installation-history';
 import {newDeviceDraft} from './site-form-values';
 import {LocaleProvider} from '../../providers/locale-provider';
 import {SessionUserProvider} from '../../providers/session-user-provider';
+import {GatewayCredentialRecoveryConfirmation,createGatewayCredentialRecoveryGuard} from './gateway-credential-recovery';
 
 const authorization = {
   revision: 1,
@@ -26,6 +27,7 @@ const user = {
   role: 'operator' as const,
   authorization,
 };
+const adminUser={...user,role:'admin' as const};
 
 const sampleGateway = {
   id: 'gw-1',
@@ -70,6 +72,27 @@ test('GatewayDetailModal renders details and metrics when open without measureme
   assert.ok(html.includes('ตั้งค่าเกตเวย์'));
   assert.ok(!html.includes('คู่ตรวจเทียบการวัด'));
   assert.ok(!html.includes('gap-2 w-full'));
+});
+
+test('registered gateway detail gives admins an explicit one-time credential recovery path',()=>{
+  const html=renderToStaticMarkup(<SessionUserProvider user={adminUser}><LocaleProvider initialLocale="en"><GatewayDetailModal inline gateway={sampleGateway} open onOpenChange={()=>{}} locale="en"/></LocaleProvider></SessionUserProvider>);
+  assert.match(html,/Issue replacement credential/i);
+  const confirmation=renderToStaticMarkup(<GatewayCredentialRecoveryConfirmation locale="en"/>);
+  assert.match(confirmation,/previous credential will stop working/i);
+});
+
+test('credential recovery scopes displayed and pending secrets to the current gateway',()=>{
+  const guard=createGatewayCredentialRecoveryGuard('gateway-a');
+  const displayedA=guard.begin();
+  assert.equal(guard.isCurrent(displayedA),true);
+  guard.scope('gateway-b');
+  assert.equal(displayedA.signal.aborted,true,'gateway change aborts an A request still pending');
+  assert.equal(guard.isCurrent(displayedA),false,'an A result already displayed is no longer valid in B scope');
+  const pendingB=guard.begin();
+  assert.equal(guard.isCurrent(pendingB),true);
+  guard.scope('gateway-c');
+  assert.equal(pendingB.signal.aborted,true);
+  assert.equal(guard.isCurrent(pendingB),false);
 });
 
 test('GatewayFormDialog renders full-width tabs, frameless billing meter, and omits subscribe box', () => {

@@ -11,6 +11,9 @@ import {Radio,Wifi,Cpu,Sliders,Settings,Activity,Layers,Clock} from 'lucide-reac
 import type {GatewayRow} from './gateway-index';
 import type {PayloadConfig} from './payload-contracts';
 import type {MetricSources} from './dashboard-source-model';
+import {useSessionUser} from '../../providers/session-user-provider';
+import {canManageGatewayOnboarding} from './gateway-permissions';
+import {GatewayCredentialRecovery} from './gateway-credential-recovery';
 
 type GatewayConfig = PayloadConfig & {
   metricSources?: MetricSources;
@@ -63,6 +66,7 @@ export function GatewayDetailModal({
   inline?: boolean | undefined;
 }) {
   const th = locale === 'th';
+  const canRecoverCredential=canManageGatewayOnboarding(useSessionUser());
   const [config, setConfig] = React.useState<GatewayConfig | null>(null);
   const [pairs, setPairs] = React.useState<Pair[]>([]);
   const [loading, setLoading] = React.useState(false);
@@ -284,6 +288,7 @@ export function GatewayDetailModal({
               <span>{th ? 'ตั้งค่าเกตเวย์' : 'Configure Gateway'}</span>
             </Button>
           )}
+          {canRecoverCredential&&<GatewayCredentialRecovery gatewayId={gateway.id} locale={locale}/>}
         </footer>
       </section>
     );
@@ -330,6 +335,7 @@ export function GatewayDetailModal({
               <span>{th ? 'ตั้งค่าเกตเวย์' : 'Configure Gateway'}</span>
             </Button>
           )}
+          {canRecoverCredential&&<GatewayCredentialRecovery gatewayId={gateway.id} locale={locale}/>}
         </DialogFooter>
       </DialogContent>
     </Dialog>

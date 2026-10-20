@@ -33,8 +33,15 @@ export class BillingSourceBindingService {
   if(!actorId)throw new ForbiddenException('Authenticated actor required');
   const parsed=sourceSchema.safeParse(input);if(!parsed.success)throw new BadRequestException('Complete billing source identity required');
   return this.db.transaction(async client=>{
-   const site=(await client.query('SELECT id FROM sites WHERE id=$1 FOR UPDATE',[siteId])).rows[0];if(!site)throw new NotFoundException('Site not found');
-   const meters=(await client.query(`SELECT b.*,d.payload_profile_revision_id,p.config FROM billing_meters b JOIN devices d ON d.id=b.device_id AND d.site_id=b.site_id JOIN payload_profile_revisions p ON p.id=d.payload_profile_revision_id WHERE b.site_id=$1 AND b.active=true FOR UPDATE OF b,d`,[siteId])).rows;
+   // Binding only references the site. KEY SHARE protects existence/deletion but
+   // is compatible with the site FK check when concurrent apply adds a device.
+   // The archive/ownership mutation routes take FOR UPDATE and still serialize.
+   const site=(await client.query("SELECT id FROM sites WHERE id=$1 AND status<>'archived' FOR KEY SHARE",[siteId])).rows[0];if(!site)throw new NotFoundException('Site not found');
+   // Device-first order matches configuration application. Never trust a joined
+   // profile/binding read from the same statement that may wait for these locks.
+   await client.query('SELECT id FROM devices WHERE id=$1 AND site_id=$2 FOR UPDATE',[parsed.data.deviceId,siteId]);
+   await client.query('SELECT id FROM billing_meters WHERE site_id=$1 AND active=true ORDER BY id FOR UPDATE',[siteId]);
+   const meters=(await client.query(`SELECT b.*,d.payload_profile_revision_id,p.config FROM billing_meters b JOIN devices d ON d.id=b.device_id AND d.site_id=b.site_id JOIN payload_profile_revisions p ON p.id=d.payload_profile_revision_id WHERE b.site_id=$1 AND b.active=true`,[siteId])).rows;
    if(meters.length!==1||meters[0].device_id!==parsed.data.deviceId)throw new ConflictException('Only the registered main billing meter may be bound');
    const meter=meters[0];if(meter.payload_profile_revision_id!==parsed.data.profileRevisionId)throw new ConflictException('Device profile changed; reload configuration');
    const source=validateBillingSource(input,meter.config);

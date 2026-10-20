@@ -5,8 +5,8 @@ import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 
-for(const migration of ['infra/migrations/058_user_document_identity.sql','infra/migrations/059_billing_issuance_approval.sql','infra/migrations/060_payload_samples_generation_energy_idx.sql','infra/migrations/069_customer_invoice_notification_links.sql','infra/migrations/070_payment_method_transfer_channel_cash.sql'])
-for(const scenario of ['fresh','duplicate','already-applied'] as const)test(`supported migration runner handles ${migration}: ${scenario}`, async () => {
+for(const migration of ['infra/migrations/058_user_document_identity.sql','infra/migrations/059_billing_issuance_approval.sql','infra/migrations/060_payload_samples_generation_energy_idx.sql','infra/migrations/066_gateway_onboarding_control_plane.sql','infra/migrations/067_gateway_configuration_publication_fence.sql','infra/migrations/068_gateway_control_rollout_and_bindings.sql','infra/migrations/069_customer_invoice_notification_links.sql','infra/migrations/070_payment_method_transfer_channel_cash.sql'])
+for(const scenario of ['fresh','duplicate','already-applied','matching-applied'] as const)test(`supported migration runner handles ${migration}: ${scenario}`, async () => {
   const root = new URL('../../../../', import.meta.url);
   const entry = new URL('./db-migrate.ts', import.meta.url);
   const sql = await readFile(new URL(migration, root), 'utf8');
@@ -22,7 +22,7 @@ for(const scenario of ['fresh','duplicate','already-applied'] as const)test(`sup
       const client = {
         async query(sql, params) {
           if (sql.startsWith('SELECT checksum')) {
-            if (params[0] === ${JSON.stringify(migration)}) return {rows: ${scenario==='already-applied'?'[{checksum:"unreleased-previous-checksum"}]':'[]'}};
+            if (params[0] === ${JSON.stringify(migration)} && ${JSON.stringify(scenario)} !== 'matching-applied') return {rows: ${scenario==='already-applied'?'[{checksum:"unreleased-previous-checksum"}]':'[]'}};
             const content = await readFile(new URL(params[0], root), 'utf8');
             return {rows: [{checksum: createHash('sha256').update(content.replaceAll('\\r\\n', '\\n')).digest('hex')}]};
           }
@@ -57,10 +57,14 @@ for(const scenario of ['fresh','duplicate','already-applied'] as const)test(`sup
     env: {...process.env, DATABASE_URL: 'postgresql://unused@127.0.0.1:1/test_migration_runner', TSX_TSCONFIG_PATH: fileURLToPath(new URL('../../tsconfig.json', import.meta.url))},
     encoding: 'utf8', timeout: 20000,
   });
-  assert.equal(result.status, scenario==='fresh'?0:1, result.stderr);
+  assert.equal(result.status, scenario==='fresh'||scenario==='matching-applied'?0:1, result.stderr);
   const eventLine = result.stdout.split(/\r?\n/).find(line => line.startsWith('MIGRATION_EVENTS:'));
   assert.ok(eventLine, result.stdout);
   const events=JSON.parse(eventLine.slice('MIGRATION_EVENTS:'.length));
+  if(scenario==='matching-applied'){
+    assert.ok(result.stdout.includes(`Already applied ${migration}`), result.stdout);
+    assert.deepEqual(events,[]);return;
+  }
   if(scenario==='duplicate'){
     assert.match(result.stderr,/Migration SQL rejected/);
     assert.deepEqual(events,[{sql:'BEGIN'},{sql},{sql:'ROLLBACK'}]);return;
@@ -74,4 +78,21 @@ for(const scenario of ['fresh','duplicate','already-applied'] as const)test(`sup
     {sql: 'INSERT INTO schema_migrations(name,checksum) VALUES($1,$2)', params: [migration, createHash('sha256').update(sql.replaceAll('\r\n', '\n')).digest('hex')]},
     {sql: 'COMMIT'},
   ]);
+});
+
+test('gateway control rollout backfills only explicit legacy or decoder-matched applied bindings',async()=>{
+  const sql=await readFile(new URL('infra/migrations/068_gateway_control_rollout_and_bindings.sql',new URL('../../../../',import.meta.url)),'utf8');
+  assert.match(sql,/profileRevisionId/);
+  assert.match(sql,/gateway_configuration_device_bindings[\s\S]*INSERT INTO gateway_configuration_device_bindings/);
+  assert.match(sql,/applied_config_version/);
+  assert.match(sql,/sourceProfile[\s\S]*profileId/);
+  assert.match(sql,/deviceType[\s\S]*pollGroups/);
+  assert.match(sql,/jsonb_array_elements_text[\s\S]*count\(DISTINCT[\s\S]*ORDER BY/);
+  assert.match(sql,/NOT EXISTS[\s\S]*mappings[\s\S]*fields/);
+  assert.match(sql,/register_mapping_versions[\s\S]*effective_to IS NULL/);
+  assert.match(sql,/register_address[\s\S]*register_count[\s\S]*data_type[\s\S]*byte_order[\s\S]*word_order[\s\S]*quality_rule/);
+  assert.match(sql,/to_jsonb\(rm\.scale\)[\s\S]*rm\.unit[\s\S]*pollGroup[\s\S]*offset[\s\S]*rm\.signed/);
+  assert.match(sql,/SELECT count\(\*\)[\s\S]*<>1/);
+  assert.doesNotMatch(sql,/pf\.field->>'(?:registerAddress|registerCount|dataType|byteOrder|wordOrder|scale|offset)'/);
+  assert.match(sql,/control_managed_at[\s\S]*profileRevisionId/);
 });

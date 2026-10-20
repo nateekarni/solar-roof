@@ -11,7 +11,8 @@ function fixture(endpoint='energy/Legacy/#',collisions=0) {
   if(sql.includes('INSERT INTO sites')) return {rows:[{id:values[0],externalSiteId:values[7]}]};
   if(sql.includes('INSERT INTO customers'))return {rows:[{id:values[0]}]};
   if(sql.includes('FROM payload_profile_revisions'))return {rows:[{id:'revision',config:DEFAULT_PAYLOAD_PROFILES[0]}]};
-  if(sql.includes('FROM gateways')&&sql.includes('FOR UPDATE'))return {rows:[{id:'gateway',externalSiteId:'SITE-existing',externalGatewayId:'GW-existing',endpoint}]};
+  if(sql.startsWith('SELECT id FROM sites WHERE id='))return {rows:[{id:'site'}]};
+  if(sql.includes('FROM gateways g JOIN sites')||sql.includes('FROM gateways WHERE id='))return {rows:[{id:'gateway',site_id:'site',externalSiteId:'SITE-existing',externalGatewayId:'GW-existing',endpoint}]};
   return {rows:[]};
  };
  return {controller:new AssetsController({query,pool:{connect:async()=>({query,release(){}})}} as any,{refreshSubscriptions:async()=>{},publishHardwareConfig:async()=>false} as any),writes};

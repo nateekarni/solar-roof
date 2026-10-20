@@ -1,0 +1,43 @@
+{
+  "schemaVersion": "1.1",
+  "messageType": "configUpdate",
+  "messageId": "GW-TEST-001-config-update-0001",
+  "gatewayId": "GW-TEST-001",
+  "siteId": "SITE-TEST-001",
+  "proposalId": "GW-TEST-001-proposal-0001",
+  "baseConfigVersion": 1,
+  "sentAt": "2026-10-19T10:20:00+07:00",
+  "devices": [
+    {
+      "deviceId": "METER-TEST-001",
+      "deviceType": "energy-meter",
+      "manufacturer": "Test fixture only",
+      "model": "UNVERIFIED-METER",
+      "firmwareVersion": "test-1.0.1",
+      "serialNumber": "TEST-SERIAL-001",
+      "protocol": "modbus-tcp",
+      "connection": {
+        "host": "192.0.2.10",
+        "port": 502,
+        "slaveId": 1
+      },
+      "mappingSource": "manual",
+      "enabled": true,
+      "pollGroups": [
+        "energy"
+      ],
+      "mappings": [
+        {
+          "tag": "energy.active.import.total",
+          "required": true,
+          "displayName": "Synthetic active import energy",
+          "pollGroup": "energy",
+          "sourceUnit": "Wh",
+          "targetUnit": "kWh",
+          "conversion": "wh-to-kwh",
+          "role": "billing-import"
+        }
+      ]
+    }
+  ]
+}

@@ -13,7 +13,14 @@ import { apiClient } from '../../lib/api-client';
 import { useLocale } from '../../providers/locale-provider';
 import { useSessionUser } from '../../providers/session-user-provider';
 import { gatewayPermissions } from './gateway-permissions';
+import {canManageGatewayOnboarding} from './gateway-permissions';
+import {GatewayCredentialRecovery} from './gateway-credential-recovery';
 import { GatewayEditDialog } from './gateway-edit-dialog';
+import {GatewayConfigProposals} from './gateway-config-proposals';
+import {GatewayOperationalStatus} from './gateway-operational-status';
+import {GatewayInitialConfigCorrection} from './gateway-initial-config-correction';
+import type {CorrectInitialGatewayConfigRequest,GatewaySyncState} from '@solar/api-contracts';
+export {GatewayOperationalStatus} from './gateway-operational-status';
 import { getTelemetryTagLabel } from './telemetry-tag-labels';
 import type { GatewayRow } from './gateway-index';
 import type { PayloadConfig } from './payload-contracts';
@@ -104,11 +111,13 @@ export function GatewayDetailPageView({ gatewayId }: { gatewayId: string }) {
   const th = locale === 'th';
   const user = useSessionUser();
   const permissions = gatewayPermissions(user);
+  const canRecoverCredential=canManageGatewayOnboarding(user);
 
   const [gateway, setGateway] = React.useState<GatewayRow | null>(null);
   const [config, setConfig] = React.useState<GatewayConfig | null>(null);
   const [samples, setSamples] = React.useState<DeviceTelemetrySample[]>([]);
   const [pairs, setPairs] = React.useState<Pair[]>([]);
+  const [syncState,setSyncState]=React.useState<GatewaySyncState|null>(null);
   const [loading, setLoading] = React.useState(true);
   const [refreshing, setRefreshing] = React.useState(false);
   const [error, setError] = React.useState('');
@@ -121,23 +130,30 @@ export function GatewayDetailPageView({ gatewayId }: { gatewayId: string }) {
     setError('');
 
     try {
-      const [telemetryRes, configRes, pairsRes] = await Promise.all([
+      const [telemetryRes, configRes, pairsRes,syncRes] = await Promise.all([
         apiClient.get<{ gateway: GatewayRow; samples: DeviceTelemetrySample[] }>(`/v1/gateways/${gatewayId}/telemetry`),
         apiClient.get<GatewayConfig>(`/v1/gateways/${gatewayId}/configuration`).catch(() => null),
         apiClient.get<Pair[]>(`/v1/gateways/${gatewayId}/comparisons`).catch(() => []),
+        canRecoverCredential?apiClient.get<GatewaySyncState>(`/v1/gateways/${gatewayId}/sync-state`).catch(()=>null):Promise.resolve(null),
       ]);
 
       setGateway(telemetryRes.gateway);
       setSamples(telemetryRes.samples || []);
       if (configRes) setConfig(configRes);
       if (pairsRes) setPairs(pairsRes);
+      setSyncState(syncRes);
     } catch (err) {
       setError((err as Error).message || 'Unable to load gateway details');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [gatewayId]);
+  }, [gatewayId,canRecoverCredential]);
+
+  const correctInitial=React.useCallback(async(request:CorrectInitialGatewayConfigRequest)=>{
+    await apiClient.post(`/v1/gateways/${encodeURIComponent(gatewayId)}/configuration/correct`,request);
+    await loadData(true);
+  },[gatewayId,loadData]);
 
   React.useEffect(() => {
     void loadData();
@@ -151,22 +167,6 @@ export function GatewayDetailPageView({ gatewayId }: { gatewayId: string }) {
     insufficient: ['ข้อมูลไม่เพียงพอ', 'Insufficient data'],
     gap: ['ข้อมูลขาดช่วง', 'Data gap'],
     pending: ['รอข้อมูล', 'Pending'],
-  };
-
-  const statusBadge = (status: string) => {
-    const isOnline = status === 'online';
-    return (
-      <span
-        className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${
-          isOnline
-            ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20'
-            : 'bg-red-500/10 text-red-700 dark:text-red-400 border border-red-500/20'
-        }`}
-      >
-        <span className={`size-1.5 rounded-full ${isOnline ? 'bg-emerald-500' : 'bg-red-500'}`} />
-        {isOnline ? (th ? 'ออนไลน์' : 'Online') : (th ? 'ออฟไลน์' : 'Offline')}
-      </span>
-    );
   };
 
   const qualityBadge = (quality: string) => {
@@ -287,6 +287,7 @@ export function GatewayDetailPageView({ gatewayId }: { gatewayId: string }) {
               <RefreshCw className={`size-3.5 ${refreshing ? 'animate-spin' : ''}`} />
               <span>{th ? 'รีเฟรชข้อมูล' : 'Refresh'}</span>
             </Button>
+            {canRecoverCredential&&<GatewayCredentialRecovery gatewayId={gateway.id} locale={locale}/>}
             {permissions.gatewayEdit && (
               <Button
                 size="sm"
@@ -305,7 +306,7 @@ export function GatewayDetailPageView({ gatewayId }: { gatewayId: string }) {
           <CardHeader className="px-6 py-3.5 [.border-b]:pb-3.5 border-b border-border/60">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2.5">
-                {statusBadge(gateway.status)}
+                <GatewayOperationalStatus gateway={gateway} locale={locale}/>
                 <span className="text-xs text-muted-foreground flex items-center gap-1 font-medium">
                   <Clock className="size-3.5" />
                   {gateway.lastReceivedAt ? (
@@ -394,6 +395,11 @@ export function GatewayDetailPageView({ gatewayId }: { gatewayId: string }) {
             </dl>
           </CardContent>
         </Card>
+
+        {canRecoverCredential&&<Card>
+          <CardHeader><CardTitle>{th?'ข้อเสนอการตั้งค่าจากเกตเวย์':'Gateway configuration proposals'}</CardTitle><CardDescription>{th?'ตรวจสอบการเปลี่ยนแปลงทั้งหมดก่อนอนุมัติเป็นคอนฟิกเวอร์ชันถัดไป':'Review every proposed device and register change before creating the next desired revision.'}</CardDescription></CardHeader>
+          <CardContent className="space-y-4">{syncState&&<GatewayInitialConfigCorrection gatewayId={gateway.id} syncState={syncState} locale={locale} onCorrect={correctInitial}/>}<GatewayConfigProposals gatewayId={gateway.id} canManage={canRecoverCredential}/></CardContent>
+        </Card>}
 
         {/* Connected Devices & Live Telemetry Cards */}
         {config?.devices && config.devices.length > 0 ? (

@@ -83,7 +83,7 @@ function DateRangeFilter({
           type="button"
           variant="outline"
           aria-label={t("customerPortal.billing.period")}
-          className="h-11! w-full min-w-0 justify-between gap-2 bg-background px-3 md:w-auto md:min-w-48"
+          className="h-11! w-full min-w-0 max-w-full justify-between gap-2 bg-background px-3 md:w-48"
         >
           <CalendarDays className="size-4 shrink-0" />
           <span className="min-w-0 truncate">{label}</span>
@@ -162,7 +162,7 @@ function StatusFilter({
           variant="outline"
           aria-label={t("customerPortal.billing.statusFilter")}
           aria-haspopup="listbox"
-          className="h-11! w-full min-w-0 justify-between gap-2 bg-background px-3 md:w-auto md:min-w-48"
+          className="h-11! w-full min-w-0 max-w-full justify-between gap-2 bg-background px-3 md:w-48"
         >
           <span className="truncate">
             {label}

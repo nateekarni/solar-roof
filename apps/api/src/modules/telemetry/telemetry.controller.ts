@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { decodeRegisterBatch, type RegisterFieldMapping } from '@solar/domain';
 import { DatabaseService } from '../../database/database.service.js';
 import { MqttIngestionService } from './mqtt-ingestion.service.js';
-import { snapshotGatewayConfiguration } from '../assets/gateway-lifecycle.js';
+import { snapshotGatewayConfiguration, guardLegacyGatewayConfiguration } from '../assets/gateway-lifecycle.js';
 
 @Controller('v1')
 export class TelemetryController {
@@ -37,7 +37,10 @@ export class TelemetryController {
     const client = await this.db.pool.connect();
     try {
       await client.query('BEGIN');
-      const device = await client.query('SELECT id,gateway_id FROM devices WHERE id = $1 FOR UPDATE', [deviceId]);
+      const candidate=(await client.query('SELECT id,gateway_id,site_id FROM devices WHERE id=$1',[deviceId])).rows[0];
+      if(!candidate)throw new NotFoundException('Device not found');
+      await guardLegacyGatewayConfiguration(client,candidate.gateway_id,candidate.site_id);
+      const device = await client.query('SELECT id,gateway_id FROM devices WHERE id=$1 AND gateway_id=$2 AND site_id=$3 FOR UPDATE', [deviceId,candidate.gateway_id,candidate.site_id]);
       if (!device.rows.length) throw new NotFoundException('Device not found');
       if (body.id) {
         const previous = await client.query('SELECT id FROM register_mapping_versions WHERE id = $1 AND device_id = $2 AND effective_to IS NULL', [body.id, deviceId]);
@@ -54,9 +57,20 @@ export class TelemetryController {
   }
   @Delete('devices/:id/register-mappings/:mappingId')
   async deleteDeviceRegisterMapping(@Param('id') deviceId: string, @Param('mappingId') mappingId: string) {
-    const result = await this.db.query('UPDATE register_mapping_versions SET effective_to = now() WHERE id = $1 AND device_id = $2 AND effective_to IS NULL RETURNING id', [mappingId,deviceId]);
-    if (!result.rows.length) throw new NotFoundException('Active mapping not found');
-    return { success: true, message: 'Mapping retired; historical version preserved' };
+    const client=await this.db.pool.connect();
+    try{
+      await client.query('BEGIN');
+      const candidate=(await client.query('SELECT id,gateway_id,site_id FROM devices WHERE id=$1',[deviceId])).rows[0];
+      if(!candidate)throw new NotFoundException('Device not found');
+      await guardLegacyGatewayConfiguration(client,candidate.gateway_id,candidate.site_id);
+      const device=(await client.query('SELECT id FROM devices WHERE id=$1 AND gateway_id=$2 AND site_id=$3 FOR UPDATE',[deviceId,candidate.gateway_id,candidate.site_id])).rows[0];
+      if(!device)throw new NotFoundException('Device changed; reload configuration');
+      const result=await client.query('UPDATE register_mapping_versions SET effective_to = now() WHERE id = $1 AND device_id = $2 AND effective_to IS NULL RETURNING id',[mappingId,deviceId]);
+      if(!result.rows.length)throw new NotFoundException('Active mapping not found');
+      await snapshotGatewayConfiguration(client,candidate.gateway_id);
+      await client.query('COMMIT');
+      return {success:true,message:'Mapping retired; historical version preserved'};
+    }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
   }
   @Post('devices/:id/test-decode')
   async testRegisterDecode(@Param('id') deviceId: string, @Body() body: { registers: Record<string, number> | number[]; mappings?: RegisterFieldMapping[] }) {

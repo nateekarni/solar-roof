@@ -27,6 +27,12 @@ test('public branding GET and HEAD work without Origin while cross-origin mutati
  assert.equal(isAllowedRequestOrigin({method:'PUT',path:'/v1/settings/company',headers:{origin:'https://external.example'}} as Request,'https://web.example'),false);
 });
 
+test('internal MQTT webhook routes bypass browser origin check',()=>{
+ for(const path of ['/v1/internal/mqtt/auth','/v1/internal/mqtt/acl']){
+  assert.equal(isAllowedRequestOrigin({method:'POST',path,headers:{}} as Request,'https://web.example'),true);
+ }
+});
+
 test('only Owner can mutate global company and bank settings even with staff permission grants',()=>{
  for(const path of ['/v1/settings/company','/v1/settings/bank-accounts','/v1/settings/bank-accounts/account-a'])for(const method of ['PUT','PATCH','POST','DELETE']){
   for(const role of ['admin','operator','accountant','customer_user']){

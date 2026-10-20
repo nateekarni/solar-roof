@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "1.1",
+  "messageType": "configStatus",
+  "messageId": "GW-TEST-001-config-status-0001",
+  "gatewayId": "GW-TEST-001",
+  "configVersion": 1,
+  "configHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "status": "received",
+  "reportedAt": "2026-10-19T10:10:00+07:00"
+}

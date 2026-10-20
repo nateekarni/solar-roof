@@ -1355,6 +1355,7 @@ input:-webkit-autofill, textarea:-webkit-autofill { -webkit-text-fill-color:var(
 .customer-portal {
   --customer-action-primary: #f29700;
   --customer-action-primary-foreground: #171717;
+  --customer-link: #a45d00;
   --customer-surface-hero: #242424;
   --customer-surface-hero-foreground: #fafafa;
   --customer-surface-background: #f7f7f5;
@@ -1410,6 +1411,7 @@ input:-webkit-autofill, textarea:-webkit-autofill { -webkit-text-fill-color:var(
 
 .dark .customer-portal {
   --customer-action-primary-foreground: #171717;
+  --customer-link: #f7b64d;
   --customer-surface-background: #101010;
   --customer-surface-elevated: #1d1d1f;
   --customer-surface-hero: #222224;
@@ -1431,6 +1433,11 @@ input:-webkit-autofill, textarea:-webkit-autofill { -webkit-text-fill-color:var(
   --customer-chart-primary-foreground: #171717;
   --customer-chart-comparison: #a8a8aa;
   --customer-chart-comparison-foreground: #171717;
+}
+
+/* Action gold needs dark text; textual links use a separate AA-safe tone. */
+.customer-portal [data-slot="button"][data-variant="link"] {
+  color: var(--customer-link);
 }
 
 .customer-portal .customer-container {

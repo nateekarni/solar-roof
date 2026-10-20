@@ -10,6 +10,30 @@ import type { DatabaseService } from "../../database/database.service.js";
 
 const flush = () => new Promise<void>(resolve => setImmediate(resolve));
 
+const required=['solar/v1/gateways/+/register','solar/v1/gateways/+/configUpdate','solar/v1/gateways/+/configStatus','solar/v1/gateways/+/status','solar/v1/sites/+/gateways/+/devices/+/telemetry'];
+test('empty default broker subscribes all control and telemetry filters once at QoS 1',async context=>{
+ const subscriptions:string[]=[];const client=Object.assign(new EventEmitter(),{connected:true,end(){},subscribe(topic:string,options:any,done:Function){assert.equal(options.qos,1);subscriptions.push(topic);done(null,[{topic,qos:1}]);}});
+ context.mock.method(mqttRuntime,'connect',()=>client);
+ const db={query:async()=>({rows:[]})};const service=new MqttIngestionService(db as any,db as any);
+ try{await service.onModuleInit();client.emit('connect');await flush();assert.deepEqual(subscriptions.sort(),[...required].sort());assert.equal(service.isReady(),true);}finally{await service.onModuleDestroy();}
+});
+
+test('connection error invalidates in-flight grants until a fresh subscription attempt',async context=>{
+ let hold=true,grant:Function|undefined;
+ const client=Object.assign(new EventEmitter(),{connected:true,end(){},subscribe(topic:string,_options:unknown,done:Function){if(hold)grant=()=>done(null,[{topic,qos:1}]);else done(null,[{topic,qos:1}]);}});
+ context.mock.method(mqttRuntime,'connect',()=>client);
+ const db={query:async()=>({rows:[]})};const service=new MqttIngestionService(db as any,db as any);
+ try{await service.onModuleInit();client.emit('connect');await flush();client.emit('error',Error('broker failed'));hold=false;grant?.();await flush();assert.equal(service.isReady(),false);
+  client.emit('connect');await flush();assert.equal(service.isReady(),true);
+ }finally{await service.onModuleDestroy();}
+});
+for(const grants of [undefined,[],[{topic:'unrelated',qos:1}]])test(`missing matching SUBACK never marks readiness (${JSON.stringify(grants)})`,async context=>{
+ const client=Object.assign(new EventEmitter(),{connected:true,end(){},subscribe(_topic:string,_options:any,done:Function){done(null,grants);}});
+ context.mock.method(mqttRuntime,'connect',()=>client);
+ const db={query:async()=>({rows:[]})};const service=new MqttIngestionService(db as any,db as any);
+ try{await service.onModuleInit();client.emit('connect');await flush();assert.equal(service.isReady(),false);}finally{await service.onModuleDestroy();}
+});
+
 test('registered external broker mode reports subscriptions and never connects a default broker', async context => {
   const previous = process.env.MQTT_DEFAULT_BROKER_ENABLED;
   process.env.MQTT_DEFAULT_BROKER_ENABLED = 'false';
@@ -58,7 +82,7 @@ test("subscription failure keeps readiness false and retries without reconnectin
   let databaseAvailable = false;
   let queries = 0;
   const db = { query: async () => { queries++; if (!databaseAvailable) throw new Error("temporary DB outage"); return { rows: [] }; } } as unknown as DatabaseService;
-  const client = Object.assign(new EventEmitter(), { connected: true, end() {} });
+  const client = Object.assign(new EventEmitter(), { connected: true, end() {},subscribe(topic:string,_options:unknown,done:Function){done(null,[{topic,qos:1}]);} });
   context.mock.method(mqttRuntime, "connect", () => client as unknown as mqtt.MqttClient);
   const service = new MqttIngestionService(db, db as import("./ingestion-database.service.js").IngestionDatabaseService);
   try {
@@ -107,11 +131,12 @@ test("broker reconnects restore subscriptions explicitly and reject a refused SU
 });
 
 test("late subscription completion cannot make a disconnected session ready", async context => {
-  let complete: ((error?: Error) => void) | undefined;
+  let complete: (() => void) | undefined;
+  let hold=true;
   const db = { query: async (sql: string) => ({ rows: sql.includes("SELECT endpoint") ? [{ endpoint: "energy/test/#" }] : [] }) } as unknown as DatabaseService;
   const client = Object.assign(new EventEmitter(), {
     connected: true,
-    subscribe(_topic: string, _options: object, callback: (error?: Error) => void) { complete = callback; },
+    subscribe(topic: string, _options: object, callback: Function) { if(hold)complete = ()=>callback(null,[{topic,qos:1}]);else callback(null,[{topic,qos:1}]); },
     end() {},
   });
   context.mock.method(mqttRuntime, "connect", () => client as unknown as mqtt.MqttClient);
@@ -125,7 +150,7 @@ test("late subscription completion cannot make a disconnected session ready", as
     complete?.(); await flush();
     assert.equal(service.isReady(), false);
     client.emit("connect"); await flush();
-    complete?.(); await flush();
+    hold=false;complete?.(); await flush();
     assert.equal(service.isReady(), true);
   } finally { await service.onModuleDestroy(); }
   assert.equal(service.isReady(), false);
