@@ -15,7 +15,6 @@ export function canCorrectInitialConfig(state:GatewaySyncState):boolean {
   return state.lifecycleState==='configuring'&&state.activeConfigVersion===0&&
     ['pending_sync','failed'].includes(state.configState)&&Boolean(state.desiredConfig&&state.desiredConfigHash&&state.desiredConfigVersion);
 }
-
 export interface InitialCorrectionDraft {expectedBaseConfigVersion:number;expectedBaseConfigHash:string;devicesJson:string}
 
 export function initialCorrectionDraft(state:GatewaySyncState):InitialCorrectionDraft {

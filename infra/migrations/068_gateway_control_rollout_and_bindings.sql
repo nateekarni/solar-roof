@@ -40,7 +40,6 @@ JOIN devices d ON d.gateway_id=legacy.gateway_id AND d.external_device_id=legacy
 JOIN payload_profile_revisions p ON p.id=legacy.profile_revision_id::uuid
   AND (p.owner_device_id IS NULL OR p.owner_device_id=d.id)
 ON CONFLICT (gateway_id,config_version,external_device_id) DO NOTHING;
-
 -- Existing strict revisions were already approved through this control plane.
 -- A legacy snapshot with profileRevisionId stays unmanaged for compatibility.
 UPDATE gateways g SET control_managed_at=managed.first_managed_at

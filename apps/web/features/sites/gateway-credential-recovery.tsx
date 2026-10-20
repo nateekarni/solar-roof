@@ -51,7 +51,7 @@ export function GatewayCredentialRecovery({gatewayId,locale}:{gatewayId:string;l
     <AlertDialogTrigger asChild><Button type="button" variant="outline"><KeyRound data-icon="inline-start"/>{th?'ออกข้อมูลเชื่อมต่อทดแทน':'Issue replacement credential'}</Button></AlertDialogTrigger>
     <AlertDialogContent onEscapeKeyDown={event=>{if(rotating)event.preventDefault();}}>
       <AlertDialogHeader><AlertDialogTitle>{credential?(th?'ข้อมูลเชื่อมต่อ MQTT แสดงครั้งเดียว':'One-time MQTT credential'):(th?'ออกข้อมูลเชื่อมต่อทดแทน':'Issue replacement credential')}</AlertDialogTitle><AlertDialogDescription>{credential?(th?'คัดลอกข้อมูลนี้ทันที ระบบไม่สามารถแสดงรหัสผ่านเดิมได้อีก':'Copy this credential now. The password cannot be shown again.'):(th?'ยืนยันผลกระทบก่อนออกข้อมูลใหม่':'Confirm the impact before issuing a replacement.')}</AlertDialogDescription></AlertDialogHeader>
-      {!credential&&<GatewayCredentialRecoveryConfirmation locale={locale}/>} 
+      {!credential&&<GatewayCredentialRecoveryConfirmation locale={locale}/>}
       {credential&&<div className="grid gap-3">
         <div className="flex items-center justify-between gap-2 rounded-md border p-3"><span className="min-w-0 truncate font-mono">{credential.username}</span><Button type="button" size="icon" variant="outline" aria-label={th?'คัดลอกชื่อผู้ใช้':'Copy username'} onClick={()=>void copy(credential.username)}><Copy/></Button></div>
         <div className="flex items-center justify-between gap-2 rounded-md border p-3"><span className="min-w-0 break-all font-mono">{credential.password}</span><Button type="button" size="icon" variant="outline" aria-label={th?'คัดลอกรหัสผ่าน':'Copy password'} onClick={()=>void copy(credential.password)}><Copy/></Button></div>

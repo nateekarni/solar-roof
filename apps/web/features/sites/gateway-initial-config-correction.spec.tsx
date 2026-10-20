@@ -17,7 +17,6 @@ test('initial correction is available only before the first configuration become
  assert.equal(canCorrectInitialConfig({...state,lifecycleState:'active',configState:'applied',activeConfigVersion:1}),false);
  assert.equal(canCorrectInitialConfig({...state,desiredConfig:null}),false);
 });
-
 test('correction request carries optimistic base identity and strictly parsed replacement devices',()=>{
  const draft=initialCorrectionDraft(state);
  assert.deepEqual(initialCorrectionRequest(draft,'[]'),{expectedBaseConfigVersion:1,expectedBaseConfigHash:'a'.repeat(64),devices:[]});
