@@ -125,8 +125,6 @@ function PaymentSession({
     }));
     setErrors((previous) => {
       const next = { ...previous };
-      for (const key of Object.keys(patch))
-        delete next[key as keyof PaymentErrors];
       delete next.submission;
       return next;
     });

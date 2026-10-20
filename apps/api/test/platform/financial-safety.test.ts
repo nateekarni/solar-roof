@@ -26,13 +26,13 @@ test('financial HTTP entry points fail closed without creating or mutating rows,
  try {
   const login=await fetch(base+'/v1/auth/login',{method:'POST',headers:{Origin:web,'Content-Type':'application/json'},body:JSON.stringify({email,password})});assert.equal(login.status,200);
   const token=(await login.json()).accessToken;
-  const request=(path:string,method='GET',body?:unknown)=>fetch(base+path,{method,headers:{Authorization:`Bearer ${token}`,Origin:web,'Content-Type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})});
+  const request=(path:string,method='GET',body?:unknown,headers:Record<string,string>={})=>fetch(base+path,{method,headers:{Authorization:`Bearer ${token}`,Origin:web,'Content-Type':'application/json',...headers},...(body===undefined?{}:{body:JSON.stringify(body)})});
   const snapshot=async()=> (await db.query('SELECT (SELECT count(*) FROM billing_cycles WHERE site_id=$1)::int AS cycles,(SELECT count(*) FROM documents WHERE site_id=$1)::int AS documents,(SELECT count(*) FROM payments WHERE billing_cycle_id=$2)::int AS payments,(SELECT amount FROM billing_cycles WHERE id=$2) AS amount,(SELECT status FROM billing_cycles WHERE id=$2) AS status,(SELECT amount FROM documents WHERE id=$3) AS document_amount,(SELECT count(*) FROM contracts WHERE site_id=$1)::int AS contracts,(SELECT jsonb_agg(to_jsonb(c) ORDER BY c.id) FROM contracts c WHERE c.site_id=$1) AS contract_rows,(SELECT jsonb_agg(to_jsonb(d) ORDER BY d.id) FROM documents d WHERE d.site_id=$1) AS document_rows,(SELECT count(*) FROM rate_versions WHERE contract_id IN (SELECT id FROM contracts WHERE site_id=$1))::int AS rates,(SELECT count(*) FROM document_artifacts WHERE document_id IN (SELECT id FROM documents WHERE site_id=$1))::int AS artifacts,(SELECT coalesce(jsonb_agg(to_jsonb(o) ORDER BY o.id),jsonb_build_array()) FROM financial_delivery_outbox o JOIN documents d ON d.id=o.document_id WHERE d.site_id=$1) AS outbox,(SELECT count(*) FROM audit_events WHERE entity_id::text=ANY(ARRAY[$1::text,$2::text,$3::text]))::int AS financial_audits',[site,cycle,doc])).rows[0];
   const schema=await (await fetch(base+'/docs-json')).json();
   const writes=Object.entries(schema.paths).flatMap(([path,methods])=>Object.keys(methods as object).filter(method=>['post','patch','put','delete'].includes(method)).map(method=>`${method.toUpperCase()} ${path}`)).filter(route=>/\/v1\/(billing-cycles|contracts|documents)(\/|$)/.test(route)).sort();
   assert.deepEqual(writes,[
    'PATCH /v1/billing-cycles/{id}/adjust','PATCH /v1/billing-cycles/{id}/rate','PATCH /v1/billing-cycles/{id}/status','PATCH /v1/billing-cycles/{id}/verify-payment',
-   'POST /v1/billing-cycles','POST /v1/billing-cycles/approve-issuance','POST /v1/billing-cycles/{id}/approve-issuance','POST /v1/billing-cycles/{id}/generate-invoice','POST /v1/billing-cycles/{id}/pay','POST /v1/billing-cycles/{id}/send-email','POST /v1/contracts','POST /v1/contracts/{id}/send-email','POST /v1/documents',
+   'POST /v1/billing-cycles','POST /v1/billing-cycles/approve-issuance','POST /v1/billing-cycles/{id}/approve-issuance','POST /v1/billing-cycles/{id}/cash-payment','POST /v1/billing-cycles/{id}/generate-invoice','POST /v1/billing-cycles/{id}/pay','POST /v1/billing-cycles/{id}/send-email','POST /v1/contracts','POST /v1/contracts/{id}/send-email','POST /v1/documents',
   ],'Every exposed financial mutation is covered or explicitly retained as contract/evidence input');
   const before=await snapshot();
   assert.equal((await request('/v1/contracts','POST',{siteId:site})).status,403,'Retired contract authoring must remain inaccessible');
@@ -48,6 +48,9 @@ test('financial HTTP entry points fail closed without creating or mutating rows,
    ['POST',`/v1/billing-cycles/${cycle}/send-email`,{}],
    ['POST','/v1/documents',{siteId:site,type:'invoice',amount:999}],
   ] as const){const response=await request(path,method,body);assert.equal(response.status,503,path);assert.equal((await response.json()).code,'FINANCIAL_NOT_READY');const after=await snapshot();const createdRows=after.cycles+after.documents+after.payments-before.cycles-before.documents-before.payments;assert.equal(createdRows,0);assert.deepEqual(after,before,path);}
+  const cashPath=`/v1/billing-cycles/${cycle}/cash-payment`;
+  const cash=await request(cashPath,'POST',{amount:'123.45',receivedAt:'2026-09-30'},{'Idempotency-Key':`financial-safety-${id}`});
+  assert.equal(cash.status,503,cashPath);assert.equal((await cash.json()).code,'FINANCIAL_NOT_READY');assert.deepEqual(await snapshot(),before,cashPath);
   assert.equal((await request(`/v1/billing-cycles/${cycle}`)).status,200);
   for(const [role,want] of [['owner',['calculate','issue','approve_payment','adjust','send']],['accountant',['calculate','issue','approve_payment','adjust','send']],['admin',[]],['operator',[]],['customer_user',[]]] as const){
    await db.query('UPDATE users SET role=$1 WHERE id=$2',[role,id]);
@@ -58,6 +61,9 @@ test('financial HTTP entry points fail closed without creating or mutating rows,
     const allowed=['owner','accountant'].includes(role);
     assert.equal((await request(`/v1/billing-cycles/${cycle}/${suffix}`,method,{status:'approved'})).status,allowed?503:403,`${role} ${suffix}`);
    }
+   const roleCash=await request(`/v1/billing-cycles/${cycle}/cash-payment`,'POST',{amount:'123.45',receivedAt:'2026-09-30'},{'Idempotency-Key':`financial-safety-${role}-${id}`});
+   assert.equal(roleCash.status,['owner','accountant'].includes(role)?503:403,`${role} cash-payment`);
+   assert.deepEqual(await snapshot(),before,`${role} cash payment must preserve financial rows`);
    const mail=await request(`/v1/contracts/${contract}/send-email`,'POST',{});
    assert.equal(mail.status,['owner','accountant'].includes(role)?409:403,`${role} requires a saved original before contract delivery`);
    assert.deepEqual(await snapshot(),before,`${role} contract mail must preserve financial rows and outbox`);

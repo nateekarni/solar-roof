@@ -83,7 +83,7 @@ function DateRangeFilter({
           type="button"
           variant="outline"
           aria-label={t("customerPortal.billing.period")}
-          className="h-11! w-full min-w-0 max-w-full justify-between gap-2 bg-background px-3 md:w-48"
+          className="h-11! w-full min-w-0 max-w-full justify-between gap-2 bg-background px-3"
         >
           <CalendarDays className="size-4 shrink-0" />
           <span className="min-w-0 truncate">{label}</span>
@@ -162,7 +162,7 @@ function StatusFilter({
           variant="outline"
           aria-label={t("customerPortal.billing.statusFilter")}
           aria-haspopup="listbox"
-          className="h-11! w-full min-w-0 max-w-full justify-between gap-2 bg-background px-3 md:w-48"
+          className="h-11! w-full min-w-0 max-w-full justify-between gap-2 bg-background px-3"
         >
           <span className="truncate">
             {label}
@@ -221,7 +221,7 @@ export function CustomerDocumentFilters({
   const t = createTranslator(locale);
   return (
     <form
-      className="flex min-w-0 flex-col gap-3 md:grid md:grid-cols-[minmax(0,1fr)_auto] md:items-center"
+      className="flex min-w-0 flex-col gap-3 lg:grid lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center"
       onSubmit={(event) => {
         event.preventDefault();
         const values = new FormData(event.currentTarget);
@@ -230,7 +230,7 @@ export function CustomerDocumentFilters({
       key={query.toString()}
     >
       <span className="sr-only">{t("customerPortal.billing.search")}</span>
-      <InputGroup className="h-11! bg-background md:max-w-sm">
+      <InputGroup className="h-11! bg-background lg:max-w-sm">
         <InputGroupAddon>
           <Search className="size-4" />
         </InputGroupAddon>
@@ -243,7 +243,7 @@ export function CustomerDocumentFilters({
           className="h-11! text-base!"
         />
       </InputGroup>
-      <div className="grid min-w-0 grid-cols-2 gap-2 md:flex md:shrink-0">
+      <div className="grid min-w-0 grid-cols-2 gap-2">
         <DateRangeFilter query={query} locale={locale} onChange={onChange} />
         <StatusFilter
           query={query}

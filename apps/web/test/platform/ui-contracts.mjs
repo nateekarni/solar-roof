@@ -71,6 +71,7 @@ try {
    await page.setViewportSize({width,height:900});await page.goto(web+'/billing');
    await page.waitForLoadState('networkidle');
    await page.getByRole('searchbox').fill('U1-OLDER-INV');
+   await page.getByRole('searchbox').press('Enter');
    await page.getByText('U1-OLDER-INV').filter({visible:true}).first().waitFor();
    const actionMenu=page.getByRole('button',{name:/การจัดการเอกสาร: U1-OLDER-INV|Document actions: U1-OLDER-INV|เมนูการดำเนินการ|Open actions menu/}).filter({visible:true});
    if(await actionMenu.count()>0){
