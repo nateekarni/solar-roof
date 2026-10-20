@@ -67,4 +67,3 @@ export function GatewayInitialConfigCorrection({gatewayId:_gatewayId,syncState,o
     </DialogContent>
   </Dialog>;
 }
-

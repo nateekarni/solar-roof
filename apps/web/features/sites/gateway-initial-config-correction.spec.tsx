@@ -37,4 +37,3 @@ test('correction UI uses the existing dialog, textarea, alert and button compone
  assert.match(html,/Correct initial configuration/);
  assert.doesNotMatch(html,/<textarea/,'closed shadcn dialog content is mounted by the dialog primitive, not a raw control here');
 });
-
