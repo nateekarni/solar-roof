@@ -49,7 +49,9 @@ test('GatewayDetailPageView renders initial loading skeleton without crashing', 
   assert.ok(html.includes('ring-1 ring-foreground/10 rounded-xl'));
 });
 
-test('operational view separates assignment, configuration, connection and telemetry freshness',()=>{
-  const html=renderToStaticMarkup(<LocaleProvider initialLocale="en"><GatewayOperationalStatus gateway={{status:'offline',connectionState:'offline',lifecycleState:'active',configState:'drifted',appliedVersion:4,lastReceivedAt:'2026-10-19T00:00:00Z',pollingIntervalSeconds:10}} now={new Date('2026-10-19T00:10:00Z').getTime()}/></LocaleProvider>);
-  for(const label of ['Assignment','Active','Configuration','Drifted','Connection','Offline','Telemetry','Stale','Last received'])assert.match(html,new RegExp(label));
+test('operational view renders one primary status and leaves configuration diagnostics to detail sections',()=>{
+  const html=renderToStaticMarkup(<LocaleProvider initialLocale="en"><GatewayOperationalStatus gateway={{status:'offline',connectionState:'online',lifecycleState:'active',configState:'drifted',appliedVersion:4,lastReceivedAt:'2026-10-19T00:00:00Z',pollingIntervalSeconds:10}} now={new Date('2026-10-19T00:10:00Z').getTime()}/></LocaleProvider>);
+  assert.equal((html.match(/data-slot="badge"/g)??[]).length,1);
+  assert.match(html,/>Offline</);
+  assert.doesNotMatch(html,/Assignment|Active|Configuration|Drifted|Connection|Telemetry|Stale|Last received/);
 });

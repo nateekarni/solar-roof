@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import type {ConfirmGatewayResponse,DiscoveredGatewayRow} from '@solar/api-contracts';
+import {GatewayRegistrationRequiredNotice} from './gateway-registration-required';
 import {useQueryClient} from '@tanstack/react-query';
 import {AlertTriangle,Radio} from 'lucide-react';
 import {Alert,AlertAction,AlertDescription,AlertTitle} from '../../components/ui/alert';
@@ -20,7 +21,7 @@ import {
   gatewayConfirmationRequest,gatewayOnboardingDraftFromDetail,isStaleDiscoveryConflict,
   validateGatewayOnboardingDraft,type GatewayDiscoveryDetail,type GatewayOnboardingDraft,
 } from './gateway-onboarding-draft';
-import {confirmGatewayWithoutCaching,correctInitialGatewayConfig,useDiscoveredGateway,useGatewaySyncState} from './gateway-onboarding-api';
+import {confirmGatewayWithoutCaching,correctInitialGatewayConfig,isGatewayRegistrationRequired,useDiscoveredGateway,useGatewaySyncState} from './gateway-onboarding-api';
 import {GatewaySyncStatus,type OneTimeGatewayCredential} from './gateway-sync-status';
 import type {PayloadRevision} from './payload-contracts';
 import type {LegacyPreset} from './preset-picker';
@@ -230,6 +231,7 @@ function PairingBody({discovered,open,onOpenChange,onSuccess,inline=false}:{disc
     <div data-slot="dialog-body" className="min-h-0 flex-1 overflow-y-auto pr-1">
       {surface==='sync'&&syncState?<GatewaySyncStatus locale={locale} credential={visibleGatewayPairingCredential(credential,discovered.id)} syncState={syncState} syncError={syncQuery.isError?syncQuery.error:null} onRetry={()=>syncQuery.refetch()} retrying={syncQuery.isFetching} onRotate={rotate} rotating={rotating} onCorrect={request=>correctInitialGatewayConfig(queryClient,confirmed!.gatewayId,request)}/>
       :surface==='loading'?<div className="flex flex-col gap-3" aria-label={th?'กำลังโหลดขั้นตอนเชื่อมต่อ':'Loading pairing workflow'}><Skeleton className="h-10 w-full"/><Skeleton className="h-48 w-full"/></div>
+      :surface==='error'&&isGatewayRegistrationRequired(detailQuery.error)?<div className="space-y-3"><GatewayRegistrationRequiredNotice gateway={discovered} locale={locale}/><Button type="button" size="sm" variant="outline" onClick={()=>void detailQuery.refetch()}>{th?'ตรวจสอบอีกครั้ง':'Check again'}</Button></div>
       :surface==='error'?<Alert variant="destructive"><AlertTitle>{th?'โหลดข้อมูลเกตเวย์ไม่สำเร็จ':'Could not load gateway details'}</AlertTitle><AlertDescription>{detailQuery.error instanceof Error?detailQuery.error.message:(th?'โปรดลองอีกครั้ง':'Try again.')}</AlertDescription><AlertAction><Button type="button" size="sm" variant="outline" onClick={()=>void detailQuery.refetch()}>{th?'ลองอีกครั้ง':'Retry'}</Button></AlertAction></Alert>
       :draft?<div className="flex flex-col gap-4">
         <Tabs value={step} onValueChange={value=>{const index=GATEWAY_PAIRING_STEPS.findIndex(item=>item.id===value);if(index>=0&&index<=maxStep)setStep(value as GatewayPairingStep);}}>

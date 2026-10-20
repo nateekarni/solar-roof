@@ -47,6 +47,10 @@ const columns = `d.id, d.external_gateway_id AS "externalGatewayId", d.mqtt_brok
   d.status, d.assigned_site_id AS "assignedSiteId", d.assigned_gateway_id AS "assignedGatewayId", d.assigned_at AS "assignedAt",
   d.source_address AS "sourceAddress", d.first_seen_at AS "firstSeenAt", d.last_seen_at AS "lastSeenAt",
   d.discovery_revision AS "discoveryRevision", d.raw_payload AS "rawPayload", d.devices`;
+const onboardingState = `CASE WHEN d.client_id=d.external_gateway_id AND EXISTS(
+    SELECT 1 FROM gateway_discovery_snapshots ready_snapshot
+    WHERE ready_snapshot.discovered_gateway_id=d.id AND ready_snapshot.revision=d.discovery_revision
+  ) THEN 'ready' ELSE 'registration_required' END AS "onboardingState"`;
 
 @Injectable()
 export class GatewayRegistrationService {
@@ -116,18 +120,24 @@ export class GatewayRegistrationService {
     if (status !== undefined && status !== null && !['unassigned', 'configuring', 'assigned', 'ignored'].includes(status)) {
       throw new Error('Invalid discovery status');
     }
-    return (await this.db.query<DiscoveryRow>(`SELECT ${columns} FROM discovered_gateways d
+    return (await this.db.query<DiscoveryRow>(`SELECT ${columns}, ${onboardingState} FROM discovered_gateways d
       WHERE ($1::text IS NULL OR d.status=$1) ORDER BY d.last_seen_at DESC,d.id LIMIT 200`, [status ?? null])).rows;
   }
 
   private async loadDetail(client: Queryable, id: string, revision: number | null = null): Promise<DiscoveredGatewayDetail> {
-    const row = (await client.query<DiscoveryRow & { snapshot: GatewayRegisterPayload }>(`SELECT ${columns}, s.payload AS snapshot,
+    const row = (await client.query<DiscoveryRow & { snapshot: GatewayRegisterPayload | null }>(`SELECT ${columns}, ${onboardingState}, s.payload AS snapshot,
       s.revision AS "discoveryRevision",s.payload AS "rawPayload",s.source_address AS "sourceAddress",s.received_at AS "lastSeenAt"
-      FROM discovered_gateways d JOIN gateway_discovery_snapshots s ON s.discovered_gateway_id=d.id AND s.revision=coalesce($2::integer,d.discovery_revision)
+      FROM discovered_gateways d LEFT JOIN gateway_discovery_snapshots s ON s.discovered_gateway_id=d.id AND s.revision=coalesce($2::integer,d.discovery_revision)
       WHERE d.id=$1 LIMIT 1`, [id, revision])).rows[0];
     if (!row) throw new NotFoundException('Discovered gateway not found');
+    if (!row.snapshot || row.clientId !== row.externalGatewayId) throw new ConflictException({
+      statusCode: 409,
+      code: 'GATEWAY_REGISTRATION_REQUIRED',
+      message: 'Gateway must publish a current schema 1.1 registration before pairing',
+    });
+    const snapshot=row.snapshot;
     const presetSuggestions: DiscoveredGatewayDetail['presetSuggestions'] = [];
-    for (const device of row.snapshot.devices) {
+    for (const device of snapshot.devices) {
       const manufacturer = normalized(device.manufacturer);
       const model = normalized(device.model);
       const profileId = normalized(device.profileId);
@@ -161,11 +171,11 @@ export class GatewayRegistrationService {
         .sort((a, b) => b.rank - a.rank || a.kind.localeCompare(b.kind) || a.id.localeCompare(b.id));
       presetSuggestions.push({ deviceId: device.deviceId, suggestions });
     }
-    const first = row.snapshot.devices[0];
-    return { ...row, model: row.snapshot.gateway.model, firmwareVersion: row.snapshot.gateway.firmwareVersion,
-      reportedSiteId: row.snapshot.reportedSiteId ?? null, reportedDeviceId: first?.deviceId ?? null,
+    const first = snapshot.devices[0];
+    return { ...row, snapshot, model: snapshot.gateway.model, firmwareVersion: snapshot.gateway.firmwareVersion,
+      reportedSiteId: snapshot.reportedSiteId ?? null, reportedDeviceId: first?.deviceId ?? null,
       manufacturer: first?.manufacturer ?? null, profileId: first?.profileId ?? null, protocol: first?.protocol ?? null,
-      devices: row.snapshot.devices,
-      draftDevices: row.snapshot.devices.map(device => ({ ...device, mappingSource: 'gateway' })), presetSuggestions };
+      devices: snapshot.devices,
+      draftDevices: snapshot.devices.map(device => ({ ...device, mappingSource: 'gateway' })), presetSuggestions };
   }
 }

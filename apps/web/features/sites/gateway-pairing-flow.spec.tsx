@@ -22,6 +22,8 @@ import {GatewayDiscoveryReview} from './gateway-discovery-review';
 import {GatewayDeviceConfiguration} from './gateway-device-configuration';
 import {applyGatewayDeviceEditorChange,clearGatewayPresetError,gatewayDeviceMatchState,parseGatewayConnectionDraft} from './gateway-device-configuration';
 import {GatewaySyncStatus} from './gateway-sync-status';
+import {GatewayRegistrationRequiredNotice,gatewayRegistrationTopic} from './gateway-registration-required';
+import {isGatewayRegistrationRequired} from './gateway-onboarding-api';
 import {gatewayOnboardingDraftFromDetail,selectGatewayRegisterPreset} from './gateway-onboarding-draft';
 import {applyRegisterDecoderCommit,commitRegisterDecoderDraft,createRegisterDecoderDraft,REGISTERED_REGISTER_DECODER_CONSTRAINTS} from './register-decoder-editor';
 
@@ -36,12 +38,22 @@ const snapshot:GatewayRegisterPayload={
   ],
 };
 const detail:DiscoveredGatewayDetail={
-  id:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',externalGatewayId:'GW-001',reportedSiteId:'SITE-ALPHA',reportedDeviceId:'METER-01',manufacturer:'Schneider',model:'Edge Pro',profileId:null,protocol:'mqtt',status:'unassigned',assignedSiteId:null,assignedGatewayId:null,firstSeenAt:'2026-10-19T01:00:00.000Z',lastSeenAt:'2026-10-19T01:00:01.000Z',rawPayload:snapshot as unknown as Record<string,unknown>,discoveryRevision:7,snapshot,devices:snapshot.devices,
+  id:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',externalGatewayId:'GW-001',reportedSiteId:'SITE-ALPHA',reportedDeviceId:'METER-01',manufacturer:'Schneider',model:'Edge Pro',profileId:null,protocol:'mqtt',status:'unassigned',onboardingState:'ready',assignedSiteId:null,assignedGatewayId:null,firstSeenAt:'2026-10-19T01:00:00.000Z',lastSeenAt:'2026-10-19T01:00:01.000Z',rawPayload:snapshot as unknown as Record<string,unknown>,discoveryRevision:7,snapshot,devices:snapshot.devices,
 };
 const sites=[
   {id:siteAlpha,code:'SITE-ALPHA',externalSiteId:'SITE-ALPHA',name:'Alpha roof',active:true,assignedGatewayId:null},
   {id:siteBeta,code:'SITE-BETA',externalSiteId:'SITE-BETA',name:'Beta roof',active:true,assignedGatewayId:null},
 ];
+
+test('registration prerequisite gives the exact MQTT identity and a stable API error guard',()=>{
+  const html=renderToStaticMarkup(<LocaleProvider initialLocale="en"><GatewayRegistrationRequiredNotice gateway={detail} locale="en"/></LocaleProvider>);
+  assert.match(html,/Gateway registration is required/);
+  assert.match(html,/GW-001/);
+  assert.match(html,/solar\/v1\/gateways\/GW-001\/register/);
+  assert.equal(gatewayRegistrationTopic('GW-001'),'solar/v1/gateways/GW-001/register');
+  assert.equal(isGatewayRegistrationRequired({code:'GATEWAY_REGISTRATION_REQUIRED'}),true);
+  assert.equal(isGatewayRegistrationRequired({code:'OTHER'}),false);
+});
 
 test('pairing exposes four ordered named steps and blocks skipping incomplete work',()=>{
   assert.deepEqual(GATEWAY_PAIRING_STEPS.map(step=>step.id),['review','site','devices','confirm']);

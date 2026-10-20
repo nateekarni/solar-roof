@@ -24,6 +24,10 @@ export const gatewayOnboardingKeys={
   proposals:(id:string)=>[...gatewayOnboardingKeys.all,'gateway',id,'proposals'] as const,
 };
 
+export function isGatewayRegistrationRequired(error:unknown):boolean{
+  return typeof error==='object'&&error!==null&&'code' in error&&(error as {code?:unknown}).code==='GATEWAY_REGISTRATION_REQUIRED';
+}
+
 export function discoveredGatewaysQueryOptions(active=true){
   return {
     queryKey:gatewayOnboardingKeys.discovered(),

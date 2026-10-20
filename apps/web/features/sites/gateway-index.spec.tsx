@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';import test from 'node:test';import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';
 import {GatewayIndex,gatewayIndexPartitions,type GatewayRow} from './gateway-index';
+import {gatewayPrimaryStatus} from './gateway-operational-status';
 import {GatewayDiscoveryError} from './gateway-workspace';
 test('gateway index exposes registered gateway and lifecycle without customer billing identity',()=>{
 const html=renderToStaticMarkup(<GatewayIndex rows={[{id:'gw',siteId:'site',siteName:'Roof A',siteCode:'S1',name:'Gateway A',externalGatewayId:'G1',status:'offline',lifecycleState:'active',configState:'applied',desiredVersion:3,publishedVersion:2,acknowledgedVersion:1,appliedVersion:1}]} locale="en" onSelect={()=>{}}/>);
@@ -12,7 +13,7 @@ assert.doesNotMatch(html,/No data/);
 
 test('gateway index exposes 3 tabs (All, Connected, Not connected) with counts and discovered pairing action',()=>{
 const registered:GatewayRow[] = [{id:'gw1',siteId:'site1',siteName:'Roof Alpha',siteCode:'S1',name:'Gateway Alpha',externalGatewayId:'GW-001',status:'online',lifecycleState:'active',configState:'applied',desiredVersion:1,publishedVersion:1,acknowledgedVersion:1,appliedVersion:1}];
-const discovered = [{id:'disc-1',externalGatewayId:'GW-DISC-99',reportedSiteId:'SITE-TEST',reportedDeviceId:'INV-01',manufacturer:'Huawei',model:'SUN2000',profileId:null,protocol:'mqtt',status:'unassigned' as const,assignedSiteId:null,assignedGatewayId:null,firstSeenAt:'2026-10-17T10:00:00Z',lastSeenAt:'2026-10-17T12:00:00Z',rawPayload:{}}];
+const discovered = [{id:'disc-1',externalGatewayId:'GW-DISC-99',reportedSiteId:'SITE-TEST',reportedDeviceId:'INV-01',manufacturer:'Huawei',model:'SUN2000',profileId:null,protocol:'mqtt',status:'unassigned' as const,onboardingState:'ready' as const,assignedSiteId:null,assignedGatewayId:null,firstSeenAt:'2026-10-17T10:00:00Z',lastSeenAt:'2026-10-17T12:00:00Z',rawPayload:{}}];
 
 const htmlTh = renderToStaticMarkup(<GatewayIndex rows={registered} discoveredRows={discovered} locale="th" onSelect={()=>{}} onPairDiscovered={()=>{}}/>);
 assert.match(htmlTh, /ทั้งหมด/);
@@ -29,24 +30,36 @@ assert.match(htmlEn, /Not connected/);
 assert.match(htmlEn, /Pair site/);
 });
 
-test('gateway index exposes draft, pending synchronization and failed lifecycle labels',()=>{
+test('gateway index reduces discovery and persisted lifecycle to one primary status',()=>{
 const rows:GatewayRow[]=[
  {id:'pending',siteId:'s1',siteName:'Roof Pending',siteCode:'S1',name:'Gateway Pending',externalGatewayId:'GW-P',status:'offline',lifecycleState:'configuring',configState:'pending_sync',desiredVersion:2,publishedVersion:1,acknowledgedVersion:1,appliedVersion:1},
  {id:'failed',siteId:'s2',siteName:'Roof Failed',siteCode:'S2',name:'Gateway Failed',externalGatewayId:'GW-F',status:'offline',lifecycleState:'configuring',configState:'failed',desiredVersion:2,publishedVersion:2,acknowledgedVersion:2,appliedVersion:1},
 ];
-const discovered=[{id:'disc',externalGatewayId:'GW-D',reportedSiteId:null,reportedDeviceId:null,manufacturer:null,model:null,profileId:null,protocol:'mqtt',status:'unassigned' as const,assignedSiteId:null,assignedGatewayId:null,firstSeenAt:'2026-10-19T01:00:00Z',lastSeenAt:'2026-10-19T01:01:00Z',rawPayload:{}}];
+const discovered=[{id:'disc',externalGatewayId:'GW-D',reportedSiteId:null,reportedDeviceId:null,manufacturer:null,model:null,profileId:null,protocol:'mqtt',status:'unassigned' as const,onboardingState:'registration_required' as const,assignedSiteId:null,assignedGatewayId:null,firstSeenAt:'2026-10-19T01:00:00Z',lastSeenAt:'2026-10-19T01:01:00Z',rawPayload:{}}];
 const html=renderToStaticMarkup(<GatewayIndex rows={rows} discoveredRows={discovered} locale="en" onSelect={()=>{}}/>);
-assert.match(html,/>Draft</);
-assert.match(html,/Pending synchronization/);
-assert.match(html,/Configuration failed/);
+assert.equal((html.match(/aria-label="Gateway status: Connecting"/g)??[]).length,4);
+assert.equal((html.match(/aria-label="Gateway status: Not connected"/g)??[]).length,2);
+assert.doesNotMatch(html,/>Draft<|Pending synchronization|Configuration failed|>Unknown<|>Stale</);
 });
 
-test('active gateway with a later pending config stays connected and shows separate operational indicators',()=>{
- const row:GatewayRow={id:'active-pending',siteId:'s',siteName:'Roof',siteCode:'S',name:'Gateway',externalGatewayId:'GW-1',status:'offline',connectionState:'offline',lifecycleState:'active',configState:'pending_sync',desiredVersion:5,publishedVersion:5,acknowledgedVersion:5,appliedVersion:4,lastReceivedAt:'2026-10-19T00:00:00Z',pollingIntervalSeconds:10};
+test('active gateway uses server recency as its only status even when the stored connection event is online',()=>{
+ const row:GatewayRow={id:'active-pending',siteId:'s',siteName:'Roof',siteCode:'S',name:'Gateway',externalGatewayId:'GW-1',status:'offline',connectionState:'online',lifecycleState:'active',configState:'pending_sync',desiredVersion:5,publishedVersion:5,acknowledgedVersion:5,appliedVersion:4,lastReceivedAt:'2026-10-19T00:00:00Z',pollingIntervalSeconds:10};
  const partitions=gatewayIndexPartitions([row],[],false);
  assert.deepEqual(partitions.connectedItems.map(item=>item.id),['active-pending']);
  const html=renderToStaticMarkup(<GatewayIndex rows={[row]} locale="en" now={new Date('2026-10-19T00:10:00Z').getTime()} onSelect={()=>{}}/>);
- for(const label of ['Active','Pending synchronization','Offline','Stale'])assert.match(html,new RegExp(label));
+ assert.equal(gatewayPrimaryStatus(row),'offline');
+ assert.equal((html.match(/aria-label="Gateway status: Offline"/g)??[]).length,2);
+ assert.doesNotMatch(html,/aria-label="Gateway status: (Online|Connecting|Not connected)"|Pending synchronization|>Stale</);
+});
+
+test('primary status follows the operator lifecycle in a fixed order',()=>{
+ assert.equal(gatewayPrimaryStatus({lifecycleState:'discovered',status:'unconnected'}),'unconnected');
+ assert.equal(gatewayPrimaryStatus({lifecycleState:'configuring',status:'offline'}),'connecting');
+ assert.equal(gatewayPrimaryStatus({lifecycleState:'disabled',status:'online'}),'connecting');
+ assert.equal(gatewayPrimaryStatus({status:'online'}),'connecting');
+ assert.equal(gatewayPrimaryStatus({lifecycleState:'active',status:'online'}),'online');
+ assert.equal(gatewayPrimaryStatus({lifecycleState:'active',status:'offline',connectionState:'online'}),'offline');
+ assert.equal(gatewayPrimaryStatus({lifecycleState:'active',status:'invalid'}),'offline');
 });
 
 test('discovery failures render a retryable system alert instead of looking like an empty result',()=>{
@@ -64,7 +77,7 @@ assert.match(html,/Loading discovered gateways/);
 assert.doesNotMatch(html,/No gateways found|No data|No results|No records match|ไม่พบข้อมูล|ไม่มีรายการข้อมูล/);
 });
 
-test('only active persisted gateways are connected and discovery is reconciled without duplicates',()=>{
+test('every persisted gateway is connected to a site while only discoveries are unconnected',()=>{
   const rows:GatewayRow[]=[
     {id:'active',siteId:'s1',siteName:'Active site',siteCode:'A',name:'Active',externalGatewayId:'GW-A',status:'offline',lifecycleState:'active',configState:'applied',desiredVersion:1,publishedVersion:1,acknowledgedVersion:1,appliedVersion:1},
     {id:'draft',siteId:'s2',siteName:'Draft site',siteCode:'D',name:'Draft',externalGatewayId:'GW-D',status:'online',lifecycleState:'configuring',configState:'draft',desiredVersion:1,publishedVersion:null,acknowledgedVersion:null,appliedVersion:null},
@@ -72,12 +85,12 @@ test('only active persisted gateways are connected and discovery is reconciled w
     {id:'failed',siteId:'s4',siteName:'Failed site',siteCode:'F',name:'Failed',externalGatewayId:'GW-F',status:'online',lifecycleState:'active',configState:'failed',desiredVersion:2,publishedVersion:2,acknowledgedVersion:2,appliedVersion:1},
   ];
   const discovered=[
-    {id:'duplicate',externalGatewayId:'GW-P',reportedSiteId:null,reportedDeviceId:null,status:'unassigned' as const,assignedSiteId:null,assignedGatewayId:'pending',firstSeenAt:'2026-10-19T01:00:00Z',lastSeenAt:'2026-10-19T01:01:00Z',rawPayload:{}},
-    {id:'new',externalGatewayId:'GW-N',reportedSiteId:null,reportedDeviceId:null,status:'unassigned' as const,assignedSiteId:null,assignedGatewayId:null,firstSeenAt:'2026-10-19T01:00:00Z',lastSeenAt:'2026-10-19T01:01:00Z',rawPayload:{}},
+    {id:'duplicate',externalGatewayId:'GW-P',reportedSiteId:null,reportedDeviceId:null,status:'unassigned' as const,onboardingState:'ready' as const,assignedSiteId:null,assignedGatewayId:'pending',firstSeenAt:'2026-10-19T01:00:00Z',lastSeenAt:'2026-10-19T01:01:00Z',rawPayload:{}},
+    {id:'new',externalGatewayId:'GW-N',reportedSiteId:null,reportedDeviceId:null,status:'unassigned' as const,onboardingState:'ready' as const,assignedSiteId:null,assignedGatewayId:null,firstSeenAt:'2026-10-19T01:00:00Z',lastSeenAt:'2026-10-19T01:01:00Z',rawPayload:{}},
   ];
   const partitions=gatewayIndexPartitions(rows,discovered,false);
-  assert.deepEqual(partitions.connectedItems.map(item=>item.id),['active','pending','failed']);
-  assert.deepEqual(partitions.unconnectedItems.map(item=>item.id),['draft','new']);
+  assert.deepEqual(partitions.connectedItems.map(item=>item.id),['active','draft','pending','failed']);
+  assert.deepEqual(partitions.unconnectedItems.map(item=>item.id),['new']);
   assert.equal(partitions.allItems.filter(item=>item.externalGatewayId==='GW-P').length,1);
 });
 
@@ -96,7 +109,7 @@ test('desktop table uses discovery-unavailable copy instead of its built-in empt
 });
 
 test('discovered rows do not expose a pairing control without onboarding capability',()=>{
-  const discovered=[{id:'disc',externalGatewayId:'GW-D',reportedSiteId:null,reportedDeviceId:null,status:'unassigned' as const,assignedSiteId:null,assignedGatewayId:null,firstSeenAt:'2026-10-19T01:00:00Z',lastSeenAt:'2026-10-19T01:01:00Z',rawPayload:{}}];
+  const discovered=[{id:'disc',externalGatewayId:'GW-D',reportedSiteId:null,reportedDeviceId:null,status:'unassigned' as const,onboardingState:'ready' as const,assignedSiteId:null,assignedGatewayId:null,firstSeenAt:'2026-10-19T01:00:00Z',lastSeenAt:'2026-10-19T01:01:00Z',rawPayload:{}}];
   const html=renderToStaticMarkup(<GatewayIndex rows={[]} discoveredRows={discovered} locale="en" onSelect={()=>{}}/>);
   assert.match(html,/GW-D/);
   assert.doesNotMatch(html,/Pair site/);
@@ -104,7 +117,18 @@ test('discovered rows do not expose a pairing control without onboarding capabil
 
 test('external gateway reconciliation is exact and case-sensitive',()=>{
   const rows:GatewayRow[]=[{id:'persisted',siteId:'s1',siteName:'Roof A',siteCode:'A',name:'Gateway lowercase',externalGatewayId:'gw-01',status:'online',lifecycleState:'active',configState:'applied',desiredVersion:1,publishedVersion:1,acknowledgedVersion:1,appliedVersion:1}];
-  const discovered=[{id:'discovered',externalGatewayId:'GW-01',reportedSiteId:null,reportedDeviceId:null,status:'unassigned' as const,assignedSiteId:null,assignedGatewayId:null,firstSeenAt:'2026-10-19T01:00:00Z',lastSeenAt:'2026-10-19T01:01:00Z',rawPayload:{}}];
+  const discovered=[{id:'discovered',externalGatewayId:'GW-01',reportedSiteId:null,reportedDeviceId:null,status:'unassigned' as const,onboardingState:'ready' as const,assignedSiteId:null,assignedGatewayId:null,firstSeenAt:'2026-10-19T01:00:00Z',lastSeenAt:'2026-10-19T01:01:00Z',rawPayload:{}}];
   const partitions=gatewayIndexPartitions(rows,discovered,false);
   assert.deepEqual(partitions.allItems.map(item=>item.id),['persisted','discovered']);
+});
+
+test('discovery readiness routes operators to pairing or registration guidance',()=>{
+  const base={reportedSiteId:null,reportedDeviceId:null,status:'unassigned' as const,assignedSiteId:null,assignedGatewayId:null,firstSeenAt:'2026-10-19T01:00:00Z',lastSeenAt:'2026-10-19T01:01:00Z',rawPayload:{}};
+  const discovered=[
+    {...base,id:'ready',externalGatewayId:'GW-READY',onboardingState:'ready' as const},
+    {...base,id:'legacy',externalGatewayId:'GW-LEGACY',onboardingState:'registration_required' as const},
+  ];
+  const html=renderToStaticMarkup(<GatewayIndex rows={[]} discoveredRows={discovered} locale="en" onSelect={()=>{}} onPairDiscovered={()=>{}} onRegistrationRequired={()=>{}}/>);
+  assert.match(html,/Pair site/);
+  assert.match(html,/Publish registration/);
 });

@@ -3,7 +3,7 @@ import {useSessionUser} from '../../providers/session-user-provider';
 import {canManageGatewayOnboarding,gatewayPermissions} from './gateway-permissions';
 
 import { useRouter } from 'next/navigation';
-import { useEffect,useState,type FormEvent } from 'react';
+import { useEffect,useRef,useState,type FormEvent } from 'react';
 import { apiClient } from '../../lib/api-client';
 import { useLocale } from '../../providers/locale-provider';
 import { Button } from '../../components/ui/button';
@@ -14,6 +14,7 @@ import { GatewayDetailModal } from './gateway-detail-modal';
 import { GatewayFormDialog } from './gateway-form-dialog';
 import { GatewayEditDialog } from './gateway-edit-dialog';
 import { PairDiscoveredGatewayDialog } from './pair-discovered-gateway-dialog';
+import {GatewayRegistrationRequiredDialog} from './gateway-registration-required';
 import { Alert,AlertAction,AlertDescription,AlertTitle } from '../../components/ui/alert';
 import type { MetricSources } from './dashboard-source-model';
 import type { PayloadConfig } from './payload-contracts';
@@ -65,11 +66,15 @@ export function GatewayWorkspace() {
   const [editOpen, setEditOpen] = useState(false);
   const [pairGateway, setPairGateway] = useState<DiscoveredGatewayRow | null>(null);
   const [pairOpen, setPairOpen] = useState(false);
+  const [registrationGateway,setRegistrationGateway]=useState<DiscoveredGatewayRow|null>(null);
+  const [registrationRetrying,setRegistrationRetrying]=useState(false);
+  const [registrationError,setRegistrationError]=useState('');
+  const registrationEpoch=useRef(0);
   const [addOpen, setAddOpen] = useState(false);
   const onboardingAccess=gatewayOnboardingAccessState(canOnboard,{pairOpen,pairGateway,discoveredRows:discoveredQuery.data??[]});
 
   useEffect(()=>{
-    if(!canOnboard){setPairOpen(false);setPairGateway(null);}
+    if(!canOnboard){registrationEpoch.current+=1;setPairOpen(false);setPairGateway(null);setRegistrationGateway(null);setRegistrationRetrying(false);setRegistrationError('');}
   },[canOnboard]);
 
   const handleOpenDetail = (row: GatewayRow) => {
@@ -86,6 +91,30 @@ export function GatewayWorkspace() {
     setPairGateway(row);
     setPairOpen(true);
   };
+
+  const handleRegistrationRequired=(row:DiscoveredGatewayRow)=>{
+    if(!canOnboard)return;
+    registrationEpoch.current+=1;
+    setRegistrationRetrying(false);setRegistrationError('');
+    setRegistrationGateway(row);
+  };
+
+  async function retryRegistration(){
+    if(!registrationGateway)return;
+    const operation=++registrationEpoch.current;
+    setRegistrationRetrying(true);setRegistrationError('');
+    try{
+      const result=await discoveredQuery.refetch();
+      if(operation!==registrationEpoch.current)return;
+      if(result.isError)throw result.error;
+      const refreshed=result.data?.find(row=>row.id===registrationGateway.id);
+      if(refreshed?.onboardingState==='ready'){
+        setRegistrationGateway(null);
+        handleOpenPair(refreshed);
+      }else setRegistrationError(th?'ยังไม่ได้รับ registration snapshot ใหม่':'A new registration snapshot has not arrived yet.');
+    }catch(cause){if(operation===registrationEpoch.current)setRegistrationError(cause instanceof Error?cause.message:(th?'ตรวจสอบสถานะไม่สำเร็จ':'Could not check registration status.'));}
+    finally{if(operation===registrationEpoch.current)setRegistrationRetrying(false);}
+  }
 
   return (
     <main className="content space-y-5">
@@ -116,6 +145,7 @@ export function GatewayWorkspace() {
         onSelect={handleOpenEdit}
         onViewDetail={handleOpenDetail}
         {...(canOnboard?{onPairDiscovered:handleOpenPair}:{})}
+        {...(canOnboard?{onRegistrationRequired:handleRegistrationRequired}:{})}
       />
 
       <GatewayDetailModal
@@ -135,6 +165,8 @@ export function GatewayWorkspace() {
         discovered={onboardingAccess.pairGateway}
         onSuccess={() => {void registeredQuery.refetch();}}
       />
+
+      <GatewayRegistrationRequiredDialog gateway={canOnboard?registrationGateway:null} locale={locale} open={canOnboard&&Boolean(registrationGateway)} onOpenChange={open=>{if(!open){registrationEpoch.current+=1;setRegistrationGateway(null);setRegistrationRetrying(false);setRegistrationError('');}}} onRetry={()=>{void retryRegistration();}} retrying={registrationRetrying} error={registrationError}/>
 
       <GatewayFormDialog
         open={addOpen}

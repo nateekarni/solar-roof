@@ -27,7 +27,7 @@ function row(payload = report(), revision = 1) {
     model: 'Gateway-X', firmwareVersion: '2.4', profileId: 'Schneider_PM2230', protocol: 'modbus-tcp',
     status: 'unassigned', assignedSiteId: null, assignedGatewayId: null, assignedAt: null,
     sourceAddress: '192.0.2.20', firstSeenAt: '2026-10-19T01:00:00Z', lastSeenAt: '2026-10-19T01:00:00Z',
-    discoveryRevision: revision, rawPayload: payload, devices: payload.devices };
+    discoveryRevision: revision, rawPayload: payload, devices: payload.devices, onboardingState: 'ready' as const };
 }
 type Step = { sql: RegExp; rows?: unknown[]; check?: (values: unknown[], sql: string) => void };
 function database(steps: Step[]) {
@@ -149,6 +149,7 @@ test('a later pre-approval report replaces the complete draft and increments its
   const f = database(steps);
   const detail = await f.service.record(input(payload));
   assert.equal(detail.discoveryRevision, 2);
+  assert.equal(detail.onboardingState, 'ready');
   assert.deepEqual(detail.devices, [{ deviceId: 'REPLACEMENT' }]);
   assert.deepEqual(detail.draftDevices, [{ deviceId: 'REPLACEMENT', mappingSource: 'gateway' }]);
   f.done();
@@ -281,16 +282,23 @@ test('equal-rank presets remain explicit suggestions in stable order', async () 
 
 for (const status of ['unassigned', 'configuring', 'assigned', 'ignored', undefined] as const)
 test(`lists bounded discovery summaries for ${status ?? 'all states'} without writing resources`, async () => {
-  const f = database([{ sql: /FROM discovered_gateways/, rows: [row()], check: (values, sql) => {
+  const registrationRequired={...row(),clientId:'legacy-telemetry-client',onboardingState:'registration_required' as const};
+  const f = database([{ sql: /FROM discovered_gateways/, rows: [row(),registrationRequired], check: (values, sql) => {
     assert.deepEqual(values, [status ?? null]);
     assert.match(sql, /status\s*=\s*\$1/);
     assert.match(sql, /ORDER BY d\.last_seen_at DESC,d\.id/);
     assert.match(sql, /LIMIT 200/);
+    assert.match(sql, /gateway_discovery_snapshots/);
+    assert.match(sql, /"onboardingState"/);
+    assert.match(sql, /d\.client_id=d\.external_gateway_id/);
+    assert.match(sql, /ready_snapshot\.revision=d\.discovery_revision/);
   } }]);
   const results = await f.service.list(status);
   assert.deepEqual(results[0]?.devices, report().devices);
   assert.equal(results[0]?.mqttBrokerId, broker);
   assert.equal(results[0]?.discoveryRevision, 1);
+  assert.equal(results[0]?.onboardingState, 'ready');
+  assert.equal(results[1]?.onboardingState, 'registration_required');
   assert.equal(f.transactions, 0);
   f.done();
 });
@@ -304,6 +312,27 @@ test('invalid list status cannot accidentally turn a filtered request into an un
 test('detail reports a missing registration instead of fabricating a snapshot', async () => {
   const f = database([{ sql: /FROM discovered_gateways/, rows: [] }]);
   await assert.rejects(f.service.detail(discoveryId), /not found/i);
+  f.done();
+});
+
+test('legacy telemetry discovery without a current registration snapshot reports a stable pairing prerequisite', async () => {
+  const f = database([{ sql: /LEFT JOIN gateway_discovery_snapshots/, rows: [{ ...row(), snapshot: null }] }]);
+  await assert.rejects(f.service.detail(discoveryId), error => {
+    const response=(error as {getResponse?:()=>unknown}).getResponse?.() as {statusCode?:number;code?:string}|undefined;
+    assert.equal(response?.statusCode,409);
+    assert.equal(response?.code,'GATEWAY_REGISTRATION_REQUIRED');
+    return true;
+  });
+  f.done();
+});
+
+test('discovery with a snapshot but mismatched broker client identity also requires registration', async () => {
+  const f = database([{ sql: /LEFT JOIN gateway_discovery_snapshots/, rows: [{ ...row(), clientId: 'spoofed-client', snapshot: report() }] }]);
+  await assert.rejects(f.service.detail(discoveryId), error => {
+    const response=(error as {getResponse?:()=>unknown}).getResponse?.() as {code?:string}|undefined;
+    assert.equal(response?.code,'GATEWAY_REGISTRATION_REQUIRED');
+    return true;
+  });
   f.done();
 });
 

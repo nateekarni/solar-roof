@@ -160,7 +160,8 @@ export interface DiscoveredGatewayRow {
   model?: string | null;
   profileId?: string | null;
   protocol?: string | null;
-  status: 'unassigned' | 'assigned' | 'ignored';
+  status: 'unassigned' | 'configuring' | 'assigned' | 'ignored';
+  onboardingState: 'ready' | 'registration_required';
   assignedSiteId?: string | null;
   assignedGatewayId?: string | null;
   firstSeenAt: string;

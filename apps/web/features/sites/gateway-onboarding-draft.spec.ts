@@ -22,7 +22,7 @@ const snapshot:GatewayRegisterPayload={
 };
 
 const detail:DiscoveredGatewayDetail & {presetSuggestions:{deviceId:string;suggestions:Array<{id:string;kind:'profile';rank:number}>}[]}={
-  id:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',externalGatewayId:'GW-001',reportedSiteId:'SITE-ALPHA',reportedDeviceId:'METER-01',manufacturer:'Schneider',model:'Edge Pro',profileId:'pm2230',protocol:'mqtt',status:'unassigned',assignedSiteId:null,assignedGatewayId:null,firstSeenAt:'2026-10-19T01:00:00.000Z',lastSeenAt:'2026-10-19T01:00:01.000Z',rawPayload:snapshot as unknown as Record<string,unknown>,discoveryRevision:7,snapshot,devices:snapshot.devices,
+  id:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',externalGatewayId:'GW-001',reportedSiteId:'SITE-ALPHA',reportedDeviceId:'METER-01',manufacturer:'Schneider',model:'Edge Pro',profileId:'pm2230',protocol:'mqtt',status:'unassigned',onboardingState:'ready',assignedSiteId:null,assignedGatewayId:null,firstSeenAt:'2026-10-19T01:00:00.000Z',lastSeenAt:'2026-10-19T01:00:01.000Z',rawPayload:snapshot as unknown as Record<string,unknown>,discoveryRevision:7,snapshot,devices:snapshot.devices,
   presetSuggestions:[{deviceId:'METER-01',suggestions:[{id:'22222222-2222-4222-8222-222222222222',kind:'profile',rank:190}]},{deviceId:'INV-01',suggestions:[]}],
 };
 

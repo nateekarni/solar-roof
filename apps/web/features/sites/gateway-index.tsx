@@ -20,7 +20,7 @@ import { Badge } from '../../components/ui/badge';
 import { Skeleton } from '../../components/ui/skeleton';
 import { cn } from '../../lib/utils';
 import type { DiscoveredGatewayRow, GatewayConfigState, GatewayLifecycleState } from '@solar/api-contracts';
-import {GatewayOperationalStatus,gatewayConnectionState} from './gateway-operational-status';
+import {GatewayOperationalStatus,gatewayPrimaryStatus,type GatewayPrimaryStatus} from './gateway-operational-status';
 
 export interface GatewayRow {
   id: string;
@@ -64,33 +64,22 @@ export interface DisplayGatewayItem {
   originalRow?: GatewayRow;
 }
 
-export type GatewayIndexLifecycle='draft'|'pending_sync'|'failed'|'online'|'offline'|'unknown';
-
-const canonicalStatus = (val?: string) =>
-  val === 'online' || val === 'ออนไลน์'
-    ? 'online'
-    : val === 'offline' || val === 'ออฟไลน์'
-    ? 'offline'
-    : val || '';
+export type GatewayIndexLifecycle=GatewayPrimaryStatus;
 
 export function gatewayIndexLifecycle(item:DisplayGatewayItem):GatewayIndexLifecycle {
-  if(item.isDiscovered)return 'draft';
-  if(item.originalRow?.configState==='failed'||item.originalRow?.configState==='drifted')return 'failed';
-  if(item.originalRow?.configState==='draft')return 'draft';
-  if(item.originalRow?.configState==='pending_sync'||item.originalRow?.lifecycleState==='configuring'||
-    (item.originalRow?.desiredVersion??0)>(item.originalRow?.appliedVersion??0))return 'pending_sync';
-  const status=canonicalStatus(item.status);
-  return status==='online'||status==='offline'?status:'unknown';
+  return gatewayPrimaryStatus(item.isDiscovered
+    ?{lifecycleState:'discovered',status:'unconnected'}
+    :item.originalRow??{status:item.status});
 }
 
 const persistedDisplayItem=(row:GatewayRow):DisplayGatewayItem=>({
   id:row.id,name:row.name,externalGatewayId:row.externalGatewayId,siteName:row.siteName,siteCode:row.siteCode,status:row.status,
   deviceCount:row.deviceCount??0,currentProductionKw:row.currentProductionKw??null,lastReceivedAt:row.lastReceivedAt??null,
-  isDiscovered:false,isConnected:false,originalRow:row,
+  isDiscovered:false,isConnected:true,originalRow:row,
 });
 
 export function gatewayIndexPartitions(rows:readonly GatewayRow[],discoveredRows:readonly DiscoveredGatewayRow[],th:boolean){
-  const persisted=rows.map(persistedDisplayItem).map(item=>({...item,isConnected:item.originalRow?.lifecycleState==='active'}));
+  const persisted=rows.map(persistedDisplayItem);
   const persistedIds=new Set(rows.map(row=>row.id));
   const persistedExternalIds=new Set(rows.map(row=>row.externalGatewayId));
   const discovered=discoveredRows.filter(row=>!(row.assignedGatewayId&&persistedIds.has(row.assignedGatewayId))&&
@@ -100,8 +89,8 @@ export function gatewayIndexPartitions(rows:readonly GatewayRow[],discoveredRows
       siteCode:d.reportedSiteId||'—',status:'unconnected',deviceCount:d.reportedDeviceId?1:0,currentProductionKw:null,
       lastReceivedAt:d.lastSeenAt,isDiscovered:true,isConnected:false,discoveredRow:d,
     }));
-  const connectedItems=persisted.filter(item=>item.isConnected);
-  const unconnectedItems=[...persisted.filter(item=>!item.isConnected),...discovered];
+  const connectedItems=persisted;
+  const unconnectedItems=discovered;
   return {connectedItems,unconnectedItems,allItems:[...connectedItems,...unconnectedItems]};
 }
 
@@ -114,6 +103,7 @@ export function GatewayIndex({
   onSelect,
   onViewDetail,
   onPairDiscovered,
+  onRegistrationRequired,
   now,
 }: {
   rows: GatewayRow[];
@@ -124,6 +114,7 @@ export function GatewayIndex({
   onSelect: (row: GatewayRow) => void;
   onViewDetail?: (row: GatewayRow) => void;
   onPairDiscovered?: (row: DiscoveredGatewayRow) => void;
+  onRegistrationRequired?: (row: DiscoveredGatewayRow) => void;
   now?:number;
 }) {
   const th = locale === 'th';
@@ -149,12 +140,12 @@ export function GatewayIndex({
     const matchesStatus =
       status === 'all' ||
       (status === 'unconnected' && !item.isConnected) ||
-      gatewayIndexLifecycle(item)===status||(!item.isDiscovered&&gatewayConnectionState(item.originalRow!)===status);
+      gatewayIndexLifecycle(item)===status;
     const query = `${item.name} ${item.externalGatewayId} ${item.siteName} ${item.siteCode}`.toLocaleLowerCase();
     return matchesStatus && query.includes(search.trim().toLocaleLowerCase());
   });
 
-  const badge = (item: DisplayGatewayItem) => <GatewayOperationalStatus compact locale={locale} {...(now===undefined?{}:{now})} gateway={item.isDiscovered?{lifecycleState:'discovered',configState:'draft',connectionState:'unknown',lastReceivedAt:item.lastReceivedAt}:{...item.originalRow!,connectionState:item.originalRow?.connectionState??gatewayConnectionState(item.originalRow!)}}/>;
+  const badge = (item: DisplayGatewayItem) => <GatewayOperationalStatus compact locale={locale} {...(now===undefined?{}:{now})} gateway={item.isDiscovered?{lifecycleState:'discovered',status:'unconnected'}:item.originalRow!}/>;
 
   const received = (item: DisplayGatewayItem) => (
     <span title={item.lastReceivedAt ? formatAppDateTime(item.lastReceivedAt, th ? 'th' : 'en') : undefined}>
@@ -170,7 +161,10 @@ export function GatewayIndex({
         })} kW`;
 
   const actions = (item: DisplayGatewayItem) => {
-    if (item.isDiscovered && item.discoveredRow && onPairDiscovered) {
+    if (item.isDiscovered && item.discoveredRow) {
+      const ready=item.discoveredRow.onboardingState==='ready';
+      const handler=ready?onPairDiscovered:onRegistrationRequired;
+      if(!handler)return null;
       return (
         <Button
           size="sm"
@@ -178,10 +172,10 @@ export function GatewayIndex({
           className="text-xs font-medium border-primary/40 hover:bg-primary/10 hover:text-primary whitespace-nowrap"
           onClick={(e) => {
             e.stopPropagation();
-            onPairDiscovered(item.discoveredRow!);
+            handler(item.discoveredRow!);
           }}
         >
-          {th ? 'เชื่อมต่อไซต์งาน' : 'Pair site'}
+          {ready?(th ? 'เชื่อมต่อไซต์งาน' : 'Pair site'):(th?'ส่งข้อมูลลงทะเบียน':'Publish registration')}
         </Button>
       );
     }
@@ -211,7 +205,8 @@ export function GatewayIndex({
 
   const handleRowClick = (item: DisplayGatewayItem) => {
     if (item.isDiscovered && item.discoveredRow) {
-      onPairDiscovered?.(item.discoveredRow);
+      if(item.discoveredRow.onboardingState==='ready')onPairDiscovered?.(item.discoveredRow);
+      else onRegistrationRequired?.(item.discoveredRow);
     } else if (item.originalRow) {
       onViewDetail?.(item.originalRow);
     }
@@ -299,12 +294,8 @@ export function GatewayIndex({
             <option value="all">{th ? 'ทุกสถานะ' : 'All statuses'}</option>
             <option value="online">{th ? 'ออนไลน์' : 'Online'}</option>
             <option value="offline">{th ? 'ออฟไลน์' : 'Offline'}</option>
-            <option value="draft">{th ? 'ฉบับร่าง' : 'Draft'}</option>
-            <option value="pending_sync">{th ? 'รอซิงก์การตั้งค่า' : 'Pending synchronization'}</option>
-            <option value="failed">{th ? 'ตั้งค่าไม่สำเร็จ' : 'Configuration failed'}</option>
-            {activeTab === 'all' && (
-              <option value="unconnected">{th ? 'ยังไม่เชื่อมต่อ' : 'Not connected'}</option>
-            )}
+            <option value="connecting">{th ? 'กำลังเชื่อมต่อ' : 'Connecting'}</option>
+            <option value="unconnected">{th ? 'ยังไม่เชื่อมต่อไซต์' : 'Not connected'}</option>
           </ChoiceSelect>
         </div>
       </div>

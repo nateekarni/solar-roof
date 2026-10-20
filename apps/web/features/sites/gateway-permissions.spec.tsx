@@ -10,7 +10,7 @@ test('onboarding discovery is restricted to the admin role even when an operator
 });
 test('view-only workspace keeps its index without starting admin discovery or offering Add gateway',()=>{const html=renderToStaticMarkup(<QueryProvider><SessionUserProvider user={{id:'staff',email:'staff@example.test',displayName:'Staff',role:'operator',authorization}}><LocaleProvider initialLocale="en"><GatewayWorkspace/></LocaleProvider></SessionUserProvider></QueryProvider>);assert.match(html,/Manage gateways/);assert.doesNotMatch(html,/Add gateway|Loading discovered gateways|Could not refresh discovered gateways/);});
 test('permission loss clears cached discovery and pairing state and removes the submit surface',()=>{
-  const discovered={id:'disc',externalGatewayId:'GW-CACHED',reportedSiteId:null,reportedDeviceId:null,status:'unassigned' as const,assignedSiteId:null,assignedGatewayId:null,firstSeenAt:'2026-10-19T01:00:00Z',lastSeenAt:'2026-10-19T01:01:00Z',rawPayload:{}};
+  const discovered={id:'disc',externalGatewayId:'GW-CACHED',reportedSiteId:null,reportedDeviceId:null,status:'unassigned' as const,onboardingState:'ready' as const,assignedSiteId:null,assignedGatewayId:null,firstSeenAt:'2026-10-19T01:00:00Z',lastSeenAt:'2026-10-19T01:01:00Z',rawPayload:{}};
   const cleared=gatewayOnboardingAccessState(false,{pairOpen:true,pairGateway:discovered,discoveredRows:[discovered]});
   assert.deepEqual(cleared,{pairOpen:false,pairGateway:null,discoveredRows:[]});
   const html=renderToStaticMarkup(<LocaleProvider initialLocale="en"><PairDiscoveredGatewayDialog canOnboard={false} open discovered={discovered} onOpenChange={()=>{}} onSuccess={()=>{}}/></LocaleProvider>);

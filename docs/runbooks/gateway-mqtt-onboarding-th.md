@@ -28,11 +28,14 @@ solar/v1/gateways/{gatewayId}/status
 
 ## ระยะที่ 1 — ลงทะเบียนแบบ anonymous
 
+แถวที่เคยถูกค้นพบจาก telemetry รุ่นเก่าอาจปรากฏใน Tab **ยังไม่เชื่อมต่อ** แต่ยังจับคู่ไม่ได้ เพราะไม่มี registration snapshot ที่ผ่าน schema 1.1 ระบบจะแสดงปุ่ม **ส่งข้อมูลลงทะเบียน** แทนขั้นตอน Pairing ห้ามสร้าง snapshot หรือ mapping ทดแทนจาก telemetry เดิม ให้ส่ง register message ใหม่ตามขั้นตอนนี้ แล้วกด **ตรวจสอบอีกครั้ง** เมื่อระบบพบ snapshot ปัจจุบันจึงจะเปิด 4 ขั้นตอน Pairing ได้
+
 สร้าง MQTTBox connection แรก:
 
 - Client ID: `GW-TEST-001`
 - Username/Password: เว้นว่างทั้งคู่
 - Clean session: เปิดสำหรับการทดสอบ
+- MQTT protocol: ใช้ MQTT 5.0 หรือ MQTT 3.1.1 ที่ Client รองรับ โดยต้องคง Client ID เดิมตลอดการทดสอบรอบนี้
 
 Publish QoS 1, Retain ปิด ไปที่:
 
@@ -251,6 +254,7 @@ solar/v1/gateways/GW-TEST-001/configUpdate
 |---|---|
 | CONNECT anonymous ถูกปฏิเสธ | Client ID ไม่ตรงรูปแบบ, ID เคยลงทะเบียน/ถูก reserve แล้ว หรือใส่ username/password |
 | PUBACK แต่ไม่ขึ้น Tab ยังไม่เชื่อมต่อ | API ไม่ ready, คนละ Broker, topic/payload identity ไม่ตรง หรือ schema 1.1 ไม่ผ่าน |
+| มี row แต่กดแล้วขึ้นว่าต้องลงทะเบียน | เป็นแถว telemetry รุ่นเก่าหรือ snapshot revision ปัจจุบันหาย; เชื่อมต่อแบบ anonymous โดยให้ Client ID ตรง Gateway ID แล้ว Publish schema 1.1 register ไปยัง topic ของ Gateway, QoS 1, Retain ปิด จากนั้นกดตรวจสอบอีกครั้ง |
 | SUBACK `config` ถูกปฏิเสธ | ยังใช้ anonymous session, username/client ID ไม่ตรง Gateway ID หรือ credential ถูกหมุนแล้ว |
 | subscribe แล้วไม่ได้ retained config | ยังไม่มี desired revision, API publisher ไม่ ready หรือ subscribe topic ผิด; ห้ามตั้ง Retain เองแทนระบบ |
 | `configStatus` ไม่เปลี่ยนสถานะ | version/hash ไม่ตรง desired config, topic Gateway ID ไม่ตรง หรือใช้ชื่อ `configAck` ที่เลิกใช้แล้ว |
