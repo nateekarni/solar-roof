@@ -5,6 +5,12 @@ import {renderToStaticMarkup} from 'react-dom/server';
 import {CashPaymentHistory} from './cash-payment-history';
 
 test('daily cash list shows customer, cycle, amount, receipt, recorder and both dates',()=>{
- const html=renderToStaticMarkup(<CashPaymentHistory locale="en" entries={[{id:'cash-1',amount:'200.00',customerName:'Acme',siteName:'Roof A',billingCycleId:'cycle-1',receiptId:'receipt-1',receiptNumber:'REC-001',recordedBy:'Natee',receivedAt:'2026-10-19',recordedAt:'2026-10-19T10:30:00+07:00',note:null}]}/>);
- for(const value of ['Cash received today','Acme','Roof A','cycle-1','200.00','REC-001','Natee','October 19, 2026','10:30'])assert.match(html,new RegExp(value));
+ const original=process.env.TZ;
+ try {
+  for(const timezone of ['UTC','Asia/Bangkok']){
+   process.env.TZ=timezone;
+   const html=renderToStaticMarkup(<CashPaymentHistory locale="en" entries={[{id:'cash-1',amount:'200.00',customerName:'Acme',siteName:'Roof A',billingCycleId:'cycle-1',receiptId:'receipt-1',receiptNumber:'REC-001',recordedBy:'Natee',receivedAt:'2026-10-19',recordedAt:'2026-10-19T10:30:00+07:00',note:null}]}/>);
+   for(const value of ['Cash received today','Acme','Roof A','cycle-1','200.00','REC-001','Natee','October 19, 2026','10:30'])assert.match(html,new RegExp(value));
+  }
+ } finally {if(original===undefined)delete process.env.TZ;else process.env.TZ=original;}
 });
