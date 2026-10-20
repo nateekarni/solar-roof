@@ -40,7 +40,10 @@ jobs:
   verify-platform:
     name: Platform Regression, Smokes & Acceptance
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    # A full run includes browser acceptance, platform regression, and publishing
+    # six tested images. Keep headroom above the current ~26-minute runtime so
+    # GitHub can finish post-job cleanup and expose digests to deployment.
+    timeout-minutes: 40
     permissions:
       contents: read
       packages: write
