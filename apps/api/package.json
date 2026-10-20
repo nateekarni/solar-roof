@@ -16,6 +16,7 @@
     "simulate:mqtt": "tsx src/scripts/simulate-mqtt.ts",
     "test:ingestion": "tsx src/scripts/test-gateway-ingestion.ts",
     "test:payload-gateway": "tsx src/scripts/verify-payload-gateway.ts",
+    "verify:gateway-onboarding": "tsx src/scripts/verify-gateway-onboarding.ts",
     "db:create:user": "tsx src/scripts/create-user.ts"
   },
   "dependencies": {
