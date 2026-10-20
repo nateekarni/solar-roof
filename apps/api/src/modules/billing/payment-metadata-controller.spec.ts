@@ -7,7 +7,9 @@ import {TEST_FINANCIAL_POLICY_HASH} from './local-financial-policy.js';
 function legacyHarness(existing?:Record<string,unknown>){
  let saved=existing;let writes=0;
  const db={transaction:async(run:any)=>run({query:async(sql:string,params:unknown[]=[])=>{
-  if(sql.includes('SELECT * FROM billing_cycles'))return {rows:[{id:'cycle',status:'approved',policy_hash:TEST_FINANCIAL_POLICY_HASH}]};
+  if(sql.includes('SELECT * FROM billing_cycles'))return {rows:[{id:'cycle',site_id:'site-a',amount:'107.00',status:'approved',policy_hash:TEST_FINANCIAL_POLICY_HASH}]};
+  if(sql.includes('FROM users u WHERE u.id=$1'))return {rows:[{role:'owner',status:'active',assigned:true}]};
+  if(sql.includes('SELECT status,verified_amount,amount FROM payments'))return {rows:[]};
   if(sql.includes('SELECT id FROM documents'))return {rows:[{id:'invoice'}]};
   if(sql.includes('SELECT 1 FROM payments'))return {rows:saved?[{id:saved.id}]:[],rowCount:saved?1:0};
   if(sql.includes('INSERT INTO payments')){

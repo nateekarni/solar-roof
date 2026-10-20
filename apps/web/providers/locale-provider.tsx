@@ -62,10 +62,12 @@ export function LocaleProvider({
   return <LocaleContext.Provider value={value}>{children}</LocaleContext.Provider>;
 }
 
-export function useLocale(): Locale {
+export function useLocale(fallback: Locale = "th"): Locale {
   const context = React.useContext(LocaleContext);
   if (!context) {
-    return "th";
+    // Standalone compositions may retain their server-supplied initial locale;
+    // within the app, the provider is always the live source of truth.
+    return fallback;
   }
   return context.locale;
 }

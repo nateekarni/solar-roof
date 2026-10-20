@@ -94,7 +94,7 @@ export function FinancialDocumentList({documents,selected,onSelect,disabled,loca
               <div>
                 <span className="text-muted-foreground">{th?'ช่องทางการชำระ:':'Payment method:'}</span>
                 <p className="font-medium text-foreground mt-0.5">
-                  {(payment as any).paymentMethod === 'promptpay' ? (th ? 'พร้อมเพย์' : 'PromptPay') : (th ? 'โอนเงินผ่านธนาคาร' : 'Bank Transfer')}
+                  {payment.transferChannel === 'promptpay' || (payment as any).paymentMethod === 'promptpay' ? (th ? 'พร้อมเพย์' : 'PromptPay') : (th ? 'โอนเงินผ่านธนาคาร' : 'Bank Transfer')}
                 </p>
               </div>
             )}

@@ -121,7 +121,7 @@ export function PaymentDialog({
 
   const today = React.useMemo(() => bangkokTransferWallTime().slice(0, 10), []);
   const [paymentDate, setPaymentDate] = React.useState<string>(today);
-  const [paymentMethod, setPaymentMethod] = React.useState<"bank_transfer" | "promptpay">("bank_transfer");
+  const [transferChannel, setTransferChannel] = React.useState<"bank_account" | "promptpay">("bank_account");
   const [paymentAmount, setPaymentAmount] = React.useState<string>("");
   const [evidenceFileName, setEvidenceFileName] = React.useState<string>("");
 
@@ -176,7 +176,7 @@ export function PaymentDialog({
       setSlipPreviewUrl(null);
       setNote("");
       setPaymentDate(today);
-      setPaymentMethod("bank_transfer");
+      setTransferChannel("bank_account");
 
       // Calculate remaining balance if partial payments exist
       const paidSoFar = (billingCycle?.payments ?? [])
@@ -274,7 +274,8 @@ export function PaymentDialog({
         slipUrl: slipPreviewUrl,
         evidenceKey: evidenceFileName || undefined,
         paidAt: paidAtIso,
-        paymentMethod,
+        paymentMethod: "bank_transfer",
+        transferChannel,
         amount: amt,
         note: note.trim() || undefined,
       });
@@ -453,20 +454,20 @@ export function PaymentDialog({
             {/* Payment Method */}
             <div className="space-y-1.5">
               <Label htmlFor="payment-method-select" className="text-xs font-semibold">
-                {text("ช่องทางการชำระ", "Payment method")}{" "}
+                {text("ช่องทางการโอน", "Transfer channel")}{" "}
                 <span className="text-destructive">*</span>
               </Label>
               <ChoiceSelect
                 id="payment-method-select"
-                value={paymentMethod}
+                value={transferChannel}
                 onChange={(e) =>
-                  setPaymentMethod(
-                    e.target.value as "bank_transfer" | "promptpay",
+                  setTransferChannel(
+                    e.target.value as "bank_account" | "promptpay",
                   )
                 }
                 className="text-base md:text-sm h-10 w-full"
               >
-                <option value="bank_transfer">
+                <option value="bank_account">
                   {text("โอนเงินผ่านธนาคาร", "Bank transfer")}
                 </option>
                 <option value="promptpay">

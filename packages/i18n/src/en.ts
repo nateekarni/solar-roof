@@ -1,4 +1,61 @@
 export const en = {
+  customerPortal: {
+    shell: {
+      home: "Home", documents: "Documents", account: "Account", skipToContent: "Skip to content",
+      desktopNavigation: "Customer navigation", mobileNavigation: "Customer mobile navigation",
+      language: "Language", thai: "ไทย", english: "EN", theme: "Theme", systemTheme: "System", lightTheme: "Light", darkTheme: "Dark",
+      loading: "Loading your account", logout: "Sign out", profileMenu: "Profile menu",
+      notifications: "Notifications", notificationDescription: "Recent billing, payment and account updates.", markAllNotificationsRead: "Mark all as read", notificationsLoading: "Loading notifications", notificationsEmpty: "No notifications yet", notificationsEmptyDescription: "Billing, payment and account updates will appear here.", notificationsUnavailable: "Unable to load notifications. Please try again.", notificationsReadFailed: "Unable to mark notifications as read.",
+    },
+    home: {
+      title: "Home", welcome: "Welcome, {name}", currentBill: "Current bill", amountDue: "Amount due", dueDate: "Due date",
+      pay: "Pay", breakdown: "Bill breakdown", consumedEnergy: "Consumed energy", rate: "Rate", subtotal: "Subtotal", tax: "Tax", total: "Total",
+      billedAmount: "Billed amount", approvedAmount: "Approved payments", outstandingAmount: "Outstanding amount",
+      additionalOpenBills: "{count} more open bills", paidUpToDate: "You are paid up to date", noOpenBill: "No open bill at the moment",
+      energy: "Energy production", energyReadings: "View energy readings", sevenDays: "7 days", thirtyDays: "30 days", energyUnavailable: "Energy data is unavailable", energyEmpty: "No energy readings for this period",
+      recentRecords: "Recent financial records", viewAllDocuments: "View all documents", noRecords: "No financial records yet",
+      unavailable: "Your account overview is unavailable", noSite: "No site is assigned to your account", stale: "Showing the last available data",
+    },
+    billing: {
+      actionsUnavailable: "Payment actions are unavailable.", retryActions: "Retry payment actions",
+      periodFrom: "Period from", periodTo: "Period to", applyFilters: "Apply filters", statusFilter: "Document status",
+      pendingEvidence: "Pending evidence: {count}", rejectedEvidence: "Evidence rejected: {count}", noReceipt: "No receipt issued yet",
+      title: "Documents", search: "Search documents", searchPlaceholder: "Document number or period", period: "Billing period", allPeriods: "All periods", clearPeriod: "Clear", applyPeriod: "Apply",
+      all: "All", awaitingPayment: "Awaiting payment", pendingVerification: "Evidence review", partiallyPaid: "Partially paid", overdue: "Overdue", paid: "Paid",
+      loadMore: "Load more documents", empty: "No matching documents", unavailable: "Documents are unavailable", documentNumber: "Document number", evidenceCount: "{count} payment evidence files", receiptCount: "{count} receipts",
+    },
+    record: {
+      fileUnavailable: "No document file is available.",
+      title: "Financial record", details: "View details", period: "Billing period", statement: "Billing statement", paymentProgress: "Payment progress", paid: "Paid",
+      timeline: "Documents and payment history", evidence: "Payment evidence", receipt: "Receipt", rejectedReason: "Reason for rejection", resubmit: "Report payment again",
+      preview: "Preview document", download: "Download", previewUnavailable: "Preview is unavailable. You can download the document.", unavailable: "This financial record is unavailable", noDocuments: "No documents yet", backToDocuments: "Back to documents",
+    },
+    payment: {
+      title: "Make a payment", description: "Pay by bank transfer or QR code and report the payment in one step.", channel: "Payment channel", channelDescription: "Transfer to the account below or scan the QR code.", details: "Payment details", detailsDescription: "Enter the transfer date and attach evidence for staff review.", instructions: "Payment instructions", transferDetails: "Transfer details and evidence", review: "Review your submission", pending: "Payment reported — evidence review",
+      pendingDescription: "Your evidence will be reviewed. Your balance changes after approval.", fullAmount: "Full outstanding amount", otherAmount: "Other amount", amount: "Transferred amount",
+      paidAt: "Transfer date", method: "Transfer method", bankTransfer: "Bank transfer", promptpay: "PromptPay", bankName: "Bank", accountName: "Account name", accountNumber: "Account number", branch: "Branch", copy: "Copy account number", copied: "Copied", qrAlt: "Payment QR code", saveQr: "Save QR code", qrFallback: "Reusable QR — verify the amount before paying",
+      note: "Note", evidence: "Transfer evidence", chooseFile: "Choose file or take a photo", dropFile: "Drop a file here or choose a file", allowedFiles: "JPG, PNG or PDF, up to 10 MB", replace: "Replace file", remove: "Remove file",
+      next: "Continue", back: "Back", submit: "Confirm payment", submitting: "Reporting payment", returnHome: "Return home", viewRecord: "View financial record",
+      unavailable: "Payment instructions are unavailable", failed: "Payment details could not be submitted. Your entered details are preserved.", duplicateEvidence: "This evidence has already been submitted. Choose a different file.", errorSummary: "Check the following fields",
+    },
+    account: {
+      description: "Manage your profile, notifications and account security.", email: "Login email", emailReadOnly: "Contact your provider to change your login email.", site: "Assigned site", taxBranch: "Tax branch",
+      profileFailed: "Unable to save your profile. Please try again.", profileSaved: "Profile saved", organizationUnavailable: "Organization details are unavailable.",
+      notificationsUnavailable: "Notification preferences are unavailable.", notificationsFailed: "Unable to save notification preferences. Your previous preferences have been restored.",
+      notificationDelivery: "Email notifications are sent to {email}.", criticalEmailAlert: "Email alerts for invoices and critical updates", inAppNotification: "In-app notifications",
+      title: "Organization & Account", organization: "Contracted organization", organizationName: "Organization name", address: "Address", taxId: "Tax ID", readOnly: "Contact your provider to update contracted organization details.",
+      profile: "Your profile", profileDescription: "Review the contact details used for this customer account.", editProfile: "Edit profile", displayName: "Display name", phoneNumber: "Phone number", avatar: "Profile picture", changeAvatar: "Change profile picture", notifications: "Notification preferences", emailNotifications: "Email notifications", security: "Security", securityDescription: "Manage your password and two-factor authentication.", password: "Change password", twoFactor: "Two-factor authentication", saved: "Your preferences have been saved", unavailable: "Account details are unavailable",
+    },
+    status: {
+      awaitingPayment: "Awaiting payment", pendingVerification: "Evidence review", partiallyPaid: "Partially paid", overdue: "Overdue", paid: "Paid", unsuccessful: "Unsuccessful", rejected: "Evidence rejected", cancelled: "Cancelled", superseded: "Replaced",
+    },
+    validation: {
+      required: "This field is required", positiveAmount: "Enter an amount greater than zero", amountExceedsOutstanding: "The amount cannot exceed the outstanding balance", futurePaidDate: "The transfer date cannot be in the future", invalidPaidDate: "Enter a valid transfer date", evidenceRequired: "Choose payment evidence", unsupportedFileType: "Choose a JPG, PNG or PDF file", fileTooLarge: "The file must be 10 MB or smaller", displayNameRequired: "Enter your display name",
+    },
+    common: {
+      loading: "Loading", retry: "Try again", save: "Save", saving: "Saving", cancel: "Cancel", close: "Close", back: "Back", unavailable: "Unavailable", noData: "No data", unknown: "Unknown", baht: "THB", kwh: "kWh", date: "Date", amount: "Amount", offline: "You are offline. Reconnect to refresh your data.",
+    },
+  },
   jobs: {
     title: "Report jobs", job: "Job", loading: "Loading job", queued: "Queued — waiting for a worker", running: "Running — processing real data", ready: "Ready — report available", failed: "Failed — report unavailable", cancelled: "Cancelled", accepted: "Report request accepted. Track the job on this page.", requestFailed: "Request failed. Your entered values are preserved.", raw: "Raw data", operational: "Operational records", unknownMetadata: "Report range and data kind are unknown", unknown: "Unknown", rows: "Rows", snapshot: "Snapshot (Asia/Bangkok)", failureCode: "Failure code", availableAt: "Eligible to run after", download: "Download", retry: "Retry job", cancel: "Cancel job", refresh: "Refresh status", more: "More jobs", empty: "No report jobs", offline: "You are offline. Reconnect to refresh the server status.", progress: "Server progress", archiveTarget: "Archived detail retrieval targets completion within one hour; this is a target, not a calculated arrival time.", legacy: "This legacy report has no saved scope. Download requires current report permission and access to all organizations as the original report creator. Otherwise create a new report.", expired: "The download is unavailable or expired. Refresh permissions and request a new report.", open: "Open job", create: "Generate Report",
   },

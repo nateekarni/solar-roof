@@ -72,6 +72,8 @@ try {
     "infra/migrations/063_discovered_gateways_and_partial_receipts.sql",
     "infra/migrations/064_safe_site_deletion_and_bank_qr.sql",
     "infra/migrations/065_payload_samples_device_tag_latest_idx.sql",
+    "infra/migrations/069_customer_invoice_notification_links.sql",
+    "infra/migrations/070_payment_method_transfer_channel_cash.sql",
   ];
   for (const file of migrationFiles) {
     const sql = await readFile(new URL(`../../../../${file}`, import.meta.url), "utf8");

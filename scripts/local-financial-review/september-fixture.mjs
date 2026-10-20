@@ -8,10 +8,22 @@ export const accounts=[
  {key:'accountant',email:'accountant.september@example.test',role:'accountant'},
  {key:'customer',email:'customer.september@example.test',role:'customer_user',customerKey:'customer'},
 ];
+export const septemberSiteRateFixture=()=>({
+ id:fixtureId('contract-rate'),siteId:fixtureId('site'),changedBy:fixtureId('owner'),
+ effectiveFrom:'2026-09-01',ratePerKwh:3.5,
+});
+export const septemberApproverFixture=()=>({
+ userId:fixtureId('owner'),positionId:fixtureId('approver-position'),positionName:'ผู้อนุมัติเอกสารทดสอบ',
+});
+export const septemberPaymentFixture=()=>({
+ promptPayId:'0105565012345',customerPaymentMethod:'bank_transfer',transferChannels:['bank_account','promptpay'],staffCashRoles:['owner','accountant'],
+});
 export function septemberReadings(){
  const start=Date.parse('2026-09-01T00:00:00+07:00'),weights=[1,2,3,4,5,6,6,5,4,3,2,1];
  let energyWh=10000000;const rows=[{time:new Date(start).toISOString(),meterWh:energyWh,loggerWh:20000000,powerW:0}];
- for(let day=0;day<30;day++){
+ // Keep the exact September billing boundary and continue through 19 October
+ // Bangkok midnight so the 7d/30d customer chart has local acceptance data.
+ for(let day=0;day<48;day++){
   const dailyWh=(400+(day%7-3)*20)*1000;let allocated=0;
   for(let hour=0;hour<24;hour++){
    const slot=hour-6;const increment=slot>=0&&slot<12?(slot===11?dailyWh-allocated:Math.floor(dailyWh*weights[slot]/42)):0;

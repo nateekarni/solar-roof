@@ -262,7 +262,7 @@ export class FinancialReadinessService {
   async capabilities(role:string,hasScope:boolean,actor:ScopePrincipal={role}):Promise<Capabilities> {
     const status=await this.status(actor);
     const allowed:FinancialAction[]=hasScope&&['owner','accountant'].includes(role)?[...ACTIONS]:[];
-    const operationsActions=hasScope?[['read_invoice','GET','/v1/operations/documents/fixture'],['read_receipt','GET','/v1/operations/documents/fixture'],['submit_payment','POST','/v1/billing-cycles/fixture/pay']].filter(([,method,path])=>routeAllowed(role,method!,path!)).map(([action])=>action!):[];
+    const operationsActions=hasScope?[['read_invoice','GET','/v1/operations/documents/fixture'],['read_receipt','GET','/v1/operations/documents/fixture'],['submit_payment','POST','/v1/billing-cycles/fixture/pay'],['record_cash_payment','POST','/v1/billing-cycles/fixture/cash-payment']].filter(([,method,path])=>routeAllowed(role,method!,path!)).map(([action])=>action!):[];
     const invoiceApprovalActions=hasScope&&hasPermission(actor,'business.billing.approve')&&status.actions.issue.enabled?['approve_invoice']:[];
     return {...(status.scope?{financialScope:status.scope}:{}),operationsActions:[...operationsActions,...invoiceApprovalActions],actions:[...(hasScope&&routeAllowed(role,'POST','/v1/contracts')?['create_contract']:[]),...allowed.filter(a=>status.actions[a].enabled),...invoiceApprovalActions],unavailable:Object.fromEntries(allowed.filter(a=>!status.actions[a].enabled).map(a=>[a,'Financial workflows await verified accounting requirements and implementation readiness.']))};
   }

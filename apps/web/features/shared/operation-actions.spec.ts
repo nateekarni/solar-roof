@@ -14,3 +14,10 @@ test('TEST unpaid pending bill permits additional transfer evidence with server 
  assert.ok(!getOperationActions('billing',{...row,status:'paid'},capabilities).some(action=>action.id==='pay'));
  assert.ok(!getOperationActions('billing',row,{...capabilities,financialScope:undefined}).some(action=>action.id==='pay'));
 });
+test('cash recording is limited to capability holders and payable balances without pending evidence',()=>{
+ const capabilities={actions:[],unavailable:{},operationsActions:['record_cash_payment']};
+ const eligible={id:'cycle',status:'approved',billingStatusView:'awaiting_payment',outstandingAmount:'100.00',pendingEvidenceCount:0};
+ assert.ok(getOperationActions('billing',eligible,capabilities).some(action=>action.id==='cash'));
+ for(const row of [{...eligible,outstandingAmount:'0.00'},{...eligible,billingStatusView:'pending_verification',pendingEvidenceCount:1},{...eligible,status:'paid'}])assert.ok(!getOperationActions('billing',row,capabilities).some(action=>action.id==='cash'));
+ assert.ok(!getOperationActions('billing',eligible,{...capabilities,operationsActions:[]}).some(action=>action.id==='cash'));
+});

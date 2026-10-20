@@ -15,6 +15,8 @@ import { operationKeys } from '../../../../../features/shared/operation-columns'
 import { Card, CardContent, CardHeader, CardTitle } from '../../../../../components/ui/card';
 import { RecordDetails } from '../../../../../features/shared/record-details';
 import { AuditRecordDetails } from '../../../../../features/shared/audit-record-details';
+import { CustomerFinancialRecordPage } from '../../../../../features/customer/records/customer-financial-record-page';
+import type { Capabilities } from '@solar/api-contracts';
 
 export const dynamic = 'force-dynamic';
 
@@ -46,6 +48,17 @@ export default async function Page({
   if (!res.ok) throw new Error('Unable to load record');
   const { row, columns } = await res.json();
   const th = (await cookies()).get('locale')?.value !== 'en';
+  if (user.role === 'customer_user' && resource === 'billing') {
+    let capabilities: Capabilities | null = null;
+    try {
+      const permissions = await serverFetch(`${getApiBaseUrl()}/v1/auth/capabilities`, { cache: 'no-store' });
+      if (permissions.ok) capabilities = await permissions.json();
+    } catch (error) {
+      const { isRedirectError } = await import('next/dist/client/components/redirect-error');
+      if (isRedirectError(error)) throw error;
+    }
+    return <CustomerFinancialRecordPage row={row} locale={th ? 'th' : 'en'} capabilities={capabilities} />;
+  }
   const backLink = recordBackLink(resource, user.role, back[resource]!, th ? 'th' : 'en');
   const fields = operationKeys(resource, row);
 

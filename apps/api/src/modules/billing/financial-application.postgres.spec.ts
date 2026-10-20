@@ -327,6 +327,17 @@ test('production finance freezes configured policy and artifacts across calculat
     throw rollback;
    }),error=>error===rollback);
   });
+  await t.test('a renderer upgrade prepares a replacement when commercial facts are unchanged',async()=>{
+   const rollback=new Error('renderer upgrade fixture rollback');
+   await assert.rejects(db.transaction(async client=>{
+    await client.query("UPDATE documents SET template_version='sarabun-a4-v8' WHERE id=$1",[invoice.id]);
+    const current=(await client.query('SELECT * FROM billing_cycles WHERE id=$1 FOR UPDATE',[cycle.id])).rows[0];
+    const replacement=await service.reviseInvoiceInTransaction(client,current,String(current.rate),owner.id);
+    assert.equal(replacement.status,'pending_issue_approval');
+    assert.equal(replacement.supersedes_document_id,invoice.id);
+    throw rollback;
+   }),error=>error===rollback);
+  });
   await t.test('public correction retry reuses one pending proposal and one tariff change without delivery',async()=>{
    const rollback=new Error('public correction retry fixture rollback'),mailBefore=messages.length;
    await assert.rejects(db.transaction(async client=>{
@@ -434,6 +445,9 @@ test('production finance freezes configured policy and artifacts across calculat
    assert.equal((await pool.query('SELECT count(*)::int AS n FROM payments')).rows[0].n,0);
    const payment=await service.submitPayment(cycle.id,{amount:'5500.00',evidenceKey:'task7-full-'+schema},recipient.id);
    const reviewer=(await pool.query("SELECT id FROM users WHERE role='accountant' AND status='active' ORDER BY id LIMIT 1")).rows[0];assert.ok(reviewer);
+   await pool.query(`INSERT INTO employee_domain_grants(user_id,domain,overrides,scope_mode)
+    VALUES($1,'business','{"business.billing.approve":true,"business.billing.record_cash_payment":true}'::jsonb,'all')
+    ON CONFLICT(user_id,domain) DO UPDATE SET overrides=employee_domain_grants.overrides||excluded.overrides,scope_mode='all',site_ids='{}'`,[reviewer.id]);
    await pool.query("UPDATE users SET display_name='ผู้ตรวจหลักฐาน',company_position_id=$2,signature_data=$3 WHERE id=$1",[reviewer.id,positionId,signature]);
    const review={paymentId:payment.paymentId,verifiedAmount:'5500.00',verifiedTransferAt:'2026-10-10T01:00:00Z'};
    const settlementState=async()=>({...await approvalState(),payments:(await pool.query('SELECT * FROM payments ORDER BY id')).rows,documents:(await pool.query('SELECT * FROM documents ORDER BY id')).rows,artifacts:(await pool.query('SELECT * FROM document_artifacts ORDER BY document_id')).rows,outboxes:(await pool.query('SELECT * FROM financial_delivery_outbox ORDER BY id')).rows,audits:(await pool.query('SELECT * FROM audit_events ORDER BY id')).rows});

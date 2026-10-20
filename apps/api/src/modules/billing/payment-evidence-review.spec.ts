@@ -6,7 +6,9 @@ import { TEST_FINANCIAL_POLICY_HASH } from './local-financial-policy.js';
 test('attachment-only submission stores unknown transaction amount and time',async()=>{
  let persisted:any;
  const client={query:async(sql:string,args:any[]=[])=>{
-  if(sql.includes('SELECT * FROM billing_cycles'))return {rows:[{id:'bill',status:'approved',policy_hash:TEST_FINANCIAL_POLICY_HASH}]};
+  if(sql.includes('SELECT * FROM billing_cycles'))return {rows:[{id:'bill',site_id:'site-a',amount:'100.00',status:'approved',policy_hash:TEST_FINANCIAL_POLICY_HASH}]};
+  if(sql.includes('FROM users u WHERE u.id=$1'))return {rows:[{role:'customer_user',status:'active',assigned:true}]};
+  if(sql.includes('SELECT status,verified_amount,amount FROM payments'))return {rows:[]};
   if(sql.includes('SELECT id FROM documents'))return {rows:[{id:'invoice'}]};
   if(sql.includes('INSERT INTO payments'))persisted=args;
   return {rows:[],rowCount:0};
@@ -14,6 +16,40 @@ test('attachment-only submission stores unknown transaction amount and time',asy
  const service=new FinancialApplicationService({transaction:async(fn:any)=>fn(client)} as any,{} as any);
  await service.submitPayment('bill',{evidenceKey:'synthetic-file',note:'Third party transfer'},'customer');
  assert.equal(persisted[2],null);assert.equal(persisted[3],null);
+});
+
+function submissionValidationHarness(options:{assigned?:boolean;today?:string;paid?:string[]}={}){
+ let inserted=false;
+ const client={query:async(sql:string,args:any[]=[])=>{
+  if(sql.includes('SELECT * FROM billing_cycles'))return {rows:[{id:'bill',site_id:'site-a',amount:'100.00',status:'approved',policy_hash:TEST_FINANCIAL_POLICY_HASH}]};
+  if(sql.includes('FROM users u WHERE u.id=$1'))return {rows:[{role:'customer_user',status:'active',assigned:options.assigned!==false}]};
+  if(sql.includes("now() AT TIME ZONE 'Asia/Bangkok'"))return {rows:[{day:options.today??'2026-10-20',transfer_day:args[0]?'2026-10-21':null}]};
+  if(sql.includes('FROM payments WHERE billing_cycle_id=$1 FOR UPDATE'))return {rows:(options.paid??[]).map(verified_amount=>({status:'paid',verified_amount}))};
+  if(sql.includes('SELECT id FROM documents'))return {rows:[{id:'invoice'}]};
+  if(sql.includes('SELECT 1 FROM payments'))return {rows:[],rowCount:0};
+  if(sql.includes('INSERT INTO payments'))inserted=true;
+  return {rows:[],rowCount:0};
+ }};
+ const service=new FinancialApplicationService({transaction:async(fn:any)=>fn(client)} as any,{} as any);
+ return {service,inserted:()=>inserted};
+}
+
+test('customer payment submission requires a live assignment to the invoice site',async()=>{
+ const {service,inserted}=submissionValidationHarness({assigned:false});
+ await assert.rejects(()=>service.submitPayment('bill',{amount:'10.00',evidenceKey:'foreign-site'},'customer'),(error:any)=>error.getStatus?.()===403);
+ assert.equal(inserted(),false);
+});
+
+test('customer payment submission rejects a future Bangkok transfer date',async()=>{
+ const {service,inserted}=submissionValidationHarness();
+ await assert.rejects(()=>service.submitPayment('bill',{amount:'10.00',paidAt:'2026-10-21T05:00:00.000Z',evidenceKey:'future-date'},'customer'),(error:any)=>error.getStatus?.()===400);
+ assert.equal(inserted(),false);
+});
+
+test('customer payment submission rejects a declared amount above the locked outstanding balance',async()=>{
+ const {service,inserted}=submissionValidationHarness({paid:['80.00']});
+ await assert.rejects(()=>service.submitPayment('bill',{amount:'20.01',evidenceKey:'over-balance'},'customer'),/exceed the bill/i);
+ assert.equal(inserted(),false);
 });
 
 test('approval requires a selected transfer and reviewer confirmed transaction fields',async()=>{
@@ -62,7 +98,7 @@ test('reviewer payer details persist before receipt issuance and enter audit sna
   if(sql.includes('SELECT employee_can_access'))return {rows:[{allowed:true}]}; if(sql.includes('SELECT role,status'))return {rows:[{role:'accountant',status:'active'}]};
   if(sql.includes('SELECT * FROM billing_cycles'))return {rows:[{id:'bill',amount:'100.00',status:'pending_verification'}]};
   if(sql.includes('SELECT * FROM payments'))return {rows:[payment]};
-  if(sql.includes('UPDATE payments')&&!sql.includes('receipt_document_id')){saved=args;Object.assign(payment,{status:args[1],verified_amount:args[4],payer_name:args[7],origin_bank:args[9],origin_account:args[10]});}
+  if(sql.includes('UPDATE payments')&&!sql.includes('receipt_document_id')){saved=args;Object.assign(payment,{status:args[1],verified_amount:args[4],payer_name:args[7],origin_bank:args[10],origin_account:args[11]});}
   if(sql.includes('INSERT INTO audit_events'))audit=JSON.parse(args[5]);return {rows:[]};
  }};
  const service=new FinancialApplicationService({transaction:async(fn:any)=>fn(client)} as any,{assertEnabled:async()=>{}} as any);

@@ -16,6 +16,7 @@ export function PaymentHistory({payments,locale}:{payments:TransferHistoryRow[];
    <dl className="grid grid-cols-2 gap-x-3 text-sm">
     <>{payment.payerName&&<><dt>{copy.payerName}</dt><dd>{payment.payerName}</dd></>}</>
     {payment.paymentMethod&&<><dt>{copy.paymentMethod}</dt><dd>{copy[payment.paymentMethod]}</dd></>}
+    {payment.transferChannel&&<><dt>{copy.transferChannel}</dt><dd>{copy[payment.transferChannel]}</dd></>}
     {payment.originBank&&<><dt>{copy.originBank}</dt><dd>{payment.originBank}</dd></>}
     {payment.originAccount&&<><dt>{copy.originAccount}</dt><dd>{payment.originAccount}</dd></>}
    </dl>

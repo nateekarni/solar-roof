@@ -84,7 +84,7 @@ test('gatewayTelemetry returns gateway details and formatted telemetry samples',
   assert.equal(result.samples[0]?.polledAt, '2026-10-18T08:00:00.000Z');
   assert.equal(result.samples[0]?.sourceTime, '2026-10-18T08:00:00.000Z');
   assert.equal(result.samples[0]?.receivedAt, '2026-10-18T08:00:01.000Z');
-  assert.equal(result.samples[0]?.tag, 'power.active.total');
+  assert.equal((result.samples[0] as {tag?:string})?.tag, 'power.active.total');
 
   // Verify the second query uses the gateway UUID and lateral joins
   assert.equal(queries.length, 2);

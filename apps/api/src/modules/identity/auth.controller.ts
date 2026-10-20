@@ -81,7 +81,7 @@ export class AuthController {
 
     const attempt = await this.db.transaction(async client=>{
       const query = `
-        SELECT id, email, display_name, role, status, customer_id, ARRAY(SELECT site_id::text FROM site_account_assignments WHERE user_id=users.id AND revoked_at IS NULL) AS assigned_site_ids, password_hash, preferred_language, preferred_theme, avatar_data
+        SELECT id, email, display_name, role, status, customer_id, ARRAY(SELECT site_id::text FROM site_account_assignments WHERE user_id=users.id AND revoked_at IS NULL) AS assigned_site_ids, password_hash, preferred_language, preferred_theme, avatar_data, phone
         FROM users
         WHERE email = $1 FOR UPDATE
       `;
@@ -171,6 +171,7 @@ export class AuthController {
         preferredLanguage: user.preferred_language,
         preferredTheme: user.preferred_theme,
         avatarData: user.avatar_data ?? null,
+        phoneNumber: user.phone ?? null,
       },
     };
   }
@@ -197,7 +198,7 @@ export class AuthController {
     }
 
     const query = `
-      SELECT id, email, display_name, role, status, customer_id, ARRAY(SELECT site_id::text FROM site_account_assignments WHERE user_id=users.id AND revoked_at IS NULL) AS assigned_site_ids, refresh_token_hash, preferred_language, preferred_theme, avatar_data
+      SELECT id, email, display_name, role, status, customer_id, ARRAY(SELECT site_id::text FROM site_account_assignments WHERE user_id=users.id AND revoked_at IS NULL) AS assigned_site_ids, refresh_token_hash, preferred_language, preferred_theme, avatar_data, phone
       FROM users
       WHERE id = $1
     `;
@@ -272,6 +273,7 @@ export class AuthController {
         preferredLanguage: user.preferred_language,
         preferredTheme: user.preferred_theme,
         avatarData: user.avatar_data ?? null,
+        phoneNumber: user.phone ?? null,
       },
     };
   }
@@ -388,7 +390,7 @@ export class AuthController {
 
     const query = `
       SELECT id, email, display_name AS "displayName", role, status, customer_id AS "customerId", ARRAY(SELECT site_id::text FROM site_account_assignments WHERE user_id=users.id AND revoked_at IS NULL) AS "assignedSiteIds",
-             preferred_language AS "preferredLanguage", preferred_theme AS "preferredTheme", avatar_data AS "avatarData"
+             preferred_language AS "preferredLanguage", preferred_theme AS "preferredTheme", avatar_data AS "avatarData", phone AS "phoneNumber"
       FROM users
       WHERE id = $1
     `;

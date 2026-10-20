@@ -8,6 +8,8 @@
     "start": "next start -p 3000",
     "lint": "tsc --noEmit -p tsconfig.json",
     "test:ui": "tsx --tsconfig tsconfig.ui-tests.json --test features/shared/empty-table.spec.tsx",
+    "test:customer:browser": "node --test --test-concurrency=1 test/customer-portal-fixture.test.mjs test/customer-account.browser.test.mjs test/customer-account-route.test.mjs test/customer-documents.browser.test.mjs test/customer-documents-route.test.mjs test/customer-documents-server.test.mjs test/customer-home-recovery.browser.test.mjs test/customer-payment.browser.test.mjs test/customer-payment-qr.browser.test.mjs test/customer-portal.browser.test.mjs test/customer-record.browser.test.mjs test/customer-record-route.test.mjs",
+    "test:customer:accessibility": "node --test test/customer-portal-accessibility.browser.test.mjs",
     "test": "tsc --noEmit -p tsconfig.json && tsx --tsconfig tsconfig.ui-tests.json --test lib/*.spec.ts features/**/*.spec.ts features/**/*.spec.tsx components/**/*.spec.ts components/**/*.spec.tsx"
   },
   "dependencies": {
@@ -30,6 +32,7 @@
     "next-themes": "^0.4.6",
     "nuqs": "^2.10.1",
     "pdfjs-dist": "^6.4.299",
+    "qrcode": "^1.5.4",
     "radix-ui": "^1.6.7",
     "react": "19.2.8",
     "react-day-picker": "^10.0.1",
@@ -47,6 +50,7 @@
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",
     "@playwright/test": "^1.63.0",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.5"
   }

@@ -17,15 +17,17 @@ export interface CustomerProfileModalProps {
   onOpenChange: (open: boolean) => void;
   inline?: boolean;
   showPosition?: boolean;
+  showPhone?: boolean;
 }
 
-export function CustomerProfileModal({ open, onOpenChange, inline = false, showPosition = false }: CustomerProfileModalProps) {
+export function CustomerProfileModal({ open, onOpenChange, inline = false, showPosition = false, showPhone = false }: CustomerProfileModalProps) {
   const { user } = useAuth();
   const locale = useLocale();
   const th = locale === "th";
   const text = (thText: string, enText: string) => (th ? thText : enText);
 
   const [name, setName] = useState(user?.displayName ?? "");
+  const [phoneNumber, setPhoneNumber] = useState(user?.phoneNumber ?? "");
   const [position, setPosition] = useState(user?.companyPosition ?? "");
   const [cropSource, setCropSource] = useState<HTMLImageElement | null>(null);
   const [zoom, setZoom] = useState(1);
@@ -42,12 +44,13 @@ export function CustomerProfileModal({ open, onOpenChange, inline = false, showP
   useEffect(() => {
     if (open) {
       setName(user?.displayName ?? "");
+      setPhoneNumber(user?.phoneNumber ?? "");
       setPosition(user?.companyPosition ?? "");
       setError("");
       setAvatarSuccess(false);
       setCropSource(null);
     }
-  }, [open, user?.displayName, user?.companyPosition]);
+  }, [open, user?.displayName, user?.companyPosition, user?.phoneNumber]);
 
   useEffect(() => {
     if (!cropSource || !canvasRef.current) return;
@@ -128,20 +131,28 @@ export function CustomerProfileModal({ open, onOpenChange, inline = false, showP
     setBusy(true);
     setError("");
     try {
-      const payload: { displayName: string; companyPosition?: string | null } = {
+      const payload: { displayName: string; phoneNumber?: string | null; companyPosition?: string | null } = {
         displayName: trimmed,
       };
+      if (showPhone) {
+        payload.phoneNumber = phoneNumber.trim() || null;
+      }
       if (showPosition) {
         payload.companyPosition = position.trim() || null;
       }
-      const result = await apiClient.put<{ displayName: string; companyPosition?: string | null }>("/v1/me/profile", payload);
+      const result = await apiClient.put<{ displayName: string; phoneNumber?: string | null; companyPosition?: string | null }>("/v1/me/profile", payload);
       const current = authStore.getState();
       if (current.user?.id === user.id) {
         const nextPosition: string | null = showPosition
           ? (result.companyPosition ?? null)
           : (current.user.companyPosition ?? null);
         authStore.setAuth(
-          { ...current.user, displayName: result.displayName, companyPosition: nextPosition },
+          {
+            ...current.user,
+            displayName: result.displayName,
+            companyPosition: nextPosition,
+            ...(showPhone ? { phoneNumber: result.phoneNumber ?? null } : {}),
+          },
           current.accessToken ?? undefined,
         );
         if (showPosition) {
@@ -293,6 +304,23 @@ export function CustomerProfileModal({ open, onOpenChange, inline = false, showP
         />
       </Field>
 
+      {showPhone && <Field className="space-y-1.5">
+        <FieldLabel htmlFor="customer-profile-phone-number" className="text-xs font-medium">
+          {text("เบอร์โทรศัพท์", "Phone number")}
+        </FieldLabel>
+        <Input
+          id="customer-profile-phone-number"
+          type="tel"
+          inputMode="tel"
+          value={phoneNumber}
+          onChange={(e) => setPhoneNumber(e.target.value)}
+          maxLength={50}
+          placeholder={text("ระบุเบอร์โทรศัพท์", "Enter your phone number")}
+          disabled={busy}
+          className="h-10 text-sm"
+        />
+      </Field>}
+
       {/* Position Input (When enabled) */}
       {showPosition && (
         <Field className="space-y-1.5">
@@ -364,7 +392,9 @@ export function CustomerProfileModal({ open, onOpenChange, inline = false, showP
           <p className="text-xs text-muted-foreground">
             {cropSource
               ? text("ลากรูปเพื่อจัดตำแหน่ง ปรับซูม แล้วกดยืนยัน", "Drag to position, adjust zoom, then confirm.")
-              : text("แก้ไขรูปโปรไฟล์และชื่อที่แสดงของคุณ", "Edit your profile picture and display name")}
+              : showPhone
+                ? text("แก้ไขรูปโปรไฟล์ ชื่อที่แสดง และเบอร์โทรศัพท์", "Edit your profile picture, display name, and phone number")
+                : text("แก้ไขรูปโปรไฟล์และชื่อที่แสดงของคุณ", "Edit your profile picture and display name")}
           </p>
         </div>
         {cropSource ? cropSection : profileForm}
@@ -389,7 +419,9 @@ export function CustomerProfileModal({ open, onOpenChange, inline = false, showP
           <DialogDescription>
             {cropSource
               ? text("ลากรูปเพื่อจัดตำแหน่ง ปรับซูม แล้วกดยืนยัน", "Drag to position, adjust zoom, then confirm.")
-              : text("แก้ไขรูปโปรไฟล์และชื่อที่แสดงของคุณ", "Edit your profile picture and display name")}
+              : showPhone
+                ? text("แก้ไขรูปโปรไฟล์ ชื่อที่แสดง และเบอร์โทรศัพท์", "Edit your profile picture, display name, and phone number")
+                : text("แก้ไขรูปโปรไฟล์และชื่อที่แสดงของคุณ", "Edit your profile picture and display name")}
           </DialogDescription>
         </DialogHeader>
 

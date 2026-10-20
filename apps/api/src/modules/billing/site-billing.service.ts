@@ -7,6 +7,7 @@ import {hasPermission,siteScope} from '../../common/auth/authorization.js';
 import {validFinancialDate} from './local-financial-policy.js';
 import {exactRate,scaledDecimal,manualTotals,assertRateEditable,type ManualLine} from './site-billing-policy.js';
 import {FinancialApplicationService} from './financial-application.service.js';
+import {FINANCIAL_TEMPLATE_VERSION} from '../documents/financial-document-pdf.js';
 function inputRate(value:unknown):string{try{return exactRate(value);}catch(error){throw new BadRequestException((error as Error).message);}}
 export interface BillingSettingsInput {serviceStartDate:string;paymentTermDays:number;recipientUserIds:string[];taxRate:string|number;pricesIncludeTax:boolean;taxConfirmed:boolean;reminderStartDays?:number;reminderIntervalDays?:number;remindersEnabled?:boolean;}
 export interface RateChangeInput {selection:'all'|'selected'|'matched';siteIds?:string[];matchedRate?:string|number;rate:string|number;effectiveDate:string;reason:string;replaceFuture?:boolean;}
@@ -48,7 +49,14 @@ export class SiteBillingService {
     throw new ConflictException({code:'FUTURE_RATE_REPLACEMENT_REQUIRED',message:'Confirm replacement of scheduled future site tariffs',siteId:cycle.site_id,effectiveDate:cycle.starts,futureRates:future,documents});
    }
    const current=(await c.query('SELECT rate FROM rate_versions WHERE site_id=$1 AND retired_at IS NULL AND effective_from<=$2::date AND (effective_to IS NULL OR effective_to>=$2::date) ORDER BY effective_from DESC LIMIT 1',[cycle.site_id,cycle.starts])).rows[0];
-   if(!future.length&&!b.replaceFuture&&current&&exactRate(current.rate)===rate&&exactRate(cycle.rate)===rate)return {status:cycle.status};
+   const sameCommercialRate=!future.length&&!b.replaceFuture&&current&&exactRate(current.rate)===rate&&exactRate(cycle.rate)===rate;
+   if(sameCommercialRate){
+    const currentDocument=(await c.query("SELECT template_version FROM documents WHERE billing_cycle_id=$1 AND document_type='invoice' AND is_current",[id])).rows[0];
+    if(!currentDocument||currentDocument.template_version===FINANCIAL_TEMPLATE_VERSION)return {status:cycle.status};
+    const replacement=await this.financial.reviseInvoiceInTransaction(c,cycle,rate,a.id);
+    await this.audit(c,a,'bill.document_renderer_revision',id,{templateVersion:currentDocument.template_version},{templateVersion:FINANCIAL_TEMPLATE_VERSION},b.reason);
+    return replacement;
+   }
    const before=(await c.query('SELECT * FROM rate_versions WHERE site_id=$1 ORDER BY effective_from',[cycle.site_id])).rows;
    const replacement=await this.financial.reviseInvoiceInTransaction(c,cycle,rate,a.id);
    await this.writeRate(c,cycle.site_id,rate,cycle.starts,a,b.reason);

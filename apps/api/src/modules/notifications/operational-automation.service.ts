@@ -7,7 +7,7 @@ import { DatabaseService } from '../../database/database.service.js';
 import { customerScope, type ScopePrincipal } from '../../common/auth/route-policy.js';
 import { hasPermission,siteScope } from '../../common/auth/authorization.js';
 import { localFinancialBinding } from '../billing/local-financial-policy.js';
-import { reminderSlot, transitionAlert } from './automation-policy.js';
+import { isPaymentPreReminderDay, reminderSlot, transitionAlert } from './automation-policy.js';
 const ruleSchema=z.object({siteId:z.uuid().optional(),siteIds:z.array(z.uuid()).min(1).max(100).optional(),kind:z.enum(['offline','stale','threshold']),semanticField:z.enum(['total_energy','active_power','voltage','current','frequency','power_factor']).optional(),operator:z.enum(['gt','gte','lt','lte']).optional(),threshold:z.coerce.number().finite().optional(),durationSeconds:z.number().int().min(0).max(604800),cooldownSeconds:z.number().int().min(0).max(2592000),recovery:z.boolean(),recipientUserIds:z.array(z.uuid()).min(1).max(100),channels:z.array(z.enum(['in_app','email'])).min(1)}).refine(r=>Boolean(r.siteId||(r.siteIds&&r.siteIds.length>0)),'At least one site is required').refine(r=>r.kind!=='threshold'||(r.semanticField&&r.operator&&r.threshold!==undefined),'Threshold requires field, operator and value');
 const updateRuleSchema=z.object({siteId:z.uuid().optional(),siteIds:z.array(z.uuid()).min(1).max(100).optional(),enabled:z.boolean().optional(),kind:z.enum(['offline','stale','threshold']).optional(),semanticField:z.enum(['total_energy','active_power','voltage','current','frequency','power_factor']).optional(),operator:z.enum(['gt','gte','lt','lte']).optional(),threshold:z.coerce.number().finite().optional(),durationSeconds:z.number().int().min(0).max(604800).optional(),cooldownSeconds:z.number().int().min(0).max(2592000).optional(),recovery:z.boolean().optional(),recipientUserIds:z.array(z.uuid()).min(1).max(100).optional(),channels:z.array(z.enum(['in_app','email'])).min(1).optional()}).refine(r=>r.kind!=='threshold'||(r.semanticField&&r.operator&&r.threshold!==undefined),'Threshold requires field, operator and value');
 function normalizeRuleRow(row:Record<string,any>){
@@ -20,6 +20,10 @@ function normalizeRuleRow(row:Record<string,any>){
 export const eligibleRecipientSql=`SELECT u.id,u.email FROM users u JOIN sites s ON s.id=$1 JOIN customers c ON c.id=s.customer_id
  WHERE u.id=$2 AND u.status='active' AND c.status='active' AND u.email_verified_at IS NOT NULL AND u.verified_email=u.email
  AND employee_can_access(u.id,CASE WHEN $3::boolean THEN 'business' ELSE 'technical' END,CASE WHEN $3::boolean THEN 'business.billing.view' ELSE 'technical.alerts.view' END,s.id)`;
+const eligibleCashStaffSql=`SELECT u.id,u.email FROM users u JOIN sites s ON s.id=$1
+ WHERE u.id=$2 AND u.role IN ('owner','accountant') AND u.status='active'
+ AND u.email_verified_at IS NOT NULL AND u.verified_email=u.email
+ AND employee_can_access(u.id,'business','business.billing.record_cash_payment',s.id)`;
 type DeliveryScope='all'|'technical';
 function financialAutomationEnabled(){return Boolean(localFinancialBinding())&&process.env.FINANCIAL_WRITES_ENABLED==='true';}
 function technicalAutomationEnabled(){return process.env.TECHNICAL_ALERTS_ENABLED!=='false';}
@@ -115,12 +119,18 @@ export class OperationalAutomationService implements OnModuleInit,OnModuleDestro
  async queueReminders(now:Date){return this.db.transaction(async client=>{
   await client.query(`SELECT pg_advisory_xact_lock(hashtext('operational-reminders'))`);
   const rows=(await client.query(`SELECT b.id,b.site_id,b.status,b.due_date::text AS due_date,c.reminders_enabled,c.reminder_start_days,c.reminder_interval_days,c.recipient_user_ids,
-  EXISTS(SELECT 1 FROM payments p WHERE p.billing_cycle_id=b.id AND p.status='pending_verification') AS pending_evidence
+  EXISTS(SELECT 1 FROM payments p WHERE p.billing_cycle_id=b.id AND p.status='pending_verification') AS pending_evidence,
+  greatest(round(b.amount::numeric,2)-coalesce((SELECT sum(round(coalesce(p.verified_amount,p.amount)::numeric,2)) FROM payments p WHERE p.billing_cycle_id=b.id AND p.status='paid'),0),0)::text AS outstanding
   FROM billing_cycles b JOIN site_billing_settings c ON c.site_id=b.site_id WHERE c.reminders_enabled AND b.due_date IS NOT NULL AND b.status NOT IN('paid','cancelled') AND EXISTS(SELECT 1 FROM documents d WHERE d.billing_cycle_id=b.id AND d.document_type='invoice' AND d.is_current AND d.status IN('issued','finalized')) FOR UPDATE OF b`)).rows;
   const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Bangkok',year:'numeric',month:'2-digit',day:'2-digit'}).format(now);
-  for(const r of rows){const slot=reminderSlot({dueDate:r.due_date,startDays:r.reminder_start_days,intervalDays:r.reminder_interval_days,enabled:r.reminders_enabled,status:r.status,pendingEvidence:r.pending_evidence},today);if(slot===null)continue;
+  for(const r of rows){const reminder={dueDate:r.due_date,startDays:r.reminder_start_days,intervalDays:r.reminder_interval_days,enabled:r.reminders_enabled,status:r.status,pendingEvidence:r.pending_evidence,outstanding:Number(r.outstanding)};
+   if(isPaymentPreReminderDay(reminder,today)){
+    const staff=(await client.query(`SELECT u.id,u.email FROM users u JOIN sites s ON s.id=$1 WHERE u.role IN ('owner','accountant') AND u.status='active' AND u.email_verified_at IS NOT NULL AND u.verified_email=u.email AND employee_can_access(u.id,'business','business.billing.record_cash_payment',s.id) ORDER BY u.id`,[r.site_id])).rows;
+    for(const recipient of staff)for(const channel of ['in_app','email'])await client.query(`INSERT INTO operational_delivery_outbox(dedupe_key,site_id,user_id,billing_cycle_id,channel,recipient,subject,body,destination) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(dedupe_key) DO NOTHING`,[`payment-precheck:${r.id}:${recipient.id}:${channel}`,r.site_id,recipient.id,r.id,channel,recipient.email,'ตรวจสอบการรับชำระก่อนแจ้งลูกค้า',`โปรดตรวจสอบยอดคงเหลือ ${Number(r.outstanding).toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2})} บาท โดยเฉพาะการรับชำระเงินสด ก่อนระบบแจ้งลูกค้าในวันถัดไป`,'/records/billing/'+r.id+'?cash=1']);
+   }
+   const slot=reminderSlot(reminder,today);if(slot===null)continue;
    for(const id of r.recipient_user_ids){const recipient=(await client.query(eligibleRecipientSql,[r.site_id,id,true])).rows[0];if(!recipient)continue;
-    for(const channel of ['in_app','email'])await client.query(`INSERT INTO operational_delivery_outbox(dedupe_key,site_id,user_id,billing_cycle_id,channel,recipient,subject,body,destination) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(dedupe_key) DO NOTHING`,[`reminder:${r.id}:${slot}:${id}:${channel}`,r.site_id,id,r.id,channel,recipient.email,'แจ้งเตือนชำระเงิน / Payment reminder',`ครบกำหนด / Due: ${r.due_date}`,'/records/billing/'+r.id]);
+    for(const channel of ['in_app','email'])await client.query(`INSERT INTO operational_delivery_outbox(dedupe_key,site_id,user_id,billing_cycle_id,channel,recipient,subject,body,destination) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(dedupe_key) DO NOTHING`,[`reminder:${r.id}:${slot}:${id}:${channel}`,r.site_id,id,r.id,channel,recipient.email,'แจ้งเตือนยอดชำระคงเหลือ',`ยอดคงเหลือ ${Number(r.outstanding).toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2})} บาท ครบกำหนดวันที่ ${r.due_date}`,'/records/billing/'+r.id]);
    }
   }
  });}
@@ -151,10 +161,11 @@ export class OperationalAutomationService implements OnModuleInit,OnModuleDestro
   for(const table of financial?['operational_delivery_outbox','payment_decision_outbox']:['operational_delivery_outbox']){
    const jobs=await this.claimDeliveries(table,scope);
    for(const job of jobs){
-    const recipient=(await this.db.query(eligibleRecipientSql,[job.site_id,job.user_id,Boolean(job.billing_cycle_id)||table==='payment_decision_outbox'])).rows[0];
+    const cashPrecheck=table==='operational_delivery_outbox'&&String(job.dedupe_key).startsWith('payment-precheck:');
+    const recipient=(await this.db.query(cashPrecheck?eligibleCashStaffSql:eligibleRecipientSql,cashPrecheck?[job.site_id,job.user_id]:[job.site_id,job.user_id,Boolean(job.billing_cycle_id)||table==='payment_decision_outbox'])).rows[0];
     if(!recipient||recipient.email!==job.recipient){await this.fail(table,job,'Recipient access or verified email changed',false);continue;}
-    if(job.billing_cycle_id){const bill=(await this.db.query(`SELECT b.status,EXISTS(SELECT 1 FROM payments p WHERE p.billing_cycle_id=b.id AND p.status='pending_verification') AS pending FROM billing_cycles b WHERE b.id=$1`,[job.billing_cycle_id])).rows[0];
-     if(!bill||['paid','cancelled'].includes(bill.status)){await this.db.query(`UPDATE operational_delivery_outbox SET state='cancelled' WHERE id=$1 AND claim_token=$2`,[job.id,job.claim_token]);continue;}
+    if(job.billing_cycle_id){const bill=(await this.db.query(`SELECT b.status,EXISTS(SELECT 1 FROM payments p WHERE p.billing_cycle_id=b.id AND p.status='pending_verification') AS pending,greatest(round(b.amount::numeric,2)-coalesce((SELECT sum(round(coalesce(p.verified_amount,p.amount)::numeric,2)) FROM payments p WHERE p.billing_cycle_id=b.id AND p.status='paid'),0),0)::text AS outstanding FROM billing_cycles b WHERE b.id=$1`,[job.billing_cycle_id])).rows[0];
+     if(!bill||['paid','cancelled'].includes(bill.status)||Number(bill.outstanding)<=0){await this.db.query(`UPDATE operational_delivery_outbox SET state='cancelled' WHERE id=$1 AND claim_token=$2`,[job.id,job.claim_token]);continue;}
      if(bill.pending){await this.db.query(`UPDATE operational_delivery_outbox SET state='pending',attempts=attempts-1,next_attempt_at=now()+interval '1 minute',claim_token=NULL,claimed_at=NULL WHERE id=$1 AND claim_token=$2`,[job.id,job.claim_token]);continue;}
     }
     // Lease refresh and marker share a transaction. A recovered/reclaimed row

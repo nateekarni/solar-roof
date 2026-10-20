@@ -1,6 +1,6 @@
 import { formatDocumentMoney, renderDocumentPdf, type DocumentParty, type DocumentSnapshot } from './document-layout.js';
 
-export const FINANCIAL_TEMPLATE_VERSION = 'sarabun-a4-v8';
+export const FINANCIAL_TEMPLATE_VERSION = 'sarabun-a4-v11';
 interface SavedFinancialParty {
   company_name: string;
   signatory_name?: string;
@@ -46,7 +46,7 @@ interface SavedFinancialDocument {
     logo: string;
     logoDataUri?: string;
     banks: { bank_name: string; account_name: string; account_number: string }[];
-    payments: { note?:string|null; payer_name?: string | null; payment_method?: 'bank_transfer' | 'promptpay' | null; origin_bank?: string | null; origin_account?: string | null; status: string; paid_at: string | Date; amount: string; evidence_key?: string; slip_url?: string }[];
+    payments: { note?:string|null; payer_name?: string | null; payment_method?: 'bank_transfer' | 'cash' | 'promptpay' | null; transfer_channel?:'bank_account'|'promptpay'|null; origin_bank?: string | null; origin_account?: string | null; status: string; paid_at: string | Date; amount: string; evidence_key?: string; slip_url?: string }[];
     outstandingBills?: {
       bills: {
         period: string;
@@ -97,13 +97,14 @@ export function financialDocumentSnapshot(document: SavedFinancialDocument): Doc
         ...(ev ? { evidence: ev } : {}),
         ...(p.payer_name ? { payerName: p.payer_name } : {}),
         ...(p.payment_method ? { paymentMethod: p.payment_method } : {}),
+        ...(p.transfer_channel ? { transferChannel: p.transfer_channel } : {}),
         ...(p.origin_bank ? { originBank: p.origin_bank } : {}),
         ...(p.origin_account ? { originAccount: p.origin_account } : {}),
       };
     }),
     ...(s.outstandingBills ? { outstandingBills: s.outstandingBills } : {}),
     paymentAccounts: s.banks.map(bank => ({ bankName: bank.bank_name, accountName: bank.account_name, accountNumber: bank.account_number })),
-    ...(s.dueDate ? { dueDate: s.dueDate } : {}), ...(s.approver ? { approver: s.approver } : {}), logoDataUri: s.logoDataUri ?? s.logo, templateVersion: s.templateVersion ?? 'sarabun-a4-v6', syntheticTest: s.policy?.scope==='TEST',
+    ...(s.dueDate ? { dueDate: s.dueDate } : {}), ...(s.approver ? { approver: s.approver } : {}), logoDataUri: s.logoDataUri ?? s.logo, templateVersion: s.templateVersion ?? FINANCIAL_TEMPLATE_VERSION, syntheticTest: s.policy?.scope==='TEST',
   };
 }
 export async function renderFinancialDocumentPdf(document: SavedFinancialDocument): Promise<Buffer> {

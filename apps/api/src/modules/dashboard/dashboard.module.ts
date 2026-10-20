@@ -5,5 +5,5 @@ import { DashboardService } from "./dashboard.service.js";
 import { OperationsController } from "./operations.controller.js";
 import { OperationsService } from "./operations.service.js";
 
-@Module({ controllers: [DashboardController, OperationsController], providers: [EnergyReadService, DashboardService, OperationsService] })
+@Module({ controllers: [DashboardController, OperationsController], providers: [EnergyReadService, DashboardService, OperationsService], exports: [DashboardService] })
 export class DashboardModule {}

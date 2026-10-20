@@ -68,10 +68,14 @@ test('normalizes financial notification wording and renders bold site name along
  assert.match(receiptHtml,/<strong class="font-semibold text-foreground">โรงงานบรรจุภัณฑ์ บางพลี<\/strong>/);
 
  const invoiceRow:NotificationFeedItem={id:'doc:2',title:'ออกใบแจ้งหนี้แล้ว',detail:'INV261000030',siteName:'ศูนย์บริการ ศรีราชา',destination:'/records/documents/2',createdAt:'2026-10-14T06:35:00.000Z',readAt:null,kind:'workflow'};
- const invoiceHtml=renderToStaticMarkup(<NotificationFeedRow row={invoiceRow} th={true} onRead={()=>{}}/>);
- assert.ok(invoiceHtml.includes('ออกใบวางบิลแล้ว'));
- assert.ok(invoiceHtml.includes('INV261000030'));
+ const invoiceHtml=renderToStaticMarkup(<NotificationFeedRow row={invoiceRow} th={true} customerFacing onRead={()=>{}}/>);
+ assert.ok(invoiceHtml.includes('ใบแจ้งหนี้พร้อมชำระแล้ว'));
+ assert.ok(invoiceHtml.includes('ตรวจสอบใบแจ้งหนี้ INV261000030 และดำเนินการชำระเงิน'));
  assert.match(invoiceHtml,/<strong class="font-semibold text-foreground">ศูนย์บริการ ศรีราชา<\/strong>/);
+
+ const invoiceEn=renderToStaticMarkup(<NotificationFeedRow row={{...invoiceRow,title:'Issued invoice'}} th={false} customerFacing onRead={()=>{}}/>);
+ assert.ok(invoiceEn.includes('Invoice ready for payment'));
+ assert.ok(invoiceEn.includes('Review invoice INV261000030 and make a payment'));
 
  const reminderRow:NotificationFeedItem={id:'workflow:remind',title:'แจ้งเตือนชำระเงิน / Payment reminder',detail:'ครบกำหนด / Due: 2026-11-13',siteName:'โรงงานอาหาร ปลวกแดง',destination:'/records/billing/3',createdAt:'2026-10-14T06:35:00.000Z',readAt:null,kind:'workflow'};
  const reminderHtml=renderToStaticMarkup(<NotificationFeedRow row={reminderRow} th={true} onRead={()=>{}}/>);

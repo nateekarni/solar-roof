@@ -50,7 +50,9 @@ export interface DocumentSnapshot {
   totals?: { subtotal: string; tax?: string; taxLabel?: string; total: string };
   approvedTransfers: {
     payerName?: string;
-    paymentMethod?: "bank_transfer" | "promptpay";
+    /** promptpay is retained only for frozen pre-v9 snapshots. */
+    paymentMethod?: "bank_transfer" | "cash" | "promptpay";
+    transferChannel?: "bank_account" | "promptpay";
     originBank?: string;
     originAccount?: string;
     paidAt: string;
@@ -300,6 +302,23 @@ function signatures(s: DocumentSnapshot): any {
     const dateOnly = dateStr.slice(0, 10);
     return formatDocumentDate(dateOnly) || dateOnly;
   };
+  if(!contract){
+    if(!receipt){
+      return {fontSize:14,table:{widths:["*","*"],body:[
+        [centered("________________________",[0,10,0,4]),centered("________________________",[0,10,0,4])],
+        [centered("ผู้วางบิล"),centered("ผู้รับวางบิล")],
+        [centered("วันที่: ____________________",[0,4,0,0]),centered("วันที่: ____________________",[0,4,0,0])],
+      ]},layout:{hLineWidth:()=>0,vLineWidth:()=>0,paddingLeft:()=>0,paddingRight:()=>0,paddingTop:()=>0,paddingBottom:()=>0}};
+    }
+    const signature=issuer?.signatureDataUri?{image:issuer.signatureDataUri,fit:[120,45],alignment:"center",margin:[0,10,0,4]}:centered("________________________",[0,10,0,4]);
+    return {fontSize:14,table:{widths:["*"],body:[
+      [signature],
+      ...(issuer?.name?[[centered(issuer.name)]]:[]),
+      ...(issuer?.title?[[centered(issuer.title)]]:[]),
+      [centered("ผู้รับเงิน")],
+      [centered(issuerDate?`วันที่: ${formatSignatoryDate(issuerDate)}`:"วันที่: ____________________",[0,4,0,0])],
+    ]},layout:{hLineWidth:()=>0,vLineWidth:()=>0,paddingLeft:()=>0,paddingRight:()=>0,paddingTop:()=>0,paddingBottom:()=>0}};
+  }
   return {
     fontSize: 14,
     table: {
@@ -438,11 +457,11 @@ function financialDefinition(s: DocumentSnapshot): DocumentDefinition {
     {width:245,alignment:"right",stack:[bodyText(title,{bold:true,fontSize:14}),bodyText(`เลขที่: ${s.documentNumber}`,{bold:true,fontSize:11.3}),bodyText(`วันที่: ${formatDocumentDate(s.issueDate)}`),...(s.type==='invoice'&&s.dueDate?[bodyText(`กำหนดชำระ: ${formatDocumentDate(s.dueDate)}`)]:[]),...(s.type==='receipt'?[bodyText(`ใบวางบิล: ${s.invoiceNumber||'-'}`)]:[])]}
   ],columnGap:8,margin:[0,0,0,5]};
   const content:any[]=[head];
-  if(s.syntheticTest) content.push(bodyText('SYNTHETIC LOCAL TEST - simulated tax 7%; no withholding / เอกสารทดสอบ',{fontSize:9,italics:true,margin:[0,0,0,3]}));
   const financialParty=(p:DocumentParty)=>({stack:[bodyText(p.name,{bold:true}),bodyText(`เลขประจำตัวผู้เสียภาษี: ${p.taxId}${p.branch?` (${p.branch})`:''}`),bodyText(p.address),...(p.phone||p.email?[bodyText([p.phone?`โทร: ${p.phone}`:'',p.email||''].filter(Boolean).join(' / '))]:[])]});
   content.push({columns:[{width:'*',stack:[bodyText('ข้อมูลบริษัท',{bold:true}),financialParty(s.issuer)]},{width:'*',stack:[bodyText('ข้อมูลลูกค้า',{bold:true}),financialParty(s.customer)]}],fontSize:10.3,columnGap:16,margin:[0,0,0,5]});
   content.push({columns:[bodyText(`ไซต์งาน: ${s.siteName||'-'}`),bodyText(`รอบบิล: ${s.period?formatDocumentDate(s.period):'-'}`,{alignment:'right'})],margin:[0,0,0,4]});
-  const rule={hLineWidth:()=>0.28,vLineWidth:()=>0.28,hLineColor:()=>primary,vLineColor:()=>primary,paddingLeft:()=>4.8,paddingRight:()=>4.8,paddingTop:()=>2,paddingBottom:()=>2};
+  const neutralBorder="#d9dde1";
+  const rule={hLineWidth:()=>0.28,vLineWidth:()=>0.28,hLineColor:()=>neutralBorder,vLineColor:()=>neutralBorder,paddingLeft:()=>4.8,paddingRight:()=>4.8,paddingTop:()=>2,paddingBottom:()=>2};
   // Fixed ordinary widths keep the reference rhythm. Exceptionally large exact numbers
   // claim measured space rather than overflowing or rounding the frozen values.
   const widthFor=(values:string[],minimum:number)=>Math.max(minimum,...values.map(text=>blockWidth(text,11)+9.6));
@@ -476,22 +495,46 @@ function financialDefinition(s: DocumentSnapshot): DocumentDefinition {
         ])
       ]
     },
-    layout:{...rule,hLineWidth:(i:number)=>i===0?1.19:0.28,hLineColor:()=>primary}
+    layout:{...rule,hLineWidth:(i:number)=>i===0?1.19:0.28,hLineColor:(i:number)=>i===0?primary:neutralBorder}
   };
   content.push(grid);
   let totals:any;
   if(s.totals){
     const rows:any[][]=[['ยอดก่อนภาษี',s.totals.subtotal],...(s.totals.tax===undefined?[]:[[s.totals.taxLabel?.split(' / ')[0]||'ภาษี',s.totals.tax]]),[s.type==='receipt'?'ยอดชำระเงินทั้งสิ้น':'ยอดรวม',s.totals.total]].map(([label,value],index,all)=>[
-      index===0?bodyText(thaiAmountWords(s.totals!.total),{rowSpan:all.length,fillColor:'#edf0f2',bold:true,margin:[0,4,0,0]}):{},
-      bodyText(label!,{bold:index===all.length-1,fillColor:index===all.length-1?primary:'#fafafa',color:index===all.length-1?'#ffffff':'#000000',alignment:'right'}),
-      {...right(`${formatDocumentMoney(value!)} บาท`),bold:index===all.length-1,fillColor:index===all.length-1?primary:'#fafafa',color:index===all.length-1?'#ffffff':'#000000'}
+      index===0?bodyText(thaiAmountWords(s.totals!.total),{rowSpan:all.length,fillColor:'#ffffff',bold:true,margin:[0,4,0,0]}):{},
+      bodyText(label!,{bold:index===all.length-1,fillColor:'#ffffff',color:'#000000',alignment:'right'}),
+      {...right(`${formatDocumentMoney(value!)} บาท`),bold:index===all.length-1,fillColor:'#ffffff',color:'#000000'}
     ]);
     totals={unbreakable:true,table:{widths:['*',rateWidth,amountWidth],body:rows},layout:rule,margin:[0,0,0,0]};
     content.push(totals);
   }
   const heading=(text:string)=>bodyText(text,{bold:true,fontSize:11,margin:[0,0,0,2]});
+  const hasOutstandingBills=s.type==='receipt'&&Boolean(s.outstandingBills?.bills.length);
+  if(hasOutstandingBills){
+    const outstanding=s.outstandingBills!;
+    content.push({
+      unbreakable:true,
+      table:{
+        headerRows:1,
+        widths:[28,'*','auto','auto','auto'],
+        body:[
+          ['ลำดับ','รอบบิล','ยอดเรียกเก็บ','ชำระแล้ว','ยอดค้างชำระ'].map((text,index)=>bodyText(text,{bold:true,fontSize:9.4,fillColor:'#f5f5f7',alignment:index===1?'left':'center'})),
+          ...outstanding.bills.map((bill,index)=>[
+            bodyText(String(index+1),{alignment:'center'}),
+            bodyText(bill.period),
+            right(formatDocumentMoney(bill.billedAmount)),
+            right(formatDocumentMoney(bill.paidAmount)),
+            right(formatDocumentMoney(bill.remainingAmount)),
+          ]),
+        ],
+      },
+      layout:{...rule,hLineWidth:(i:number)=>i===0?1.19:0.28,hLineColor:(i:number)=>i===0?primary:neutralBorder},
+      margin:[0,8,0,0],
+    });
+    content.push(bodyText(`คงเหลืออีก ${outstanding.bills.length} บิล รวมยอดค้างชำระ ${formatDocumentMoney(outstanding.totalOutstanding)} บาท`,{bold:true,margin:[4,3,4,0]}));
+  }
   const remarks=[heading('หมายเหตุ'),...(s.remarks?.length?s.remarks.map(r=>bodyText(r)):[bodyText(s.paymentTerms||'-')])];
-  const payments=s.approvedTransfers.filter(p=>p.status==='paid'||p.status==='approved').map((p,index)=>({stack:[...(s.approvedTransfers.length>1?[bodyText(`การชำระ ${index+1}`,{bold:true})]:[]),bodyText(`ช่องทาง: ${p.paymentMethod==='promptpay'?'พร้อมเพย์':p.paymentMethod==='bank_transfer'?'โอนเงินผ่านธนาคาร':'-'} / ผู้ชำระ: ${p.payerName||'-'}`),bodyText(`ธนาคารต้นทาง: ${p.originBank||'-'} / บัญชีต้นทาง: ${p.originAccount||'-'}`),bodyText(`ชำระ: ${formatDocumentDate(p.paidAt)}`),bodyText(`จำนวนเงิน: ${formatDocumentMoney(p.amount)} บาท`),bodyText(`หลักฐาน: ${p.evidence||'-'}`)],margin:[0,0,0,4]}));
+  const payments=s.approvedTransfers.filter(p=>p.status==='paid'||p.status==='approved').map((p,index)=>({stack:[...(s.approvedTransfers.length>1?[bodyText(`การชำระ ${index+1}`,{bold:true})]:[]),bodyText(`ช่องทาง: ${p.paymentMethod==='cash'?'เงินสด':p.paymentMethod==='promptpay'||p.transferChannel==='promptpay'?'พร้อมเพย์':p.paymentMethod==='bank_transfer'?'โอนเงินผ่านธนาคาร':'-'} / ผู้ชำระ: ${p.payerName||'-'}`),bodyText(`ธนาคารต้นทาง: ${p.originBank||'-'} / บัญชีต้นทาง: ${p.originAccount||'-'}`),bodyText(`ชำระ: ${formatDocumentDate(p.paidAt)}`),bodyText(`จำนวนเงิน: ${formatDocumentMoney(p.amount)} บาท`),bodyText(`หลักฐาน: ${p.evidence||'-'}`)],margin:[0,0,0,4]}));
   const lower=s.type==='receipt'?{stack:[heading('ข้อมูลการชำระเงิน'),...payments,{columns:[{width:'*',stack:remarks},{width:'*',text:''}],columnGap:16}],margin:[4,10,4,0]}:{columns:[{width:'*',stack:[heading('บัญชีรับชำระ'),...(s.paymentAccounts.length?s.paymentAccounts.map(b=>bodyText(`${b.bankName}\n${b.accountName}\n${b.accountNumber}`)):[bodyText('-')])]},{width:'*',stack:remarks}],columnGap:16,margin:[4,10,4,0]};
   content.push(lower);
   // Add whitespace only when the complete short document fits. The same engine
@@ -499,6 +542,14 @@ function financialDefinition(s: DocumentSnapshot): DocumentDefinition {
   const continuation={columns:[{width:32,image:s.logoDataUri,fit:[32,26]},{width:'*',alignment:'right',stack:[bodyText(title,{bold:true}),bodyText(s.documentNumber)]}],columnGap:12};
   const topMargin=Math.max(10,12+blockHeight(continuation,defaultStyle,10)+8);
   head.margin=[0,10-topMargin,0,5];
+  if(!hasOutstandingBills){
+    const usableHeight=841.89-topMargin-bottomMargin;
+    const naturalHeight=blockHeight(content,defaultStyle,10);
+    const filler=Math.max(0,Math.min(220,Math.floor(usableHeight-naturalHeight-10)));
+    if(filler>0) grid.table.body.push([
+      bodyText('',{colSpan:6,margin:[0,0,0,filler]}),{},{},{},{},{}
+    ]);
+  }
   return {pageSize:'A4',pageOrientation:'portrait',pageMargins:[10,topMargin,10,bottomMargin],defaultStyle,content,info:{title:s.documentNumber,subject:s.templateVersion},header:page=>page===1?null:{...continuation,margin:[10,12,10,0]},footer:(page,total)=>({margin:[10,8,10,0],stack:[...(page===total?[sign]:[{canvas:[],margin:[0,signatureSpace,0,0]}]),bodyText(`หน้า ${page} / ${total}`,{fontSize:8,alignment:'right',margin:[0,4,0,0]})]})};
 }
 function blockWidth(text:string,size:number):number {

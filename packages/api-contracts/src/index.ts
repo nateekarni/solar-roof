@@ -1,7 +1,10 @@
 export { normalizePaymentMetadata } from './payments.js';
+export { buildPromptPayPayload, normalizePromptPayId } from './promptpay.js';
+export type { NormalizedPromptPayId } from './promptpay.js';
+export type { CustomerPortalRange, CustomerBillingStatus, CustomerPortalBill, CustomerPortalHomeResponse, CustomerPaymentInstructions } from './customer-portal.js';
 export type {FinancialInsights,DashboardSiteContext,MaintenanceInsights} from './dashboard-insights.js';
-export type { PaymentMetadata, PaymentSubmission, PaymentTransferRow, TransferPaymentMethod } from './payments.js';
-export type { OperationQuery, OperationPage, OperationRow, OperationFacets, BillingStatusView, BillingRow, BillingReplacementProposal, IssuancePreview, IssuancePreviewResponse, OperationAction, PersistedDocumentRow } from './operations.js';
+export type { CashPaymentResult, CashPaymentSubmission, PaymentMetadata, PaymentMethod, PaymentSubmission, PaymentTransferRow, TransferChannel } from './payments.js';
+export type { OperationQuery, OperationPage, OperationRow, OperationFacets, BillingStatusView, BillingRow, CashPaymentEntry, BillingReplacementProposal, IssuancePreview, IssuancePreviewResponse, OperationAction, PersistedDocumentRow } from './operations.js';
 export type { PendingIssuanceStatus, IssuanceLabel, IssuanceApprovalRequest, IssuanceApprovalResult, IssuanceApprovalBatch } from './operations.js';
 export { operationFilters } from './operation-filters.js';
 export type { OperationFilter } from './operation-filters.js';

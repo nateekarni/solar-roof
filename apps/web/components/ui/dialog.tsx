@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { XIcon, PanelsTopLeft } from "lucide-react"
 
 const HeaderIconContext = React.createContext(false)
+export const DialogPresentationContext = React.createContext("");
 function containsIcon(nodes: React.ReactNode): boolean {
   return React.Children.toArray(nodes).some(node => React.isValidElement<{children?:React.ReactNode}>(node) && (typeof node.type === "object" || node.type === "svg" || containsIcon(node.props.children)));
 }
@@ -59,11 +60,15 @@ function DialogContent({
   children,
   showCloseButton = true,
   ref,
+  onOpenAutoFocus,
+  onCloseAutoFocus,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
 }) {
   const contentRef = React.useRef<HTMLDivElement | null>(null);
+  const presentationClassName = React.useContext(DialogPresentationContext);
+  const presentationReturnFocus = React.useRef<HTMLElement | null>(null);
   const [submitError, setSubmitError] = React.useState('');
   const cleanupRef = React.useRef<(() => void) | null>(null);
   const attachContent = React.useCallback((node: HTMLDivElement | null) => {
@@ -86,6 +91,20 @@ function DialogContent({
       <DialogPrimitive.Content
         data-slot="dialog-content"
         ref={attachContent}
+        onOpenAutoFocus={(event) => {
+          // Opt-in compositions may use existing forms opened without a Radix
+          // Trigger. Remember their initiating control before focus enters.
+          if (presentationClassName && document.activeElement instanceof HTMLElement)
+            presentationReturnFocus.current = document.activeElement;
+          onOpenAutoFocus?.(event);
+        }}
+        onCloseAutoFocus={(event) => {
+          onCloseAutoFocus?.(event);
+          if (!event.defaultPrevented && presentationClassName && presentationReturnFocus.current?.isConnected) {
+            event.preventDefault();
+            presentationReturnFocus.current.focus();
+          }
+        }}
         onInputCapture={() => setSubmitError('')}
         onSubmitCapture={() => setSubmitError('')}
         className={cn(
@@ -97,6 +116,7 @@ function DialogContent({
           // Desktop: Centered modal
           "sm:fixed sm:left-1/2 sm:top-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:bottom-auto sm:right-auto sm:max-w-lg sm:rounded-2xl sm:p-6 sm:max-h-[88vh]",
           "sm:data-open:zoom-in-95 sm:data-closed:zoom-out-95",
+          presentationClassName,
           className
         )}
         {...props}

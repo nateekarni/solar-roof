@@ -23,6 +23,38 @@ test('reminder queues stable per cycle slot recipient channel keys and ignores p
  row.pending_evidence=true;await service.queueReminders(new Date('2026-10-15T00:00:00Z'));assert.equal(queued.length,2);
  row.pending_evidence=false;row.status='cancelled';await service.queueReminders(new Date('2026-10-15T00:00:00Z'));assert.equal(queued.length,2);
 });
+test('queues owner and accountant payment prechecks one day before the first customer reminder',async()=>{
+ const queued:unknown[][]=[];
+ const row={id:'cycle',site_id:'site',status:'approved',due_date:'2026-10-10',reminders_enabled:true,reminder_start_days:2,reminder_interval_days:3,recipient_user_ids:['customer'],pending_evidence:false,outstanding:'44565.50'};
+ const query=async(sql:string,values:unknown[]=[])=>{
+  if(sql.includes('FROM billing_cycles b JOIN site_billing_settings'))return {rows:[row],rowCount:1};
+  if(sql.includes("u.role IN ('owner','accountant')"))return {rows:[{id:'accountant',email:'accountant@example.com'}],rowCount:1};
+  if(sql.startsWith('INSERT INTO operational_delivery_outbox'))queued.push(values);
+  return {rows:[],rowCount:0};
+ };
+ const service=new OperationalAutomationService(fromPartial<DatabaseService>({transaction:async(work:any)=>work({query})}));
+ await service.queueReminders(new Date('2026-10-11T00:00:00Z'));
+ assert.deepEqual(queued.map(values=>values[0]),['payment-precheck:cycle:accountant:in_app','payment-precheck:cycle:accountant:email']);
+ assert.ok(queued.every(values=>values[8]==='/records/billing/cycle?cash=1'));
+});
+test('cancels a claimed reminder when the latest outstanding balance is zero',async()=>{
+ const savedEnv={...process.env};
+ Object.assign(process.env,{NODE_ENV:'test',LOCAL_FINANCIAL_FIXTURE_MARKER:'solar-financial-flow-review-v1',DATABASE_URL:'postgres://local:local@127.0.0.1:15449/solar_financial_flow_review',FINANCIAL_WRITES_ENABLED:'true'});
+ try{
+  const updates:unknown[][]=[];
+  const db=fromPartial<DatabaseService>({query:async(sql:string,values:unknown[]=[])=>{
+   if(sql.startsWith('SELECT u.id,u.email'))return {rows:[{id:'customer',email:'verified@example.com'}]};
+   if(sql.startsWith('SELECT b.status'))return {rows:[{status:'approved',pending:false,outstanding:'0.00'}]};
+   if(sql.startsWith('UPDATE operational_delivery_outbox SET state=\'cancelled\''))updates.push(values);
+   return {rows:[]};
+  }});
+  const service=new OperationalAutomationService(db);
+  service.reconcileClaims=async()=>undefined;
+  service.claimDeliveries=async(table:string)=>table==='operational_delivery_outbox'?[{id:'job',dedupe_key:'reminder:cycle:0:customer:in_app',site_id:'site',user_id:'customer',billing_cycle_id:'cycle',recipient:'verified@example.com',claim_token:'token'}]:[];
+  await service.deliver();
+  assert.deepEqual(updates,[['job','token']]);
+ }finally{for(const key of Object.keys(process.env))if(!(key in savedEnv))delete process.env[key];Object.assign(process.env,savedEnv);}
+});
 test('missing offline observations never synthesize an alarm',async()=>{
  const sqls:string[]=[];const query=async(sql:string)=>{sqls.push(sql);if(sql.includes('SELECT * FROM operational_alert_rules'))return {rows:[{id:'rule',site_id:'site',kind:'offline',state:{},duration_seconds:0,cooldown_seconds:0,recovery:true}]};return {rows:[]};};
  const service=new OperationalAutomationService(fromPartial<DatabaseService>({transaction:async(work:any)=>work({query})}));

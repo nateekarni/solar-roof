@@ -1,5 +1,5 @@
 import {SiteBillingService} from './site-billing.service.js';
-import type { PaymentSubmission } from '@solar/api-contracts';
+import type { CashPaymentSubmission, PaymentSubmission } from '@solar/api-contracts';
 import { reviewedPaymentMetadata } from './payment-metadata.js';
 import {allocateDocumentNumber} from '../documents/document-number.js';
 import { ContractPdfService, type ScopedActor } from '../documents/contract-pdf.service.js';
@@ -16,6 +16,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   Inject,
   NotFoundException,
   Param,
@@ -356,6 +357,17 @@ export class BillingController {
   }
 
   @Roles("owner", "accountant")
+  @Post("billing-cycles/:id/cash-payment")
+  async recordCashPayment(
+    @Param("id") id:string,
+    @Body() body:CashPaymentSubmission,
+    @Headers("idempotency-key") idempotencyKey:string|undefined,
+    @Req() req:Request&{user?:{id:string;role:string}},
+  ) {
+    return this.financial.recordCashPayment(id,body,req.user?.id,idempotencyKey);
+  }
+
+  @Roles("owner", "accountant")
   @Patch("billing-cycles/:id/verify-payment")
   async verifyPayment(
     @Param("id") id: string,
@@ -367,7 +379,8 @@ export class BillingController {
       verifiedTransferAt?: string;
       transferReference?: string;
       payerName?:string|null;
-      paymentMethod?:'bank_transfer'|'promptpay'|null;
+      paymentMethod?:'bank_transfer'|'cash'|null;
+      transferChannel?:'bank_account'|'promptpay'|null;
       originBank?:string|null;
       originAccount?:string|null;
       note?: string;

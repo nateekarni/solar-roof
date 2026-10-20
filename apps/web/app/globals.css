@@ -1081,6 +1081,13 @@ td.rdp-outside .rdp-day_button {
   opacity: 0.35 !important;
 }
 
+/* Future transfer dates remain visible but clearly unavailable. */
+.customer-payment-calendar td.rdp-disabled .rdp-day_button {
+  color: var(--muted-foreground) !important;
+  opacity: 0.45 !important;
+  cursor: not-allowed !important;
+}
+
 /* Range Middle Cell (Continuous Subtle Yellow Brand Band - Opacity 5%) */
 td.rdp-range_middle {
   background-color: color-mix(in oklab, var(--primary) 5%, transparent) !important;
@@ -1127,6 +1134,14 @@ td.rdp-selected:not(.rdp-range_middle) .rdp-day_button {
   font-weight: 700 !important;
   border-radius: 0.5rem !important;
   box-shadow: 0 1px 3px 0 color-mix(in oklab, var(--shadow-color) 15%, transparent) !important;
+}
+
+/* Today is also the initial transfer-date selection; selected state wins. */
+.customer-payment-calendar td.rdp-today.rdp-selected .rdp-day_button {
+  background-color: var(--customer-action-primary) !important;
+  color: var(--customer-action-primary-foreground) !important;
+  border-color: var(--customer-action-primary) !important;
+  opacity: 1 !important;
 }
 
 /* Row end rounding for Range Middle */
@@ -1334,5 +1349,226 @@ input:-webkit-autofill, textarea:-webkit-autofill { -webkit-text-fill-color:var(
 
 .animate-shake {
   animation: shake 0.35s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+/* Customer presentation owns its palette; staff root tokens remain independent. */
+.customer-portal {
+  --customer-action-primary: #f29700;
+  --customer-action-primary-foreground: #171717;
+  --customer-surface-hero: #242424;
+  --customer-surface-hero-foreground: #fafafa;
+  --customer-surface-background: #f7f7f5;
+  --customer-surface-elevated: #ffffff;
+  --customer-foreground: #202020;
+  --customer-muted: #f0f0ee;
+  --customer-muted-foreground: #626262;
+  --customer-border: #dededb;
+  --customer-focus: #c77700;
+  --customer-success: #176340;
+  --customer-success-foreground: #ffffff;
+  --customer-warning: #f7cd70;
+  --customer-warning-foreground: #493000;
+  --customer-pending: #fff0c2;
+  --customer-pending-foreground: #684200;
+  --customer-destructive: #ae253d;
+  --customer-destructive-foreground: #ffffff;
+  --customer-chart-primary: #c26d00;
+  --customer-chart-primary-foreground: #ffffff;
+  --customer-chart-comparison: #737373;
+  --customer-chart-comparison-foreground: #ffffff;
+  --background: var(--customer-surface-background);
+  --foreground: var(--customer-foreground);
+  --card: var(--customer-surface-elevated);
+  --card-foreground: var(--customer-foreground);
+  --popover: var(--customer-surface-elevated);
+  --popover-foreground: var(--customer-foreground);
+  --primary: var(--customer-action-primary);
+  --primary-foreground: var(--customer-action-primary-foreground);
+  --secondary: var(--customer-muted);
+  --secondary-foreground: var(--customer-foreground);
+  --accent: var(--customer-muted);
+  --accent-foreground: var(--customer-foreground);
+  --muted: var(--customer-muted);
+  --muted-foreground: var(--customer-muted-foreground);
+  --border: var(--customer-border);
+  --input: var(--customer-border);
+  --ring: var(--customer-focus);
+  --success: var(--customer-success);
+  --success-foreground: var(--customer-success-foreground);
+  --warning: var(--customer-warning);
+  --warning-foreground: var(--customer-warning-foreground);
+  --warning-emphasis: var(--customer-warning-foreground);
+  --destructive: var(--customer-destructive);
+  --destructive-foreground: var(--customer-destructive-foreground);
+  --chart-1: var(--customer-chart-primary);
+  --chart-2: var(--customer-chart-comparison);
+  background: var(--customer-surface-background);
+  color: var(--customer-foreground);
+  font-family: var(--font-sans);
+  overflow-wrap: anywhere;
+}
+
+.dark .customer-portal {
+  --customer-action-primary-foreground: #171717;
+  --customer-surface-background: #101010;
+  --customer-surface-elevated: #1d1d1f;
+  --customer-surface-hero: #222224;
+  --customer-surface-hero-foreground: #fafafa;
+  --customer-foreground: #f5f5f5;
+  --customer-muted: #2b2b2d;
+  --customer-muted-foreground: #b8b8ba;
+  --customer-border: #3b3b3d;
+  --customer-focus: #f7c66f;
+  --customer-success: #8addaf;
+  --customer-success-foreground: #123523;
+  --customer-warning: #f7cd70;
+  --customer-warning-foreground: #493000;
+  --customer-pending: #343436;
+  --customer-pending-foreground: #f7cd70;
+  --customer-destructive: #ffa8b8;
+  --customer-destructive-foreground: #4e1020;
+  --customer-chart-primary: #f7b64d;
+  --customer-chart-primary-foreground: #171717;
+  --customer-chart-comparison: #a8a8aa;
+  --customer-chart-comparison-foreground: #171717;
+}
+
+.customer-portal .customer-container {
+  width: 100%;
+  max-width: 72rem;
+  min-width: 0;
+  margin-inline: auto;
+  padding-left: max(1rem, env(safe-area-inset-left));
+  padding-right: max(1rem, env(safe-area-inset-right));
+}
+.customer-portal .customer-top-nav {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background: color-mix(in oklab, var(--customer-surface-elevated) 92%, transparent);
+  border-bottom: 1px solid var(--customer-border);
+  box-shadow: 0 8px 28px color-mix(in oklab, var(--customer-foreground) 7%, transparent);
+  backdrop-filter: blur(18px) saturate(130%);
+  padding-top: env(safe-area-inset-top);
+}
+.customer-portal .customer-main {
+  padding-top: 1.5rem;
+  padding-bottom: calc(7.5rem + env(safe-area-inset-bottom));
+}
+.customer-portal .customer-card {
+  border-color: color-mix(in oklab, var(--customer-border) 78%, transparent);
+  box-shadow:
+    0 1px 0 color-mix(in oklab, white 5%, transparent) inset,
+    0 16px 42px color-mix(in oklab, var(--customer-foreground) 7%, transparent);
+}
+.customer-portal .customer-nav-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  min-height: 44px;
+  min-width: 44px;
+  padding: .625rem .875rem;
+  border-radius: .875rem;
+  color: var(--customer-muted-foreground);
+  font-size: .875rem;
+  font-weight: 500;
+}
+.customer-portal .customer-nav-link:hover {
+  background: var(--customer-muted);
+  color: var(--customer-foreground);
+}
+/* The legacy unlayered anchor reset overrides layered text utilities. Keep
+   customer payment links on their semantic action foreground in both themes. */
+.customer-portal a.customer-primary-action {
+  color: var(--customer-action-primary-foreground);
+}
+.customer-portal .customer-nav-link[aria-current="page"] {
+  background: var(--customer-action-primary);
+  color: var(--customer-action-primary-foreground);
+  font-weight: 700;
+}
+.customer-portal .customer-bottom-nav {
+  position: fixed;
+  left: 50%;
+  bottom: max(.75rem, env(safe-area-inset-bottom));
+  width: min(calc(100% - 2rem), 36rem);
+  transform: translateX(-50%);
+  z-index: 40;
+  background: color-mix(in oklab, #252527 94%, transparent);
+  border-top: 1px solid #464648;
+  border: 1px solid color-mix(in oklab, #5a5a5c 78%, transparent);
+  border-radius: 2rem;
+  padding-block: .45rem;
+  box-shadow:
+    0 1px 0 color-mix(in oklab, white 9%, transparent) inset,
+    0 18px 48px color-mix(in oklab, black 38%, transparent);
+  backdrop-filter: blur(22px) saturate(135%);
+}
+.customer-portal .customer-bottom-nav .customer-container { padding-inline: .45rem; }
+.customer-portal .customer-bottom-nav .customer-nav-link {
+  flex-direction: column;
+  gap: .2rem;
+  border-radius: 1.5rem;
+  padding-block: .45rem;
+  transition: color 180ms ease, background-color 180ms ease, transform 180ms ease;
+  color: #dedede;
+}
+.customer-portal .customer-bottom-nav .customer-nav-link[aria-current="page"] {
+  background: transparent;
+  color: var(--customer-action-primary);
+}
+.customer-portal .customer-bottom-nav .customer-nav-link:active { transform: scale(.97); }
+.customer-portal .customer-preference {
+  min-height: 44px;
+  min-width: 44px;
+  max-width: 7rem;
+  padding: .5rem;
+  border: 1px solid var(--customer-border);
+  border-radius: .75rem;
+  background: var(--customer-surface-elevated);
+  color: var(--customer-foreground);
+  font: inherit;
+  font-size: 1rem;
+}
+.customer-portal .customer-profile-trigger { transition: background-color 180ms ease, transform 180ms ease; }
+.customer-portal .customer-profile-trigger:active { transform: scale(.96); }
+.customer-portal :focus-visible {
+  outline: 2px solid var(--customer-focus);
+  outline-offset: 3px;
+}
+.customer-portal .customer-skip-link {
+  position: fixed;
+  top: max(.5rem, env(safe-area-inset-top));
+  left: 1rem;
+  z-index: 60;
+  transform: translateY(-200%);
+  padding: .75rem 1rem;
+  border-radius: .75rem;
+  background: var(--customer-action-primary);
+  color: var(--customer-action-primary-foreground);
+}
+.customer-portal .customer-skip-link:focus { transform: translateY(0); }
+.customer-portal [data-slot="dialog-content"] [data-slot="input"],
+.customer-portal[data-slot="dialog-content"] [data-slot="input"] {
+  font-size: 1rem;
+}
+@media (min-width: 768px) {
+  .customer-portal .customer-container { padding-inline: 2rem; }
+  .customer-portal .customer-main { padding-bottom: max(2rem, env(safe-area-inset-bottom)); }
+}
+@media (max-width: 767px) {
+  .customer-portal :where(input:not([type="range"]), select, textarea) {
+    font-size: 1rem;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .customer-portal, .customer-portal *, .customer-portal *::before, .customer-portal *::after,
+  body:has(.customer-portal) [data-slot="dialog-overlay"] {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 

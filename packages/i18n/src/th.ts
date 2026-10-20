@@ -1,4 +1,61 @@
 export const th = {
+  customerPortal: {
+    shell: {
+      home: "หน้าแรก", documents: "เอกสาร", account: "บัญชี", skipToContent: "ข้ามไปยังเนื้อหา",
+      desktopNavigation: "เมนูสำหรับลูกค้า", mobileNavigation: "เมนูมือถือสำหรับลูกค้า",
+      language: "ภาษา", thai: "ไทย", english: "EN", theme: "ธีม", systemTheme: "ระบบ", lightTheme: "สว่าง", darkTheme: "มืด",
+      loading: "กำลังโหลดบัญชีของคุณ", logout: "ออกจากระบบ", profileMenu: "เมนูโปรไฟล์",
+      notifications: "การแจ้งเตือน", notificationDescription: "ติดตามรอบบิล การชำระเงิน และความเคลื่อนไหวสำคัญของบัญชี", markAllNotificationsRead: "อ่านทั้งหมด", notificationsLoading: "กำลังโหลดการแจ้งเตือน", notificationsEmpty: "ยังไม่มีการแจ้งเตือน", notificationsEmptyDescription: "รอบบิล การชำระเงิน และความเคลื่อนไหวของบัญชีจะแสดงที่นี่", notificationsUnavailable: "ไม่สามารถโหลดการแจ้งเตือนได้ กรุณาลองอีกครั้ง", notificationsReadFailed: "ไม่สามารถบันทึกสถานะอ่านได้",
+    },
+    home: {
+      title: "หน้าแรก", welcome: "สวัสดี {name}", currentBill: "บิลปัจจุบัน", amountDue: "ยอดที่ต้องชำระ", dueDate: "วันครบกำหนด",
+      pay: "ชำระเงิน", breakdown: "รายละเอียดค่าใช้จ่าย", consumedEnergy: "พลังงานที่ใช้", rate: "อัตราต่อหน่วย", subtotal: "ยอดก่อนภาษี", tax: "ภาษี", total: "ยอดรวม",
+      billedAmount: "ยอดเรียกเก็บ", approvedAmount: "ยอดชำระที่อนุมัติแล้ว", outstandingAmount: "ยอดคงเหลือ",
+      additionalOpenBills: "มีบิลที่ยังไม่ปิดอีก {count} รายการ", paidUpToDate: "ชำระครบแล้ว", noOpenBill: "ขณะนี้ไม่มีบิลที่ต้องชำระ",
+      energy: "การผลิตพลังงาน", energyReadings: "ดูข้อมูลการผลิตพลังงาน", sevenDays: "7 วัน", thirtyDays: "30 วัน", energyUnavailable: "ไม่สามารถแสดงข้อมูลพลังงานได้", energyEmpty: "ไม่มีข้อมูลพลังงานในช่วงนี้",
+      recentRecords: "รายการทางการเงินล่าสุด", viewAllDocuments: "ดูเอกสารทั้งหมด", noRecords: "ยังไม่มีรายการทางการเงิน",
+      unavailable: "ไม่สามารถโหลดภาพรวมบัญชีได้", noSite: "บัญชีของคุณยังไม่ได้รับการผูกไซต์", stale: "กำลังแสดงข้อมูลล่าสุดที่มี",
+    },
+    billing: {
+      actionsUnavailable: "ไม่สามารถโหลดสิทธิ์การชำระเงินได้", retryActions: "ลองโหลดสิทธิ์การชำระเงินอีกครั้ง",
+      periodFrom: "รอบบิลตั้งแต่", periodTo: "รอบบิลถึง", applyFilters: "กรองเอกสาร", statusFilter: "สถานะเอกสาร",
+      pendingEvidence: "หลักฐานรอตรวจสอบ: {count}", rejectedEvidence: "หลักฐานไม่ผ่านการตรวจสอบ: {count}", noReceipt: "ยังไม่มีใบเสร็จรับเงิน",
+      title: "เอกสาร", search: "ค้นหาเอกสาร", searchPlaceholder: "เลขที่เอกสารหรือรอบบิล", period: "รอบบิล", allPeriods: "ทุกรอบบิล", clearPeriod: "ล้าง", applyPeriod: "นำไปใช้",
+      all: "ทั้งหมด", awaitingPayment: "รอชำระเงิน", pendingVerification: "รอตรวจหลักฐาน", partiallyPaid: "ชำระบางส่วน", overdue: "เกินกำหนด", paid: "ชำระแล้ว",
+      loadMore: "โหลดเอกสารเพิ่มเติม", empty: "ไม่พบเอกสารที่ตรงกัน", unavailable: "ไม่สามารถโหลดเอกสารได้", documentNumber: "เลขที่เอกสาร", evidenceCount: "หลักฐานการชำระเงิน {count} ไฟล์", receiptCount: "ใบเสร็จรับเงิน {count} ฉบับ",
+    },
+    record: {
+      fileUnavailable: "ไม่มีไฟล์เอกสารสำหรับรายการนี้",
+      title: "รายการทางการเงิน", details: "ดูรายละเอียด", period: "รอบบิล", statement: "ใบแจ้งค่าใช้จ่าย", paymentProgress: "ความคืบหน้าการชำระเงิน", paid: "ชำระแล้ว",
+      timeline: "เอกสารและประวัติการชำระเงิน", evidence: "หลักฐานการชำระเงิน", receipt: "ใบเสร็จรับเงิน", rejectedReason: "เหตุผลที่ไม่อนุมัติ", resubmit: "แจ้งชำระเงินใหม่",
+      preview: "ดูตัวอย่างเอกสาร", download: "ดาวน์โหลด", previewUnavailable: "ไม่สามารถแสดงตัวอย่างได้ คุณสามารถดาวน์โหลดเอกสารได้", unavailable: "ไม่สามารถโหลดรายการทางการเงินนี้ได้", noDocuments: "ยังไม่มีเอกสาร", backToDocuments: "กลับหน้ารายการ",
+    },
+    payment: {
+      title: "ชำระเงิน", description: "ชำระผ่านบัญชีหรือ QR Code แล้วแนบข้อมูลการชำระเงินได้ในขั้นตอนเดียว", channel: "ช่องทางชำระเงิน", channelDescription: "เลือกโอนผ่านธนาคารหรือสแกน QR Code", details: "ข้อมูลการชำระเงิน", detailsDescription: "ระบุวันที่และแนบหลักฐานเพื่อให้เจ้าหน้าที่ตรวจสอบ", instructions: "วิธีชำระเงิน", transferDetails: "ข้อมูลการโอนและหลักฐาน", review: "ตรวจสอบข้อมูลก่อนส่ง", pending: "ส่งข้อมูลการชำระเงินแล้ว — รอตรวจหลักฐาน",
+      pendingDescription: "เจ้าหน้าที่จะตรวจสอบหลักฐาน ยอดคงเหลือจะเปลี่ยนหลังอนุมัติ", fullAmount: "ชำระเต็มยอดคงเหลือ", otherAmount: "ระบุยอดอื่น", amount: "จำนวนเงินที่โอน",
+      paidAt: "วันที่โอน", method: "วิธีโอนเงิน", bankTransfer: "โอนผ่านธนาคาร", promptpay: "พร้อมเพย์", bankName: "ธนาคาร", accountName: "ชื่อบัญชี", accountNumber: "เลขที่บัญชี", branch: "สาขา", copy: "คัดลอกเลขบัญชี", copied: "คัดลอกแล้ว", qrAlt: "QR Code สำหรับชำระเงิน", saveQr: "บันทึก QR Code", qrFallback: "QR แบบไม่ระบุยอด กรุณาตรวจสอบยอดก่อนชำระ",
+      note: "หมายเหตุ", evidence: "หลักฐานการโอน", chooseFile: "เลือกไฟล์หรือถ่ายรูป", dropFile: "ลากไฟล์มาวางที่นี่หรือเลือกไฟล์", allowedFiles: "JPG, PNG หรือ PDF ขนาดไม่เกิน 10 MB", replace: "เปลี่ยนไฟล์", remove: "นำไฟล์ออก",
+      next: "ดำเนินการต่อ", back: "ย้อนกลับ", submit: "ยืนยันการชำระเงิน", submitting: "กำลังส่งข้อมูลการชำระเงิน", returnHome: "กลับหน้าแรก", viewRecord: "ดูรายการทางการเงิน",
+      unavailable: "ไม่สามารถโหลดข้อมูลการชำระเงินได้", failed: "ไม่สามารถส่งข้อมูลการชำระเงินได้ ข้อมูลที่กรอกยังคงอยู่", duplicateEvidence: "หลักฐานนี้ถูกส่งแล้ว กรุณาเลือกไฟล์อื่น", errorSummary: "กรุณาตรวจสอบข้อมูลต่อไปนี้",
+    },
+    account: {
+      description: "จัดการโปรไฟล์ การแจ้งเตือน และความปลอดภัยของบัญชี", email: "อีเมลเข้าสู่ระบบ", emailReadOnly: "ติดต่อผู้ให้บริการเพื่อเปลี่ยนอีเมลเข้าสู่ระบบ", site: "ไซต์ที่ได้รับมอบหมาย", taxBranch: "สาขาภาษี",
+      profileFailed: "บันทึกโปรไฟล์ไม่สำเร็จ กรุณาลองอีกครั้ง", profileSaved: "บันทึกโปรไฟล์แล้ว", organizationUnavailable: "ไม่สามารถโหลดข้อมูลองค์กรได้",
+      notificationsUnavailable: "ไม่สามารถโหลดการตั้งค่าการแจ้งเตือนได้", notificationsFailed: "บันทึกการแจ้งเตือนไม่สำเร็จ คืนค่าการตั้งค่าก่อนหน้าแล้ว",
+      notificationDelivery: "ส่งอีเมลแจ้งเตือนไปยัง {email}", criticalEmailAlert: "รับอีเมลแจ้งเตือนรอบบิลและเหตุสำคัญ", inAppNotification: "การแจ้งเตือนภายในระบบ",
+      title: "ข้อมูลองค์กรและบัญชี", organization: "องค์กรตามสัญญา", organizationName: "ชื่อองค์กร", address: "ที่อยู่", taxId: "เลขประจำตัวผู้เสียภาษี", readOnly: "ติดต่อผู้ให้บริการเพื่อแก้ไขข้อมูลองค์กรตามสัญญา",
+      profile: "โปรไฟล์ของคุณ", profileDescription: "ตรวจสอบข้อมูลติดต่อที่ใช้กับบัญชีลูกค้านี้", editProfile: "แก้ไขโปรไฟล์", displayName: "ชื่อที่แสดง", phoneNumber: "เบอร์โทรศัพท์", avatar: "รูปโปรไฟล์", changeAvatar: "เปลี่ยนรูปโปรไฟล์", notifications: "การตั้งค่าการแจ้งเตือน", emailNotifications: "แจ้งเตือนทางอีเมล", security: "ความปลอดภัย", securityDescription: "จัดการรหัสผ่านและการยืนยันตัวตนสองขั้นตอน", password: "เปลี่ยนรหัสผ่าน", twoFactor: "การยืนยันตัวตนสองขั้นตอน", saved: "บันทึกการตั้งค่าแล้ว", unavailable: "ไม่สามารถโหลดข้อมูลบัญชีได้",
+    },
+    status: {
+      awaitingPayment: "รอชำระเงิน", pendingVerification: "รอตรวจหลักฐาน", partiallyPaid: "ชำระบางส่วน", overdue: "เกินกำหนด", paid: "ชำระแล้ว", unsuccessful: "ไม่สำเร็จ", rejected: "หลักฐานไม่ผ่านการอนุมัติ", cancelled: "ยกเลิกแล้ว", superseded: "มีเอกสารทดแทนแล้ว",
+    },
+    validation: {
+      required: "กรุณากรอกข้อมูลนี้", positiveAmount: "กรุณาระบุยอดมากกว่าศูนย์", amountExceedsOutstanding: "ยอดชำระต้องไม่เกินยอดคงเหลือ", futurePaidDate: "วันที่โอนต้องไม่เป็นวันในอนาคต", invalidPaidDate: "กรุณาระบุวันที่โอนที่ถูกต้อง", evidenceRequired: "กรุณาเลือกหลักฐานการชำระเงิน", unsupportedFileType: "กรุณาเลือกไฟล์ JPG, PNG หรือ PDF", fileTooLarge: "ไฟล์ต้องมีขนาดไม่เกิน 10 MB", displayNameRequired: "กรุณาระบุชื่อที่แสดง",
+    },
+    common: {
+      loading: "กำลังโหลด", retry: "ลองอีกครั้ง", save: "บันทึก", saving: "กำลังบันทึก", cancel: "ยกเลิก", close: "ปิด", back: "ย้อนกลับ", unavailable: "ไม่พร้อมใช้งาน", noData: "ไม่มีข้อมูล", unknown: "ไม่ทราบ", baht: "บาท", kwh: "กิโลวัตต์ชั่วโมง", date: "วันที่", amount: "จำนวนเงิน", offline: "คุณออฟไลน์อยู่ เชื่อมต่ออีกครั้งเพื่ออัปเดตข้อมูล",
+    },
+  },
   jobs: {
     title: "งานรายงาน", job: "งาน", loading: "กำลังโหลดงาน", queued: "อยู่ในคิว — รอผู้ประมวลผล", running: "กำลังประมวลผลข้อมูลจริง", ready: "พร้อมใช้งาน — รายงานพร้อมดาวน์โหลด", failed: "ประมวลผลไม่สำเร็จ — ยังไม่มีรายงาน", cancelled: "ยกเลิกแล้ว", accepted: "รับคำขอรายงานแล้ว ติดตามงานได้ที่หน้านี้", requestFailed: "ส่งคำขอไม่สำเร็จ ข้อมูลที่กรอกยังคงอยู่", raw: "ข้อมูลดิบ", operational: "รายการดำเนินงาน", unknownMetadata: "ไม่ทราบช่วงข้อมูลและชนิดข้อมูลของรายงาน", unknown: "ไม่ทราบ", rows: "จำนวนแถว", snapshot: "ข้อมูล ณ เวลา (Asia/Bangkok)", failureCode: "รหัสข้อผิดพลาด", availableAt: "เริ่มประมวลผลได้หลัง", download: "ดาวน์โหลด", retry: "ลองประมวลผลอีกครั้ง", cancel: "ยกเลิกงาน", refresh: "ตรวจสอบสถานะอีกครั้ง", more: "งานเพิ่มเติม", empty: "ยังไม่มีงานรายงาน", offline: "ขณะนี้ออฟไลน์ เชื่อมต่ออีกครั้งเพื่อรับสถานะจากเซิร์ฟเวอร์", progress: "ความคืบหน้าจากเซิร์ฟเวอร์", archiveTarget: "การเรียกคืนรายละเอียดเก่ามีเป้าหมายภายใน 1 ชั่วโมง เป็นเป้าหมาย ไม่ใช่เวลาที่คำนวณว่าจะเสร็จ", legacy: "รายงานเดิมไม่มีขอบเขตสิทธิ์ที่บันทึกไว้ ดาวน์โหลดได้เมื่อมีสิทธิ์รายงานและเป็นเจ้าของรายงานเดิมที่เข้าถึงทุกองค์กรในปัจจุบัน หากไม่เข้าเงื่อนไขต้องสร้างรายงานใหม่", expired: "ดาวน์โหลดไม่ได้หรือหมดอายุ โปรดตรวจสอบสิทธิ์และขอรายงานใหม่", open: "เปิดงาน", create: "สร้างรายงาน",
   },

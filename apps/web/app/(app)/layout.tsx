@@ -9,6 +9,7 @@ import { MobileBottomNav } from "../../components/navigation/mobile-bottom-nav";
 import { SidebarInset, SidebarProvider } from "../../components/ui/sidebar";
 import { LocaleProvider } from "../../providers/locale-provider";
 import { SiteSelectionProvider } from "../../features/dashboard/site-selection-provider";
+import { CustomerAppShell } from "../../features/customer/shell/customer-app-shell";
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
   const user = await getSessionUser();
@@ -17,7 +18,9 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
 
   return (
     <LocaleProvider initialLocale={locale}>
-      <SessionUserProvider user={user}><SiteSelectionProvider><SidebarProvider defaultOpen>
+      <SessionUserProvider user={user}><SiteSelectionProvider>{user?.role === "customer_user" ? (
+        <CustomerAppShell>{children}</CustomerAppShell>
+      ) : <SidebarProvider defaultOpen>
         <AppSidebar />
         <SidebarInset className="flex flex-col h-svh overflow-hidden">
           <AppHeader />
@@ -26,7 +29,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
           </div>
           <MobileBottomNav />
         </SidebarInset>
-      </SidebarProvider></SiteSelectionProvider></SessionUserProvider>
+      </SidebarProvider>}</SiteSelectionProvider></SessionUserProvider>
     </LocaleProvider>
   );
 }

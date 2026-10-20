@@ -13,7 +13,7 @@ import {Alert,AlertDescription} from '../ui/alert';
 import {ResponsivePopover} from '../ui/responsive-popover';
 import {accessibleFeedRows,markFeedRead,type NotificationFeed,type NotificationFeedItem} from './notification-feed-state';
 
-function formatNotificationCopy(row: NotificationFeedItem, th: boolean) {
+function formatNotificationCopy(row: NotificationFeedItem, th: boolean, customerFacing = false) {
  if (row.metadata?.type === 'finance-readiness') {
   return {
    title: th ? 'รายการข้อมูลที่ต้องตั้งค่าก่อนเริ่มใช้งาน' : 'Setup Checklist Before Go-Live',
@@ -38,7 +38,14 @@ function formatNotificationCopy(row: NotificationFeedItem, th: boolean) {
  }
  // Document issuance: Invoice
  else if (row.title === 'ออกใบแจ้งหนี้แล้ว' || row.title === 'Issued invoice') {
-  title = th ? 'ออกใบวางบิลแล้ว' : 'Invoice Issued';
+  if (customerFacing) {
+   title = th ? 'ใบแจ้งหนี้พร้อมชำระแล้ว' : 'Invoice ready for payment';
+   detail = th
+    ? `ตรวจสอบใบแจ้งหนี้ ${row.detail} และดำเนินการชำระเงิน`
+    : `Review invoice ${row.detail} and make a payment`;
+  } else {
+   title = th ? 'ออกใบวางบิลแล้ว' : 'Invoice Issued';
+  }
  }
  // Document issuance: Receipt
  else if (row.title === 'ออกใบเสร็จแล้ว' || row.title === 'Issued receipt') {
@@ -85,8 +92,8 @@ function formatNotificationCopy(row: NotificationFeedItem, th: boolean) {
  };
 }
 
-export function NotificationFeedRow({row,th,onRead,onNavigate}:{row:NotificationFeedItem;th:boolean;onRead:(id:string)=>void;onNavigate?:()=>void}) {
- const {title, detail, siteName} = formatNotificationCopy(row, th);
+export function NotificationFeedRow({row,th,onRead,onNavigate,customerFacing=false}:{row:NotificationFeedItem;th:boolean;onRead:(id:string)=>void;onNavigate?:()=>void;customerFacing?:boolean}) {
+ const {title, detail, siteName} = formatNotificationCopy(row, th, customerFacing);
  const isFinanceReadiness = row.metadata?.type === 'finance-readiness';
  const formattedDate = new Intl.DateTimeFormat(th ? 'th-TH' : 'en-GB', {
   dateStyle: 'medium',

@@ -13,7 +13,7 @@ import { FinancialReadinessService } from '../financial-readiness/financial-read
 import { requireTestTransferAmount, validFinancialDate, decimal, sqlCalendarPeriod, actualEnergyDifference, requireTestSettlement, TEST_FINANCIAL_POLICY_HASH, localFinancialBinding } from './local-financial-policy.js';
 import {energyCharge,financialPolicySnapshot,financialPolicyHash,validateFinancialPolicy,financialTotals} from './financial-policy.js';
 import { BRAND_PRIMARY } from '@solar/domain';
-import type { PaymentSubmission, IssuancePreview } from '@solar/api-contracts';
+import type { CashPaymentResult, CashPaymentSubmission, PaymentSubmission, IssuancePreview } from '@solar/api-contracts';
 import { reviewedPaymentMetadata } from './payment-metadata.js';
 import { allocateDocumentNumber } from '../documents/document-number.js';
 import { FINANCIAL_TEMPLATE_VERSION, renderFinancialDocumentPdf } from '../documents/financial-document-pdf.js';
@@ -22,6 +22,7 @@ import {frozenFinancialTax} from './frozen-financial-tax.js';
 import {DocumentIdentityService,type DocumentIdentity} from '../identity/document-identity.js';
 import { lockIssuanceActor, authorizedIssuanceLabel } from './issuance-approval.js';
 import {manualBillIds} from './manual-bill-identity.js';
+import {outstandingBalance,settlementBalance} from './payment-settlement.js';
 type FinancialApprover=DocumentIdentity&{approvedAt:string};
 const validDate=validFinancialDate;
 export function reviewedActualEnergyDifference(opening:unknown,closing:unknown):string {
@@ -142,6 +143,28 @@ export class FinancialApplicationService {
   await client.query('INSERT INTO document_artifacts(document_id,pdf_bytes,sha256) VALUES($1,$2,$3)',[doc.id,bytes,sha256]);
   await client.query('INSERT INTO financial_delivery_outbox(id,document_id,artifact_sha256) VALUES($1,$2,$3)',[randomUUID(),doc.id,sha256]);await this.audit(client,actorId,'finance.issue_'+type,cycle.id,{documentId:doc.id,contentHash:sha256,policyHash:cycle.policy_hash});return doc;
  }
+ private async issueSettlementReceipt(client:PoolClient,cycle:any,payment:any,actorId:string,approver:FinancialApprover,settled:boolean){
+  const existingReceiptCount=Number((await client.query("SELECT count(*)::int AS count FROM documents WHERE billing_cycle_id=$1 AND document_type='receipt'",[cycle.id])).rows?.[0]?.count??0);
+  const paidAt=payment.verified_transfer_at??payment.paid_at;
+  const receiptDay=(await client.query("SELECT to_char($1::timestamptz AT TIME ZONE 'Asia/Bangkok','YYYY-MM-DD') AS day",[paidAt])).rows?.[0]?.day??new Date(paidAt).toISOString().slice(0,10);
+  const outstandingRows=(await client.query(`
+   SELECT bc.id, to_char(bc.period_start, 'YYYY-MM') AS period, bc.amount,
+    coalesce((SELECT sum(coalesce(p.verified_amount, p.amount)) FROM payments p WHERE p.billing_cycle_id=bc.id AND p.status='paid'),0) AS paid_amount
+   FROM billing_cycles bc
+   JOIN sites s ON s.id=bc.site_id
+   WHERE s.customer_id=(SELECT customer_id FROM sites WHERE id=$1)
+    AND bc.status IN ('approved','pending_verification','partially_paid')
+    AND EXISTS(SELECT 1 FROM documents d WHERE d.billing_cycle_id=bc.id AND d.document_type='invoice' AND d.status IN ('issued','finalized'))
+   ORDER BY bc.period_start ASC
+  `,[cycle.site_id])).rows??[];
+  const bills=outstandingRows.map(row=>{
+   const remaining=outstandingBalance(String(row.amount),[String(row.paid_amount)]);
+   return {cycleId:row.id,period:row.period,billedAmount:String(row.amount),paidAmount:String(row.paid_amount),remainingAmount:remaining};
+  }).filter(row=>row.remainingAmount!=='0.00');
+  const totalOutstanding=bills.reduce((sum,row)=>sum+BigInt(row.remainingAmount.replace('.','')),0n);
+  const outstandingBills=bills.length?{bills,totalOutstanding:decimal(totalOutstanding,2)}:undefined;
+  return this.issue(client,cycle,'receipt',actorId,approver,undefined,{payment,outstandingBills,installmentIndex:existingReceiptCount+1,issueDate:receiptDay,settled});
+ }
  async reviseInvoiceInTransaction(client:PoolClient,cycle:any,rate:string,actorId?:string){
   if(!actorId)throw new BadRequestException('Correction actor required');
   // Every caller follows configuration -> cycle -> document lock order.
@@ -157,7 +180,9 @@ export class FinancialApplicationService {
    if(pending.supersedes_document_id===old.id&&scaledDecimal(pending.rate,4)===scaledDecimal(rate,4)&&pending.snapshot?.cycle?.policy_hash===hash&&pending.snapshot?.cycle?.billing_settings_version===config.version)return pending;
    throw new ConflictException('A different replacement awaits issuance approval');
   }
-  if(scaledDecimal(cycle.rate,4)===scaledDecimal(rate,4)&&cycle.policy_hash===hash&&cycle.billing_settings_version===config.version)return old;
+  // A renderer upgrade is an explicit document revision even when the commercial
+  // facts are unchanged. Historical artifacts stay immutable and downloadable.
+  if(scaledDecimal(cycle.rate,4)===scaledDecimal(rate,4)&&cycle.policy_hash===hash&&cycle.billing_settings_version===config.version&&old.template_version===FINANCIAL_TEMPLATE_VERSION)return old;
   const snapshots=(cycle.meter_snapshot??[]).map((line:any)=>({...line,...energyCharge(line.consumedKwh,rate)}));
   const gross=decimal(snapshots.reduce((sum:bigint,line:any)=>sum+scaledDecimal(line.subtotal,2),0n),2);
   const totals=policy.scope==='PRODUCTION'?financialTotals(gross,policy):configuredTotals(gross,config.tax_rate,config.prices_include_tax);
@@ -262,24 +287,85 @@ export class FinancialApplicationService {
  async submitPayment(id:string,body:PaymentSubmission,actorId:string|undefined){
   if(!actorId)throw new BadRequestException('Actor required');
   const metadata=reviewedPaymentMetadata(body);
+  if(metadata.paymentMethod==='cash')throw new BadRequestException('Cash payments are recorded by authorized staff only');
   let amount:string|null=null;try{if(body.amount!==undefined)amount=requireTestTransferAmount(body.amount);}catch(error){throw new BadRequestException((error as Error).message);}
   if(!body.slipUrl&&!body.evidenceKey)throw new BadRequestException('Transfer evidence required');
   const paidAt=body.paidAt?new Date(body.paidAt):null;if(paidAt&&!Number.isFinite(paidAt.getTime()))throw new BadRequestException('Valid transfer date required');
   return this.db.transaction(async client=>{
    await client.query("SELECT pg_advisory_xact_lock(hashtext('production-financial-configuration'))");
    const cycle=(await client.query('SELECT * FROM billing_cycles WHERE id=$1 FOR UPDATE',[id])).rows[0];if(!cycle)throw new NotFoundException('Billing cycle not found');
+   const submitter=(await client.query(`SELECT u.role,u.status,
+    CASE WHEN u.role<>'customer_user' THEN true ELSE EXISTS(
+     SELECT 1 FROM site_account_assignments assignment
+     JOIN sites assigned_site ON assigned_site.id=assignment.site_id
+     JOIN customers assigned_customer ON assigned_customer.id=assigned_site.customer_id
+     WHERE assignment.user_id=u.id AND assignment.site_id=$2 AND assignment.revoked_at IS NULL
+      AND assigned_site.customer_id=u.customer_id AND assigned_customer.status='active'
+    ) END AS assigned
+    FROM users u WHERE u.id=$1`,[actorId,cycle.site_id])).rows[0];
+   if(!submitter||submitter.status!=='active'||!['customer_user','admin','owner','accountant'].includes(submitter.role)||!submitter.assigned)throw new ForbiddenException('Live assigned payment submitter required');
    const policy=validateFinancialPolicy(cycle);if(policy.scope==='PRODUCTION')await this.readiness.assertEnabled('submit_payment',{billingCycleId:id,siteId:cycle.site_id},client);
    if(!['approved','pending_verification','partially_paid'].includes(cycle.status))throw new ConflictException('Issued unpaid invoice required');
    const invoice=(await client.query("SELECT id FROM documents WHERE billing_cycle_id=$1 AND document_type='invoice' AND status='issued'",[id])).rows[0];if(!invoice)throw new ConflictException('Issued invoice required');
+   if(paidAt){
+    const calendar=(await client.query("SELECT to_char(now() AT TIME ZONE 'Asia/Bangkok','YYYY-MM-DD') AS day,to_char($1::timestamptz AT TIME ZONE 'Asia/Bangkok','YYYY-MM-DD') AS transfer_day",[paidAt])).rows[0];
+    if(calendar.transfer_day>calendar.day)throw new BadRequestException('Transfer date cannot be in the future');
+   }
+   const payments=(await client.query('SELECT status,verified_amount,amount FROM payments WHERE billing_cycle_id=$1 FOR UPDATE',[id])).rows;
+   if(amount){
+    const approved=payments.filter(payment=>payment.status==='paid').map(payment=>String(payment.verified_amount??payment.amount));
+    try{settlementBalance(String(cycle.amount),approved,amount);}catch(error){throw new BadRequestException((error as Error).message);}
+   }
    const duplicate=await client.query(`SELECT 1 FROM payments WHERE submitted_by IS NOT NULL AND status IN('pending_verification','paid') AND (payment_evidence_sha256(evidence_key)=payment_evidence_sha256($1::text) OR payment_evidence_sha256(slip_url)=payment_evidence_sha256($2::text))`,[body.evidenceKey??null,body.slipUrl??null]);if(duplicate.rowCount)throw new ConflictException('Transfer evidence already submitted');
-   const paymentId=randomUUID();await client.query(`INSERT INTO payments(id,billing_cycle_id,amount,status,paid_at,slip_url,evidence_key,note,submitted_by,payer_name,payment_method,origin_bank,origin_account,declared_amount,declared_transfer_at) VALUES($1,$2,$3,'pending_verification',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,[paymentId,id,null,null,body.slipUrl??null,body.evidenceKey??null,body.note??null,actorId,metadata.payerName??null,metadata.paymentMethod??null,metadata.originBank??null,metadata.originAccount??null,amount,paidAt]);
+   const paymentId=randomUUID();await client.query(`INSERT INTO payments(id,billing_cycle_id,amount,status,paid_at,slip_url,evidence_key,note,submitted_by,payer_name,payment_method,transfer_channel,origin_bank,origin_account,declared_amount,declared_transfer_at) VALUES($1,$2,$3,'pending_verification',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,[paymentId,id,null,null,body.slipUrl??null,body.evidenceKey??null,body.note??null,actorId,metadata.payerName??null,metadata.paymentMethod??null,metadata.transferChannel??null,metadata.originBank??null,metadata.originAccount??null,amount,paidAt]);
    await client.query("UPDATE billing_cycles SET status='pending_verification' WHERE id=$1",[id]);await this.audit(client,actorId,'finance.payment_submitted',id,{paymentId});return {success:true,paymentId,status:'pending_verification'};
   }).catch(error=>{if(error?.code==='23505'&&['payments_new_active_evidence','payments_new_active_slip'].includes(error.constraint))throw new ConflictException('Transfer evidence already submitted');throw error;});
  }
- async verifyPayment(id:string,status:string,reason:string|undefined,actorId:string|undefined,review?:{paymentId:string;verifiedAmount?:string|number;verifiedTransferAt?:string;transferReference?:string;payerName?:string|null;paymentMethod?:'bank_transfer'|'promptpay'|null;originBank?:string|null;originAccount?:string|null}){
+ async recordCashPayment(id:string,body:CashPaymentSubmission,actorId:string|undefined,idempotencyKey:string|undefined):Promise<CashPaymentResult>{
+  if(!actorId)throw new BadRequestException('Actor required');
+  const key=idempotencyKey?.trim();if(!key||key.length>160)throw new BadRequestException('Explicit stable idempotency key required');
+  if(!validDate(body.receivedAt))throw new BadRequestException('Valid received date required');
+  let amount:string;try{amount=requireTestTransferAmount(body.amount);}catch(error){throw new BadRequestException((error as Error).message);}
+  await this.readiness.assertEnabled('approve_payment',{billingCycleId:id});
+  return this.db.transaction(async client=>{
+   await this.readiness.assertEnabled('approve_payment',{billingCycleId:id},client);
+   const actor=(await client.query('SELECT role,status FROM users WHERE id=$1',[actorId])).rows[0];
+   if(!actor||actor.status!=='active'||!['owner','accountant'].includes(actor.role))throw new ForbiddenException('Live cash recording role required');
+   const cycle=(await client.query('SELECT * FROM billing_cycles WHERE id=$1 FOR UPDATE',[id])).rows[0];if(!cycle)throw new NotFoundException('Billing cycle not found');
+   if(!(await client.query("SELECT employee_can_access($1,'business','business.billing.record_cash_payment',$2) AS allowed",[actorId,cycle.site_id])).rows[0]?.allowed)throw new ForbiddenException('Live scoped cash recording permission required');
+   const today=(await client.query("SELECT to_char(now() AT TIME ZONE 'Asia/Bangkok','YYYY-MM-DD') AS day")).rows[0]?.day;
+   if(body.receivedAt>today)throw new BadRequestException('Received date cannot be in the future');
+   const payments=(await client.query('SELECT * FROM payments WHERE billing_cycle_id=$1 ORDER BY submitted_at,id FOR UPDATE',[id])).rows;
+   const replay=payments.find(payment=>payment.payment_method==='cash'&&payment.submitted_by===actorId&&payment.idempotency_key===key);
+   if(replay){
+    if(String(replay.verified_amount)!==amount||String(replay.received_at).slice(0,10)!==body.receivedAt||(replay.note??'')!==(body.note?.trim()??''))throw new ConflictException('Idempotency key already used with different cash payment details');
+    const receipt=(await client.query('SELECT id,document_number FROM documents WHERE id=$1',[replay.receipt_document_id])).rows[0];
+    const outstanding=outstandingBalance(String(cycle.amount),payments.filter(payment=>payment.status==='paid').map(payment=>String(payment.verified_amount??payment.amount)));
+    return {success:true,billingCycleStatus:outstanding==='0.00'?'paid':'partially_paid',outstandingAmount:outstanding,paymentId:replay.id,receipt:{id:receipt.id,documentNumber:receipt.document_number}};
+   }
+   if(!['approved','partially_paid'].includes(cycle.status))throw new ConflictException('Outstanding issued invoice without pending evidence required');
+   if(!(await client.query("SELECT id FROM documents WHERE billing_cycle_id=$1 AND document_type='invoice' AND is_current AND status IN('issued','finalized')",[id])).rows[0])throw new ConflictException('Issued invoice required');
+   const approved=payments.filter(payment=>payment.status==='paid').map(payment=>String(payment.verified_amount??payment.amount));
+   const balance=settlementBalance(String(cycle.amount),approved,amount);
+   const paymentId=randomUUID();
+   const payment=(await client.query(`INSERT INTO payments(id,billing_cycle_id,amount,status,paid_at,note,submitted_by,verified_at,verified_by,verified_amount,verified_transfer_at,declared_amount,declared_transfer_at,payment_method,transfer_channel,idempotency_key,received_at)
+    VALUES($1,$2,$3,'paid',($4::date+time '12:00') AT TIME ZONE 'Asia/Bangkok',$5,$6,now(),$6,$3,($4::date+time '12:00') AT TIME ZONE 'Asia/Bangkok',$3,($4::date+time '12:00') AT TIME ZONE 'Asia/Bangkok','cash',NULL,$7,$4::date) RETURNING *`,[paymentId,id,amount,body.receivedAt,body.note?.trim()||null,actorId,key])).rows[0];
+   const identity=await this.documentIdentity.resolve(client,actorId);
+   const approvedAt=(await client.query('SELECT now() AS value')).rows[0].value.toISOString();
+   const receipt=await this.issueSettlementReceipt(client,cycle,payment,actorId,{...identity,approvedAt},balance.settled);
+   await client.query('UPDATE payments SET receipt_document_id=$1 WHERE id=$2',[receipt.id,paymentId]);
+   const cycleStatus=balance.settled?'paid':'partially_paid';
+   await client.query('UPDATE billing_cycles SET status=$2 WHERE id=$1',[id,cycleStatus]);
+   if(balance.settled)await client.query("UPDATE operational_delivery_outbox SET state='cancelled',completed_at=now(),last_error=NULL WHERE billing_cycle_id=$1 AND state IN('pending','failed')",[id]);
+   await client.query("INSERT INTO audit_events(id,actor_id,action,entity_type,entity_id,after_json,reason,correlation_id) VALUES($1,$2,'payment.cash_recorded','payment',$3,$4,$5,$6)",[randomUUID(),actorId,paymentId,JSON.stringify({amount,receivedAt:body.receivedAt,recordedAt:approvedAt,billingCycleStatus:cycleStatus,outstandingAmount:balance.outstanding,receiptId:receipt.id,idempotencyKey:key}),body.note?.trim()||'Cash payment recorded',randomUUID()]);
+   return {success:true,billingCycleStatus:cycleStatus,outstandingAmount:balance.outstanding,paymentId,receipt:{id:receipt.id,documentNumber:receipt.document_number}};
+  });
+ }
+ async verifyPayment(id:string,status:string,reason:string|undefined,actorId:string|undefined,review?:{paymentId:string;verifiedAmount?:string|number;verifiedTransferAt?:string;transferReference?:string;payerName?:string|null;paymentMethod?:'bank_transfer'|'cash'|null;transferChannel?:'bank_account'|'promptpay'|null;originBank?:string|null;originAccount?:string|null}){
   await this.readiness.assertEnabled('approve_payment',{billingCycleId:id});if(!actorId)throw new BadRequestException('Actor required');if(!['approved','rejected'].includes(status))throw new BadRequestException('Invalid verification status');
   if(!review?.paymentId)throw new BadRequestException('Select one transfer to review');
   const metadata=reviewedPaymentMetadata(review);
+  if(metadata.paymentMethod==='cash')throw new BadRequestException('Cash payments do not use transfer evidence review');
   let verifiedAmount:string|null=null;let verifiedTransferAt:Date|null=null;
   if(status==='approved'){
    try{verifiedAmount=requireTestTransferAmount(review.verifiedAmount);}catch(error){throw new BadRequestException((error as Error).message);}
@@ -296,64 +382,28 @@ export class FinancialApplicationService {
    const payment=payments.find(p=>p.id===review.paymentId);if(!payment)throw new NotFoundException('Transfer not found');
    if(payment.status!=='pending_verification')throw new ConflictException('Transfer has already been reviewed');
    if(status==='rejected'&&!reason?.trim())throw new BadRequestException('Rejection reason required');
-   const minor=(value:string)=>{const [whole,fraction='']=value.split('.');return BigInt(whole!)*100n+BigInt(fraction.padEnd(2,'0').slice(0,2));};
-   const approvedTotal=payments.filter(p=>p.status==='paid').reduce((total,p)=>total+minor(p.verified_amount),0n);
-   const total=status==='approved'?approvedTotal+minor(verifiedAmount!):approvedTotal;
-   if(total>minor(cycle.amount))throw new ConflictException('Confirmed transfers exceed the bill; resolve the difference before approval');
+   const approved=payments.filter(p=>p.status==='paid').map(p=>String(p.verified_amount??p.amount));
+   const balance=status==='approved'?settlementBalance(String(cycle.amount),approved,verifiedAmount!):null;
    if(status==='approved'&&review.transferReference?.trim()){
     await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[review.transferReference.trim()]);
     if((await client.query("SELECT id FROM payments WHERE transfer_reference=$1 AND status='paid'",[review.transferReference.trim()])).rows.length)throw new ConflictException('Transfer reference already approved');
    }
-   const settled=total===minor(cycle.amount);
+   const settled=balance?.settled??false;
    let approver:FinancialApprover|undefined;
    if(status==='approved'){
     const identity=await this.documentIdentity.resolve(client,actorId);
     const approvedAt=(await client.query('SELECT now() AS value')).rows[0].value.toISOString();
     approver={...identity,approvedAt};
    }
-   await client.query('UPDATE payments SET status=$2,verified_at=now(),verified_by=$3,rejection_reason=$4,verified_amount=$5,verified_transfer_at=$6,amount=$5,paid_at=$6,transfer_reference=$7,payer_name=coalesce($8,payer_name),payment_method=coalesce($9,payment_method),origin_bank=coalesce($10,origin_bank),origin_account=coalesce($11,origin_account) WHERE id=$1',[payment.id,status==='approved'?'paid':'rejected',actorId,reason?.trim()??null,verifiedAmount,verifiedTransferAt,review.transferReference?.trim()||null,metadata.payerName??null,metadata.paymentMethod??null,metadata.originBank??null,metadata.originAccount??null]);
+   await client.query('UPDATE payments SET status=$2,verified_at=now(),verified_by=$3,rejection_reason=$4,verified_amount=$5,verified_transfer_at=$6,amount=$5,paid_at=$6,transfer_reference=$7,payer_name=coalesce($8,payer_name),payment_method=coalesce($9,payment_method),transfer_channel=coalesce($10,transfer_channel),origin_bank=coalesce($11,origin_bank),origin_account=coalesce($12,origin_account) WHERE id=$1',[payment.id,status==='approved'?'paid':'rejected',actorId,reason?.trim()??null,verifiedAmount,verifiedTransferAt,review.transferReference?.trim()||null,metadata.payerName??null,metadata.paymentMethod??null,metadata.transferChannel??null,metadata.originBank??null,metadata.originAccount??null]);
    const pending=payments.some(p=>p.id!==payment.id&&p.status==='pending_verification');
    const cycleStatus=settled?'paid':pending?'pending_verification':'partially_paid';
 
-   let receipt = null;
+   let receipt=null;
    if(status==='approved'){
-    const existingReceiptCount = Number((await client.query("SELECT count(*)::int AS count FROM documents WHERE billing_cycle_id=$1 AND document_type='receipt'",[cycle.id])).rows?.[0]?.count ?? 0);
-    const receiptDay = (await client.query("SELECT to_char($1::timestamptz AT TIME ZONE 'Asia/Bangkok','YYYY-MM-DD') AS day",[verifiedTransferAt])).rows?.[0]?.day ?? (verifiedTransferAt ? verifiedTransferAt.toISOString().slice(0, 10) : undefined);
-
-    const outstandingRows = (await client.query(`
-      SELECT bc.id, to_char(bc.period_start, 'YYYY-MM') AS period, bc.amount,
-        coalesce((SELECT sum(coalesce(p.verified_amount, p.amount)) FROM payments p WHERE p.billing_cycle_id = bc.id AND p.status = 'paid'), 0) AS paid_amount
-      FROM billing_cycles bc
-      JOIN sites s ON s.id = bc.site_id
-      WHERE s.customer_id = (SELECT customer_id FROM sites WHERE id = $1)
-        AND bc.status IN ('approved', 'pending_verification', 'partially_paid')
-        AND EXISTS (SELECT 1 FROM documents d WHERE d.billing_cycle_id = bc.id AND d.document_type = 'invoice' AND d.status IN ('issued', 'finalized'))
-      ORDER BY bc.period_start ASC
-    `, [cycle.site_id])).rows ?? [];
-
-    const outstandingList = outstandingRows.map(r => {
-      const bM = minor(String(r.amount));
-      const pM = minor(String(r.paid_amount));
-      const rem = bM > pM ? bM - pM : 0n;
-      return { cycleId: r.id, period: r.period, billedAmount: decimal(bM, 2), paidAmount: decimal(pM, 2), remainingAmount: decimal(rem, 2), rem };
-    }).filter(b => b.rem > 0n);
-
-    const totalOutstanding = outstandingList.reduce((acc, b) => acc + b.rem, 0n);
-    const outstandingBills = outstandingList.length > 0 ? {
-      bills: outstandingList.map(({ rem, ...rest }) => rest),
-      totalOutstanding: decimal(totalOutstanding, 2),
-    } : undefined;
-
-    const updatedPayment = { ...payment, status: 'paid', verified_amount: verifiedAmount, amount: verifiedAmount, paid_at: verifiedTransferAt };
-    receipt = await this.issue(client, cycle, 'receipt', actorId, approver, undefined, {
-      payment: updatedPayment,
-      outstandingBills,
-      installmentIndex: existingReceiptCount + 1,
-      issueDate: receiptDay,
-      settled,
-    });
-
-    await client.query('UPDATE payments SET receipt_document_id=$1 WHERE id=$2', [receipt.id, payment.id]);
+    const updatedPayment={...payment,status:'paid',verified_amount:verifiedAmount,verified_transfer_at:verifiedTransferAt,amount:verifiedAmount,paid_at:verifiedTransferAt};
+    receipt=await this.issueSettlementReceipt(client,cycle,updatedPayment,actorId,approver!,settled);
+    await client.query('UPDATE payments SET receipt_document_id=$1 WHERE id=$2',[receipt.id,payment.id]);
    }
    await client.query('UPDATE billing_cycles SET status=$2 WHERE id=$1',[id,cycleStatus]);
    await client.query("INSERT INTO audit_events(id,actor_id,action,entity_type,entity_id,before_json,after_json,reason,correlation_id) VALUES($1,$2,$3,'payment',$4,$5,$6,$7,$8)",[randomUUID(),actorId,'payment.verify_'+status,payment.id,JSON.stringify(payment),JSON.stringify({status,verifiedAmount,verifiedTransferAt,cycleStatus,...metadata}),reason?.trim()??'Transfer approved',randomUUID()]);

@@ -65,7 +65,8 @@
       }
     ],
     "dueDate": "2026-11-07",
-    "templateVersion": "sarabun-a4-v5",
+    "templateVersion": "sarabun-a4-v11",
+    "rendererFixtureHash": "c7530b5c370719880167a3c389afb0a4fb87355218e73bab2a34071eb5065a34",
     "syntheticTest": true
   },
   "contract": {

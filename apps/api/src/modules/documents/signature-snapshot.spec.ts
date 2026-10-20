@@ -23,13 +23,13 @@ test('invoice PDF adapter uses the frozen approver rather than company signatory
  assert.deepEqual(financialDocumentSnapshot(saved).signatories.issuer,{});
 });
 import {refinementFixtures,layoutDocumentPages,pageLines,lineText} from './document-layout.test-fixtures.js';
-import {renderDocumentPdf} from './document-layout.js';
-test('A4 financial document renders uploaded frozen signature bytes and exact saved signatory text',async()=>{
+import {documentDefinition,renderDocumentPdf} from './document-layout.js';
+test('A4 invoice retains approver audit data without rendering profile identity or signature bytes',async()=>{
  const invoice=refinementFixtures().invoice!;
  invoice.signatories={issuer:{name:'ผู้ลงนามที่บันทึกไว้',title:'กรรมการ',signatureDataUri:invoice.logoDataUri}};
  const pages=layoutDocumentPages(invoice);assert.ok(pages.length>=1);
- const text=pageLines(pages.at(-1)).map(lineText).join('\n');assert.match(text,/ผู้ลงนามที่บันทึกไว้/);assert.match(text,/ผู้อนุมัติออกเอกสาร/);assert.match(text,/ผู้รับวางบิล/);
- assert.ok(pages.flatMap((page:any)=>page.items).filter((item:any)=>item.type==='image').length>=2);
+ const text=pageLines(pages.at(-1)).map(lineText).join('\n');assert.doesNotMatch(text,/ผู้ลงนามที่บันทึกไว้|กรรมการ|ผู้ออกใบวางบิล|ผู้รับใบวางบิล/);assert.match(text,/ผู้วางบิล/);assert.match(text,/ผู้รับวางบิล/);
+ const footer=documentDefinition(invoice).footer(1,1);assert.ok(footer.stack[0].table.body[0].every((cell:any)=>!cell.image));
  const bytes=await renderDocumentPdf(invoice);assert.equal(bytes.subarray(0,5).toString(),'%PDF-');
 });
 test('manual document preserves issued line descriptions and configured tax without test watermark',()=>{

@@ -1,7 +1,7 @@
 import type {DashboardSummaryDataPoint, DashboardSummaryResponse} from '@solar/api-contracts';
 import { formatAppDate, formatAppDateRange } from "../../lib/date-format";
 import type {Locale} from '@solar/i18n';
-import { CustomerDashboard, type CustomerDashboardProps } from './customer-dashboard';
+import type { ReactNode } from 'react';
 
 export function BusinessProductionTrend({points,locale='th',charges=false}:{points:DashboardSummaryDataPoint[];locale?:Locale;charges?:boolean}) {
   const th=locale==='th';
@@ -18,23 +18,20 @@ export function BusinessProductionTrend({points,locale='th',charges=false}:{poin
   </section>;
 }
 
-export function BusinessDashboard({data,role,locale,periodControl,...customerProps}:CustomerDashboardProps & {role:string}) {
-  if(role==='customer_user') return <CustomerDashboard data={data} locale={locale} periodControl={periodControl} {...customerProps}/>;
-  const th=locale==='th';const customer=role==='customer_user';
+export function BusinessDashboard({data,locale,periodControl}:{data:DashboardSummaryResponse;role:string;locale:Locale;periodControl?:ReactNode}) {
+  const th=locale==='th';
   const unknown=th?'ยังไม่มีข้อมูล':'Unavailable';
   const format=(value:number|null|undefined)=>value==null||!Number.isFinite(value)?unknown:value.toLocaleString(locale,{maximumFractionDigits:2});
-  const financeLabel=customer?(th?'ค่าไฟฟ้า':'Electricity charges'):(th?'ยอดรายได้ที่วางบิล':'Billed revenue');
+  const financeLabel=th?'ยอดรายได้ที่วางบิล':'Billed revenue';
   const cards=[{label:th?'พลังงานที่ผลิต':'Generated energy',value:format(data.stats.periodKwh),unit:'kWh'},
     {label:financeLabel,value:data.stats.billCount>0?format(data.stats.periodAmount):unknown,unit:'THB'},
     {label:th?'ใบวางบิลที่ชำระแล้ว':'Paid invoices',value:data.stats.billCount>0?`${data.stats.paidBillCount} / ${data.stats.billCount}`:unknown,unit:''}];
   return <div className="content w-full min-w-0 space-y-5">
     <header className="flex min-w-0 flex-wrap items-start justify-between gap-4"><div><h1 className="text-xl font-bold md:text-2xl">{th?'หน้าแรก':'Home'}</h1>
-      {customer&&<p className="mt-1 text-sm text-muted-foreground">{data.sites[0]?.customerName||(th?'ยังไม่มีข้อมูลองค์กรที่ได้รับมอบหมาย':'Organization assignment unavailable')}</p>}
       <p className="mt-2 text-sm text-muted-foreground">{formatAppDateRange(data.range.start,data.range.end,locale)}</p></div><div className="max-w-full [&_button]:min-h-11">{periodControl}</div></header>
     {data.energyReadModel?.enabled&&data.energyReadModel.status==='preparing'&&<p role="status" className="rounded-xl bg-muted p-4 text-sm">{th?'กำลังอัปเดตยอดพลังงาน ยอดที่แสดงอาจยังไม่ครบ':'Energy totals are updating and may be incomplete.'}</p>}
     <section className="grid min-w-0 gap-4 md:grid-cols-3">{cards.map(card=><article key={card.label} className="min-w-0 rounded-xl border bg-card p-5"><h2 className="text-sm text-muted-foreground">{card.label}</h2><p className="mt-3 break-words text-2xl font-semibold">{card.value} <span className="text-sm font-normal">{card.value!==unknown?card.unit:''}</span></p>{card.unit==='THB'&&data.stats.billCount===0&&<p className="mt-2 text-sm text-muted-foreground">{th?'ยังไม่มีใบวางบิลในช่วงเวลานี้':'No billing records in this period'}</p>}</article>)}</section>
     <section aria-label={th?'เอกสาร':'Documents'} className="grid gap-3 sm:grid-cols-3">{[{href:'/billing',label:th?'ใบวางบิล':'Billing statements'},{href:'/receipts',label:th?'ใบเสร็จรับเงิน':'Receipts'}].map(link=><a key={link.href} href={link.href} className="flex min-h-11 items-center rounded-xl border bg-card px-4 py-3 font-medium text-primary hover:bg-muted">{link.label} →</a>)}</section>
-    {customer&&<a href="/production" className="inline-flex min-h-11 items-center text-primary">{th?'ดูการผลิตไฟฟ้า':'View production'} →</a>}
-    <div className={`grid min-w-0 gap-4 ${customer?'':'lg:grid-cols-2'}`}><BusinessProductionTrend points={data.production} locale={locale}/>{!customer&&<BusinessProductionTrend points={data.revenue} locale={locale} charges/>}</div>
+    <div className="grid min-w-0 gap-4 lg:grid-cols-2"><BusinessProductionTrend points={data.production} locale={locale}/><BusinessProductionTrend points={data.revenue} locale={locale} charges/></div>
   </div>;
 }

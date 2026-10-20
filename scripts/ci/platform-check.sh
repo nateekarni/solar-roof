@@ -113,6 +113,12 @@ for item in "${suites[@]}"; do
   fi
   if [[ "$item" == session && "$suite_passed" == true ]]; then pnpm --filter @solar/web exec tsx --test lib/api-client.spec.ts || suite_passed=false; fi
   if [[ "$item" == accessibility && "$suite_passed" == true ]]; then pnpm --filter @solar/web exec tsx --test lib/power-format.spec.ts || suite_passed=false; fi
+  # Customer fixtures share only the owned browser transport, never staff
+  # screenshot/baseline directories. Both suites run in the browser-enabled phase.
+  if [[ "$item" == accessibility && "$suite_passed" == true ]]; then
+    pnpm --filter @solar/web test:customer:browser || suite_passed=false
+    pnpm --filter @solar/web test:customer:accessibility || suite_passed=false
+  fi
   if [[ "$item" == readiness && "$suite_passed" == true ]]; then pnpm --filter @solar/web exec tsx --test features/dashboard/summary-status.spec.tsx || suite_passed=false; fi
   if [[ "$suite_passed" == false ]]; then
     echo "Platform suite FAILED: $item" >&2

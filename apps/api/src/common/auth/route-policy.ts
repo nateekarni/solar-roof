@@ -25,6 +25,7 @@ export function isOwnerCompanyMutation(method: string, rawPath: string): boolean
 export function routeAllowed(role: string, method: string, rawPath: string): boolean {
   if (!["owner", "admin", "operator", "accountant", "customer_user"].includes(role)) return false;
   const path = rawPath.split("?")[0]!.replace(/\/$/, "");
+  if (path === '/v1/customer/portal/home' || path === '/v1/customer/portal/payment-instructions') return role === 'customer_user' && ['GET','HEAD'].includes(method);
   if (/^\/v1\/settings\/finance-readiness(?:\/|$)/.test(path)) return role==='owner' && (path==='/v1/settings/finance-readiness'&&['GET','HEAD'].includes(method) || path==='/v1/settings/finance-readiness/confirm'&&method==='POST');
   if (isOwnerCompanyMutation(method,path)) return role === 'owner';
   if(/^\/v1\/operations\/contracts\/[^/]+\/original$/.test(path)&&method==='POST')return ['owner','accountant'].includes(role);
@@ -69,6 +70,7 @@ export function routeAllowed(role: string, method: string, rawPath: string): boo
   if (/^\/v1\/(?:sites|customers|gateways|devices|meter-presets)(?:\/|$)/.test(path)) return read || role === "admin";
   if (path === "/v1/telemetry/ingest") return false; // MQTT is the only provisioned ingestion transport.
   if (/^\/v1\/billing-cycles\/[^/]+\/pay$/.test(path)) return method === "POST" && ["owner", "admin", "accountant", "customer_user"].includes(role);
+  if(/^\/v1\/billing-cycles\/[^/]+\/cash-payment$/.test(path))return method==='POST'&&['owner','accountant'].includes(role);
   if(/^\/v1\/billing-cycles\/[^/]+\/verify-payment$/.test(path))return method==='PATCH'&&['owner','accountant'].includes(role);
   if (/^\/v1\/contracts\/[^/]+\/send-email$/.test(path)) return method === 'POST' && ['owner','admin'].includes(role);
   if (path === '/v1/contracts' && !read) return method === 'POST' && ['owner','admin'].includes(role);

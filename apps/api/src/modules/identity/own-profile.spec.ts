@@ -34,6 +34,23 @@ test('session-facing me exposes position and signature presence without signatur
  assert.doesNotMatch(calls[0]!.sql,/signature_data AS/);
 });
 
+test('own profile exposes and updates only the authenticated user phone number',async()=>{
+ const calls:Array<{sql:string;params:unknown[]}>=[];
+ const controller=new MeController({query:async(sql:string,params:unknown[])=>{
+  calls.push({sql,params});
+  if(sql.includes('UPDATE users'))return {rows:[{displayName:'Current',phoneNumber:'+66 81 234 5678'}]};
+  return {rows:[{displayName:'Current',companyPosition:null,phoneNumber:'+66 80 000 0000',hasSignature:false,signatureDataUri:null}]};
+ }} as unknown as DatabaseService);
+ const req={user:{id:'current'}};
+ assert.deepEqual(await controller.getProfile(req as never),{displayName:'Current',companyPosition:null,phoneNumber:'+66 80 000 0000',hasSignature:false,signatureDataUri:null});
+ assert.match(calls[0]!.sql,/u\.phone AS "phoneNumber"/);
+ assert.deepEqual(await controller.updateProfile(req as never,{phoneNumber:'  +66 81 234 5678  '}),{displayName:'Current',phoneNumber:'+66 81 234 5678'});
+ assert.deepEqual(calls[1]!.params,['+66 81 234 5678','current']);
+ assert.match(calls[1]!.sql,/phone = \$1/);
+ await assert.rejects(()=>controller.updateProfile(req as never,{phoneNumber:123 as never}),/Invalid phone number/);
+ await assert.rejects(()=>controller.updateProfile(req as never,{phoneNumber:'x'.repeat(51)}),/Invalid phone number/);
+});
+
 test('own profile returns the authenticated user signature and never accepts another identity',async()=>{
  const calls:Array<{sql:string;params:unknown[]}>=[];
  const controller=new MeController({query:async(sql:string,params:unknown[])=>{

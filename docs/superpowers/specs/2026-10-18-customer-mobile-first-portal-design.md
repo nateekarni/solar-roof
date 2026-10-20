@@ -2,7 +2,11 @@
 
 ## Status
 
-Approved for implementation planning on 2026-10-18.
+Ready for local acceptance.
+
+Verification date: 2026-10-18. Customer projections: `GET /v1/customer/portal/home?range=7d|30d` and `GET /v1/customer/portal/payment-instructions`.
+
+Implementation and verification results are recorded in `.superpowers/sdd/2026-10-18-customer-mobile-first-portal/task-11-report.md`. Commit and merge remain pending the user's local acceptance; the full verification matrix retains the pre-existing blockers documented there.
 
 ## Intent
 
@@ -14,7 +18,7 @@ The customer presentation is a dedicated boundary. Staff-facing pages and compon
 
 - Keep the customer navigation label **เอกสาร / Documents** and the existing routes.
 - Preserve the Solar Roof primary gold (`#f29700` or its tokenized equivalent).
-- Replace blue/navy presentation accents with a deep aubergine family that contrasts with Solar Gold.
+- Keep Solar Gold as the single customer accent. The dark theme reuses the legacy system's neutral charcoal/black surfaces and contains no purple-tinted surfaces.
 - Use a bill-first hierarchy: amount due, status, due date, and payment action precede energy information.
 - Show an itemized, persisted bill breakdown rather than generic metric tiles.
 - Place an interactive energy chart below the billing section.
@@ -62,7 +66,7 @@ Shared UI primitives remain reusable when they are presentation-neutral: buttons
 
 ## Visual system
 
-The customer visual language uses Solar Gold for primary actions and important highlights and deep aubergine for contrasting hero surfaces and premium depth. Colors are exposed through semantic tokens rather than hardcoded component values. Suggested token responsibilities include:
+The customer visual language uses Solar Gold for primary actions and important highlights. Light mode keeps its warm customer presentation, while dark mode uses layered neutral charcoal/black surfaces aligned with the legacy system. Colors are exposed through semantic tokens rather than hardcoded component values. Suggested token responsibilities include:
 
 - `--customer-action-primary`
 - `--customer-action-primary-foreground`
@@ -71,15 +75,15 @@ The customer visual language uses Solar Gold for primary actions and important h
 - `--customer-chart-primary`
 - `--customer-chart-comparison`
 
-Light and dark themes provide separate token values while retaining the same hierarchy. Dark theme uses a darker aubergine rather than reverting to blue. Success, warning, pending, and destructive states use semantic colors distinct from brand colors.
+Light and dark themes provide separate token values while retaining the same hierarchy. Dark theme contains no aubergine or purple-tinted surface, border, pending, or comparison-chart token. Success, warning, pending, and destructive states remain legible through semantic foregrounds and non-color labels.
 
 Motion is purposeful and limited to chart entry, progress transitions, and direct manipulation feedback. `prefers-reduced-motion` removes nonessential motion without hiding information.
 
 ## Customer application shell
 
-Mobile uses a safe-area-aware bottom navigation for หน้าแรก/Home, เอกสาร/Documents, and บัญชี/Account. Desktop and tablet use a compact top navigation and a centered consumer-app content width rather than the staff sidebar and full-width operations workspace.
+Mobile uses a safe-area-aware, floating capsule bottom navigation for หน้าแรก/Home, เอกสาร/Documents, and บัญชี/Account. The active destination changes only its icon and label to Solar Gold; it does not become a filled yellow tile. Desktop and tablet use a compact top navigation and a centered consumer-app content width rather than the staff sidebar and full-width operations workspace.
 
-The shell owns customer navigation, locale and theme controls, page-width constraints, route-level loading presentation, and the customer token scope. It does not own financial state or authorization decisions.
+The top bar presents one profile avatar on the right. Its popover owns the account shortcut, locale and theme controls, and sign-out action so the top bar stays app-like without removing existing functionality. The shell also owns page-width constraints, route-level loading presentation, and the customer token scope. It does not own financial state or authorization decisions. Mobile text-entry controls render at 16px or larger so focusing a field does not trigger iOS Safari's automatic page zoom; pinch zoom remains available.
 
 ## Customer home
 
@@ -123,6 +127,8 @@ The breakdown uses persisted financial values only:
 - outstanding amount
 
 The browser does not recreate authoritative accounting calculations. It may format values but does not infer absent values as zero or invent a previous-balance line.
+
+Legacy nullable `subtotal` and `simulated_tax` remain null in the customer home projection (`subtotal` and `tax`). Home and record detail display the same localized unavailable state for each absent field. The persisted billed amount remains authoritative even when either breakdown field is absent; neither server nor browser derives a replacement subtotal or tax from it.
 
 ### Energy chart
 
@@ -233,6 +239,8 @@ The initial implementation supports all four combinations:
 - English/dark
 
 The initial locale remains Thai. The initial theme follows the current system preference behavior. User preference updates continue through the current preference mechanism.
+
+Customer page roots consume the same live locale provider as the shell and pass that locale to their children, including an already-open payment flow. Server cookie-derived locale props initialize standalone presentation only; they do not override the provider after a preference change. Locale changes render synchronously from context without refreshing server data or resetting payment drafts.
 
 ## Responsive and accessibility requirements
 

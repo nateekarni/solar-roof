@@ -18,12 +18,12 @@ test("ordinary financial references use one A4 page and bottom blank-date signat
     assert.equal(pages.length, 1, name);
     const lines = pageLines(pages[0]);
     const sig = signatures(pages[0]);
-    assert.equal(sig.length, name === "receipt" ? 1 : 2);
+    assert.equal(sig.length, name === "invoice" ? 2 : 1);
     assert.ok(sig.every((l) => l.y > 690));
     assert.doesNotMatch(lines.map(lineText).join("\n"), /Page 1 \/ 1/);
     assert.equal(
-      lines.filter((l) => lineText(l).includes(name === "receipt" ? "วันที่อนุมัติ:" : "วันที่ลงนาม:")).length,
-      name === "receipt" ? 1 : 2,
+      lines.filter((l) => l.y>690&&lineText(l).startsWith("วันที่:")).length,
+      name === "invoice" ? 2 : 1,
     );
   }
 });
@@ -38,9 +38,15 @@ test("long facts survive pagination, final-page signatures and compact continuat
     assert.ok(pages.length > 1, name);
     for (let i = 0; i < pages.length; i++) {
       const lines = pageLines(pages[i]);
+      const expectedSignatures = {
+        "long-contract": 2,
+        "long-invoice": 2,
+        "long-receipt": 1,
+        "oversized-row": 2,
+      }[name];
       assert.equal(
         signatures(pages[i]).length,
-        i === pages.length - 1 ? (name === "long-receipt" ? 1 : 2) : 0,
+        i === pages.length - 1 ? expectedSignatures : 0,
         name,
       );
       if (i > 0) {

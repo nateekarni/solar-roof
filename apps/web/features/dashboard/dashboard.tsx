@@ -15,10 +15,10 @@ import { SelectedSiteSummary } from "./selected-site-summary";
 import { PeriodPicker } from "./period-picker";
 import { SiteFilter } from "./site-filter";
 import { SummaryStatus } from "./summary-status";
-import { BusinessDashboard } from "./business-dashboard";
 import { DeferredDashboardDetails } from "./deferred-dashboard-details";
 import { requirePageAccess } from "../../lib/session-user";
-import type { CustomerInvoice as SchoolInvoice } from "./customer-dashboard";
+import { CustomerHomePage } from "../customer/home/customer-home-page";
+import { loadCustomerHomeServer } from "../customer/api/customer-portal-server-api";
 
 type DashboardData = DashboardSummaryResponse;
 async function getDashboardData(
@@ -64,34 +64,24 @@ export async function Dashboard({
     | undefined;
 } = {}) {
   const resolvedParams = searchParams ? await searchParams : undefined;
-  const [user,cookieStore,data] = await Promise.all([
+  const [user,cookieStore] = await Promise.all([
     requirePageAccess("/"),
     cookies(),
-    getDashboardData(
-      resolvedParams?.start_date,
-      resolvedParams?.end_date,
-      resolvedParams?.month,
-      resolvedParams?.year,
-      resolvedParams?.site_id,
-    ),
   ]);
   const locale = (cookieStore.get("locale")?.value as Locale) || "th";
   const t = createTranslator(locale);
 
   if (user.role === "customer_user") {
-    const parts = new Intl.DateTimeFormat("en", {timeZone:"Asia/Bangkok",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date());
-    const part = (type:string) => parts.find(value=>value.type===type)?.value;
-    const today = `${part("year")}-${part("month")}-${part("day")}`;
-    const monthStart = `${part("year")}-${part("month")}-01`;
-    const [daily, monthly, billResponse] = await Promise.all([
-      data.range.start===today&&data.range.end===today ? Promise.resolve(data) : getDashboardData(today,today,undefined,undefined,resolvedParams?.site_id),
-      data.range.start===monthStart&&data.range.end===today ? Promise.resolve(data) : getDashboardData(monthStart,today,undefined,undefined,resolvedParams?.site_id),
-      serverFetch(`${getApiBaseUrl()}/v1/operations/billing?limit=100&sort=period&direction=desc`,{cache:"no-store"}),
-    ]);
-    if(billResponse.status===401) redirect("/login");
-    const bills = billResponse.ok ? await billResponse.json() as {rows:SchoolInvoice[];page?:{hasMore:boolean}} : null;
-    return <><DashboardAutoRefresh/><BusinessDashboard data={data} role={user.role} locale={locale} todayKwh={daily.energyReadModel?.status==='preparing'?null:daily.stats.periodKwh} monthKwh={monthly.energyReadModel?.status==='preparing'?null:monthly.stats.periodKwh} invoices={(bills?.rows??[]).filter(bill=>!resolvedParams?.site_id||bill.siteId===resolvedParams.site_id)} billingHasMore={bills?.page?.hasMore??false} siteId={resolvedParams?.site_id} siteControl={undefined} billingUnavailable={!billResponse.ok} periodControl={<PeriodPicker/>}/></>;
+    return <CustomerHomePage initial={await loadCustomerHomeServer()} locale={locale}/>;
   }
+
+  const data = await getDashboardData(
+    resolvedParams?.start_date,
+    resolvedParams?.end_date,
+    resolvedParams?.month,
+    resolvedParams?.year,
+    resolvedParams?.site_id,
+  );
 
   const presentation=dashboardLayout(user.role);
   const selectedSite=resolvedParams?.site_id?data.sites.find(site=>site.id===resolvedParams.site_id):undefined;

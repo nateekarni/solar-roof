@@ -25,7 +25,7 @@ export class MeController {
     const query = `
       SELECT u.id, u.email, u.display_name AS "displayName", u.role, u.status, u.customer_id AS "customerId",
              u.preferred_language AS "preferredLanguage", u.preferred_theme AS "preferredTheme", u.avatar_data AS "avatarData",
-             p.name AS "companyPosition", (u.signature_data IS NOT NULL) AS "hasSignature"
+             u.phone AS "phoneNumber", p.name AS "companyPosition", (u.signature_data IS NOT NULL) AS "hasSignature"
       FROM users u LEFT JOIN employee_positions p ON p.id = u.company_position_id
       WHERE u.id = $1
     `;
@@ -49,11 +49,11 @@ export class MeController {
       typeof body !== "object" ||
       Array.isArray(body) ||
       !Object.keys(body).length ||
-      Object.keys(body).some((key) => key !== "displayName" && key !== "companyPosition")
+      Object.keys(body).some((key) => key !== "displayName" && key !== "companyPosition" && key !== "phoneNumber")
     )
       throw new BadRequestException("Invalid profile fields");
 
-    const payload = body as { displayName?: unknown; companyPosition?: unknown };
+    const payload = body as { displayName?: unknown; companyPosition?: unknown; phoneNumber?: unknown };
 
     let newDisplayName: string | undefined = undefined;
     if ("displayName" in payload) {
@@ -61,6 +61,20 @@ export class MeController {
       if (typeof name !== "string" || !name.trim() || name.trim().length > 120)
         throw new BadRequestException("Invalid display name");
       newDisplayName = name.trim();
+    }
+
+    let hasPhoneUpdate = false;
+    let newPhoneNumber: string | null = null;
+    if ("phoneNumber" in payload) {
+      hasPhoneUpdate = true;
+      const phoneNumber = payload.phoneNumber;
+      if (phoneNumber === null || (typeof phoneNumber === "string" && !phoneNumber.trim())) {
+        newPhoneNumber = null;
+      } else if (typeof phoneNumber === "string" && phoneNumber.trim().length <= 50) {
+        newPhoneNumber = phoneNumber.trim();
+      } else {
+        throw new BadRequestException("Invalid phone number");
+      }
     }
 
     let hasPositionUpdate = false;
@@ -104,11 +118,16 @@ export class MeController {
       updates.push(`company_position_id = $${values.length}`);
     }
 
+    if (hasPhoneUpdate) {
+      values.push(newPhoneNumber);
+      updates.push(`phone = $${values.length}`);
+    }
+
     updates.push("updated_at = NOW()");
     values.push(userId);
 
-    const result = await this.db.query<{ displayName: string }>(
-      `UPDATE users SET ${updates.join(", ")} WHERE id = $${values.length} RETURNING display_name AS "displayName"`,
+    const result = await this.db.query<{ displayName: string; phoneNumber: string | null }>(
+      `UPDATE users SET ${updates.join(", ")} WHERE id = $${values.length} RETURNING display_name AS "displayName", phone AS "phoneNumber"`,
       values,
     );
     const row = result.rows[0];
@@ -117,6 +136,7 @@ export class MeController {
     return {
       displayName: row.displayName,
       ...(hasPositionUpdate ? { companyPosition: newCompanyPositionName } : {}),
+      ...(hasPhoneUpdate ? { phoneNumber: row.phoneNumber } : {}),
     };
   }
 
@@ -125,7 +145,7 @@ export class MeController {
     const userId = req.user?.id;
     if (!userId) throw new UnauthorizedException("Not authenticated");
     const result = await this.db.query(`
-      SELECT u.display_name AS "displayName", p.name AS "companyPosition",
+      SELECT u.display_name AS "displayName", p.name AS "companyPosition", u.phone AS "phoneNumber",
              (u.signature_data IS NOT NULL) AS "hasSignature", u.signature_data AS "signatureDataUri"
       FROM users u LEFT JOIN employee_positions p ON p.id = u.company_position_id
       WHERE u.id = $1

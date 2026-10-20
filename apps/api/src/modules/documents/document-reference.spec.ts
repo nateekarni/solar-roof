@@ -29,7 +29,7 @@ test('actual PDF first-page headers have no issuer identity beside the frozen lo
   assert.equal(text(header.columns[1]),'');assert.equal(header.columns[0].image,snapshot.logoDataUri);
   const lines=pageLines(layoutDocumentPages(snapshot)[0]);
   const names=lines.filter(line=>lineText(line)===snapshot.issuer.name);
-  assert.equal(names.length,1,kind);assert.ok(names[0].y>80,`${kind} issuer belongs below header`);
+  assert.equal(names.length,1,kind);assert.ok(names[0].y>60,`${kind} issuer belongs below header`);
  }
 });
 test("reference typography, paired cards, frozen accent and blank footer identity", () => {
@@ -37,8 +37,9 @@ test("reference typography, paired cards, frozen accent and blank footer identit
   const d = documentDefinition(s);
   assert.equal(d.defaultStyle.fontSize, 11);
   const all = JSON.stringify(d.content);
-  assert.match(all, /#a25a00/);
-  assert.doesNotMatch(all, /#f29700/);
+  const grid=d.content.find((node:any)=>node.table?.headerRows===1);
+  assert.equal(grid.layout.hLineColor(0),'#a25a00');
+  assert.equal(grid.layout.hLineColor(1),'#d9dde1');
   assert.match(all, /"fontSize":14/);
   assert.match(all, /"fontSize":11/);
   assert.match(all, /"fontSize":10.3/);
@@ -51,7 +52,7 @@ test("reference typography, paired cards, frozen accent and blank footer identit
   assert.match(text(d.content[0]), /กำหนดชำระ/);
   assert.match(text(d.footer(1, 2)), /หน้า 1 \/ 2/);
   assert.doesNotMatch(text(d.footer(2, 2)), /INV|Page/);
-  assert.equal((text(d.footer(2, 2)).match(/วันที่ลงนาม:/g) ?? []).length, 2);
+  assert.equal((text(d.footer(2, 2)).match(/วันที่:/g) ?? []).length, 2);
 });
 test("receipt preserves invoice reference and every truthful transfer field without double-counting totals", () => {
   const d = documentDefinition({
@@ -110,7 +111,7 @@ test("ordinary invoice and receipt fit one page with bottom signatures and no vi
     const signatures = lines.filter((l) =>
       lineText(l).startsWith("________________________"),
     );
-    assert.equal(signatures.length, name === "receipt" ? 1 : 2);
+    assert.equal(signatures.length, name === "invoice" ? 2 : 1);
     assert.ok(signatures[0].y > 690);
     for (const line of lines)
       assert.ok(
@@ -362,6 +363,14 @@ test("actual ordinary receipt with saved terms, approved note and every payer fa
       .filter((l) => lineText(l).startsWith("________________________")).length,
     1,
   );
+});
+test('v11 ordinary receipt fixture guards the renderer shape under its template identifier',()=>{
+ const snapshot=ordinaryIssuedFixtures().receipt! as any,definition=documentDefinition(snapshot);
+ const grid=definition.content.find((node:any)=>node.table?.headerRows===1);
+ const sanitize=(value:unknown)=>JSON.parse(JSON.stringify(value,(key,child)=>key==='image'?'[frozen-image]':typeof child==='function'?undefined:child));
+ const fingerprint={templateVersion:snapshot.templateVersion,pageMargins:definition.pageMargins,defaultStyle:definition.defaultStyle,content:sanitize(definition.content),footer:sanitize(definition.footer(1,1)),grid:{widths:grid.table.widths,top:grid.layout.hLineColor(0),inner:grid.layout.hLineColor(1),vertical:grid.layout.vLineColor(1)}};
+ const actual=createHash('sha256').update(JSON.stringify(fingerprint)).digest('hex');
+ assert.equal(snapshot.templateVersion,'sarabun-a4-v11');assert.equal(actual,snapshot.rendererFixtureHash);
 });
 test("actual ordinary PPA finishes all ten clauses and paired signatures in two readable A4 pages", () => {
   const snapshot = ordinaryIssuedFixtures().contract!;

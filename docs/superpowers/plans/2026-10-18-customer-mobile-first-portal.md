@@ -14,7 +14,7 @@
 
 - Keep public customer routes `/`, `/billing`, `/records/billing/:id`, and `/settings` unchanged.
 - Do not restyle, restructure, or change response semantics for owner, admin, accountant, or operator workflows.
-- Keep Solar Gold as the primary action color; use deep aubergine, not blue/navy, for customer hero and contrast surfaces.
+- Keep Solar Gold as the primary action color. Dark customer surfaces use the legacy neutral charcoal/black palette with no purple tint; staff tokens remain unchanged.
 - Every customer label, status, validation error, empty state, and confirmation must have Thai and English keys.
 - Support light and dark themes in every slice; respect `prefers-reduced-motion`.
 - Keep server scope authoritative. A `customer_user` with no active single-site assignment receives no cross-customer data.
@@ -318,7 +318,7 @@ Expected: FAIL because the customer shell does not exist.
 
 - [ ] **Step 3: Add customer semantic tokens**
 
-In `globals.css`, scope tokens under `.customer-portal` and `.dark .customer-portal`. Use Solar Gold for action, deep aubergine around `#2A1538` for hero surfaces, semantic success/warning/destructive tokens, and chart colors with WCAG AA foregrounds. Add safe-area padding and reduced-motion rules without altering staff token values.
+In `globals.css`, scope tokens under `.customer-portal` and `.dark .customer-portal`. Use Solar Gold for action, keep the approved warm light-theme contrast, and use legacy neutral charcoal/black hero and elevated surfaces in dark mode. Retain semantic success/warning/destructive tokens and chart colors with WCAG AA foregrounds. Add safe-area padding and reduced-motion rules without altering staff token values.
 
 - [ ] **Step 4: Implement the role-aware shell switch**
 
@@ -390,7 +390,7 @@ Expected: FAIL because the customer home components and model are absent.
 
 - [ ] **Step 4: Build the customer home composition**
 
-Implement the approved order and responsive layout. The hero uses the aubergine surface and Solar Gold CTA. The breakdown uses labeled rows, not metric tiles. The chart uses Recharts with keyboard/touch-friendly range controls, null gaps, localized tooltips, and reduced motion. Recent records are exactly the API-provided latest three.
+Implement the approved order and responsive layout. The light hero uses its warm contrast surface, the dark hero uses a neutral charcoal surface, and both use a Solar Gold CTA. The breakdown uses labeled rows, not metric tiles. The chart uses Recharts with keyboard/touch-friendly range controls, null gaps, localized tooltips, and reduced motion. Recent records are exactly the API-provided latest three.
 
 - [ ] **Step 5: Switch only the customer branch in `Dashboard`**
 
@@ -760,12 +760,95 @@ git commit -m "refactor(web): retire legacy customer presentation"
 
 ---
 
+## Task 12: Polish the customer shell for mobile-app behavior
+
+**Files:**
+- Modify: `apps/web/features/customer/shell/customer-top-nav.tsx`
+- Modify: `apps/web/features/customer/shell/customer-app-shell.spec.tsx`
+- Modify: `apps/web/app/globals.css`
+- Modify: `apps/web/features/customer/**` card surfaces
+- Modify: `packages/i18n/src/en.ts`
+- Modify: `packages/i18n/src/th.ts`
+- Modify: `apps/web/test/customer-portal.browser.test.mjs`
+- Modify: `docs/superpowers/specs/2026-10-18-customer-mobile-first-portal-design.md`
+
+- [x] **Step 1: Add a failing rendered shell test**
+
+Prove that the old shell lacks a profile menu, floating mobile navigation, neutral dark tokens, and elevated customer cards. Preserve the existing 16px mobile form-control assertion for iOS focus-zoom protection.
+
+- [x] **Step 2: Replace top-bar controls with the customer profile menu**
+
+Keep account navigation, locale, theme, and sign-out available inside an accessible avatar popover. Do not reuse or modify the staff header.
+
+- [x] **Step 3: Apply the legacy neutral dark palette and card hierarchy**
+
+Remove purple from customer dark background, elevated, hero, muted, border, pending, and chart-comparison tokens. Keep Solar Gold as the only brand accent, add restrained elevation to primary customer cards, and leave light/staff themes independent.
+
+- [x] **Step 4: Float the mobile bottom navigation**
+
+Use an inset safe-area-aware capsule with a translucent neutral surface, subtle edge and shadow. Indicate the active destination through Solar Gold icon/label color without a filled yellow tile.
+
+- [x] **Step 5: Verify mobile input focus and rendered regressions**
+
+Run the focused shell test, web typecheck, full customer browser/accessibility suite, and capture Thai/dark mobile plus English/light desktop screenshots outside the repository. Confirm all visible mobile inputs/selects/textareas compute to at least 16px.
+
+---
+
+## Task 13: Refine customer filters, account editing, profile menu, and financial PDF rhythm
+
+**Files:**
+- Modify: `apps/web/features/customer/documents/customer-document-filters.tsx`
+- Modify: `apps/web/features/customer/documents/customer-documents-page.spec.tsx`
+- Modify: `apps/web/features/customer/account/customer-profile-card.tsx`
+- Modify: `apps/web/features/customer/account/customer-notification-card.tsx`
+- Modify: `apps/web/features/customer/account/customer-account-page.spec.tsx`
+- Modify: `apps/web/features/customer/records/customer-financial-record-page.tsx`
+- Modify: `apps/web/features/customer/records/customer-financial-record-page.spec.tsx`
+- Modify: `apps/web/features/customer/shell/customer-top-nav.tsx`
+- Modify: `apps/web/features/customer/shell/customer-app-shell.spec.tsx`
+- Modify: `apps/web/app/globals.css`
+- Modify: `packages/i18n/src/en.ts`
+- Modify: `packages/i18n/src/th.ts`
+- Modify: `apps/api/src/modules/documents/document-layout.ts`
+- Modify: `apps/api/src/modules/documents/document-layout.spec.ts`
+- Modify: customer browser and accessibility regressions
+
+- [x] **Step 1: Add failing customer UI and PDF regressions**
+
+Prove the document toolbar has a prefixed search input, a responsive date-range picker, and a responsive status selector. On desktop the bounded search stays left while the two selector buttons align right; on mobile the search occupies its own row and both selectors share the next row. Prove the account profile is display-first and edits in the existing responsive dialog presentation, notification controls retain standard switch dimensions, the record back action is an outlined surface button, and the customer profile popover reuses the Admin header presentation plus `ProfilePreferences` without account-navigation links.
+
+For both invoices and receipts, prove only the first table rule uses the frozen Solar Gold primary while all remaining table rules use the neutral document border. Totals and Thai amount words retain white backgrounds. Add geometry regressions for short invoices and receipts: when no outstanding-balance table follows, the item region expands and keeps totals above payment accounts/remarks (invoice) or payment facts/remarks (receipt), while long rows and receipts with outstanding balances still paginate safely without forced filler.
+
+- [x] **Step 2: Implement the responsive document toolbar**
+
+Compose the installed Shadcn `InputGroup`, `Calendar`, `Select`-style trigger, `Popover`, and `Sheet` primitives. Preserve the current URL/query contract, opaque cursor reset, back/forward recovery, Thai/English copy, keyboard access, and 16px mobile input text.
+
+- [x] **Step 3: Make account editing display-first and normalize switches**
+
+Keep the existing profile and avatar APIs. Show current avatar, display name, and login email in the card; open the edit form as a centered modal on desktop and a bottom sheet on mobile. Scope customer touch-target rules so they do not distort the Shadcn switch track or thumb.
+
+- [x] **Step 4: Reuse the Admin profile-popover presentation**
+
+Share the Admin `ProfilePreferences` component and its header/trigger spacing. Customer content contains only identity, language, theme, and sign-out; it must not duplicate account navigation inside the popover.
+
+- [x] **Step 5: Refine invoice and receipt document layout**
+
+Apply Solar Gold only to the leading table rule, use the neutral border for all other rules, and keep financial cells white. Preserve the receipt outstanding-balances table when it exists. Add measured filler only to short documents without that table so totals settle near the bottom before the appropriate lower facts; never compromise the reserved signature/footer area or multi-page behavior.
+
+- [ ] **Step 6: Verify local UI, immutable PDF workflow, and complete regressions**
+
+Run focused RED/GREEN suites, web/API type checks, customer browser/accessibility tests at 390 and 1280, financial PDF page/geometry tests, the local invoice/PDF/Mailpit workflow, and the full monorepo test task. Leave local services running and do not stage, commit, or merge.
+
+---
+
 ## Completion Criteria
 
 - Customer users receive the dedicated mobile-first shell and customer pages at all existing routes.
 - Home is bill-first, uses a persisted itemized breakdown, includes a 7d/30d production chart, and shows the latest three financial records.
 - Payment uses the existing transfer/evidence workflow and ends in pending verification.
 - Documents, record detail, preview, rejected-evidence recovery, and account settings work in Thai/English and light/dark.
+- The customer top bar uses a profile avatar menu; the mobile bottom navigation floats and highlights only the active icon/label in Solar Gold.
+- Customer dark mode uses neutral charcoal/black surfaces without purple, and mobile text-entry controls do not trigger iOS focus zoom.
 - Viewports 390, 768, and 1280 pass browser checks without page-level horizontal overflow.
 - Customer endpoints are customer-only, site-scoped, read-only projections except for the existing payment submission endpoint.
 - Bank management metadata is not exposed by payment instructions.

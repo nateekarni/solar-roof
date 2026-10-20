@@ -11,6 +11,7 @@ import { AlarmsModule } from "./modules/alarms/alarms.module.js";
 import { AssetsModule } from "./modules/assets/assets.module.js";
 import { BillingModule } from "./modules/billing/billing.module.js";
 import { DashboardModule } from "./modules/dashboard/dashboard.module.js";
+import { CustomerPortalModule } from './modules/customer-portal/customer-portal.module.js';
 import { DocumentsModule } from "./modules/documents/documents.module.js";
 import { IdentityModule } from "./modules/identity/identity.module.js";
 import { PaymentsModule } from "./modules/payments/payments.module.js";
@@ -30,6 +31,7 @@ import { RequestOriginGuard } from "./common/auth/request-origin.guard.js";
     FinancialReadinessModule,
     NotificationFeedModule,
     DashboardModule,
+    CustomerPortalModule,
     HealthModule,
     IdentityModule,
     AssetsModule,

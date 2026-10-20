@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';import test from 'node:test';
-import {formatFinancialMoney} from './financial-document-pdf.js';
+import {FINANCIAL_TEMPLATE_VERSION,formatFinancialMoney} from './financial-document-pdf.js';
+import {documentDefinition} from './document-layout.js';
+import {readFileSync} from 'node:fs';
 test('PDF monetary formatting preserves exact large satang and PostgreSQL zero padding',()=>{assert.equal(formatFinancialMoney('90071992547409.91'),'90,071,992,547,409.91');assert.equal(formatFinancialMoney('4623.45000000'),'4,623.45');assert.equal(formatFinancialMoney('2000'),'2,000.00');assert.throws(()=>formatFinancialMoney('4623.450001'));});
+test('latest financial template is v11 and TEST scope stays frozen without a visible synthetic banner',()=>{assert.equal(FINANCIAL_TEMPLATE_VERSION,'sarabun-a4-v11');const logo=`data:image/png;base64,${readFileSync(new URL('../../../../web/public/brand/solar-roof-document-stacked.png',import.meta.url)).toString('base64')}`,snapshot=financialDocumentSnapshot({document_type:'invoice',document_number:'INV-V11',snapshot:{company:{company_name:'Issuer',tax_id:'1'},customer:{company_name:'Customer',tax_id:'2'},issueDate:'2026-10-19',logo,policy:{scope:'TEST'},cycle:{period_start:'2026-10-01',period_end:'2026-10-31',subtotal:'1.00',simulated_tax:'0.00',amount:'1.00',meter_snapshot:[]},banks:[],payments:[]}});assert.equal(snapshot.templateVersion,'sarabun-a4-v11');assert.equal(snapshot.syntheticTest,true);assert.doesNotMatch(JSON.stringify(documentDefinition(snapshot).content),/SYNTHETIC LOCAL TEST|เอกสารทดสอบ/);});
 
 import { financialDocumentSnapshot } from './financial-document-pdf.js';
 
@@ -37,7 +40,7 @@ test('financial snapshot adapter retains every saved meter/rate and approved tra
   const snapshot = financialDocumentSnapshot(document);
   assert.equal(snapshot.issuer.name, 'บริษัทจริง');
   assert.equal(snapshot.siteExternalId,'SITE-002');
-  assert.equal(snapshot.templateVersion,'sarabun-a4-v6');
+  assert.equal(snapshot.templateVersion,'sarabun-a4-v11');
   assert.deepEqual(snapshot.items.map((item: any) => [item.period, item.quantity, item.rate, item.amount]), [
     ['2026-09-01 - 2026-09-15', '1000.123', '4.1234', '4123.91'],
     ['2026-09-16 - 2026-09-30', '2000.456', '4.5678', '9137.68'],

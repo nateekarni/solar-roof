@@ -101,10 +101,12 @@ test('preparation rejects absent cycles, incomplete calculations, invalid policy
 test('TEST payment persistence keeps an exact large string amount',async()=>{
  let inserted=false;
  const db={transaction:async(run:any)=>run({query:async(sql:string,params:unknown[])=>{
- if(sql.includes('SELECT * FROM billing_cycles'))return {rows:[{id:'cycle',status:'approved',policy_hash:TEST_FINANCIAL_POLICY_HASH}]};
+ if(sql.includes('SELECT * FROM billing_cycles'))return {rows:[{id:'cycle',site_id:'site-a',amount:'90071992547409.91',status:'approved',policy_hash:TEST_FINANCIAL_POLICY_HASH}]};
+ if(sql.includes('FROM users u WHERE u.id=$1'))return {rows:[{role:'admin',status:'active',assigned:true}]};
+ if(sql.includes('SELECT status,verified_amount,amount FROM payments'))return {rows:[]};
  if(sql.includes('SELECT id FROM documents'))return {rows:[{id:'invoice'}]};
  if(sql.includes('SELECT 1 FROM payments'))return {rows:[],rowCount:0};
- if(sql.includes('INSERT INTO payments')){assert.equal(params[2],null);assert.equal(params[12],'90071992547409.91');inserted=true;}
+ if(sql.includes('INSERT INTO payments')){assert.equal(params[2],null);assert.equal(params[13],'90071992547409.91');inserted=true;}
  return {rows:[]};
  }})};
  const service=new FinancialApplicationService(db as unknown as DatabaseService,{} as FinancialReadinessService);
@@ -124,14 +126,16 @@ test('future financial originals freeze protocol site identity and persist the r
  if(sql.includes('AS starts'))return {rows:[{starts:'2026-09-01',ends:'2026-09-30'}]};
  if(sql.includes('INSERT INTO documents')){persisted=JSON.parse(params[7]);insertedVersion=params[10];return {rows:[{id:params[0],snapshot:persisted}]};}return {rows:[]};}})};
  const service=new FinancialApplicationService(issuanceDb(db),{assertEnabled:async()=>({scope:'TEST'})} as unknown as FinancialReadinessService);
- const result=await service.issueInvoice('cycle','owner');assert.equal(result.document.snapshot.customer.external_site_id,'PROTOCOL-002');assert.equal(persisted.templateVersion,'sarabun-a4-v8');assert.equal(insertedVersion,'sarabun-a4-v8');assert.equal(persisted.logoDataUri,persisted.logo);assert.equal(persisted.brandPrimary,'#f29700');assert.equal(persisted.policyHash,TEST_FINANCIAL_POLICY_HASH);assert.equal(persisted.policy.logo,'/brand/solar-roof-document.png');assert.equal(logoHash(persisted.logo),createHash('sha256').update(readFileSync(new URL('../../../../web/public/brand/solar-roof-document-stacked.png',import.meta.url))).digest('hex'));
+ const result=await service.issueInvoice('cycle','owner');assert.equal(result.document.snapshot.customer.external_site_id,'PROTOCOL-002');assert.equal(persisted.templateVersion,'sarabun-a4-v11');assert.equal(insertedVersion,'sarabun-a4-v11');assert.equal(persisted.logoDataUri,persisted.logo);assert.equal(persisted.brandPrimary,'#f29700');assert.equal(persisted.policyHash,TEST_FINANCIAL_POLICY_HASH);assert.equal(persisted.policy.logo,'/brand/solar-roof-document.png');assert.equal(logoHash(persisted.logo),createHash('sha256').update(readFileSync(new URL('../../../../web/public/brand/solar-roof-document-stacked.png',import.meta.url))).digest('hex'));
 });
 
 // Missing persistence/normalization must fail here, independently of SQL column ordering.
 function paymentSubmissionHarness() {
  const saved:Record<string,unknown>[]=[];
  const db={transaction:async(run:any)=>run({query:async(sql:string,params:unknown[]=[])=>{
-  if(sql.includes('SELECT * FROM billing_cycles'))return {rows:[{id:'cycle',status:'approved',policy_hash:TEST_FINANCIAL_POLICY_HASH}]};
+  if(sql.includes('SELECT * FROM billing_cycles'))return {rows:[{id:'cycle',site_id:'site-a',amount:'1000.00',status:'approved',policy_hash:TEST_FINANCIAL_POLICY_HASH}]};
+  if(sql.includes('FROM users u WHERE u.id=$1'))return {rows:[{role:'customer_user',status:'active',assigned:true}]};
+  if(sql.includes('SELECT status,verified_amount,amount FROM payments'))return {rows:[]};
   if(sql.includes('SELECT id FROM documents'))return {rows:[{id:'invoice'}]};
   if(sql.includes('SELECT 1 FROM payments'))return {rows:[],rowCount:0};
   if(sql.includes('INSERT INTO payments')){
@@ -146,7 +150,7 @@ function paymentSubmissionHarness() {
 test('transfer submissions persist trimmed optional payer metadata with exact amounts',async()=>{
  const {saved,service}=paymentSubmissionHarness();
  await service.submitPayment('cycle',{amount:'107.00',evidenceKey:'metadata',payerName:'  ผู้จ่ายจริง  ',paymentMethod:' promptpay ',originBank:' ธนาคารผู้จ่าย ',originAccount:' 001-234 '} as any,'actor');
- assert.equal(saved[0]!.payer_name,'ผู้จ่ายจริง');assert.equal(saved[0]!.payment_method,'promptpay');assert.equal(saved[0]!.origin_bank,'ธนาคารผู้จ่าย');assert.equal(saved[0]!.origin_account,'001-234');assert.equal(saved[0]!.declared_amount,'107.00');assert.equal(saved[0]!.amount,null);
+ assert.equal(saved[0]!.payer_name,'ผู้จ่ายจริง');assert.equal(saved[0]!.payment_method,'bank_transfer');assert.equal(saved[0]!.transfer_channel,'promptpay');assert.equal(saved[0]!.origin_bank,'ธนาคารผู้จ่าย');assert.equal(saved[0]!.origin_account,'001-234');assert.equal(saved[0]!.declared_amount,'107.00');assert.equal(saved[0]!.amount,null);
 });
 test('malformed payer metadata fails before payment persistence',async()=>{
  for(const field of ['payerName','originBank','originAccount'])for(const value of [123,{},[],true]){
@@ -162,9 +166,9 @@ test('legacy omission and optional blank fields persist no fabricated payer info
   for(const field of ['payer_name','payment_method','origin_bank','origin_account'])assert.equal(saved[0]![field]??null,null);
  }
 });
-test('payer fields accept their trimmed maximum lengths and both transfer methods',async()=>{
- for(const paymentMethod of ['bank_transfer','promptpay']){
-  const {saved,service}=paymentSubmissionHarness();await service.submitPayment('cycle',{amount:'107.00',evidenceKey:'limits',payerName:' '+ 'ก'.repeat(200)+' ',originBank:'x'.repeat(120),originAccount:'0'.repeat(80),paymentMethod} as any,'actor');assert.equal(saved[0]!.payer_name,'ก'.repeat(200));assert.equal(saved[0]!.payment_method,paymentMethod);
+test('payer fields accept their trimmed maximum lengths and both transfer channels',async()=>{
+ for(const transferChannel of ['bank_account','promptpay']){
+  const {saved,service}=paymentSubmissionHarness();await service.submitPayment('cycle',{amount:'107.00',evidenceKey:'limits',payerName:' '+ 'ก'.repeat(200)+' ',originBank:'x'.repeat(120),originAccount:'0'.repeat(80),paymentMethod:'bank_transfer',transferChannel} as any,'actor');assert.equal(saved[0]!.payer_name,'ก'.repeat(200));assert.equal(saved[0]!.payment_method,'bank_transfer');assert.equal(saved[0]!.transfer_channel,transferChannel);
  }
 });
 
@@ -202,7 +206,7 @@ test('approval freezes all approved transfer metadata, excludes rejected history
 test('additional TEST evidence retains each transfer metadata independently without overwriting prior submissions',async()=>{
  const {saved,service}=paymentSubmissionHarness();
  await service.submitPayment('cycle',{amount:'57.00',evidenceKey:'first',payerName:'First payer',paymentMethod:'bank_transfer',originAccount:'00123'},'actor');
- await service.submitPayment('cycle',{amount:'50.00',evidenceKey:'second',payerName:'Second payer',paymentMethod:'promptpay'},'actor');
+ await service.submitPayment('cycle',{amount:'50.00',evidenceKey:'second',payerName:'Second payer',paymentMethod:'bank_transfer',transferChannel:'promptpay'},'actor');
  assert.equal(saved.length,2);assert.equal(saved[0]!.payer_name,'First payer');assert.equal(saved[0]!.origin_account,'00123');assert.equal(saved[1]!.payer_name,'Second payer');assert.equal(saved[1]!.origin_account,null);assert.notEqual(saved[0]!.id,saved[1]!.id);
 });
 

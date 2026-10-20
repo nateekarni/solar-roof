@@ -10,6 +10,13 @@ test('rate correction prepares approval without automatic delivery',async()=>{
  const result=await new SiteBillingService({transaction:async(fn:any)=>fn(c)} as any,financial as any).reprice('bill',{rate:'3.7',reason:'Correction'},owner);
  assert.equal(result.status,'pending_issue_approval');
 });
+test('same-rate correction prepares a renderer revision for a legacy current invoice',async()=>{
+ const cycle={id:'bill',site_id:'a',status:'approved',starts:'2026-10-01',billing_kind:'energy',rate:'3.5'};let revisions=0;
+ const c={query:async(sql:string)=>({rows:sql.includes('FROM billing_cycles')?[cycle]:sql.includes('FROM sites')?[{customer_id:'c'}]:sql.includes('effective_from>$2')?[]:sql.includes('FROM rate_versions')?[{rate:'3.5000'}]:sql.includes('FROM documents')?[{template_version:'sarabun-a4-v8'}]:[]})};
+ const financial={reviseInvoiceInTransaction:async()=>{revisions++;return {id:'replacement',status:'pending_issue_approval'};}};
+ const result=await new SiteBillingService({transaction:async(fn:any)=>fn(c)} as any,financial as any).reprice('bill',{rate:'3.5',reason:'Renderer v9'},owner);
+ assert.equal(result.status,'pending_issue_approval');assert.equal(revisions,1);
+});
 test('invoice rate correction warns before retiring an already scheduled future tariff',async()=>{let mutation=false;const c={query:async(sql:string)=>{if(sql.includes('FROM billing_cycles'))return {rows:[{id:'bill',site_id:'a',status:'approved',starts:'2026-10-01',billing_kind:'energy'}]};if(sql.includes('FROM sites'))return {rows:[{customer_id:'c'}]};if(sql.includes('FROM rate_versions'))return {rows:[{id:'december',startDate:'2026-12-01',rate:'4'}]};if(sql.startsWith('UPDATE')||sql.startsWith('INSERT'))mutation=true;return {rows:[]};}};await assert.rejects(new SiteBillingService({transaction:async(fn:any)=>fn(c)} as any,{} as any).reprice('bill',{rate:'3.7',reason:'Correction'},owner),(error:any)=>error.getResponse().code==='FUTURE_RATE_REPLACEMENT_REQUIRED');assert.equal(mutation,false);});
 test('bulk matched preview compares database decimals and includes future rates/documents',async()=>{
  let params:any[]=[];const db={query:async(sql:string,p:any[])=>{params=p;assert.match(sql,/r.rate=\$4/);return {rows:[{siteId:'a',rate:'3.5000',futureRates:[{rate:'3.7'}],documents:['INV-1']}]};}};

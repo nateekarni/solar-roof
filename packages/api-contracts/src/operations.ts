@@ -72,15 +72,37 @@ export interface IssuanceApprovalBatch {
 }
 
 export interface BillingRow extends OperationRow {
+ /** Customer detail only: every issued receipt, including earlier installments. IDs use the existing scoped document endpoint. */
+ receipts?: Array<{id:string;documentNumber:string;issueDate:string|null}>;
  /** Proposed correction; original cycle amounts and issued document stay authoritative until approval. */
  pendingReplacement?: BillingReplacementProposal | null;
  payments?: PaymentTransferRow[];
+ cashPayments?: CashPaymentEntry[];
  /** Persisted calculation tax, shown before issuance without recalculating in the browser. */
  simulatedTax?: string | null;
+ /** Persisted subtotal and server-calculated settlement display values; money stays decimal text. */
+ subtotal?: string | null;
+ approvedAmount?: string;
+ outstandingAmount?: string;
+ pendingEvidenceCount?: number;
+ rejectedEvidenceCount?: number;
  siteId: string; period: string; status: string;
  billingStatusView: Exclude<BillingStatusView, 'all'>;
  invoiceId: string | null; receiptId: string | null;
  invoiceNumber: string | null; receiptNumber: string | null;
+}
+export interface CashPaymentEntry {
+ id:string;
+ amount:string;
+ customerName:string;
+ siteName:string;
+ billingCycleId:string;
+ receiptId:string|null;
+ receiptNumber:string|null;
+ recordedBy:string;
+ receivedAt:string;
+ recordedAt:string;
+ note:string|null;
 }
 export interface BillingReplacementProposal {
  rate:string;subtotal:string;tax:string;amount:string;dueDate:string|null;

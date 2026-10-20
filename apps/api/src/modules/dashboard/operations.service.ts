@@ -4,20 +4,9 @@ import { DatabaseService } from "../../database/database.service.js";
 import { operationPageSql, operationPredicate, parseOperationQuery } from "./operation-query.js";
 import { customerScope, type ScopePrincipal } from "../../common/auth/resource-scope.js";
 import { siteScope,hasPermission } from '../../common/auth/authorization.js';
+import { approvedAmount, daysOverdue, collectionStatus, billingStatusView } from './billing-read-model.js';
 
 const siteConnectionStatus=`CASE WHEN si.status IN ('inactive','archived') THEN si.status WHEN EXISTS (SELECT 1 FROM gateways g WHERE g.site_id=si.id AND g.retired_at IS NULL AND g.last_seen_at<=now() AND g.last_seen_at>=now()-make_interval(secs=>greatest(120,g.polling_interval_seconds*2))) THEN 'online' ELSE 'offline' END`;
-const approvedAmount="coalesce((SELECT sum(coalesce(verified_amount,amount)) FROM payments WHERE billing_cycle_id=b.id AND status='paid'),0)";
-const daysOverdue="greatest(0,(now() AT TIME ZONE 'Asia/Bangkok')::date-b.due_date)";
-const collectionStatus=`CASE WHEN b.status IN ('draft','cancelled','superseded') OR NOT EXISTS(SELECT 1 FROM documents invoice WHERE invoice.billing_cycle_id=b.id AND invoice.document_type='invoice' AND invoice.is_current AND invoice.status IN('issued','finalized')) THEN NULL WHEN ${approvedAmount}>=b.amount THEN 'paid' WHEN EXISTS(SELECT 1 FROM payments WHERE billing_cycle_id=b.id AND status='pending_verification') THEN 'pending_review' WHEN ${approvedAmount}>0 THEN 'partially_paid' WHEN ${daysOverdue}>0 THEN 'overdue' ELSE 'awaiting_payment' END`;
-// Project once from the collection result so rows, tab filters, and counts cannot drift.
-const billingStatusView=`CASE
- WHEN q.status='pending_issue_approval' OR q."pendingReplacement" IS NOT NULL THEN 'pending_issue_approval'
- WHEN q."collectionStatus"='pending_review' THEN 'pending_verification'
- WHEN q."collectionStatus"='partially_paid' THEN 'partially_paid'
- WHEN q."collectionStatus"='overdue' THEN 'overdue'
- WHEN q."collectionStatus"='paid' THEN 'paid'
- WHEN q."collectionStatus"='awaiting_payment' THEN 'awaiting_payment'
- ELSE 'unsuccessful' END`;
 
 @Injectable()
 export class OperationsService {
@@ -42,6 +31,9 @@ export class OperationsService {
       case "billing":
         sql=`SELECT b.id,b.site_id AS "siteId",b.contract_id AS "contractId",to_char(b.period_start,'YYYY-MM-DD') AS "periodStart",to_char(b.period_end,'YYYY-MM-DD') AS "periodEnd",to_char(b.period_end,'YYYY-MM') AS period,s.name AS "customerName",si.external_site_id AS "externalSiteId",si.name AS "siteName",
           b.billing_kind AS "billingKind",to_char(d.issue_date,'YYYY-MM-DD') AS "issueDate",to_char(b.due_date,'YYYY-MM-DD') AS "dueDate",b.consumed_kwh AS "consumedKwh",b.rate,b.amount,b.simulated_tax::text AS "simulatedTax",b.status,b.quality,b.opening_energy AS "openingEnergy",b.closing_energy AS "closingEnergy",
+          b.subtotal::text AS subtotal,(${approvedAmount})::text AS "approvedAmount",greatest(0,b.amount-${approvedAmount})::text AS "outstandingAmount",
+          (SELECT count(*)::int FROM payments WHERE billing_cycle_id=b.id AND status='pending_verification') AS "pendingEvidenceCount",
+          (SELECT count(*)::int FROM payments WHERE billing_cycle_id=b.id AND status='rejected') AS "rejectedEvidenceCount",
           p.id AS "paymentId",p.status AS "paymentStatus",p.slip_url AS "slipUrl",p.slip_url AS "หลักฐานการชำระ",p.paid_at AS "paidAt",
           p.rejection_reason AS "rejectionReason",d.id AS "invoiceId",r.id AS "receiptId",d.document_number AS "invoiceNumber",r.document_number AS "receiptNumber",
           CASE WHEN ${approvedAmount}>=b.amount OR b.status IN('draft','cancelled','superseded') THEN 0 ELSE ${daysOverdue} END AS "daysOverdue",
@@ -134,7 +126,12 @@ export class OperationsService {
     params.push(id);
     const result=await this.db.query<OperationRow>(`SELECT q.* FROM (${sql}) q WHERE q.id=$${params.length}::uuid`,params);
     if(!result.rows[0]) throw new NotFoundException('Record not found');
-    if(resource==='billing')result.rows[0].payments=(await this.db.query(`SELECT id,amount::text AS amount,verified_amount::text AS "verifiedAmount",verified_transfer_at AS "verifiedTransferAt",declared_amount::text AS "declaredAmount",declared_transfer_at AS "declaredTransferAt",slip_url AS "slipUrl",note,submitted_by AS "submittedBy",(SELECT display_name FROM users WHERE users.id=payments.submitted_by) AS "submittedByName",transfer_reference AS "transferReference",status,paid_at AS "transferDate",submitted_at AS "submittedAt",verified_at AS "verifiedAt",rejection_reason AS "rejectionReason",evidence_key AS "evidenceKey",payer_name AS "payerName",payment_method AS "paymentMethod",origin_bank AS "originBank",origin_account AS "originAccount" FROM payments WHERE billing_cycle_id=$1 ORDER BY submitted_at,id`,[id])).rows;
+    if(resource==='billing')result.rows[0].payments=(await this.db.query(`SELECT id,amount::text AS amount,verified_amount::text AS "verifiedAmount",verified_transfer_at AS "verifiedTransferAt",declared_amount::text AS "declaredAmount",declared_transfer_at AS "declaredTransferAt",slip_url AS "slipUrl",note,submitted_by AS "submittedBy",(SELECT display_name FROM users WHERE users.id=payments.submitted_by) AS "submittedByName",transfer_reference AS "transferReference",status,paid_at AS "transferDate",submitted_at AS "submittedAt",verified_at AS "verifiedAt",rejection_reason AS "rejectionReason",evidence_key AS "evidenceKey",payer_name AS "payerName",payment_method AS "paymentMethod",transfer_channel AS "transferChannel",origin_bank AS "originBank",origin_account AS "originAccount" FROM payments WHERE billing_cycle_id=$1 ORDER BY submitted_at,id`,[id])).rows;
+    if(resource==='billing'&&user?.role==='customer_user')result.rows[0].receipts=(await this.db.query(`SELECT d.id,d.document_number AS "documentNumber",to_char(d.issue_date,'YYYY-MM-DD') AS "issueDate" FROM documents d WHERE d.billing_cycle_id=$1 AND d.document_type='receipt' AND d.status IN('issued','finalized') AND d.site_id=ANY($2::uuid[]) AND EXISTS(SELECT 1 FROM site_account_assignments access WHERE access.user_id=$3::uuid AND access.site_id=d.site_id AND access.revoked_at IS NULL) ORDER BY d.issue_date NULLS LAST,d.id`,[id,siteScope(user,'business'),user.id])).rows;
+    if(resource==='billing'&&['owner','accountant'].includes(user?.role??'')){
+      const scope=siteScope(user,'business');
+      result.rows[0].cashPayments=scope?.length===0?[]:(await this.db.query(`SELECT p.id,coalesce(p.verified_amount,p.amount)::text AS amount,c.name AS "customerName",s.name AS "siteName",p.billing_cycle_id AS "billingCycleId",d.id AS "receiptId",d.document_number AS "receiptNumber",coalesce(u.display_name,'—') AS "recordedBy",to_char(p.received_at,'YYYY-MM-DD') AS "receivedAt",p.verified_at AS "recordedAt",p.note FROM payments p JOIN billing_cycles b ON b.id=p.billing_cycle_id JOIN sites s ON s.id=b.site_id JOIN customers c ON c.id=s.customer_id LEFT JOIN documents d ON d.id=p.receipt_document_id LEFT JOIN users u ON u.id=p.submitted_by WHERE p.payment_method='cash' AND p.status='paid' AND p.received_at=(now() AT TIME ZONE 'Asia/Bangkok')::date ${scope===null?'':'AND s.id=ANY($1::uuid[])'} ORDER BY p.verified_at DESC,p.id`,scope===null?[]:[scope])).rows;
+    }
     return {columns,row:result.rows[0]};
   }
   async document(id:string,user?:ScopePrincipal) {

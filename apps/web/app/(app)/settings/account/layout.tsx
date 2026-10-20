@@ -1,3 +1,8 @@
 import type { ReactNode } from "react";
 import { requirePageAccess } from "../../../../lib/session-user";
-export default async function PageAccessLayout({children}:{children:ReactNode}) { await requirePageAccess("/settings/account"); return children; }
+import { redirect } from "next/navigation";
+export default async function PageAccessLayout({children}:{children:ReactNode}) {
+  const user = await requirePageAccess("/settings/account");
+  if (user.role === "customer_user") redirect("/settings");
+  return children;
+}

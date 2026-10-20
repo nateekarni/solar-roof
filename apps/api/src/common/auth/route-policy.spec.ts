@@ -11,6 +11,17 @@ import type { ExecutionContext } from '@nestjs/common';
 import type { Request } from 'express';
 import { isAllowedRequestOrigin } from './request-origin.guard.js';
 
+test('customer portal home is an exact customer-only read endpoint', () => {
+ for (const role of ['customer_user','owner','admin','operator','accountant']) {
+  for (const method of ['GET','HEAD','POST','PUT','PATCH','DELETE','OPTIONS']) {
+   const allowed=role==='customer_user' && ['GET','HEAD'].includes(method);
+   assert.equal(routeAllowed(role,method,'/v1/customer/portal/home?range=7d'),allowed);
+   assert.equal(authorizedRoute({role},method,'/v1/customer/portal/home?range=7d'),allowed);
+  }
+ }
+ for(const path of ['/v1/customer/portal/home/technical','/v1/customer/portal','/v1/customer/portal/home-other'])assert.equal(routeAllowed('customer_user','GET',path),false);
+});
+
 test('public branding GET and HEAD work without Origin while cross-origin mutations remain blocked',()=>{
  for(const method of ['GET','HEAD'])for(const origin of [undefined,'https://external.example'])assert.equal(isAllowedRequestOrigin({method,path:'/v1/public/branding/logo',headers:{origin}} as Request,'https://web.example'),true);
  assert.equal(isAllowedRequestOrigin({method:'PUT',path:'/v1/settings/company',headers:{origin:'https://external.example'}} as Request,'https://web.example'),false);
@@ -94,6 +105,12 @@ test('only Owner and Accountant may approve or reject payment evidence',()=>{
  for(const role of ['owner','accountant'])assert.equal(routeAllowed(role,'PATCH','/v1/billing-cycles/1/verify-payment'),true);
 });
 
+test('only Owner and Accountant may record cash payments',()=>{
+ for(const role of ['admin','operator','customer_user'])assert.equal(routeAllowed(role,'POST','/v1/billing-cycles/1/cash-payment'),false);
+ for(const role of ['owner','accountant'])assert.equal(routeAllowed(role,'POST','/v1/billing-cycles/1/cash-payment'),true);
+ for(const method of ['GET','PATCH','PUT','DELETE'])assert.equal(routeAllowed('owner',method,'/v1/billing-cycles/1/cash-payment'),false);
+});
+
 test('Admin cannot read financial documents or finance widgets',()=>{
  for(const path of ['/v1/documents/1/download','/v1/billing-cycles/1','/v1/operations/billing','/v1/dashboard/revenue','/v1/contracts']) assert.equal(routeAllowed('admin','GET',path),false);
 });
@@ -102,4 +119,16 @@ test('customer daily production drilldown is read-only and does not admit techni
  assert.equal(routeAllowed('customer_user','GET','/v1/dashboard/day?site_id=assigned'),true);
  assert.equal(routeAllowed('customer_user','POST','/v1/dashboard/day'),false);
  assert.equal(routeAllowed('customer_user','GET','/v1/dashboard/technical'),false);
+});
+test('payment instructions allow only customer reads on the exact route', () => {
+ const path = '/v1/customer/portal/payment-instructions';
+ for (const role of ['customer_user','owner','admin','operator','accountant','bogus']) {
+  for (const method of ['GET','HEAD','POST','PUT','PATCH','DELETE','OPTIONS']) {
+   assert.equal(routeAllowed(role,method,path), role === 'customer_user' && ['GET','HEAD'].includes(method));
+   assert.equal(authorizedRoute({role},method,path), role === 'customer_user' && ['GET','HEAD'].includes(method));
+  }
+ }
+ for (const path of ['/v1/customer/portal/payment-instructions/other','/v1/customer/portal/payment-instructions-extra']) {
+  assert.equal(routeAllowed('customer_user','GET',path),false);
+ }
 });

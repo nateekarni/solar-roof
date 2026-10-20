@@ -39,7 +39,7 @@ test('PaymentDialog renders payment date picker, method select, amount input, an
   assert.match(html, /payment-date/);
 
   // Payment Method select
-  assert.match(html, /ช่องทางการชำระ/);
+  assert.match(html, /ช่องทางการโอน/);
   assert.match(html, /โอนเงินผ่านธนาคาร/);
   assert.match(html, /พร้อมเพย์/);
 

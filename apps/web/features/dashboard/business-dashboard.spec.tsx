@@ -9,13 +9,9 @@ test('owner home presents production, billed revenue and documents without opera
  const html=renderToStaticMarkup(<BusinessDashboard data={data} role="owner" locale="en"/>);
  assert.match(html,/Billed revenue/);assert.match(html,/2,500/);assert.match(html,/href="\/billing"/);assert.doesNotMatch(html,/href="\/contracts"/);assert.match(html,/href="\/receipts"/);assert.match(html,/Unavailable/);assert.doesNotMatch(html,/Gateway|telemetry|\/alerts|Power flow|Compare/);
 });
-test('customer home identifies own customer and charges with no company revenue or customer selector',()=>{
- const html=renderToStaticMarkup(<BusinessDashboard data={data} role="customer_user" locale="en"/>);
- assert.match(html,/Customer A/);assert.match(html,/Billed amount in period/);assert.doesNotMatch(html,/revenue|Gateway|Compare|<select/);assert.doesNotMatch(html,/href="\/contracts"/);
-});
 test('missing financial records remain unavailable rather than zero revenue',()=>{
- const html=renderToStaticMarkup(<BusinessDashboard data={{...data,sites:[],stats:{...data.stats,periodAmount:0,billCount:0}}} role="customer_user" locale="en"/>);
- assert.match(html,/Organization assignment unavailable/);assert.doesNotMatch(html,/>0 THB</);assert.match(html,/No outstanding invoices in the loaded records/);
+ const html=renderToStaticMarkup(<BusinessDashboard data={{...data,sites:[],stats:{...data.stats,periodAmount:0,billCount:0}}} role="owner" locale="en"/>);
+ assert.match(html,/Billed revenue/);assert.doesNotMatch(html,/>0 THB</);assert.match(html,/No billing records in this period/);
 });
 test('unknown production samples cannot corrupt valid trend bars or imply measured zero',()=>{
  const points=JSON.parse('[{"date":"2026-10-01","value":null},{"date":"2026-10-02","value":50}]');

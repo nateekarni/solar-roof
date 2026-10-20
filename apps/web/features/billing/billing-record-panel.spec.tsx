@@ -19,3 +19,12 @@ test('staff billing record exposes verification only with current financial capa
 test('paid bill has no payment or verification action and modal hides duplicate background history',()=>{
  const html=renderToStaticMarkup(<BillingRecordPanel row={{...row,status:'paid',paymentStatus:'paid'}} locale="th" capabilities={{financialScope:'TEST',actions:['approve_payment'],unavailable:{},operationsActions:['submit_payment']}} onPay={()=>{}} onVerify={()=>{}} historyVisible={false}/>);assert.doesNotMatch(html,/button|ประวัติการโอนเงิน/);
 });
+test('cash receipt action requires its live capability and a positive eligible outstanding balance',()=>{
+ const eligible={...row,status:'approved',billingStatusView:'awaiting_payment',outstandingAmount:'670.13'};
+ const allowed=renderToStaticMarkup(<BillingRecordPanel row={eligible} locale="en" capabilities={{actions:[],unavailable:{},operationsActions:['record_cash_payment']}} onPay={()=>{}} onCash={()=>{}} onVerify={()=>{}}/>);
+ assert.match(allowed,/Record cash payment/);
+ for(const patch of [{outstandingAmount:'0.00'},{billingStatusView:'pending_verification'},{status:'paid'}]){
+  const denied=renderToStaticMarkup(<BillingRecordPanel row={{...eligible,...patch}} locale="en" capabilities={{actions:[],unavailable:{},operationsActions:['record_cash_payment']}} onPay={()=>{}} onCash={()=>{}} onVerify={()=>{}}/>);
+  assert.doesNotMatch(denied,/Record cash payment/);
+ }
+});

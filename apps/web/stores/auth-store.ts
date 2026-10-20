@@ -8,6 +8,7 @@ export interface AuthUser {
   email: string;
   displayName: string;
   companyPosition?: string | null;
+  phoneNumber?: string | null;
   hasSignature?: boolean;
   avatarData?: string | null;
   role: "owner" | "admin" | "operator" | "accountant" | "customer_user";
@@ -44,6 +45,7 @@ function sessionUser(user: AuthUser): AuthUser {
     ...(user.preferredLanguage !== undefined ? {preferredLanguage: user.preferredLanguage} : {}),
     ...(user.preferredTheme !== undefined ? {preferredTheme: user.preferredTheme} : {}),
     ...(user.companyPosition !== undefined ? {companyPosition: user.companyPosition} : {}),
+    ...(user.phoneNumber !== undefined ? {phoneNumber: user.phoneNumber} : {}),
     ...(user.hasSignature !== undefined ? {hasSignature: user.hasSignature} : {}),
   };
 }
