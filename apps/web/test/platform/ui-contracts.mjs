@@ -72,15 +72,9 @@ try {
    await page.waitForLoadState('networkidle');
    await page.getByRole('searchbox').fill('U1-OLDER-INV');
    await page.getByRole('searchbox').press('Enter');
-   await page.getByText('U1-OLDER-INV').filter({visible:true}).first().waitFor();
-   const actionMenu=page.getByRole('button',{name:/การจัดการเอกสาร: U1-OLDER-INV|Document actions: U1-OLDER-INV|เมนูการดำเนินการ|Open actions menu/}).filter({visible:true});
-   if(await actionMenu.count()>0){
-    await actionMenu.first().click();
-    await page.getByRole('menuitem',{name:/ต้นฉบับ PDF|Original PDF|ดูใบวางบิล|View Invoice/}).first().click();
-   }else{
-    const olderRow=page.getByText('U1-OLDER-INV').filter({visible:true}).first().locator('xpath=ancestor::*[@data-slot="card" or self::tr]');
-    await olderRow.getByRole('button',{name:/^(ดูใบวางบิล|View Invoice)/}).filter({visible:true}).first().click();
-   }
+   const olderCard=page.getByText('U1-OLDER-INV').filter({visible:true}).first().locator('xpath=ancestor::article');
+   await olderCard.getByRole('link',{name:/^(ดูรายละเอียด|View details)$/}).click();
+   await page.locator('[data-document-id="invoice"]').getByRole('button',{name:/^(ดูตัวอย่างเอกสาร|Preview document)$/}).click();
    await page.getByRole('dialog').getByRole('alert').waitFor();
    assert.equal(await page.getByRole('dialog').locator('iframe').count(),0,'Assigned customer sees truthful metadata-only evidence');
    await page.keyboard.press('Escape');
