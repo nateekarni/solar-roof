@@ -10,6 +10,9 @@ export POSTGRES_IMAGE=solar-postgres-backup:ci
 export POSTGRES_DB=solar_readiness POSTGRES_USER=solar POSTGRES_PASSWORD=local-test-postgres
 export DATABASE_URL=postgresql://solar:local-test-postgres@postgres:5432/solar_readiness
 export MQTT_PASSWORD=local-test-backend MQTT_GATEWAY_CREDENTIALS='{"pilot-one":"local-test-gateway"}'
+export MQTT_URL=mqtt://mqtt:1883 INTERNAL_MQTT_SECRET=local-test-callback-secret
+export EMQX_MANAGEMENT_URL=https://emqx.example.invalid EMQX_MANAGEMENT_API_KEY=local-test-emqx-key
+export EMQX_MANAGEMENT_API_SECRET=local-test-emqx-secret EMQX_MANAGEMENT_DEFAULT_BROKER_ID=00000000-0000-4000-8000-000000000001
 export CLOUDFLARE_API_TOKEN=unused-synthetic-fixture ACME_EMAIL=ci@example.invalid
 export MINIO_ROOT_USER=solar MINIO_ROOT_PASSWORD=local-test-storage
 export JWT_ACCESS_SECRET=local-test-access-secret-at-least-32-characters JWT_REFRESH_SECRET=local-test-refresh-secret-at-least-32-characters
@@ -27,15 +30,35 @@ services:
         chmod 640 /export/fixture/*.pem
         ln -sfn fixture /export/current
         exec sleep infinity
+    volumes:
+      - mqtt-certs:/export
     healthcheck:
       test: [CMD, test, -s, /export/current/fullchain.pem]
       interval: 1s
       start_period: 1s
   mqtt:
+    image: solar-mqtt:ci
     ports: !reset []
+    environment:
+      MQTT_PASSWORD: local-test-backend
+      MQTT_GATEWAY_CREDENTIALS: '{"pilot-one":"local-test-gateway"}'
+      MQTT_TLS_DOMAIN: mqtt-solar.fowir.com
+    volumes:
+      - mqtt-certs:/mosquitto/certs:ro
+      - mqtt-data:/mosquitto/data
+    depends_on:
+      certbot: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, python3, /usr/local/bin/mqtt-runtime.py, --healthcheck]
+      interval: 1s
+      retries: 30
+      start_period: 1s
     networks:
       default:
         aliases: [mqtt-solar.fowir.com]
+volumes:
+  mqtt-certs:
+  mqtt-data:
 YAML
 override="$tmp/override.yml"
 if command -v cygpath >/dev/null 2>&1; then override=$(cygpath -m "$override"); fi
