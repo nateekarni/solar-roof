@@ -1,0 +1,43 @@
+{
+  "schemaVersion": "1.1",
+  "messageType": "register",
+  "messageId": "GW-TEST-001-register-0001",
+  "sentAt": "2026-10-19T10:00:00+07:00",
+  "gateway": {
+    "gatewayId": "GW-TEST-001",
+    "model": "MQTTBox-Simulator",
+    "firmwareVersion": "test-1.0.0"
+  },
+  "reportedSiteId": "SITE-REPORTED-001",
+  "devices": [
+    {
+      "deviceId": "METER-TEST-001",
+      "deviceType": "energy-meter",
+      "manufacturer": "Test fixture only",
+      "model": "UNVERIFIED-METER",
+      "firmwareVersion": "test-1.0.0",
+      "serialNumber": "TEST-SERIAL-001",
+      "protocol": "modbus-tcp",
+      "connection": {
+        "host": "192.0.2.10",
+        "port": 502,
+        "slaveId": 1
+      },
+      "pollGroups": [
+        "energy"
+      ],
+      "mappings": [
+        {
+          "tag": "energy.active.import.total",
+          "required": true,
+          "displayName": "Synthetic active import energy",
+          "pollGroup": "energy",
+          "sourceUnit": "Wh",
+          "targetUnit": "kWh",
+          "conversion": "wh-to-kwh",
+          "role": "billing-import"
+        }
+      ]
+    }
+  ]
+}

@@ -8,6 +8,9 @@ function fixture() {
  const writes:string[]=[];
  const query=async(sql:string)=>{
   writes.push(sql);
+  if(sql.startsWith('SELECT site_id FROM gateways'))return {rows:[{site_id:'s'}]};
+  if(sql.includes('FROM sites WHERE'))return {rows:[{id:'s'}]};
+  if(sql.startsWith('SELECT * FROM gateways WHERE id='))return {rows:[{id:'g',site_id:'s'}]};
   if(sql.includes('desired_config_version AS version'))return {rows:[{id:'g',version:0,endpoint:'solar/v1/sites/SITE-001/gateways/GW-001/devices/+/telemetry',pollingIntervalSeconds:10,alertRules:{}}]};
   if(sql.includes('FROM gateways g JOIN sites'))return {rows:[{gatewayId:'g',externalSiteId:'SITE-001',externalGatewayId:'GW-001',endpoint:'solar/v1/sites/SITE-001/gateways/GW-001/devices/+/telemetry'}]};
   if(sql.includes('FROM devices d'))return {rows:[{externalDeviceId:'METER-001',config:DEFAULT_PAYLOAD_PROFILES[0]},{externalDeviceId:'SMARTLOGGER-001',config:DEFAULT_PAYLOAD_PROFILES[1]}]};

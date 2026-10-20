@@ -21,6 +21,7 @@ function fixture(overrides:Record<string,unknown>={}){
  const previous={id:'old',meter_id:'meter',site_id:'s',device_id:'d',profile_revision_id:'r',source_tag:'energy.active.import.total',canonical_tag:'energy.active.import.total',source_unit:'Wh',target_unit:'kWh',conversion:'wh-to-kwh',measurement_purpose:'grid-import'};
  const db={transaction:async(run:any)=>run({query:async(sql:string,params:any[])=>{
   if(sql.startsWith('SELECT id FROM sites'))return {rows:[{id:'s'}]};
+  if(sql.startsWith('SELECT id FROM devices'))return {rows:[{id:'d'}]};
   if(sql.includes('FROM billing_meters'))return {rows:[meter]};
   if(sql.includes('SELECT * FROM billing_source_bindings'))return {rows:[previous]};
   writes.push(sql);
@@ -41,4 +42,36 @@ test('source replacement requires confirmed impact and preserves immutable histo
 test('latest invalid source does not display an older counter as currently verified',async()=>{
  const db={query:async(sql:string)=>({rows:sql.includes('FROM billing_meters')?[{meter_id:'meter',device_id:'d',payload_profile_revision_id:'r',billing_source_binding_id:'b',config:DEFAULT_PAYLOAD_PROFILES[0]}]:sql.includes('FROM billing_source_bindings')?[{id:'b',profile_revision_id:'r',device_id:'d',site_id:'s'}]:[{id:'bad',quality:'invalid',valueKwh:null,unit:'kWh',fresh:false}]})};
  const result=await new BillingSourceBindingService(db as unknown as DatabaseService).get('s');assert.equal(result.status,'invalid-data');assert.equal(result.latestVerifiedReading,null);
+});
+
+test('binding locks the device then meter before a fresh profile read and binds the post-lock revision',async()=>{
+ let deviceLocked=false;const steps:string[]=[];
+ const db={transaction:async(run:any)=>run({query:async(sql:string,params:any[])=>{
+  if(sql.startsWith('SELECT id FROM sites'))return {rows:[{id:'s'}]};
+  if(sql.startsWith('SELECT id FROM devices')){deviceLocked=true;steps.push('device');return {rows:[{id:'d'}]};}
+  if(sql.startsWith('SELECT id FROM billing_meters')){steps.push('meter');return {rows:[{id:'meter'}]};}
+  if(sql.includes('FROM billing_meters')){
+   if(!sql.includes('FOR UPDATE'))steps.push('read');
+   return {rows:[{id:'meter',device_id:'d',payload_profile_revision_id:deviceLocked?'post-apply':'r',config:DEFAULT_PAYLOAD_PROFILES[0],billing_source_binding_id:null}]};
+  }
+  if(sql.includes('INSERT INTO billing_source_bindings'))return {rows:[{id:params[0],profile_revision_id:params[4]}]};
+  return {rows:[]};
+ }})};
+ const binding=await new BillingSourceBindingService(db as unknown as DatabaseService).bind('s',{...input,profileRevisionId:'post-apply'},'actor');
+ assert.equal(binding?.profileRevisionId,'post-apply');assert.deepEqual(steps,['device','meter','read']);
+});
+
+test('archived or deleted sites cannot acquire a new billing binding',async()=>{
+ for(const deleted of [false,true]){
+  let bindings=0;
+  const db={transaction:async(run:any)=>run({query:async(sql:string,params:any[])=>{
+   if(sql.startsWith('SELECT id FROM sites'))return {rows:deleted||sql.includes("status<>'archived'")?[]:[{id:'s'}]};
+   if(sql.startsWith('SELECT id FROM devices'))return {rows:[{id:'d'}]};
+   if(sql.includes('FROM billing_meters'))return {rows:[{id:'meter',device_id:'d',payload_profile_revision_id:'r',config:DEFAULT_PAYLOAD_PROFILES[0],billing_source_binding_id:null}]};
+   if(sql.includes('INSERT INTO billing_source_bindings')){bindings++;return {rows:[{id:params[0],profile_revision_id:'r'}]};}
+   return {rows:[]};
+  }})};
+  await assert.rejects(new BillingSourceBindingService(db as unknown as DatabaseService).bind('s',input,'actor'),/Site not found/);
+  assert.equal(bindings,0);
+ }
 });

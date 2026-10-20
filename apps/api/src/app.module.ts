@@ -17,6 +17,7 @@ import { PaymentsModule } from "./modules/payments/payments.module.js";
 import { ReportsModule } from "./modules/reports/reports.module.js";
 import { SettingsModule } from "./modules/settings/settings.module.js";
 import { TelemetryModule } from "./modules/telemetry/telemetry.module.js";
+import { GatewayControlModule } from './modules/gateway-control/gateway-control.module.js';
 
 import { APP_GUARD } from "@nestjs/core";
 import { JwtAuthGuard } from "./modules/identity/jwt.guard.js";
@@ -34,6 +35,7 @@ import { RequestOriginGuard } from "./common/auth/request-origin.guard.js";
     IdentityModule,
     AssetsModule,
     TelemetryModule,
+    GatewayControlModule,
     AlarmsModule,
     BillingModule,
     DocumentsModule,

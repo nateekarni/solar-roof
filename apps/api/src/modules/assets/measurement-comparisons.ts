@@ -3,6 +3,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { z } from 'zod';
 import type { DatabaseService } from '../../database/database.service.js';
 import { compareWindow } from './gateway-reconciliation.js';
+import { lockGatewayReference } from './gateway-lifecycle.js';
 
 const pairInput=z.object({leftDeviceId:z.uuid(),rightDeviceId:z.uuid(),leftTag:z.string().min(1).max(128),rightTag:z.string().min(1).max(128),kind:z.enum(['energy','power']),relativeTolerance:z.number().finite().min(0).max(1).default(0.05),absoluteFloor:z.number().finite().min(0).default(0.1),windowSeconds:z.number().int().min(900).max(86400).default(900)}).strict();
 export class MeasurementComparisons {
@@ -17,7 +18,8 @@ export class MeasurementComparisons {
   const parsed=pairInput.safeParse({relativeTolerance:stored.comparisonRelativeTolerance??0.05,absoluteFloor:(supplied.kind==='power'?stored.comparisonPowerAbsoluteFloor:stored.comparisonEnergyAbsoluteFloor)??0.1,windowSeconds:stored.comparisonWindowSeconds??900,...supplied});if(!parsed.success)throw new BadRequestException('Invalid measurement pair');const p=parsed.data;
   if(p.leftDeviceId===p.rightDeviceId)throw new BadRequestException('Choose independent devices');
   return this.db.transaction(async client=>{
-   const devices=(await client.query(`SELECT d.id,p.config FROM devices d JOIN payload_profile_revisions p ON p.id=d.payload_profile_revision_id JOIN gateways g ON g.id=d.gateway_id WHERE d.id=ANY($1::uuid[]) AND d.gateway_id=$2 AND g.retired_at IS NULL FOR SHARE OF d`,[[p.leftDeviceId,p.rightDeviceId],gatewayId])).rows;
+   const gateway=await lockGatewayReference(client,gatewayId);
+   const devices=(await client.query(`SELECT d.id,p.config FROM devices d JOIN payload_profile_revisions p ON p.id=d.payload_profile_revision_id JOIN gateways g ON g.id=d.gateway_id WHERE d.id=ANY($1::uuid[]) AND d.gateway_id=$2 AND d.site_id=$3 AND g.retired_at IS NULL ORDER BY d.id FOR SHARE OF d`,[[p.leftDeviceId,p.rightDeviceId],gatewayId,gateway.site_id])).rows;
    for(const [deviceId,tag] of [[p.leftDeviceId,p.leftTag],[p.rightDeviceId,p.rightTag]]){
     const device=devices.find(d=>d.id===deviceId),field=device?.config?.fields?.find((f:any)=>f.tag===tag);
     if(!field||!(p.kind==='energy'?['Wh','kWh'].includes(field.targetUnit):['W','kW'].includes(field.targetUnit)))throw new BadRequestException('Pair source must be a registered field with compatible canonical units in this gateway');
@@ -34,7 +36,25 @@ export class MeasurementComparisons {
  }
  async recomputeNext(){
   return this.db.transaction(async client=>{
-   const job=(await client.query(`SELECT q.pair_id,q.from_time,p.*,l.expected_interval_seconds AS left_cadence,r.expected_interval_seconds AS right_cadence,l.poll_group_cadence AS left_groups,r.poll_group_cadence AS right_groups FROM measurement_comparison_dirty q JOIN measurement_comparison_pairs p ON p.id=q.pair_id JOIN devices l ON l.id=p.left_device_id JOIN devices r ON r.id=p.right_device_id ORDER BY q.from_time FOR UPDATE OF q SKIP LOCKED LIMIT 1`)).rows[0];
+   // Peek without a queue lock, then reference site/gateway before claiming work.
+   // A busy parent is skipped with NOWAIT just like a busy queue row. Roll back
+   // each unsuccessful candidate's locks so unrelated pairs remain runnable.
+   const candidates=(await client.query(`SELECT q.pair_id,p.gateway_id,g.site_id FROM measurement_comparison_dirty q
+    JOIN measurement_comparison_pairs p ON p.id=q.pair_id JOIN gateways g ON g.id=p.gateway_id ORDER BY q.from_time,q.pair_id`)).rows;
+   let job:(typeof candidates)[number]|undefined;
+   for(const candidate of candidates){
+    await client.query('SAVEPOINT comparison_candidate');
+    const abandon=async()=>{await client.query('ROLLBACK TO SAVEPOINT comparison_candidate');await client.query('RELEASE SAVEPOINT comparison_candidate');};
+    try{
+     // Historical comparisons retain their prior archived/retired eligibility.
+     const site=(await client.query('SELECT id FROM sites WHERE id=$1 FOR KEY SHARE NOWAIT',[candidate.site_id])).rows[0];
+     const gateway=site&&(await client.query('SELECT id FROM gateways WHERE id=$1 AND site_id=$2 FOR KEY SHARE NOWAIT',[candidate.gateway_id,candidate.site_id])).rows[0];
+     if(!gateway){await abandon();continue;}
+     job=(await client.query(`SELECT q.pair_id,q.from_time,p.*,l.expected_interval_seconds AS left_cadence,r.expected_interval_seconds AS right_cadence,l.poll_group_cadence AS left_groups,r.poll_group_cadence AS right_groups FROM measurement_comparison_dirty q JOIN measurement_comparison_pairs p ON p.id=q.pair_id JOIN devices l ON l.id=p.left_device_id JOIN devices r ON r.id=p.right_device_id WHERE q.pair_id=$1 AND p.gateway_id=$2 ORDER BY q.from_time FOR UPDATE OF q SKIP LOCKED LIMIT 1`,[candidate.pair_id,candidate.gateway_id])).rows[0];
+     if(!job){await abandon();continue;}
+     await client.query('RELEASE SAVEPOINT comparison_candidate');break;
+    }catch(error){await abandon();if((error as {code?:string}).code!=='55P03')throw error;}
+   }
    if(!job)return false;
    const profileGroups=(await client.query(`SELECT d.id,(SELECT f->>'pollGroup' FROM jsonb_array_elements(p.config->'fields') f WHERE f->>'tag'=CASE WHEN d.id=$1 THEN $3 ELSE $4 END) AS poll_group FROM devices d JOIN payload_profile_revisions p ON p.id=d.payload_profile_revision_id WHERE d.id=ANY($2::uuid[])`,[job.left_device_id,[job.left_device_id,job.right_device_id],job.left_tag,job.right_tag])).rows;
    const leftCadence=Number(job.left_groups[profileGroups.find(d=>d.id===job.left_device_id)?.poll_group]??job.left_cadence),rightCadence=Number(job.right_groups[profileGroups.find(d=>d.id===job.right_device_id)?.poll_group]??job.right_cadence);

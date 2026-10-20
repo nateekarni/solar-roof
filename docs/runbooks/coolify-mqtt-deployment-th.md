@@ -1,121 +1,113 @@
-# Deploy เฉพาะ MQTT — mqtt-solar.fowir.com บน Coolify
+# Deploy EMQX สำหรับ Solar Platform บน Coolify
 
-ปรับปรุง 6 ตุลาคม 2026 — ใช้ **resource แยกจากเว็บไซต์** มี certbot และ mqtt เท่านั้น ไม่สร้าง DB/MinIO/Redis/users เว็บ deploy แยกตาม [คู่มือ solar.fowir.com](coolify-web-first-deployment-th.md)
+คู่มือนี้ใช้ EMQX `5.8.3` จาก `infra/docker/docker-compose.emqx.yml` เป็น Broker ของ control plane และ telemetry รุ่น 1.1 โดยแยก resource ออกจากเว็บ การ deploy นี้เปิดสู่ภายนอกเฉพาะ MQTTS `8883`; TCP `1883` และ Dashboard HTTPS `18083` อยู่ใน private Compose network เท่านั้น
 
-หากใช้ Broker ภายนอกที่ผู้ดูแล Gateway ให้ **ไม่ต้องทำคู่มือนี้** ตั้ง registered broker ใน Admin และเปิด MQTT_ENABLED=true / MQTT_DEFAULT_BROKER_ENABLED=false ใน web resource แทน
+## 1. สิ่งที่ต้องเตรียม
 
-## 1. เตรียม release
+- DNS `mqtt-solar.fowir.com` ชี้มายังเครื่องและเปิด firewall เฉพาะ TCP `8883`
+- `/data/mqtt-certs/fullchain.pem` และ `/data/mqtt-certs/privkey.pem` เป็น certificate/key จริงของ `mqtt-solar.fowir.com`
+- CA bundle ของระบบ เช่น `/etc/ssl/certs/ca-certificates.crt` สำหรับ EMQX ตรวจ callback HTTPS ของ `solar.fowir.com`
+- API ที่ `https://solar.fowir.com/v1/internal/mqtt/auth` และ `/acl` เข้าถึงได้จาก container
+- secret แยกกันสำหรับ node cookie, Dashboard, callback และบัญชี `solar-backend`
 
-1. GitHub Actions CI and staging → main รุ่นใหม่ → verify ผ่าน → คัดลอก MQTT_IMAGE และ CERTBOT_IMAGE digest จาก Summary ของ run เดียวกัน
-2. ใช้เซิร์ฟเวอร์เดิมได้ pilot 2 vCPU / RAM 4 GiB; ค่า default mqtt/certbot อย่างละ CPU0.25, RAM128m, reservation32m
-3. ถ้า GHCR private ให้ authenticate server ตาม [คู่มือ private repo](coolify-private-github-th.md)
-4. ตรวจไม่มี broker อื่นจับ host port8883 ถ้ามี full-stack resource เดิมอย่า deploy broker อีกชุดชนกัน
+ห้ามใช้ certificate ตัวอย่าง, self-signed certificate ของ CI หรือรหัสจากไฟล์ `.example` ใน production และห้ามเปิด `1883`/`18083` เป็น host port
 
-## 2. DNS / Firewall
+## 2. สร้าง EMQX resource
 
-1. Cloudflare → zone fowir.com → DNS → A record ชื่อ mqtt-solar → public IPv4 ของ server (ผลตรวจล่าสุด 188.166.250.177) → **DNS only**
-2. AAAA ใช้เฉพาะ IPv6 ที่เข้าถึงจริง DNS record solar ของเว็บไซต์ไม่ต้องเปลี่ยน
-3. เปิด inbound TCP8883 ไป server; **ไม่เปิด1883ออกอินเทอร์เน็ต** MQTT บน8883เป็น TLS/TCP ไม่ใช่เว็บ HTTP ไม่กรอก https:// หน้า MQTT hostname
-4. DNS-01 ใช้ Cloudflare API ไม่ต้องเปิดเว็บ HTTP ของ mqtt-solar เพื่อออก certificate
+1. Coolify → Project/Environment เดียวกับเว็บ → New Resource → Git repository → branch/revision ที่ผ่าน CI
+2. เลือก Docker Compose และตั้ง Compose Location เป็น `/infra/docker/docker-compose.emqx.yml`
+3. คัดลอกชื่อค่าจาก `infra/docker/.env.emqx.example` ไป Coolify แล้วแทน placeholder ทุกตัว
+4. สร้าง secret เป็น hexadecimal เพื่อไม่ให้ HOCON ตีความ `#`, `:` หรือ `=` เช่น `openssl rand -hex 32`; เก็บผลใน secret manager ไม่ใส่ Git, ticket หรือ log
+5. `INTERNAL_MQTT_SECRET` ต้องเป็นค่าเดียวกับ API ส่วน `EMQX_NODE_COOKIE`, Dashboard password และ `MQTT_PASSWORD` ต้องเป็นคนละค่า
 
-## 3. Cloudflare token สำหรับ certificate (เฉพาะกรณีใช้ Cloudflare DNS)
+ค่า deploy ที่บังคับ:
 
-1. My Profile → API Tokens → Create Token → template Edit zone DNS
-2. Permissions: Zone / DNS / Edit และ Zone / Zone / Read
-3. Zone Resources: Include / Specific zone / **fowir.com**; ไม่ให้ทุก zone
-4. Create Token → เก็บ secret → ใส่ CLOUDFLARE_API_TOKEN ใน Coolify เฉพาะ resource broker
-5. ACME_EMAIL เป็นอีเมลติดต่อจริง certificate service ขอและต่ออายุ Let's Encrypt ผ่าน DNS-01 อัตโนมัติ; การ deploy นี้ใช้บริการและยอมรับ [เงื่อนไข Let's Encrypt](https://letsencrypt.org/repository/)
-
-certificate ของ mqtt-solar อยู่ใน named volumes letsencrypt-data/mqtt-certs ของ resource นี้ แยกจาก certificate เว็บไซต์ที่ Coolify Proxy ดูแล ไม่ต้องสร้าง Zone ใหม่ถ้ามี fowir.com อยู่แล้ว และ token ไม่ใช่ certificate ที่นำไปแจก Gateway
-
-> **หมายเหตุ (กรณีไม่ได้ใช้ Cloudflare DNS):** หาก DNS ของโดเมนไม่ได้อยู่บน Cloudflare ให้ข้ามข้อ 3 นี้ แล้วออก SSL Certificate บนเซิร์ฟเวอร์โดยตรง นำไปวางที่ `/data/mqtt-certs/` และใช้ Compose Location เป็น `/infra/docker/docker-compose.mqtt-hostcert.yml` แทน
-
-## 4. สร้าง MQTT Application แยก
-
-1. Coolify → Project/Environment เดียวกับเว็บ → New Resource → Git repository → main
-2. Build Pack Docker Compose, Base Directory `/`:
-   * **กรณีใช้ Cloudflare DNS-01:** Compose Location **/infra/docker/docker-compose.mqtt.yml**
-   * **กรณีใช้ Host/Manual Certificate (ไม่ได้ใช้ Cloudflare):** Compose Location **/infra/docker/docker-compose.mqtt-hostcert.yml**
-3. ตั้งชื่อ resource เช่น solar-mqtt ไม่เปลี่ยนชื่อของ resource เว็บที่มีข้อมูลอยู่
-4. Domains ของ mqtt/certbot **เว้นว่าง** broker publish8883:8883 ผ่าน Compose ไม่ส่ง MQTT เข้า HTTPS router ของ Coolify
-5. Environment Variables:
-   * กรณี Cloudflare ใช้ [infra/docker/.env.mqtt.example](../../infra/docker/.env.mqtt.example)
-   * กรณี Host Certificate ใช้ [infra/docker/.env.mqtt-hostcert.example](../../infra/docker/.env.mqtt-hostcert.example)
-
-| ค่า | ความหมาย |
+| ตัวแปร | ใช้ทำอะไร |
 |---|---|
-| MQTT_IMAGE / CERTBOT_IMAGE | digest ที่ผ่าน CI |
-| MQTT_PASSWORD | รหัสบัญชี backend solar-backend อย่างน้อย16ตัว |
-| MQTT_GATEWAY_CREDENTIALS | JSON username→password ของแต่ละ Gateway ใช้คนละรหัสกับ backend |
-| CLOUDFLARE_API_TOKEN | tokenเฉพาะfowir.com |
-| ACME_EMAIL | contactจริง |
+| `EMQX_NODE_COOKIE` | secret ภายใน node/cluster |
+| `EMQX_DASHBOARD_USER`, `EMQX_DASHBOARD_PASSWORD` | บัญชี Dashboard ที่ไม่ใช่ค่า default |
+| `INTERNAL_MQTT_SECRET` | header `x-internal-secret` สำหรับ auth และ ACL callback |
+| `MQTT_CERTS_DIR` | directory ที่มี `fullchain.pem` และ `privkey.pem` |
+| `MQTT_WEBHOOK_CA_FILE` | PEM CA bundle สำหรับตรวจ TLS ของ `solar.fowir.com` |
 
-ตัวอย่าง format (แทนรหัสตัวอย่างด้วยของจริง): MQTT_GATEWAY_CREDENTIALS={"GW-001":"รหัสของ_GW-001_อย่างน้อย16ตัว"} เป็นค่าที่เรากำหนดเมื่อใช้ broker ของเรา ไม่ใช่ค่าจาก database และไม่ต้องกรอกเมื่อใช้ broker ภายนอก
+ที่ Web/API resource ต้องกำหนด `EMQX_MANAGEMENT_URL`, `EMQX_MANAGEMENT_API_KEY`, `EMQX_MANAGEMENT_API_SECRET` และ `EMQX_MANAGEMENT_DEFAULT_BROKER_ID` เพิ่มด้วย โดย UUID ตัวหลังต้องตรงกับ broker record ที่ URL นี้จัดการจริง หากเป็น remote broker ให้ใส่ target ใน `EMQX_MANAGEMENT_BROKERS_JSON`; ระบบจะไม่ fallback ไป broker เริ่มต้นที่ไม่เกี่ยวข้อง โดยสร้าง Application/API key ใน EMQX ที่มีสิทธิ์อ่าน/ลบ client session สำหรับ `DELETE /api/v5/clients/{clientid}` โดยเฉพาะ ห้ามใช้ Dashboard password และห้ามใส่ key/secret ใน URL ระบบใช้ค่านี้เพื่อตัด session เก่าก่อนยืนยันการหมุน Gateway credential
 
-MQTT_TLS_DOMAIN=mqtt-solar.fowir.com กำหนดใน Compose ทั้งสอง services แล้ว ไม่ใช้ localhost
+Compose ของ EMQX 5.8.3 ต้องคง `EMQX_AUTHORIZATION__CACHE__ENABLE=false` ไว้ เพื่อไม่ให้ connected client ใช้ authorization cache เก่าหลัง gateway ถูก suspend/หมุน credential หลังแก้ค่านี้ต้อง recreate container (restart อย่างเดียวอาจไม่รับ environment ใหม่) และตรวจ effective configuration ก่อนเปิดการหมุน credential ห้าม deploy หาก assertion นี้ไม่ผ่าน
 
-## 5. Deploy และตรวจ certificate/broker
+Compose บังคับ callback ทั้งสองเส้นให้ใช้ `verify_peer`, CA bundle และ SNI `solar.fowir.com` ถ้า CA/hostname ไม่ตรงให้แก้ chain หรือ DNS ห้ามเปลี่ยนเป็น `verify_none`
 
-1. Save variables → Deploy → certbot ต้องออก certificate domain mqtt-solar.fowir.com สำเร็จและ healthy; broker รอ certbot healthy ก่อนเริ่ม
-2. mqtt healthy และ serverรับ8883; ถ้า certificate failure ดู certbot logs/token/zone/DNS/time อย่าปิดตรวจ TLS เพื่อให้ผ่าน
-3. จากเครื่องผู้ดูแลตรวจ:
+### กรณีมี volume `emqx-data` เดิม
 
-~~~sh
-openssl s_client -connect mqtt-solar.fowir.com:8883 -servername mqtt-solar.fowir.com -verify_return_error </dev/null
-~~~
+`EMQX_DASHBOARD__DEFAULT_USERNAME` และ `EMQX_DASHBOARD__DEFAULT_PASSWORD` ใช้สร้างบัญชีเริ่มต้นเฉพาะตอนฐานข้อมูล EMQX ใหม่ การเปลี่ยนค่า env แล้ว redeploy **ไม่เปลี่ยนหรือหมุน credential ที่บันทึกอยู่ใน persisted `emqx-data`** และไม่เปลี่ยนชื่อบัญชีเดิม ดังนั้นห้ามสรุปว่ารหัสถูกเปลี่ยนจาก env อย่างเดียว
 
-ต้อง verify chain/hostname ถูก ไม่ใช้ self-signed certificate ของ CI บน production
+ก่อนนำ volume เดิมขึ้น production ให้ snapshot/backup volume แล้วเปิด terminal ส่วนตัวใน EMQX container ตรวจชื่อ admin ที่มีอยู่ และหมุนรหัสด้วยคำสั่งของ EMQX 5.8.3:
 
-4. Coolify Terminal ของ mqtt ตรวจ health:
+```sh
+emqx ctl admins list
+emqx ctl admins passwd <existing-user> <new-password>
+```
 
-~~~sh
-python3 /usr/local/bin/mqtt-runtime.py --healthcheck
-~~~
+ผลจาก `emqx ctl admins list` คือ inventory ที่ต้องตรวจครบ ห้ามสมมติว่า `<existing-user>` เป็น admin เพียงรายเดียว สำหรับ other admin users/บัญชี admin อื่นทุกบัญชี ให้ระบุ owner และ purpose, หมุนเป็นรหัสเฉพาะที่ไม่ใช่ default หรือปิด/ลบบัญชีที่ยืนยันว่าไม่ใช้แล้วตาม change approval ห้ามปล่อยบัญชีเก่าที่ไม่ทราบเจ้าของไว้
 
-exit0 ตรวจ certificate และ TLS listener ที่กำลังเสิร์ฟ ไม่ใช่การยืนยันว่า telemetry ลง DB แล้ว
+ก่อนหมุนรหัส ให้อ่าน exact prior credential ของ `<existing-user>` จาก secret store ที่ได้รับอนุญาตโดยไม่คัดลอกลงเอกสาร และตรวจผ่าน private/incognito session ว่า credential ชุดนี้ login ได้จริง ถ้าเข้าไม่ได้ให้หยุดและแก้ inventory/secret provenance ก่อน เพราะจะยังพิสูจน์ไม่ได้ว่าการหมุนทำให้รหัสเดิมใช้ไม่ได้
 
-## 6. เชื่อม API ของเว็บเข้ากับ Broker แยก
+แทน placeholder ใน terminal ส่วนตัวเท่านั้น เพราะ password เป็น command argument และอาจติด shell history/process inspection ห้ามคัดลอกคำสั่งจริงลง ticket, deployment log หรือ screenshot หลังรันคำสั่งให้ออกจาก Dashboard ทุก session แล้วตรวจด้วย private/incognito session ใหม่:
 
-เนื่องจากเป็นสอง Compose resources hostname mqtt ภายในเว็บใช้ไม่ได้ ให้ต่อผ่าน endpoint TLS จริง (serverต้อง resolve และเข้าถึง endpointตัวเองได้; ถ้า NATไม่รองรับ hairpin ต้องแก้เครือข่ายให้ hostname/TLS ถูก)
+1. `<existing-user>` กับ exact prior credential จาก secret store ต้อง login fail/ถูกปฏิเสธหลัง rotation
+2. `<existing-user>` กับ new secret ต้องใช้งานได้ (new secret works)
+3. แยกต่างหากจากข้อ 1 ให้ตรวจ legacy username `admin` กับ password `admin123456` ต้อง login fail/ถูกปฏิเสธ แม้ `<existing-user>` จะเป็นชื่ออื่น
 
-ใน **resource เว็บไซต์** Coolify Environment Variables:
+ถ้าต้องเปลี่ยน username ด้วย ให้สร้างบัญชีใหม่ตามคำสั่ง `emqx ctl admins` ของ version ที่ deploy, ยืนยันว่าบัญชีใหม่ login ได้ก่อน แล้วจึงลบบัญชีเก่า ห้ามลบ volume เพื่อหวัง reset credential เพราะทำให้ state อื่นใน Broker สูญหาย
 
-~~~dotenv
+## 3. เชื่อม API กับ EMQX ชุดเดียวกัน
+
+ตั้งใน web/staging resource:
+
+```dotenv
 MQTT_ENABLED=true
 MQTT_DEFAULT_BROKER_ENABLED=true
 MQTT_URL=mqtts://mqtt-solar.fowir.com:8883
 MQTT_USERNAME=solar-backend
-MQTT_PASSWORD=รหัส_backend_เดียวกับ_resource_MQTT
-~~~
+MQTT_PASSWORD=<รหัส backend ที่ EMQX callback ตรวจค่าเดียวกัน>
+INTERNAL_MQTT_SECRET=<ค่าเดียวกับ EMQX resource>
+```
 
-Save → Redeploy เว็บ; ไม่ต้องสร้าง DB ใหม่ ไม่ต้องรัน seed user ใหม่ อีกทางเลือกคือเก็บ broker นี้ผ่าน Admin ใน registered brokers และใช้ MQTT_DEFAULT_BROKER_ENABLED=false เลือกใช้วิธีเดียวเพื่อไม่ subscribe ซ้ำ
+ถ้า API และ EMQX ถูกต่อเข้ากับ private network เดียวกันจริง สามารถใช้ `mqtt://mqtt:1883` ได้โดยไม่ publish port นี้ แต่ทุก instance ของ API และเครื่องมือทดสอบต้องชี้ Broker EMQX เดียวกัน ห้ามเปิด default broker ซ้ำกับ registered broker ตัวเดียวกัน
 
-/ready ของเว็บยังตรวจเว็บแยก /ready/mqtt ใน API containerต้องตอบ ready ตรวจทั้ง health broker และการรับ payload จริง เว็บยังใช้งานได้เมื่อ broker offline
+## 4. ตรวจ deployment
 
-## 7. Gateway และ Topic
+ตรวจ render ด้วยค่าทดสอบเท่านั้น เพราะ `docker compose config` แสดงค่าที่ expand แล้ว:
 
-Gateway: host mqtt-solar.fowir.com, port8883, TLSเปิดและตรวจ CA/hostname, username **GW-001** สำหรับ Gateway ID GW-001, password จาก MQTT_GATEWAY_CREDENTIALS ไม่แจก backend credential ให้ Gateway
+```sh
+docker compose --env-file infra/docker/.env.emqx.example -f infra/docker/docker-compose.emqx.yml config
+```
 
-Standard JSON topic ของ pilot:
+อย่าแนบ output จาก environment จริง เพราะอาจมี callback secret และ Dashboard password
 
-~~~text
-solar/v1/sites/SITE-001/gateways/GW-001/devices/SPM91-01/telemetry
-solar/v1/sites/SITE-001/gateways/GW-001/dataAcept
-~~~
+หลัง deploy ตรวจตามลำดับ:
 
-บรรทัดแรก publish telemetry บรรทัดสอง subscribe ACK (สะกด dataAcept ตาม protocol ปัจจุบัน) ตั้ง site/Gateway/device external IDs ใน Admin ให้ตรง payload และเลือก Pilot SPM91 Preset; ตัวเลข1700Whจะ normalizeเป็น1.7kWh
+```sh
+openssl s_client -connect mqtt-solar.fowir.com:8883 -servername mqtt-solar.fowir.com -verify_return_error </dev/null
+# รันบรรทัดนี้ใน API container/private network
+curl -fsS http://127.0.0.1:3001/ready/mqtt
+```
 
-ACL ผูก Gatewayด้วย authenticated username ตรง Gateway ID แยกจาก UUID ใน DB ส่วน legacy energy/<username>/telemetry และ response/config ยังคงรองรับ ACL ไม่อนุญาต Gateway publishข้อมูล/อ่าน ACK ของ Gatewayอื่น Usernameต้องไม่ซ้ำข้าม sites จัด unique Gateway IDs เมื่อใช้ broker นี้
+- TLS ต้องตรวจ chain และ hostname ผ่าน
+- `/ready/mqtt` ต้องตอบ HTTP `200` และ JSON `{"status":"ready","configuredBrokers":1,"readyBrokers":1}` เมื่อมี Broker เดียว
+- EMQX Dashboard ต้องเข้าผ่าน private network/SSH tunnel เท่านั้น และต้องไม่มี default credential
+- API backend ต้องเป็น client อย่างน้อย 1 รายและมี subscription QoS 1 ห้าเส้น: `register`, `configUpdate`, `configStatus`, `status` และ canonical `telemetry`; API ไม่ subscribe เส้น `config`
 
-ติดตั้งแล้วทดสอบ subscribe/publishด้วย credentialเฉพาะเครื่อง, หน่วย/quality/timestamps, ACK/duplicate และ freshness หน้าเว็บ ไม่ส่ง payloadทดสอบเข้าเครื่องจริงโดยไม่ประสานผู้ดูแล
+จำนวน clients/subscriptions ใน Dashboard เป็นค่าปัจจุบันและอาจมี session อื่น ให้เทียบ delta กับ baseline ก่อนเปิด MQTTBox แทนการยึดเลขรวมคงที่
 
-## 8. อัปเดต/บำรุงรักษา
+## 5. Troubleshooting
 
-- เปลี่ยน MQTT_IMAGE/CERTBOT_IMAGE digest ใน resourceเดิมแล้ว Deploy เก็บ volumesเดิม brokerจะ reloadcertificateหลังต่ออายุ
-- เพิ่ม/หมุนGatewaypassword: ปรับJSON credentialsโดยคงรายการอื่น → Redeploybroker → เปลี่ยนGatewayให้ตรง
-- หมุนbackendpasswordต้องเปลี่ยนทั้งbrokerresourceและwebresource
-- สำรอง credentials/config แบบเข้ารหัสพร้อม certificate volumesที่ต้องเก็บ ไม่ใส่ token/password ใน Git
-- ไม่ใช้ down -v หรือสร้าง broker resourceใหม่เพื่อแก้ certrenewfailure
-- การทดสอบ TLS/loginจริงที่serverเป็นขั้นตอนหลังDeploy ผล CI syntheticfixtureไม่ยืนยันproduction
+| อาการ | ตรวจจุดใด |
+|---|---|
+| EMQX มี client แต่ Topics/Subscriptions เป็น 0 | client อาจ connect อย่างเดียว; ตรวจ `/ready/mqtt`, SUBACK ของ API และว่า API ใช้ `MQTT_URL` เดียวกัน |
+| `/ready/mqtt` เป็น `not_ready` | ตรวจ DNS/port/credential `solar-backend`, callback secret และ EMQX auth log โดยไม่พิมพ์รหัส |
+| auth/ACL callback ถูก deny ทุกครั้ง | ค่า `INTERNAL_MQTT_SECRET` สอง resource ไม่ตรง หรือ header ไม่ถูกส่ง |
+| callback ขึ้น TLS error | CA bundle, chain หรือ SNI ผิด; ห้ามปิด peer verification |
+| Gateway connect ได้แต่ publish/subscribe ไม่ได้ | Client ID, username, lifecycle หรือ topic ไม่ตรง ACL; ดูขั้นตอนใน `gateway-mqtt-onboarding-th.md` |
+| retained config ไม่มาถึง | ตรวจ API readiness, subscription `.../config` QoS 1, desired revision และ publication status; API ไม่ควร subscribe topic นี้เอง |
 
-อ้างอิง [Coolify Networking](https://coolify.io/docs/core/networking-in-coolify), [Cloudflare DNS token](https://developers.cloudflare.com/fundamentals/api/get-started/create-token/) และ [Certbot Cloudflare plugin](https://certbot-dns-cloudflare.readthedocs.io/en/stable/)
+หลัง Broker พร้อม ให้ทดสอบ flow จริงตาม [คู่มือ Gateway/MQTTBox](gateway-mqtt-onboarding-th.md) การที่ `emqx ping` หรือ MQTT CONNECT สำเร็จยังไม่ยืนยันว่า API รับข้อความหรือบันทึก telemetry แล้ว

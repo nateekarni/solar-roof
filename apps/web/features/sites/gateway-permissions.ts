@@ -1,2 +1,3 @@
 import type {AuthorizationSnapshot} from '../../lib/effective-page-access';
 export function gatewayPermissions(user:{role:string;authorization?:AuthorizationSnapshot}){const can=(key:string)=>user.authorization?user.authorization.permissions.includes(`technical.${key}`):user.role==='admin';return {gatewayEdit:can('gateways.edit'),deviceEdit:can('devices.edit'),registerView:can('registers.view'),registerEdit:can('registers.edit'),receptionEdit:can('reception.edit'),brokerView:can('brokers.view'),brokerEdit:can('brokers.edit')};}
+export function canManageGatewayOnboarding(user:{role:string;authorization?:AuthorizationSnapshot}){return user.role==='admin';}

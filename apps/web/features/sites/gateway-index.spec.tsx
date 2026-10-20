@@ -1,19 +1,20 @@
 import assert from 'node:assert/strict';import test from 'node:test';import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';
-import {GatewayIndex} from './gateway-index';
+import {GatewayIndex,gatewayIndexPartitions,type GatewayRow} from './gateway-index';
+import {GatewayDiscoveryError} from './gateway-workspace';
 test('gateway index exposes registered gateway and lifecycle without customer billing identity',()=>{
-const html=renderToStaticMarkup(<GatewayIndex rows={[{id:'gw',siteId:'site',siteName:'Roof A',siteCode:'S1',name:'Gateway A',externalGatewayId:'G1',status:'offline',desiredVersion:3,publishedVersion:2,acknowledgedVersion:1,appliedVersion:1}]} locale="en" onSelect={()=>{}}/>);
+const html=renderToStaticMarkup(<GatewayIndex rows={[{id:'gw',siteId:'site',siteName:'Roof A',siteCode:'S1',name:'Gateway A',externalGatewayId:'G1',status:'offline',lifecycleState:'active',configState:'applied',desiredVersion:3,publishedVersion:2,acknowledgedVersion:1,appliedVersion:1}]} locale="en" onSelect={()=>{}}/>);
 for(const label of ['Gateway A','Roof A','G1','Devices','Production power','Last received','Gateway actions: Gateway A'])assert.ok(html.includes(label),label);
-assert.doesNotMatch(html,/Pending application|Configuration|Not published/);
-assert.doesNotMatch(html,/Customer|Tax|Invoice/);
+assert.doesNotMatch(html,/Pending application|Not published/);
+assert.doesNotMatch(html,/Customer|Tax|Invoice|>Configuration</);
 assert.doesNotMatch(html,/All sites|aria-label="Site"/);
 assert.doesNotMatch(html,/No data/);
 });
 
 test('gateway index exposes 3 tabs (All, Connected, Not connected) with counts and discovered pairing action',()=>{
-const registered = [{id:'gw1',siteId:'site1',siteName:'Roof Alpha',siteCode:'S1',name:'Gateway Alpha',externalGatewayId:'GW-001',status:'online',desiredVersion:1,publishedVersion:1,acknowledgedVersion:1,appliedVersion:1}];
+const registered:GatewayRow[] = [{id:'gw1',siteId:'site1',siteName:'Roof Alpha',siteCode:'S1',name:'Gateway Alpha',externalGatewayId:'GW-001',status:'online',lifecycleState:'active',configState:'applied',desiredVersion:1,publishedVersion:1,acknowledgedVersion:1,appliedVersion:1}];
 const discovered = [{id:'disc-1',externalGatewayId:'GW-DISC-99',reportedSiteId:'SITE-TEST',reportedDeviceId:'INV-01',manufacturer:'Huawei',model:'SUN2000',profileId:null,protocol:'mqtt',status:'unassigned' as const,assignedSiteId:null,assignedGatewayId:null,firstSeenAt:'2026-10-17T10:00:00Z',lastSeenAt:'2026-10-17T12:00:00Z',rawPayload:{}}];
 
-const htmlTh = renderToStaticMarkup(<GatewayIndex rows={registered} discoveredRows={discovered} locale="th" onSelect={()=>{}}/>);
+const htmlTh = renderToStaticMarkup(<GatewayIndex rows={registered} discoveredRows={discovered} locale="th" onSelect={()=>{}} onPairDiscovered={()=>{}}/>);
 assert.match(htmlTh, /ทั้งหมด/);
 assert.match(htmlTh, /เชื่อมต่อแล้ว/);
 assert.match(htmlTh, /ยังไม่เชื่อมต่อ/);
@@ -21,9 +22,89 @@ assert.match(htmlTh, /เชื่อมต่อไซต์งาน/);
 assert.match(htmlTh, /GW-DISC-99/);
 assert.match(htmlTh, /Gateway Alpha/);
 
-const htmlEn = renderToStaticMarkup(<GatewayIndex rows={registered} discoveredRows={discovered} locale="en" onSelect={()=>{}}/>);
+const htmlEn = renderToStaticMarkup(<GatewayIndex rows={registered} discoveredRows={discovered} locale="en" onSelect={()=>{}} onPairDiscovered={()=>{}}/>);
 assert.match(htmlEn, /All/);
 assert.match(htmlEn, /Connected/);
 assert.match(htmlEn, /Not connected/);
 assert.match(htmlEn, /Pair site/);
+});
+
+test('gateway index exposes draft, pending synchronization and failed lifecycle labels',()=>{
+const rows:GatewayRow[]=[
+ {id:'pending',siteId:'s1',siteName:'Roof Pending',siteCode:'S1',name:'Gateway Pending',externalGatewayId:'GW-P',status:'offline',lifecycleState:'configuring',configState:'pending_sync',desiredVersion:2,publishedVersion:1,acknowledgedVersion:1,appliedVersion:1},
+ {id:'failed',siteId:'s2',siteName:'Roof Failed',siteCode:'S2',name:'Gateway Failed',externalGatewayId:'GW-F',status:'offline',lifecycleState:'configuring',configState:'failed',desiredVersion:2,publishedVersion:2,acknowledgedVersion:2,appliedVersion:1},
+];
+const discovered=[{id:'disc',externalGatewayId:'GW-D',reportedSiteId:null,reportedDeviceId:null,manufacturer:null,model:null,profileId:null,protocol:'mqtt',status:'unassigned' as const,assignedSiteId:null,assignedGatewayId:null,firstSeenAt:'2026-10-19T01:00:00Z',lastSeenAt:'2026-10-19T01:01:00Z',rawPayload:{}}];
+const html=renderToStaticMarkup(<GatewayIndex rows={rows} discoveredRows={discovered} locale="en" onSelect={()=>{}}/>);
+assert.match(html,/>Draft</);
+assert.match(html,/Pending synchronization/);
+assert.match(html,/Configuration failed/);
+});
+
+test('active gateway with a later pending config stays connected and shows separate operational indicators',()=>{
+ const row:GatewayRow={id:'active-pending',siteId:'s',siteName:'Roof',siteCode:'S',name:'Gateway',externalGatewayId:'GW-1',status:'offline',connectionState:'offline',lifecycleState:'active',configState:'pending_sync',desiredVersion:5,publishedVersion:5,acknowledgedVersion:5,appliedVersion:4,lastReceivedAt:'2026-10-19T00:00:00Z',pollingIntervalSeconds:10};
+ const partitions=gatewayIndexPartitions([row],[],false);
+ assert.deepEqual(partitions.connectedItems.map(item=>item.id),['active-pending']);
+ const html=renderToStaticMarkup(<GatewayIndex rows={[row]} locale="en" now={new Date('2026-10-19T00:10:00Z').getTime()} onSelect={()=>{}}/>);
+ for(const label of ['Active','Pending synchronization','Offline','Stale'])assert.match(html,new RegExp(label));
+});
+
+test('discovery failures render a retryable system alert instead of looking like an empty result',()=>{
+let retried=false;
+const html=renderToStaticMarkup(<GatewayDiscoveryError locale="en" error={new Error('broker unavailable')} onRetry={()=>{retried=true;}}/>);
+assert.match(html,/data-slot="alert"/);
+assert.match(html,/Could not refresh discovered gateways/);
+assert.match(html,/Retry/);
+assert.equal(retried,false);
+});
+
+test('initial discovery loading does not present a false empty result',()=>{
+const html=renderToStaticMarkup(<GatewayIndex rows={[]} discoveryLoading locale="en" onSelect={()=>{}}/>);
+assert.match(html,/Loading discovered gateways/);
+assert.doesNotMatch(html,/No gateways found|No data|No results|No records match|ไม่พบข้อมูล|ไม่มีรายการข้อมูล/);
+});
+
+test('only active persisted gateways are connected and discovery is reconciled without duplicates',()=>{
+  const rows:GatewayRow[]=[
+    {id:'active',siteId:'s1',siteName:'Active site',siteCode:'A',name:'Active',externalGatewayId:'GW-A',status:'offline',lifecycleState:'active',configState:'applied',desiredVersion:1,publishedVersion:1,acknowledgedVersion:1,appliedVersion:1},
+    {id:'draft',siteId:'s2',siteName:'Draft site',siteCode:'D',name:'Draft',externalGatewayId:'GW-D',status:'online',lifecycleState:'configuring',configState:'draft',desiredVersion:1,publishedVersion:null,acknowledgedVersion:null,appliedVersion:null},
+    {id:'pending',siteId:'s3',siteName:'Pending site',siteCode:'P',name:'Pending',externalGatewayId:'GW-P',status:'online',lifecycleState:'active',configState:'pending_sync',desiredVersion:2,publishedVersion:1,acknowledgedVersion:1,appliedVersion:1},
+    {id:'failed',siteId:'s4',siteName:'Failed site',siteCode:'F',name:'Failed',externalGatewayId:'GW-F',status:'online',lifecycleState:'active',configState:'failed',desiredVersion:2,publishedVersion:2,acknowledgedVersion:2,appliedVersion:1},
+  ];
+  const discovered=[
+    {id:'duplicate',externalGatewayId:'GW-P',reportedSiteId:null,reportedDeviceId:null,status:'unassigned' as const,assignedSiteId:null,assignedGatewayId:'pending',firstSeenAt:'2026-10-19T01:00:00Z',lastSeenAt:'2026-10-19T01:01:00Z',rawPayload:{}},
+    {id:'new',externalGatewayId:'GW-N',reportedSiteId:null,reportedDeviceId:null,status:'unassigned' as const,assignedSiteId:null,assignedGatewayId:null,firstSeenAt:'2026-10-19T01:00:00Z',lastSeenAt:'2026-10-19T01:01:00Z',rawPayload:{}},
+  ];
+  const partitions=gatewayIndexPartitions(rows,discovered,false);
+  assert.deepEqual(partitions.connectedItems.map(item=>item.id),['active','pending','failed']);
+  assert.deepEqual(partitions.unconnectedItems.map(item=>item.id),['draft','new']);
+  assert.equal(partitions.allItems.filter(item=>item.externalGatewayId==='GW-P').length,1);
+});
+
+test('initial discovery failure is explicitly unavailable while registered rows remain visible',()=>{
+  const rows:GatewayRow[]=[{id:'active',siteId:'s1',siteName:'Roof A',siteCode:'A',name:'Gateway A',externalGatewayId:'GW-A',status:'online',lifecycleState:'active',configState:'applied',desiredVersion:1,publishedVersion:1,acknowledgedVersion:1,appliedVersion:1}];
+  const html=renderToStaticMarkup(<GatewayIndex rows={rows} discoveryUnavailable locale="en" onSelect={()=>{}}/>);
+  assert.match(html,/Discovered gateways unavailable/);
+  assert.match(html,/Gateway A/);
+  assert.doesNotMatch(html,/No gateways found|No results|No records match/);
+});
+
+test('desktop table uses discovery-unavailable copy instead of its built-in empty result',()=>{
+  const html=renderToStaticMarkup(<GatewayIndex rows={[]} discoveryUnavailable locale="en" onSelect={()=>{}}/>);
+  assert.match(html,/Discovered gateways unavailable/);
+  assert.doesNotMatch(html,/No results|No records match|ไม่พบข้อมูล|ไม่มีรายการข้อมูล/);
+});
+
+test('discovered rows do not expose a pairing control without onboarding capability',()=>{
+  const discovered=[{id:'disc',externalGatewayId:'GW-D',reportedSiteId:null,reportedDeviceId:null,status:'unassigned' as const,assignedSiteId:null,assignedGatewayId:null,firstSeenAt:'2026-10-19T01:00:00Z',lastSeenAt:'2026-10-19T01:01:00Z',rawPayload:{}}];
+  const html=renderToStaticMarkup(<GatewayIndex rows={[]} discoveredRows={discovered} locale="en" onSelect={()=>{}}/>);
+  assert.match(html,/GW-D/);
+  assert.doesNotMatch(html,/Pair site/);
+});
+
+test('external gateway reconciliation is exact and case-sensitive',()=>{
+  const rows:GatewayRow[]=[{id:'persisted',siteId:'s1',siteName:'Roof A',siteCode:'A',name:'Gateway lowercase',externalGatewayId:'gw-01',status:'online',lifecycleState:'active',configState:'applied',desiredVersion:1,publishedVersion:1,acknowledgedVersion:1,appliedVersion:1}];
+  const discovered=[{id:'discovered',externalGatewayId:'GW-01',reportedSiteId:null,reportedDeviceId:null,status:'unassigned' as const,assignedSiteId:null,assignedGatewayId:null,firstSeenAt:'2026-10-19T01:00:00Z',lastSeenAt:'2026-10-19T01:01:00Z',rawPayload:{}}];
+  const partitions=gatewayIndexPartitions(rows,discovered,false);
+  assert.deepEqual(partitions.allItems.map(item=>item.id),['persisted','discovered']);
 });

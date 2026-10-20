@@ -16,6 +16,7 @@
     "simulate:mqtt": "tsx src/scripts/simulate-mqtt.ts",
     "test:ingestion": "tsx src/scripts/test-gateway-ingestion.ts",
     "test:payload-gateway": "tsx src/scripts/verify-payload-gateway.ts",
+    "verify:gateway-onboarding": "tsx src/scripts/verify-gateway-onboarding.ts",
     "db:create:user": "tsx src/scripts/create-user.ts"
   },
   "dependencies": {
@@ -52,6 +53,7 @@
     "zod": "4.5.4"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.3.15",
     "@types/express": "5.0.6",
     "@types/pg": "^8.23.1",
     "prisma": "8.0.0-rc.12"

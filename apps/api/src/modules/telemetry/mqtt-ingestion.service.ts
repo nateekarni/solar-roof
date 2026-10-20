@@ -8,7 +8,27 @@ import { observeDuration, observeValue } from '../../common/observability/metric
 import { IngestionDatabaseService } from './ingestion-database.service.js';
 import { PayloadIngestion, gatewayPrefix } from "./payload-ingestion.js";
 import { budget, IngestionLimiter, parseBoundedPayload } from './ingestion-limiter.js';
-import { acknowledgeGatewayConfiguration } from '../assets/gateway-lifecycle.js';
+import { acknowledgeGatewayConfiguration, lockGatewayReference } from '../assets/gateway-lifecycle.js';
+import { GatewayControlMessageHandler } from '../gateway-control/gateway-control-message-handler.js';
+import { GatewayConfigurationService } from '../gateway-control/gateway-configuration.service.js';
+import { GatewayRegistrationService } from '../gateway-control/gateway-registration.service.js';
+import { GatewayCredentialService } from '../gateway-control/gateway-credential.service.js';
+import { gatewayControlTopic, parseGatewayControlTopic } from '../gateway-control/gateway-control-payload.js';
+
+const requiredSubscriptions = ['solar/v1/gateways/+/register', 'solar/v1/gateways/+/configUpdate',
+  'solar/v1/gateways/+/configStatus', 'solar/v1/gateways/+/status', 'solar/v1/sites/+/gateways/+/devices/+/telemetry'];
+type RemoteSession = {client:mqtt.MqttClient;topics:Set<string>;desired:string[];ready:boolean;settings:string;generation:number};
+function subscriptionMatches(filter:string,topic:string):boolean {
+  const control=parseGatewayControlTopic(topic);
+  if(control)return control.kind!=='config'&&filter===`solar/v1/gateways/+/${control.kind}`;
+  return telemetryTopicMatches(filter,topic);
+}
+function subscribeGranted(client:mqtt.MqttClient,topic:string):Promise<void> {
+  return new Promise((resolve,reject)=>client.subscribe(topic,{qos:1},(error,granted)=>{
+    if(error||granted?.length!==1||granted[0]?.topic!==topic||granted[0]?.qos!==1)reject(Error('Required subscription not granted'));
+    else resolve();
+  }));
+}
 
 export interface CanonicalLiveField {deviceId:string;externalDeviceId?:string|null;deviceName:string;tag:string;value:number;unit:string;rawValue:number;rawUnit:string;polledAt:string;sourceTime?:string;receivedAt:string;quality:string;communication:string;profileId:string;profileVersion:string;pollGroup:string;ageSeconds:number;stale:boolean}
 export interface LiveTelemetrySnapshot {
@@ -53,8 +73,9 @@ export class MqttIngestionService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(MqttIngestionService.name);
   private readonly enabled = process.env.MQTT_ENABLED !== 'false';
   private readonly defaultBrokerEnabled = process.env.MQTT_DEFAULT_BROKER_ENABLED !== 'false';
+  private readonly legacyConfigEnabled = process.env.MQTT_LEGACY_CONFIG_ENABLED === 'true';
   private remoteDiscovered = false;
-  private remote = new Map<string,{client:mqtt.MqttClient;topics:Set<string>;desired:string[];ready:boolean;settings:string}>();
+  private remote = new Map<string,RemoteSession>();
   private remoteTimer: ReturnType<typeof setInterval> | undefined;
   private refreshRemotePending: Promise<void> | undefined;
   private client: mqtt.MqttClient | null = null;
@@ -66,12 +87,22 @@ export class MqttIngestionService implements OnModuleInit, OnModuleDestroy {
   private readonly limiter = new IngestionLimiter();
   private stopping = false;
   private acknowledgmentsEnabled = true;
+  private stopDesiredNotifications: (()=>void) | undefined;
+  private readonly pendingRetries = new Map<string|null,Promise<void>>();
+  private readonly configPublications = new Map<string,{version:number;work:Promise<{delivery:'pending'|'published'}>}>();
+  private readonly cancelConfigWaits = new Set<()=>void>();
   constructor(@Inject(DatabaseService) private readonly db: DatabaseService,
-    @Inject(IngestionDatabaseService) private readonly ingress: IngestionDatabaseService) {}
+    @Inject(IngestionDatabaseService) private readonly ingress: IngestionDatabaseService,
+    @Inject(GatewayConfigurationService) private readonly configuration: GatewayConfigurationService = new GatewayConfigurationService(db,new GatewayCredentialService(db)),
+    @Inject(GatewayControlMessageHandler) private readonly control: GatewayControlMessageHandler = new GatewayControlMessageHandler(new GatewayRegistrationService(db),configuration)) {}
   async onModuleInit() {
     if (!this.enabled || this.client || this.remoteTimer) return;
+    this.stopDesiredNotifications=this.configuration.onDesiredConfig((id,version)=>this.publishGatewayConfig(id,version));
     void this.refreshRemote().catch(()=>this.logger.warn("Remote broker settings refresh failed"));
-    this.remoteTimer=setInterval(()=>{void this.refreshRemote().catch(()=>this.logger.warn("Remote broker settings refresh failed"));},5000);
+    this.remoteTimer=setInterval(()=>{
+      void this.refreshRemote().catch(()=>this.logger.warn("Remote broker settings refresh failed"));
+      void this.retryConnectedConfigurations();
+    },5000);
     this.remoteTimer.unref();
     if (!this.defaultBrokerEnabled) return;
     this.client = mqtt.connect(process.env.MQTT_URL || 'mqtt://localhost:1883', {
@@ -85,12 +116,12 @@ export class MqttIngestionService implements OnModuleInit, OnModuleDestroy {
     this.client.on('offline', () => this.clearReadiness());
     this.client.on('message', (topic, payload) => {
       if (this.stopping || !this.subscriptionsReady) { observeValue('ingress_rejected', 1); return; }
-      const matching = [...this.subscribedTopics].filter(filter => telemetryTopicMatches(filter, topic));
+      const matching = [...this.subscribedTopics].filter(filter => subscriptionMatches(filter, topic));
       if (matching.length === 0) { observeValue('ingress_rejected', 1); return; }
       const target = matching.find(f => !f.includes('+') && !f.includes('#')) ?? matching[0]!;
       this.limiter.submit(target, payload.length, () => this.handleIncomingMessage(topic, payload));
     });
-    this.client.on('error', () => { this.subscriptionsReady = false; this.scheduleRestore(this.connectionGeneration); this.logger.warn('MQTT connection failed; retrying'); });
+    this.client.on('error', () => { this.clearReadiness(); this.scheduleRestore(this.connectionGeneration); this.logger.warn('MQTT connection failed; retrying'); });
   }
     isConnected(): boolean { return this.client?.connected === true; }
   isReady(): boolean { return this.isConnected() && this.subscriptionsReady; }
@@ -112,6 +143,8 @@ export class MqttIngestionService implements OnModuleInit, OnModuleDestroy {
   }
   async onModuleDestroy() {
     this.stopping = true;
+    this.stopDesiredNotifications?.();
+    for(const cancel of this.cancelConfigWaits)cancel();
     clearInterval(this.remoteTimer);
     this.clearReadiness();
     const drained = await this.limiter.shutdown(budget('INGEST_SHUTDOWN_TIMEOUT_MS', 10000));
@@ -137,6 +170,7 @@ export class MqttIngestionService implements OnModuleInit, OnModuleDestroy {
     try {
       await this.refreshSubscriptions();
       if (generation !== this.connectionGeneration || !this.client?.connected) return;
+      await this.retryPendingConfigurations(null);
       const gateways = await this.ingress.query("SELECT name, polling_interval_seconds, alert_rules FROM gateways WHERE protocol = 'mqtt' AND alert_rules <> '{}'::jsonb ORDER BY id LIMIT 1024");
       for (const gateway of gateways.rows) {
         if (generation !== this.connectionGeneration || !this.client?.connected) return;
@@ -157,8 +191,11 @@ export class MqttIngestionService implements OnModuleInit, OnModuleDestroy {
   }
   private async syncRemote() {
     if(this.stopping)return;
-    const result=await this.ingress.query(`SELECT b.id,b.url,b.username,b.password_cipher,array_agg(g.endpoint) AS topics FROM mqtt_brokers b JOIN gateways g ON g.mqtt_broker_id=b.id WHERE g.protocol='mqtt' AND g.retired_at IS NULL GROUP BY b.id ORDER BY b.id LIMIT 33`);
-    for(const broker of result.rows)broker.topics=broker.topics.flatMap((topic:string)=>topic.startsWith('solar/v1/')?[topic,topic.replace(/\/devices\/[^/]+\/telemetry$/,'/configAck')]:[topic]);
+    const result=await this.ingress.query(`SELECT b.id,b.url,b.username,b.password_cipher,
+      coalesce(array_agg(g.endpoint) FILTER (WHERE g.id IS NOT NULL),'{}') AS topics FROM mqtt_brokers b
+      LEFT JOIN gateways g ON g.mqtt_broker_id=b.id AND g.protocol='mqtt' AND g.retired_at IS NULL
+      GROUP BY b.id ORDER BY b.id LIMIT 33`);
+    for(const broker of result.rows)broker.topics=this.subscriptionFilters(broker.topics);
     if(this.stopping)return;
     if(result.rows.length>32)throw Error('At most 32 active MQTT brokers are supported');
     const ids=new Set(result.rows.map(b=>b.id));
@@ -169,40 +206,79 @@ export class MqttIngestionService implements OnModuleInit, OnModuleDestroy {
       if(session && session.settings!==settings){session.ready=false;session.client.end(true);this.remote.delete(broker.id);session=undefined;}
       if(!session){
         const client=mqtt.connect(broker.url,{connectTimeout:5000,reconnectPeriod:5000,resubscribe:false,username:broker.username||undefined,...(broker.password_cipher?{password:decryptBrokerPassword(broker.password_cipher)}:{})});
-        session={client,topics:new Set(),desired:broker.topics,ready:false,settings};this.remote.set(broker.id,session);
+        session={client,topics:new Set(),desired:broker.topics,ready:false,settings,generation:0};this.remote.set(broker.id,session);
         const current=session;
-        client.on('connect',()=>{void (async()=>{
+        client.on('connect',()=>{
+          const generation=++current.generation;current.ready=false;current.topics.clear();
+          void (async()=>{
           await this.subscribeRemote(current,current.desired);
           if(!current.ready || this.stopping)return;
+          await this.retryPendingConfigurations(broker.id);
           const gateways=await this.ingress.query("SELECT name, polling_interval_seconds, alert_rules FROM gateways WHERE mqtt_broker_id=$1 AND protocol='mqtt' AND alert_rules <> '{}'::jsonb ORDER BY id LIMIT 1024",[broker.id]);
           for(const gateway of gateways.rows){
             if(!current.ready || this.stopping)return;
             await this.publishHardwareConfig(gateway.name,{pollingIntervalSeconds:gateway.polling_interval_seconds,alertRules:gateway.alert_rules});
           }
-        })().catch(()=>{current.ready=false;client.reconnect();});});
-        for(const event of ['close','offline','disconnect'] as const)client.on(event,()=>{current.ready=false;current.topics.clear();});
-        client.on('error',()=>{current.ready=false;});
+        })().catch(()=>{if(current.generation===generation&&this.remote.get(broker.id)===current&&!this.stopping){current.ready=false;client.reconnect();}});});
+        for(const event of ['close','offline','disconnect','error'] as const)client.on(event,()=>{current.generation++;current.ready=false;current.topics.clear();});
         client.on('message',(topic,payload)=>{
           if(this.stopping||!current.ready)return;
-          const matching=[...current.topics].filter(filter=>telemetryTopicMatches(filter,topic));
+          const matching=[...current.topics].filter(filter=>subscriptionMatches(filter,topic));
           if(matching.length===0)return;
           const target = matching.find(f => !f.includes('+') && !f.includes('#')) ?? matching[0]!;
           this.limiter.submit(broker.id+':'+target,payload.length,()=>this.handleIncomingMessage(topic,payload,client,broker.id));
         });
       }
       session.desired=broker.topics;
-      if(session.client.connected)await this.subscribeRemote(session,broker.topics);
+      if(session.client.connected)await this.subscribeRemote(session,broker.topics).catch(()=>{session!.ready=false;this.logger.warn('Remote broker subscription failed');});
     }
     this.remoteDiscovered = true;
   }
-  private async subscribeRemote(session:{client:mqtt.MqttClient;topics:Set<string>;desired:string[];ready:boolean},filters:string[]){
+  private subscriptionFilters(endpoints:string[]):string[]{
+    if(endpoints.length>1024||endpoints.some(topic=>typeof topic!=='string'||Buffer.byteLength(topic)>1024))throw Error('Gateway subscription resource limit');
+    return [...new Set([...requiredSubscriptions,...endpoints.filter(topic=>!topic.startsWith('solar/v1/')),
+      ...(this.legacyConfigEnabled?['solar/v1/sites/+/gateways/+/configAck']:[])])];
+  }
+  private async retryConnectedConfigurations():Promise<void> {
+    await Promise.allSettled([
+      ...(this.isReady()?[this.retryPendingConfigurations(null)]:[]),
+      ...[...this.remote].filter(([,session])=>session.ready&&session.client.connected).map(([id])=>this.retryPendingConfigurations(id)),
+    ]);
+  }
+  private retryPendingConfigurations(brokerId:string|null):Promise<void> {
+    const pending=this.pendingRetries.get(brokerId);
+    if(pending)return pending;
+    const run=(async()=>{
+      let after:string|null=null;
+      while(!this.stopping){
+        const client=brokerId===null?this.client:this.remote.get(brokerId)?.client;
+        if(!client?.connected)return;
+        const revisions=await this.configuration.pendingForPublish(brokerId,after);
+        for(const revision of revisions){
+          if(this.stopping||!client.connected)return;
+          // A failed/stale candidate cannot starve later pending gateways.
+          await this.publishGatewayConfig(revision.gatewayId,revision.version,brokerId).catch(()=>{
+            this.logger.warn({event:'gateway_config_retry_pending'});
+          });
+        }
+        if(revisions.length<100)return;
+        after=revisions.at(-1)!.gatewayId;
+      }
+    })().catch(()=>{this.logger.warn({event:'gateway_config_retry_pending'});}).finally(()=>{this.pendingRetries.delete(brokerId);});
+    this.pendingRetries.set(brokerId,run);
+    return run;
+  }
+  private async subscribeRemote(session:RemoteSession,filters:string[]){
     if(session.ready && session.topics.size===new Set(filters).size && filters.every(f=>session.topics.has(f)))return;
     session.ready=false;
-    if(filters.length>1024||filters.some(f=>typeof f!=='string'||Buffer.byteLength(f)>1024))throw Error('Gateway subscription resource limit');
+    const generation=session.generation;
     const wanted=new Set(filters);
     for(const topic of session.topics)if(!wanted.has(topic))session.client.unsubscribe(topic);
-    for(const topic of wanted)if(!session.topics.has(topic))await new Promise<void>((resolve,reject)=>session.client.subscribe(topic,{qos:1},(err,granted)=>err||granted?.some(g=>g.qos===128)?reject(err||Error('Subscription refused')):resolve()));
-    if(!session.client.connected||this.stopping||session.desired!==filters)return;
+    for(const topic of wanted)if(!session.topics.has(topic)){
+      try{await subscribeGranted(session.client,topic);}
+      catch(error){if(generation!==session.generation||session.desired!==filters||this.stopping)return;throw error;}
+      if(generation!==session.generation||!session.client.connected||this.stopping||session.desired!==filters)return;
+    }
     session.topics=wanted;session.ready=true;
   }
   async refreshSubscriptions() {
@@ -216,16 +292,10 @@ export class MqttIngestionService implements OnModuleInit, OnModuleDestroy {
       const result = await this.ingress.query("SELECT endpoint FROM gateways WHERE protocol = 'mqtt' AND mqtt_broker_id IS NULL AND retired_at IS NULL ORDER BY id LIMIT 1025");
       if (result.rows.length > 1024 || result.rows.some(row => typeof row.endpoint !== 'string' || Buffer.byteLength(row.endpoint) > 1024)) throw new Error('Gateway subscription resource limit');
       if (generation !== this.connectionGeneration || !client.connected) return;
-      const topics = new Set<string>(result.rows.flatMap(row => row.endpoint.startsWith('solar/v1/')?[row.endpoint,row.endpoint.replace(/\/devices\/[^/]+\/telemetry$/,'/configAck')]:[row.endpoint]));
-      const hasStandard = result.rows.some(row => typeof row.endpoint === 'string' && row.endpoint.startsWith('solar/v1/'))
-        || (await this.ingress.query("SELECT 1 FROM sites WHERE status <> 'archived' LIMIT 1")).rows.length > 0;
-      if (hasStandard) {
-        topics.add('solar/v1/sites/+/gateways/+/devices/+/telemetry');
-        topics.add('solar/v1/sites/+/gateways/+/configAck');
-      }
+      const topics = new Set(this.subscriptionFilters(result.rows.map(row=>row.endpoint)));
       for (const topic of this.subscribedTopics) if (!topics.has(topic) && typeof client.unsubscribe === 'function') client.unsubscribe(topic);
-      for (const topic of topics) if (!this.subscribedTopics.has(topic) && typeof client.subscribe === 'function') {
-        await new Promise<void>((resolve, reject) => client.subscribe!(topic, { qos: 1 }, (error,granted) => error||granted?.some(item=>item.qos===128) ? reject(error||Error('Subscription refused')) : resolve()));
+      for (const topic of topics) if (!this.subscribedTopics.has(topic)) {
+        await subscribeGranted(client,topic);
         if (generation !== this.connectionGeneration || !client.connected) return;
       }
       this.subscribedTopics = topics;
@@ -237,7 +307,9 @@ export class MqttIngestionService implements OnModuleInit, OnModuleDestroy {
   }
 async handleIncomingMessage(topic: string, messageStr: string | Buffer, sourceClient = this.client, brokerId: string | null = null) {
     const started = performance.now();
+    if(topic.startsWith('solar/v1/gateways/')){await this.control.handle({topic,payload:messageStr,brokerId});return;}
     if (['response','config','ack','dataAcept','status'].includes(topic.split('/').at(-1)!)) return;
+    if(topic.endsWith('/configAck')&&!this.legacyConfigEnabled)return;
     let data: Record<string, any>;
     try { data = parseBoundedPayload(messageStr) as Record<string, any>; }
     catch (error) { if(topic.startsWith('solar/v1/')) await new PayloadIngestion(this.ingress).accept(topic,undefined,brokerId); observeValue('ingress_rejected',1); return; }
@@ -252,7 +324,7 @@ async handleIncomingMessage(topic: string, messageStr: string | Buffer, sourceCl
         accepted++;
         if (this.acknowledgmentsEnabled && this.limiter.withinDrainDeadline() && sourceClient?.connected) sourceClient.publish(gatewayPrefix(ack.siteId,ack.gatewayId)+'/dataAcept',JSON.stringify(ack),{qos:1});
       }, (siteId, gatewayId, configPayload) => {
-        if (this.acknowledgmentsEnabled && this.limiter.withinDrainDeadline() && sourceClient?.connected) sourceClient.publish(gatewayPrefix(siteId, gatewayId)+'/config', JSON.stringify(configPayload), {qos:1});
+        if (this.legacyConfigEnabled && this.acknowledgmentsEnabled && this.limiter.withinDrainDeadline() && sourceClient?.connected) sourceClient.publish(gatewayPrefix(siteId, gatewayId)+'/config', JSON.stringify(configPayload), {qos:1});
       });
       observeValue(accepted?'ingress_accepted':'ingress_rejected',accepted||1);return;
     }
@@ -299,6 +371,10 @@ async handleIncomingMessage(topic: string, messageStr: string | Buffer, sourceCl
     const client = await this.ingress.pool.connect(); let accepted = false;
     try {
       await client.query('BEGIN');
+      // energy_raw_dirty can take device FK locks. Reference the site/gateway
+      // first so later gateway presence writes cannot invert configuration locks.
+      const gateway=await lockGatewayReference(client,entity.gatewayId,entity.siteId);
+      if(gateway.protocol!=='mqtt'||gateway.mqtt_broker_id!==brokerId||gateway.endpoint!==entity.endpoint)throw new Error('Gateway admission changed; retry message');
       // Migration 020's energy_raw_dirty trigger durably upserts affected Bangkok days
       // in this INSERT transaction. A dirty-day failure rolls back telemetry and prevents ACK.
       const inserted = await client.query(
@@ -328,12 +404,63 @@ async handleIncomingMessage(topic: string, messageStr: string | Buffer, sourceCl
     } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
     // Both a committed insert and a durable duplicate are safe to acknowledge. No ACK is emitted before COMMIT.
     observeValue(accepted ? 'ingress_accepted' : 'ingress_duplicate', 1);
-    if (this.acknowledgmentsEnabled && this.limiter.withinDrainDeadline() && this.client?.connected) this.client.publish(entity.endpoint.replace(/\/#$/, '') + '/response', JSON.stringify({
+    if (this.acknowledgmentsEnabled && this.limiter.withinDrainDeadline() && sourceClient?.connected) sourceClient.publish(entity.endpoint.replace(/\/#$/, '') + '/response', JSON.stringify({
       status: 'acknowledged', gateway: entity.gatewayName, deviceId: entity.deviceId, ingestionId: data.ingestionId ?? ingestionId,
       sourceTime: sourceTime.toISOString(), serverReceivedAt: receivedTime.toISOString(), duplicate: !accepted,
     }), { qos: 1 }, error => {
       if (!error) observeDuration('ingress_ack_latency', performance.now() - started, {});
     });
+  }
+  async publishGatewayConfig(gatewayId:string,version:number,expectedBrokerId?:string|null):Promise<{delivery:'pending'|'published'}> {
+    const current=this.configPublications.get(gatewayId);
+    if(current)return current.version===version?current.work:{delivery:'pending'};
+    const work=(async()=>{
+      let next=version;
+      // One immediate corrective send; ongoing edits/failures stay durable for
+      // the bounded periodic scanner, never an unbounded recursive retry loop.
+      for(let pass=0;pass<2;pass++) {
+        const result=await this.publishConfigRevision(gatewayId,next,expectedBrokerId);
+        if(result.retryVersion===undefined||this.stopping)return {delivery:result.delivery};
+        next=result.retryVersion;
+      }
+      return {delivery:'pending' as const};
+    })().finally(()=>{this.configPublications.delete(gatewayId);});
+    this.configPublications.set(gatewayId,{version,work});
+    return work;
+  }
+  private async publishConfigRevision(gatewayId:string,version:number,expectedBrokerId?:string|null):Promise<{delivery:'pending'|'published';retryVersion?:number}> {
+    const desired=await this.configuration.desiredForPublish(gatewayId,version);
+    if(expectedBrokerId!==undefined&&desired.brokerId!==expectedBrokerId)return {delivery:'pending'};
+    const client=desired.brokerId===null?this.client:this.remote.get(desired.brokerId)?.client;
+    if(this.stopping||!client?.connected)return {delivery:'pending'};
+    try {
+      const attemptId=await this.configuration.beginPublication(gatewayId,version,desired.payload.configHash,desired.brokerId,desired.epoch);
+      return await new Promise<{delivery:'pending'|'published';retryVersion?:number}>((resolve)=>{
+        let expired=false,completed=false;
+        const cancel=()=>{expired=true;clearTimeout(timer);this.cancelConfigWaits.delete(cancel);resolve({delivery:'pending'});};
+        const timer=setTimeout(cancel,budget('MQTT_CONFIG_PUBLISH_TIMEOUT_MS',5000));
+        timer.unref();
+        this.cancelConfigWaits.add(cancel);
+        const complete=(error?:Error)=>{
+          if(completed)return;completed=true;clearTimeout(timer);this.cancelConfigWaits.delete(cancel);
+          // A callback after timeout still fences/repairs its retained write.
+          // A failed DB transaction leaves the durable attempt for all scanners.
+          void this.configuration.recordPublished(gatewayId,attemptId,!error).then(result=>{
+            resolve(result);
+            if(expired&&result.retryVersion!==undefined&&!this.stopping) {
+              void this.publishGatewayConfig(gatewayId,result.retryVersion,expectedBrokerId).catch(()=>this.logger.warn({event:'gateway_config_publish_pending'}));
+            }
+          }).catch(()=>{this.logger.warn({event:'gateway_config_publish_pending'});resolve({delivery:'pending'});});
+        };
+        if(this.stopping){cancel();complete(Error('Stopping'));return;}
+        try{client.publish(gatewayControlTopic(desired.payload.gatewayId,'config'),JSON.stringify(desired.payload),{qos:1,retain:true},complete);}
+        catch(error){complete(error instanceof Error?error:Error('Configuration publication failed'));}
+      });
+    }catch{
+      observeValue('gateway_config_publish_pending',1);
+      this.logger.warn({event:'gateway_config_publish_pending'});
+      return {delivery:'pending'};
+    }
   }
   async publishHardwareConfig(gatewayName: string, configData: Record<string, unknown>) {
     const result = await this.ingress.query(`SELECT g.mqtt_broker_id AS "brokerId",g.endpoint,g.external_gateway_id AS "externalGatewayId",s.external_site_id AS "externalSiteId" FROM gateways g JOIN sites s ON s.id=g.site_id WHERE g.name = $1 AND g.protocol = 'mqtt'`, [gatewayName]);
@@ -342,6 +469,7 @@ async handleIncomingMessage(topic: string, messageStr: string | Buffer, sourceCl
     const targetClient=gateway.brokerId?this.remote.get(gateway.brokerId)?.client:this.client;
     if(!targetClient?.connected)return false;
     const standard=gateway.endpoint.startsWith('solar/v1/');
+    if(standard&&!this.legacyConfigEnabled)return false;
     const topic = standard && gateway.externalSiteId && gateway.externalGatewayId ? gatewayPrefix(gateway.externalSiteId,gateway.externalGatewayId)+'/config' : gateway.endpoint.replace(/\/#$/, '') + '/config';
     await new Promise<void>((resolve, reject) => targetClient.publish(topic, JSON.stringify({ ...configData, gateway: gatewayName, ...(standard?{siteId:gateway.externalSiteId,gatewayId:gateway.externalGatewayId}:{}), timestamp: new Date().toISOString() }), { qos: 1, retain: true }, error => error ? reject(error) : resolve()));
     return true;

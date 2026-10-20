@@ -6,7 +6,7 @@ import { decodePayloadMessages, validateReceiveConfig, type PayloadReceiveConfig
 import { normalizePayloadEnvelope, validatePayloadProfile, type PayloadEnvelope, type PayloadProfile } from './payload-profile.js';
 import { payloadTopic } from './payload-ingestion.js';
 import { parseBoundedPayload } from './ingestion-limiter.js';
-import { snapshotGatewayConfiguration } from '../assets/gateway-lifecycle.js';
+import { snapshotGatewayConfiguration, guardLegacyGatewayConfiguration } from '../assets/gateway-lifecycle.js';
 
 type Device = { externalDeviceId:string;config:PayloadProfile };
 export class PayloadReceptionSettings {
@@ -38,7 +38,7 @@ export class PayloadReceptionSettings {
   try {
    await client.query('BEGIN');
    // Serialize settings saves and attachments, then stabilize assigned profiles.
-   await client.query('SELECT id FROM gateways WHERE id=$1 FOR UPDATE',[context.gatewayId]);
+   await guardLegacyGatewayConfiguration(client,context.gatewayId,siteId);
    const devices=(await client.query<Device>(`SELECT d.external_device_id AS "externalDeviceId",p.config FROM devices d JOIN payload_profile_revisions p ON p.id=d.payload_profile_revision_id WHERE d.gateway_id=$1 AND d.site_id=$2 FOR SHARE OF d`,[context.gatewayId,siteId])).rows;
    this.validateTargets(config,devices);
    const previous=(await client.query('SELECT version FROM gateway_payload_receive_revisions WHERE gateway_id=$1 ORDER BY version DESC LIMIT 1',[context.gatewayId])).rows[0];

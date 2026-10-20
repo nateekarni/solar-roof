@@ -2,81 +2,41 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { PayloadIngestion } from './payload-ingestion.js';
 
-test('unregistered gateway records to discovered_gateways and generates preset config push', async () => {
-  const queries: { sql: string; values: any[] }[] = [];
-  const presetRegisters = [
-    { semanticField: 'total_energy', registerAddress: '3204', dataType: 'uint32', byteOrder: 'ABCD', scale: 0.01, unit: 'kWh' },
-  ];
-
-  const db = {
-    query: async (sql: string, values: any[] = []) => {
-      queries.push({ sql, values });
-      if (sql.includes('FROM gateways g JOIN sites s')) return { rows: [] };
-      if (sql.includes('FROM devices d')) return { rows: [] };
-      if (sql.includes('FROM meter_presets')) {
-        return {
-          rows: [
-            {
-              brand: 'Schneider Electric',
-              model: 'PowerLogic PM2230',
-              device_type: 'meter',
-              registers: presetRegisters,
-            },
-          ],
-        };
-      }
-      return { rows: [] };
-    },
-    pool: { connect: async () => ({ query: db.query, release() {} }) },
-  };
-
+for (const path of ['accept', 'acceptMany'] as const)
+for (const brokerId of ['11111111-1111-4111-8111-111111111111', null] as const)
+test(`${path} rejects unknown telemetry in the ${brokerId ?? 'default'} broker without discovery, config, or dataAcept`, async () => {
+  const queries: { sql: string; values: unknown[] }[] = [];
+  const acknowledgements: unknown[] = [];
+  const configurations: unknown[] = [];
+  const db = { query: async (sql: string, values: unknown[] = []) => {
+    queries.push({ sql, values });
+    return { rows: [] };
+  } };
   const ingest = new PayloadIngestion(db as any);
-  const topic = 'solar/v1/sites/SITE-UNKNOWN/gateways/GW-NEW-01/devices/DEV-01/telemetry';
-  const payload = {
-    device: {
-      deviceId: 'DEV-01',
-      manufacturer: 'Schneider Electric',
-      model: 'PowerLogic PM2230',
-    },
-    data: {
-      values: { 'energy.active.import.total': 12345 },
-    },
-  };
+  const topic = 'solar/v1/sites/SITE-UNKNOWN/gateways/GW-SHARED/devices/DEV-01/telemetry';
+  const payload = { messageId: 'not-registration', device: { deviceId: 'DEV-01', model: 'PowerLogic PM2230' } };
 
-  let ackEmitted: any = null;
-  let configPushed: any = null;
+  if (path === 'accept') assert.equal(await ingest.accept(topic, payload, brokerId), null);
+  else await ingest.acceptMany(topic, payload, brokerId, ack => acknowledgements.push(ack), (...args) => configurations.push(args));
 
-  await ingest.acceptMany(
-    topic,
-    payload,
-    null,
-    ack => {
-      ackEmitted = ack;
-    },
-    (siteId, gatewayId, config) => {
-      configPushed = { siteId, gatewayId, config };
-    }
-  );
+  assert.equal(acknowledgements.length, 0);
+  assert.equal(configurations.length, 0);
+  assert.equal(queries.some(query => query.sql.includes('INSERT INTO discovered_gateways')), false);
+  assert.equal(queries.some(query => query.sql.includes('FROM meter_presets')), false);
+  assert.equal(queries.some(query => query.sql.includes('gateway_configuration_revisions')), false);
+});
 
-  // Assert discovered_gateways was inserted
-  const insertDiscovered = queries.find(q => q.sql.includes('INSERT INTO discovered_gateways'));
-  assert.ok(insertDiscovered, 'Should insert into discovered_gateways');
-  assert.equal(insertDiscovered.values[0], 'GW-NEW-01');
-  assert.equal(insertDiscovered.values[1], 'SITE-UNKNOWN');
-  assert.equal(insertDiscovered.values[2], 'DEV-01');
-  assert.equal(insertDiscovered.values[3], 'Schneider Electric');
-  assert.equal(insertDiscovered.values[4], 'PowerLogic PM2230');
+test('a known gateway with an unknown device records a bounded rejection without acknowledging', async () => {
+  const queries: { sql: string; values: unknown[] }[] = [];
+  const db = { query: async (sql: string, values: unknown[] = []) => {
+    queries.push({ sql, values });
+    if (sql.includes('FROM gateways g') && sql.includes('JOIN sites s')) return { rows: [{ siteId: 'site', gatewayId: 'gateway' }] };
+    return { rows: [] };
+  } };
+  const ingest = new PayloadIngestion(db as any);
+  const result = await ingest.accept('solar/v1/sites/SITE-001/gateways/GW-001/devices/UNKNOWN/telemetry', {}, null);
 
-  // Assert config push was generated
-  assert.ok(configPushed, 'Should push config back to gateway');
-  assert.equal(configPushed.siteId, 'SITE-UNKNOWN');
-  assert.equal(configPushed.gatewayId, 'GW-NEW-01');
-  assert.equal(configPushed.config.command, 'configure_mapping');
-  assert.deepEqual(configPushed.config.registers, presetRegisters);
-
-  // Assert dataAcept ACK was emitted
-  assert.ok(ackEmitted, 'Should acknowledge payload');
-  assert.equal(ackEmitted.messageType, 'dataAcept');
-  assert.equal(ackEmitted.status, 'accepted');
-  assert.equal(ackEmitted.gatewayId, 'GW-NEW-01');
+  assert.equal(result, null);
+  assert.ok(queries.some(query => query.sql.includes('INSERT INTO payload_rejections')));
+  assert.equal(queries.some(query => query.sql.includes('INSERT INTO discovered_gateways')), false);
 });
