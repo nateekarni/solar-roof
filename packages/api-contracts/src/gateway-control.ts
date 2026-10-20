@@ -123,9 +123,24 @@ export interface GatewaySyncState {
   desiredConfigHash: string | null;
   activeConfigVersion: number | null;
   activeConfigHash: string | null;
+  /** Current immutable desired snapshot, used for explicit initial correction review. */
+  desiredConfig?: GatewayConfigPayload | null;
   lastReceivedAt?: string | null;
   lastError?: GatewayConfigStatusPayload['error'] | null;
 }
+export interface GatewayBillingContinuityProof {
+  deviceId:string;
+  expectedProfileRevisionId:string;
+  expectedBillingSourceBindingId:string;
+}
+export interface AdoptExistingGatewayRequest {
+  expectedDesiredConfigVersion:number;
+  devices:GatewayDeviceConfig[];
+  /** Required for each already billing-bound legacy device. The Admin reviews
+   * the exact deployed decoder and billing binding before control-plane adoption. */
+  billingContinuity?:GatewayBillingContinuityProof[];
+}
+export interface CorrectInitialGatewayConfigRequest { expectedBaseConfigVersion:number; expectedBaseConfigHash:string; devices:GatewayDeviceConfig[] }
 export interface ConfirmGatewayResponse {
   gatewayId: string;
   configVersion: number;

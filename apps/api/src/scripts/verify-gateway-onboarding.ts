@@ -6,6 +6,7 @@ import { resolve } from 'node:path';
 import mqtt, { type IClientOptions, type IPublishPacket, type MqttClient } from 'mqtt';
 import { Pool } from 'pg';
 import { parseGatewayControlPayload } from '../modules/gateway-control/gateway-control-payload.js';
+import type { GatewayConfigPayload } from '@solar/api-contracts';
 
 const requiredEnvironment = [
   'MQTT_E2E_URL',
@@ -36,6 +37,17 @@ export function assertConfigDeliveryPacket(packet: Pick<IPublishPacket, 'qos' | 
 export function assertDataAcceptedPacket(packet: Pick<IPublishPacket, 'qos' | 'retain'>): void {
   assert.equal(packet.qos, 1, 'dataAcept must be delivered at QoS 1');
   assert.equal(packet.retain, false, 'dataAcept must not be retained');
+}
+
+export function buildAppliedConfigTelemetry(config:GatewayConfigPayload,input:{messageId:string;sequence:number;lotNumber:number;deviceId:string;value:number;polledAt:string;sentAt:string}) {
+  const device=config.devices.find(candidate=>candidate.deviceId===input.deviceId&&candidate.enabled);
+  assert.ok(device?.deviceType&&device.profileId&&device.profileVersion,'applied config must pin an enabled device profile');
+  return {schemaVersion:'1.1',messageType:'telemetry',messageId:input.messageId,sequence:input.sequence,lotNumber:input.lotNumber,
+    configurationVersion:config.configVersion,siteId:config.siteId,gatewayId:config.gatewayId,
+    device:{deviceId:input.deviceId,deviceType:device.deviceType,profileId:device.profileId,profileVersion:device.profileVersion},
+    pollGroup:'energy',timestamps:{polledAt:input.polledAt,sentAt:input.sentAt},
+    data:{values:{'energy.active.import.total':input.value},units:{'energy.active.import.total':'Wh'}},
+    quality:{status:'good',communication:'online'}};
 }
 
 export function combineVerificationErrors(original: unknown, cleanupErrors: unknown[]): unknown {
@@ -487,14 +499,8 @@ async function executeGatewayOnboardingVerification(config: GatewayOnboardingE2E
     assert.ok(configuredDevice?.profileId && configuredDevice.profileVersion, 'retained config pins the generated device profile');
     const preApplyMessageId = randomUUID();
     messageIds.push(preApplyMessageId);
-    const preApplyTelemetry = {
-      schemaVersion: '1.1', messageType: 'telemetry', messageId: preApplyMessageId, sequence: 0, lotNumber: 1,
-      configurationVersion: 1, siteId: externalSiteId, gatewayId,
-      device: { deviceId, deviceType: configuredDevice.deviceType, profileId: configuredDevice.profileId, profileVersion: configuredDevice.profileVersion },
-      pollGroup: 'energy', timestamps: { polledAt: new Date(Date.now() - 1_000).toISOString(), sentAt: new Date().toISOString() },
-      data: { values: { 'energy.active.import.total': 123_455 }, units: { 'energy.active.import.total': 'Wh' } },
-      quality: { status: 'good', communication: 'online' },
-    };
+    const preApplyTelemetry = buildAppliedConfigTelemetry(desired1,{messageId:preApplyMessageId,sequence:0,lotNumber:1,deviceId,value:123_455,
+      polledAt:new Date(Date.now()-1_000).toISOString(),sentAt:new Date().toISOString()});
     await expectSubscribeDenied(gateway, ackTopic, config.operationTimeoutMs, signal);
     await expectPublishDenied(gateway, telemetryTopic, preApplyTelemetry, config.operationTimeoutMs, signal);
     assert.equal(Number((await databaseQuery(pool, `SELECT count(*)::int AS count FROM payload_messages
@@ -530,14 +536,8 @@ async function executeGatewayOnboardingVerification(config: GatewayOnboardingE2E
 
     const telemetryMessageId = randomUUID();
     messageIds.push(telemetryMessageId);
-    const telemetry = {
-      schemaVersion: '1.1', messageType: 'telemetry', messageId: telemetryMessageId, sequence: 1, lotNumber: 1,
-      configurationVersion: 1, siteId: externalSiteId, gatewayId,
-      device: { deviceId, deviceType: configuredDevice.deviceType, profileId: configuredDevice.profileId, profileVersion: configuredDevice.profileVersion },
-      pollGroup: 'energy', timestamps: { polledAt: new Date(Date.now() - 1_000).toISOString(), sentAt: new Date().toISOString() },
-      data: { values: { 'energy.active.import.total': 123_456 }, units: { 'energy.active.import.total': 'Wh' } },
-      quality: { status: 'good', communication: 'online' },
-    };
+    const telemetry=buildAppliedConfigTelemetry(desired1,{messageId:telemetryMessageId,sequence:1,lotNumber:1,deviceId,value:123_456,
+      polledAt:new Date(Date.now()-1_000).toISOString(),sentAt:new Date().toISOString()});
     const barrier = await withTimeout(pool.connect(), 'database commit barrier connection', config.operationTimeoutMs, signal);
     let barrierOpen = false;
     let barrierReleaseError: Error | undefined;

@@ -15,6 +15,7 @@ import { MeasurementComparisons } from '../assets/measurement-comparisons.js';
 import { TelemetryController } from '../telemetry/telemetry.controller.js';
 import { PayloadReceptionSettings } from '../telemetry/payload-reception-settings.js';
 import { gatewayConfigHash } from './gateway-control-payload.js';
+import type { GatewaySessionRevoker } from './gateway-session-revoker.js';
 
 const discoveryId = '11111111-1111-4111-8111-111111111111';
 const siteId = '22222222-2222-4222-8222-222222222222';
@@ -38,18 +39,21 @@ function fixture(options: { revision?: number; status?: string; occupied?: boole
   preset?: unknown; registerPreset?:unknown; active?: number; desired?: number; hash?: string; proposalStatus?: string; base?: number;
   duplicateEvent?: boolean; existingDevice?: boolean; missing?: boolean; connection?: string; retiredDuplicate?: boolean;
   proposalDevices?: GatewayDeviceConfig[]; desiredDevices?: GatewayDeviceConfig[]; activeDevices?: GatewayDeviceConfig[];
-  existingRows?: Record<string, unknown>[] } = {}) {
+  existingRows?: Record<string, unknown>[]; controlManaged?:boolean;lifecycleState?:string;configState?:string;kickError?:boolean;mqttSuspended?:boolean } = {}) {
   const calls: Write[] = [], pending: Write[] = [], committed: Write[] = [];
+  const events:string[]=[];
   let rolledBack = false;
   const gateway = { id: gatewayId, site_id: siteId, external_gateway_id: 'GW-001', external_site_id: 'SELECTED',
-    mqtt_broker_id: broker, retired_at: null, protocol: 'mqtt', lifecycle_state: 'active', config_state: 'applied',config_publication_epoch:'0',
+    mqtt_broker_id: broker, retired_at: null, protocol: 'mqtt', mqtt_access_suspended:options.mqttSuspended??false,lifecycle_state: options.lifecycleState??'active', config_state: options.configState??'applied',config_publication_epoch:'0',
     desired_config_version: options.desired ?? 1, applied_config_version: options.active ?? 1,
-    desired_config_hash: options.hash ?? 'a'.repeat(64), active_config_hash: 'a'.repeat(64), connection_state: options.connection ?? 'unknown' };
+    desired_config_hash: options.hash ?? 'a'.repeat(64), active_config_hash: 'a'.repeat(64), connection_state: options.connection ?? 'unknown',
+    desired_config:{schemaVersion:'1.1',messageType:'config',messageId:'desired-sync',gatewayId:'GW-001',siteId:'SELECTED',
+      configVersion:options.desired??1,configHash:options.hash??'a'.repeat(64),issuedAt:now,approvedBy:actor,devices:options.desiredDevices??[device()]} };
   const query = async (sql: string, values: unknown[] = []) => {
     calls.push({ sql, values });
     if (sql === 'BEGIN') return { rows: [] };
     if (sql === 'ROLLBACK') { pending.length = 0; rolledBack = true; return { rows: [] }; }
-    if (sql === 'COMMIT') { committed.push(...pending); pending.length = 0; return { rows: [] }; }
+    if (sql === 'COMMIT') { committed.push(...pending); pending.length = 0;events.push('COMMIT'); return { rows: [] }; }
     if (options.fail?.test(sql)) throw new Error('injected SQL failure');
     if (/^(INSERT|UPDATE)/.test(sql.trim())) {
       if (options.duplicateEvent && /INSERT INTO gateway_(config_proposals|config_status_events|connection_events)/.test(sql)) return { rows: [] };
@@ -69,9 +73,15 @@ function fixture(options: { revision?: number; status?: string; occupied?: boole
       applied_config_version:options.active??1,active_config:{schemaVersion:'1.1',messageType:'config',messageId:'active-1',
         gatewayId:'GW-001',siteId:'SELECTED',configVersion:options.active??1,configHash:'a'.repeat(64),issuedAt:now,
         approvedBy:actor,devices:options.activeDevices??[device()]} }] };
+    if (/SELECT EXISTS\(SELECT 1 FROM gateway_configuration_revisions/.test(sql))return {rows:[{managed:options.controlManaged??true}]};
+    if (/SELECT id FROM gateway_mqtt_credentials/.test(sql)) {
+      const latest=[...committed,...pending].reverse().find(row=>/INSERT INTO gateway_mqtt_credentials/.test(row.sql));
+      return {rows:latest?[{id:latest.values[0]}]:[]};
+    }
+    if (/FROM gateways g WHERE|FROM gateways g\s/.test(sql)) return { rows: options.missing||options.mqttSuspended&&sql.includes('NOT g.mqtt_access_suspended') ? [] : [gateway] };
     if (/FROM gateway_configuration_revisions/.test(sql)) return { rows: [{ version: options.desired ?? 1,
       config_hash: options.hash ?? 'a'.repeat(64), config: { schemaVersion: '1.1', messageType: 'config', messageId: 'cfg-1',
-        gatewayId: 'GW-001', siteId: 'SELECTED', configVersion: options.desired ?? 1, configHash: 'a'.repeat(64), issuedAt: now,
+        gatewayId: 'GW-001', siteId: 'SELECTED', configVersion: options.desired ?? 1, configHash: options.hash ?? 'a'.repeat(64), issuedAt: now,
         approvedBy: actor, devices: values[1] === (options.active ?? 1) && options.activeDevices ? options.activeDevices : options.desiredDevices ?? [device()] } }] };
     if (/FROM devices/.test(sql)) return { rows: options.existingRows ?? (options.existingDevice ? [{ id: presetId, external_device_id: 'M1' }] : []) };
     if (/SELECT id,external_gateway_id,retired_at,protocol FROM gateways/.test(sql)) {
@@ -87,7 +97,8 @@ function fixture(options: { revision?: number; status?: string; occupied?: boole
   };
   const db = { query, pool: { connect: async () => ({ query, release() {} }) },
     transaction: DatabaseService.prototype.transaction } as unknown as DatabaseService;
-  return { service: new GatewayConfigurationService(db, new GatewayCredentialService(db)), db, calls, committed,
+  const revoker={kick:async()=>{events.push('KICK');if(options.kickError)throw new Error('broker unavailable');}} as unknown as GatewaySessionRevoker;
+  return { service: new GatewayConfigurationService(db, new GatewayCredentialService(db),revoker), db, calls, committed,events,
     get rolledBack() { return rolledBack; } };
 }
 const confirm = (devices:GatewayDeviceConfig[] = [device()]) => ({ discoveryRevision: 2, siteId, devices });
@@ -166,15 +177,88 @@ test('confirms manual configuration atomically with trusted identity, local prof
     ? '{' + Object.keys(v).filter(k => k !== 'configHash').sort().map(k => JSON.stringify(k) + ':' + canonical((v as Record<string, unknown>)[k])).join(',') + '}' : JSON.stringify(v); }
   assert.equal(response.configHash, createHash('sha256').update(canonical(snapshot)).digest('hex'));
   assert.equal(response.configVersion, 1);
+  const immutableBinding=write(f,/INSERT INTO gateway_configuration_device_bindings/);
+  assert.match(immutableBinding.sql,/JOIN devices d[\s\S]*payload_profile_revision_id IS NOT NULL/);
+  assert.deepEqual(immutableBinding.values,[response.gatewayId,1]);
   assert.equal(response.syncState.activeConfigVersion, 0);
   assert.equal(response.syncState.activeConfigHash, null);
   const credential = write(f, /INSERT INTO gateway_mqtt_credentials/);
-  assert.equal(credential.values[1], 'GW-001');
-  assert.ok(await argon2.verify(String(credential.values[2]), response.credential.password));
+  assert.equal(credential.values[2], 'GW-001');
+  assert.ok(await argon2.verify(String(credential.values[3]), response.credential.password));
   assert.ok(!JSON.stringify(f.calls).includes(response.credential.password));
   assert.match(write(f, /UPDATE discovered_gateways/).sql, /'configuring'/);
   assert.equal(f.calls.at(-1)?.sql, 'COMMIT');
   assert.equal(f.calls.filter(c => c.sql === 'BEGIN').length, 1);
+});
+
+test('explicit admin adoption snapshots and activates reviewed legacy configuration without inventing mappings',async()=>{
+ const existing={id:presetId,external_device_id:'M1',payload_profile_revision_id:'77777777-7777-4777-8777-777777777777',device_type:'meter',
+  model:'Verified Model',serial_number:'SERIAL-1',slave_id:3,profile_config:null,registers:[],billing:false,billing_bound:false};
+ const f=fixture({desired:4,active:4,controlManaged:false,existingRows:[existing]});
+ const result=await f.service.adoptExisting(gatewayId,{expectedDesiredConfigVersion:4,devices:[device()]},actor);
+ assert.equal(result.configVersion,5);assert.equal(result.credential.username,'GW-001');
+ const revision=JSON.parse(String(write(f,/INSERT INTO gateway_configuration_revisions/).values[3]));
+ assert.deepEqual(revision.devices[0].mappings,device().mappings);
+ const activation=write(f,/UPDATE gateways SET applied_config_version=/);
+ assert.match(activation.sql,/desired_config_version=\$2[\s\S]*active_config_hash=\$3[\s\S]*lifecycle_state='active'[\s\S]*config_state='applied'/);
+ assert.deepEqual(activation.values.slice(0,3),[gatewayId,5,result.configHash]);
+ assert.deepEqual(write(f,/INSERT INTO gateway_configuration_device_bindings/).values,[gatewayId,5]);
+ assert.match(f.calls.find(row=>/SELECT EXISTS\(SELECT 1 FROM gateway_configuration_revisions/.test(row.sql))!.sql,/profileRevisionId/);
+});
+
+test('adoption rejects already-managed or stale legacy gateways before issuing a credential',async()=>{
+ for(const options of [{controlManaged:true,desired:4},{controlManaged:false,desired:5}]){
+  const f=fixture(options);
+  await assert.rejects(f.service.adoptExisting(gatewayId,{expectedDesiredConfigVersion:4,devices:[device()]},actor),http(409));
+  assert.ok(!f.committed.some(write=>/gateway_mqtt_credentials|gateway_configuration_revisions/.test(write.sql)));
+ }
+});
+
+test('billing-bound legacy adoption requires and preserves exact admin-reviewed decoder and billing continuity',async()=>{
+ const bindingId='88888888-8888-4888-8888-888888888888';
+ const existing={...existingMeter(),billing_source_binding_id:bindingId};
+ const legacySnapshot=[{...meter(),protocol:undefined,connection:undefined,serialNumber:undefined}] as unknown as GatewayDeviceConfig[];
+ const request={expectedDesiredConfigVersion:4,devices:[meter()],billingContinuity:[{deviceId:'M1',expectedProfileRevisionId:meterProfileId,
+  expectedBillingSourceBindingId:bindingId}]};
+ const missing=fixture({desired:4,active:4,controlManaged:false,existingRows:[existing],activeDevices:legacySnapshot});
+ await assert.rejects(missing.service.adoptExisting(gatewayId,{expectedDesiredConfigVersion:4,devices:[meter()]},actor),http(409));
+ const adopted=fixture({desired:4,active:4,controlManaged:false,existingRows:[existing],activeDevices:legacySnapshot});
+ const result=await adopted.service.adoptExisting(gatewayId,request,actor);
+ assert.equal(result.configVersion,5);
+ assert.ok(!adopted.committed.some(row=>/UPDATE billing_meters|INSERT INTO billing_source_bindings/.test(row.sql)));
+ assert.ok(!adopted.committed.some(row=>/UPDATE devices[\s\S]*payload_profile_revision_id=\$2|INSERT INTO payload_profile_revisions/.test(row.sql)));
+ const audit=JSON.parse(String(write(adopted,/INSERT INTO audit_events/).values[4]));
+ assert.deepEqual(audit.billingContinuity,request.billingContinuity);
+ const changed=fixture({desired:4,active:4,controlManaged:false,existingRows:[existing],activeDevices:legacySnapshot});
+ await assert.rejects(changed.service.adoptExisting(gatewayId,{...request,billingContinuity:[{...request.billingContinuity[0]!,expectedBillingSourceBindingId:actor}]},actor),http(409));
+});
+
+test('failed initial configuration can be corrected as v2 and remains configuring until matching apply',async()=>{
+ const corrected=device();corrected.connection={host:'192.0.2.20',port:502,slaveId:4};
+ const correction=fixture({active:0,desired:1,lifecycleState:'configuring',configState:'failed',existingDevice:true});
+ const issued=await correction.service.correctInitialConfig(gatewayId,{expectedBaseConfigVersion:1,expectedBaseConfigHash:'a'.repeat(64),devices:[corrected]},actor);
+ assert.equal(issued.configVersion,2);assert.equal(issued.configHash.length,64);
+ const snapshot=JSON.parse(String(write(correction,/INSERT INTO gateway_configuration_revisions/).values[3]));
+ assert.deepEqual(snapshot.devices[0].connection,corrected.connection);
+ assert.match(write(correction,/UPDATE gateways SET desired_config_version/).sql,/config_state='pending_sync'/);
+ assert.ok(!correction.committed.some(row=>/applied_config_version=|active_config_hash=/.test(row.sql)));
+
+ const applied=fixture({active:0,desired:2,hash:issued.configHash,lifecycleState:'configuring',configState:'pending_sync',existingDevice:true,desiredDevices:[corrected]});
+ const result=await applied.service.recordConfigStatus(control(status('applied',issued.configHash,2)));
+ assert.equal(result.activated,true);
+ assert.deepEqual(write(applied,/INSERT INTO gateway_configuration_device_bindings/).values,[gatewayId,2]);
+ assert.match(write(applied,/UPDATE gateways[\s\S]*active_config_hash/).sql,/lifecycle_state='active'/);
+});
+
+test('initial correction rejects active gateways, stale base identity and malformed replacement devices',async()=>{
+ const request={expectedBaseConfigVersion:1,expectedBaseConfigHash:'a'.repeat(64),devices:[device()]};
+ for(const [options,body] of [
+  [{active:1,desired:1,lifecycleState:'active'},request],
+  [{active:0,desired:2,lifecycleState:'configuring',configState:'failed'},request],
+  [{active:0,desired:1,lifecycleState:'configuring',configState:'failed'},{...request,expectedBaseConfigHash:'b'.repeat(64)}],
+ ] as const){const f=fixture(options);await assert.rejects(f.service.correctInitialConfig(gatewayId,body as never,actor),http(409));assert.deepEqual(f.committed,[]);}
+ const malformed=fixture({active:0,desired:1,lifecycleState:'configuring',configState:'failed'});
+ await assert.rejects(malformed.service.correctInitialConfig(gatewayId,{...request,devices:[{...device(),mappings:[]}]},actor),http(400));
 });
 
 for (const options of [{ revision: 3 }, { status: 'configuring' }, { occupied: true }, { duplicate: true }]) {
@@ -403,6 +487,8 @@ test('applied matching status atomically advances active state and device bindin
   assert.deepEqual(update.values.slice(0, 3), [gatewayId, 1, 'a'.repeat(64)]);
   assert.match(update.sql, /lifecycle_state='active'/);
   assert.match(write(f, /UPDATE devices[\s\S]*payload_profile_revision_id=\$2/).sql, /gateway_id=\$/);
+  const immutableBinding=write(f,/INSERT INTO gateway_configuration_device_bindings/);
+  assert.deepEqual(immutableBinding.values,[gatewayId,1]);
   assert.ok(!f.committed.some(w => /INSERT INTO devices/.test(w.sql)));
   assert.match(write(f, /UPDATE discovered_gateways/).sql, /'assigned'/);
 });
@@ -414,9 +500,51 @@ test('failed desired status records error and retains the active revision', asyn
   assert.deepEqual(JSON.parse(String(write(f, /INSERT INTO gateway_config_status_events/).values[6])), { code: 'DEVICE_READ', deviceId: 'M1' });
 });
 
-test('duplicate applied status never rebinds profiles', async () => {
-  const f = fixture({ duplicateEvent: true }); await f.service.recordConfigStatus(control(status('applied')));
-  assert.equal(f.committed.length, 0);
+test('duplicate applied status idempotently repairs a missing immutable binding', async () => {
+  const f = fixture({ duplicateEvent: true,active:1,desired:2 }); await f.service.recordConfigStatus(control(status('applied','a'.repeat(64),1)));
+  const binding=write(f,/INSERT INTO gateway_configuration_device_bindings/);
+  assert.deepEqual(binding.values,[gatewayId,1]);
+  assert.match(binding.sql,/payload_profile_revisions/);
+  assert.match(binding.sql,/register_mapping_versions/);
+  assert.match(binding.sql,/effective_to IS NULL/);
+  assert.match(binding.sql,/profileId/);
+  assert.match(binding.sql,/deviceType/);assert.match(binding.sql,/pollGroups/);
+  assert.match(binding.sql,/fields/);assert.match(binding.sql,/mappings/);assert.match(binding.sql,/NOT EXISTS/);
+  assert.match(binding.sql,/register_address/);assert.match(binding.sql,/register_count/);assert.match(binding.sql,/data_type/);
+  assert.match(binding.sql,/byte_order/);assert.match(binding.sql,/word_order/);assert.match(binding.sql,/quality_rule/);
+});
+
+test('binding predicate uses prepared semantic profile and persisted register rows, rejecting a physical mismatch',async()=>{
+  const f=fixture();await f.service.confirm(discoveryId,confirm(),actor);
+  const snapshot=JSON.parse(String(write(f,/INSERT INTO gateway_configuration_revisions/).values[3]));
+  const profile=JSON.parse(String(write(f,/INSERT INTO payload_profile_revisions/).values[3]));
+  const stored=write(f,/INSERT INTO register_mapping_versions/);
+  const quality=JSON.parse(String(stored.values[10]));
+  const register={tag:stored.values[2],registerAddress:stored.values[3],dataType:stored.values[4],byteOrder:stored.values[5],
+    wordOrder:stored.values[6],registerCount:stored.values[7],scale:stored.values[8],sourceUnit:stored.values[9],
+    pollGroup:quality.pollGroup,offset:quality.offset??0};
+  assert.equal(profile.fields[0].registerCount,undefined);
+  assert.equal(profile.fields[0].dataType,undefined);
+  assert.equal(register.registerCount,2);assert.equal(register.dataType,'uint32');
+  const eligible=(candidate:typeof register)=>snapshot.devices.filter((configured:GatewayEnabledDeviceConfig)=>{
+    const mapping=configured.mappings[0]!,field=profile.fields[0]!;
+    const semantic=field.tag===mapping.tag&&(field.sourceTag??field.tag)===(mapping.sourceTag??mapping.tag)
+      &&field.pollGroup===mapping.pollGroup&&field.sourceUnit===mapping.sourceUnit&&field.targetUnit===mapping.targetUnit
+      &&field.conversion===mapping.conversion&&(field.role??'none')===(mapping.role??'none')
+      &&Boolean(field.required)===Boolean(mapping.required);
+    const physical=candidate.tag===mapping.tag&&candidate.registerAddress===mapping.registerAddress
+      &&candidate.registerCount===mapping.registerCount&&candidate.dataType===mapping.dataType
+      &&candidate.byteOrder===mapping.byteOrder&&candidate.wordOrder===mapping.wordOrder
+      &&candidate.scale===mapping.scale&&candidate.sourceUnit===mapping.sourceUnit
+      &&candidate.pollGroup===mapping.pollGroup&&candidate.offset===(mapping.offset??0);
+    return configured.enabled&&semantic&&physical;
+  }).length;
+  assert.equal(eligible(register),1);
+  assert.equal(eligible({...register,scale:Number(register.scale)+1}),0);
+  const sql=write(f,/INSERT INTO gateway_configuration_device_bindings/).sql;
+  assert.match(sql,/FROM register_mapping_versions/);
+  assert.match(sql,/SELECT count\(\*\)[\s\S]*<>1/);
+  assert.doesNotMatch(sql,/pf\.field->>'(?:registerAddress|registerCount|dataType|byteOrder|wordOrder|scale|offset)'/);
 });
 
 test('status activation rolls back evidence and bindings on a profile update failure', async () => {
@@ -434,11 +562,21 @@ test('connection status records presence and drift without activating configurat
   assert.match(write(f, /UPDATE gateways/).sql, /drifted/);
 });
 
+test('MQTT control messages cannot mutate a gateway while credential rotation has suspended access',async()=>{
+ const f=fixture({mqttSuspended:true});
+ await assert.rejects(f.service.recordConnectionStatus(control({schemaVersion:'1.1',messageType:'status',messageId:'suspended-presence',
+  gatewayId:'GW-001',sessionId:'session-1',firmwareVersion:'2.4',status:'online',appliedConfigVersion:1,appliedConfigHash:'a'.repeat(64),reportedAt:now})),http(404));
+ assert.ok(!f.committed.some(row=>/gateway_connection_events/.test(row.sql)));
+ const lookup=f.calls.find(row=>/g\.external_gateway_id=\$1/.test(row.sql))!;
+ assert.match(lookup.sql,/NOT g\.mqtt_access_suspended/);
+});
+
 test('sync state separates desired and active and computes proposal staleness with bounded ordering', async () => {
   const f = fixture({ desired: 3, active: 1, connection: 'offline' });
   const sync = await f.service.syncState(gatewayId);
   assert.equal(sync.desiredConfigVersion, 3); assert.equal(sync.activeConfigVersion, 1);
   assert.equal(sync.connectionState, 'offline');
+  assert.equal(sync.desiredConfig?.messageId,'desired-sync');
   const proposals=await f.service.proposals(gatewayId);
   assert.equal(proposals[0]?.activeConfigVersion,1);
   assert.equal(proposals[0]?.activeSnapshot?.messageId,'active-1');
@@ -449,12 +587,23 @@ test('sync state separates desired and active and computes proposal staleness wi
 test('rotation is transactional, one-time and audits no plaintext or hash', async () => {
   const f = fixture(); const secret = await f.service.rotateCredential(gatewayId, actor);
   assert.equal(secret.username, 'GW-001');
-  assert.ok(await argon2.verify(String(write(f, /INSERT INTO gateway_mqtt_credentials/).values[2]), secret.password));
+  assert.ok(await argon2.verify(String(write(f, /INSERT INTO gateway_mqtt_credentials/).values[3]), secret.password));
   assert.ok(!JSON.stringify(f.calls).includes(secret.password));
   const audit = write(f, /INSERT INTO audit_events/); assert.ok(!String(audit.values[4]).includes('argon2'));
+  assert.deepEqual(f.events.filter(event=>event==='COMMIT'||event==='KICK'),['COMMIT','KICK','COMMIT']);
+  assert.ok(f.committed.some(row=>/mqtt_access_suspended=true/.test(row.sql)));
+  assert.ok(f.committed.some(row=>/mqtt_access_suspended=false/.test(row.sql)));
   const fail = fixture({ fail: /INSERT INTO audit_events/ });
   await assert.rejects(fail.service.rotateCredential(gatewayId, actor), /injected SQL failure/);
-  assert.deepEqual(fail.committed, []); assert.equal(fail.rolledBack, true);
+  assert.deepEqual(fail.committed, []); assert.equal(fail.rolledBack, true);assert.ok(!fail.events.includes('KICK'));
+});
+
+test('rotation does not claim success or re-enable MQTT when EMQX session termination is unconfirmed',async()=>{
+  const f=fixture({kickError:true});
+  await assert.rejects(f.service.rotateCredential(gatewayId,actor),http(503));
+  assert.ok(f.committed.some(row=>/mqtt_access_suspended=true/.test(row.sql)));
+  assert.ok(!f.committed.some(row=>/mqtt_access_suspended=false/.test(row.sql)));
+  assert.deepEqual(f.events.filter(event=>event==='COMMIT'||event==='KICK'),['COMMIT','KICK']);
 });
 
 test('rejects invalid Modbus slave identity before creating resources', async () => {
@@ -543,7 +692,7 @@ const meterProfileId='77777777-7777-4777-8777-777777777777';
 function meter() { return { ...device(), profileId:'sender-meter',profileVersion:'1.0.0' }; }
 function existingMeter() {
   return { id:presetId,external_device_id:'M1',payload_profile_revision_id:meterProfileId,device_type:'meter',
-    model:'Verified Model',serial_number:'SERIAL-1',slave_id:3,billing:true,billing_bound:true,
+    model:'Verified Model',serial_number:'SERIAL-1',slave_id:3,billing:true,billing_bound:true,billing_source_binding_id:'88888888-8888-4888-8888-888888888888',
     profile_config:{id:'local-original',version:'1.0.0',sourceProfile:{id:'sender-meter',version:'1.0.0'},schemaVersion:'1.1',
       displayName:'Verified Model',deviceType:'energy-meter',pollGroups:['energy'],fields:[{tag:'energy.active.import.total',
         displayName:'Import energy',pollGroup:'energy',sourceUnit:'Wh',targetUnit:'kWh',conversion:'wh-to-kwh',role:'billing-import',registerAddress:'3204'}]},

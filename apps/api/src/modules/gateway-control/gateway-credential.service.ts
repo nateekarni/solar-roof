@@ -1,5 +1,5 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { isIP } from 'node:net';
 import * as argon2 from 'argon2';
 import type { PoolClient } from 'pg';
@@ -7,6 +7,7 @@ import { DatabaseService } from '../../database/database.service.js';
 import { parseGatewayControlTopic } from './gateway-control-payload.js';
 
 interface CredentialRow {
+  id: string;
   external_gateway_id: string;
   username: string;
   password_hash: string;
@@ -16,6 +17,7 @@ interface CredentialRow {
   protocol: string;
   gateway_status: string;
   site_status: string;
+  mqtt_access_suspended: boolean;
 }
 
 interface VerificationOptions {
@@ -122,7 +124,7 @@ export class GatewayCredentialService {
     this.verification = verification ?? (processVerification ??= new GatewayCredentialVerification());
   }
 
-  async issue(client: PoolClient, gatewayId: string, createdBy: string): Promise<{ username: string; password: string }> {
+  private async create(client: PoolClient, gatewayId: string, createdBy: string): Promise<{ id:string;username: string; password: string }> {
     // The caller owns BEGIN/COMMIT so issuance is atomic with approval. Locking
     // the gateway also serializes concurrent rotations before the partial indexes.
     const rows = (await client.query(`SELECT id,external_gateway_id,retired_at,protocol FROM gateways WHERE id=$1 FOR UPDATE`, [gatewayId])).rows;
@@ -135,21 +137,32 @@ export class GatewayCredentialService {
     }
     const password = randomBytes(32).toString('base64url');
     const hash = await argon2.hash(password, { type: argon2.argon2id });
+    const id=randomUUID();
     await client.query('UPDATE gateway_mqtt_credentials SET revoked_at=clock_timestamp() WHERE gateway_id=$1 AND revoked_at IS NULL', [gatewayId]);
-    await client.query(`INSERT INTO gateway_mqtt_credentials(gateway_id,username,password_hash,created_by)
-      VALUES($1,$2,$3,$4)`, [gatewayId, username, hash, createdBy]);
-    return { username, password };
+    await client.query(`INSERT INTO gateway_mqtt_credentials(id,gateway_id,username,password_hash,created_by)
+      VALUES($1,$2,$3,$4,$5)`, [id,gatewayId, username, hash, createdBy]);
+    return {id,username, password };
+  }
+
+  async issue(client: PoolClient, gatewayId: string, createdBy: string): Promise<{ username: string; password: string }> {
+    const {username,password}=await this.create(client,gatewayId,createdBy);
+    return {username,password};
   }
 
   async rotate(client: PoolClient, gatewayId: string, createdBy: string): Promise<{ username: string; password: string }> {
-    return this.issue(client, gatewayId, createdBy);
+    const {username,password}=await this.create(client,gatewayId,createdBy);
+    return {username,password};
+  }
+
+  async rotateWithGeneration(client:PoolClient,gatewayId:string,createdBy:string):Promise<{id:string;username:string;password:string}>{
+    return this.create(client,gatewayId,createdBy);
   }
 
   async verify(gatewayId: string, password: string, context?: GatewayCredentialContext): Promise<boolean> {
     if (typeof password !== 'string' || !password) return false;
     try {
-      const rows = (await this.db.query<CredentialRow>(`SELECT c.username,c.password_hash,c.revoked_at,
-        g.external_gateway_id,g.retired_at,g.lifecycle_state,g.protocol,g.status AS gateway_status,s.status AS site_status
+      const rows = (await this.db.query<CredentialRow>(`SELECT c.id,c.username,c.password_hash,c.revoked_at,
+        g.external_gateway_id,g.retired_at,g.lifecycle_state,g.protocol,g.status AS gateway_status,s.status AS site_status,g.mqtt_access_suspended
         FROM gateway_mqtt_credentials c JOIN gateways g ON g.id=c.gateway_id JOIN sites s ON s.id=g.site_id
         WHERE c.gateway_id=$1 AND c.revoked_at IS NULL LIMIT 2`, [gatewayId])).rows;
       const row = rows[0];
@@ -157,10 +170,20 @@ export class GatewayCredentialService {
         || !['configuring', 'active'].includes(row.lifecycle_state) || row.protocol !== 'mqtt'
         || !['online', 'offline', 'active'].includes(row.gateway_status)
         || !['online', 'offline', 'active'].includes(row.site_status)
+        || row.mqtt_access_suspended
         || row.username !== row.external_gateway_id || row.username === 'solar-backend'
         || !parseGatewayControlTopic(`solar/v1/gateways/${row.external_gateway_id}/register`)
         || typeof row.password_hash !== 'string' || !row.password_hash.startsWith('$argon2id$')) return false;
-      return await this.verification.verify(gatewayId, row.password_hash, password, context?.sourceAddress);
+      const verified=await this.verification.verify(gatewayId, row.password_hash, password, context?.sourceAddress);
+      if(!verified)return false;
+      // Argon2 intentionally runs outside a database lock. A rotation can commit
+      // while the hash is in flight, so authorize only after proving that the
+      // exact generation we verified is still the sole active generation and
+      // gateway access has not been suspended by the rotation workflow.
+      const current=(await this.db.query<Pick<CredentialRow,'id'|'revoked_at'|'mqtt_access_suspended'>>(`SELECT c.id,c.revoked_at,g.mqtt_access_suspended
+        FROM gateway_mqtt_credentials c JOIN gateways g ON g.id=c.gateway_id
+        WHERE c.gateway_id=$1 AND c.id=$2 AND c.revoked_at IS NULL LIMIT 2`,[gatewayId,row.id])).rows;
+      return current.length===1&&current[0]?.id===row.id&&current[0].revoked_at===null&&!current[0].mqtt_access_suspended;
     } catch {
       // Driver/hash errors may contain sensitive values. Fail closed without logging.
       return false;

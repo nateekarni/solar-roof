@@ -277,9 +277,10 @@ test('sync view renders one-time credential, copy actions, closing warning and t
   assert.match(readFileSync(new URL('gateway-sync-status.tsx',import.meta.url),'utf8'),/Confirm credential rotation/);
   const applied=renderToStaticMarkup(<GatewaySyncStatus locale="en" credential={null} syncState={{...base,lifecycleState:'active',configState:'applied',connectionState:'online',activeConfigVersion:4,activeConfigHash:'abc'}} onRotate={()=>{}} rotating={false}/>);
   assert.match(applied,/Configuration applied/i);
-  const failed=renderToStaticMarkup(<GatewaySyncStatus locale="en" credential={null} syncState={{...base,configState:'failed',lastError:{code:'DEVICE_WRITE',message:'register rejected'}}} onRotate={()=>{}} rotating={false}/>);
+  const failed=renderToStaticMarkup(<GatewaySyncStatus locale="en" credential={null} syncState={{...base,activeConfigVersion:0,desiredConfig:{schemaVersion:'1.1',messageType:'config',messageId:'cfg',gatewayId:'GW-001',siteId:'SITE-001',configVersion:4,configHash:'abc',issuedAt:'2026-10-19T00:00:00Z',approvedBy:'admin',devices:[]},configState:'failed',lastError:{code:'DEVICE_WRITE',message:'register rejected'}}} onRotate={()=>{}} rotating={false} onCorrect={async()=>{}}/>);
   assert.match(failed,/Synchronization failed/i);
   assert.match(failed,/register rejected/i);
+  assert.match(failed,/Correct initial configuration/i);
   const pollingError=renderToStaticMarkup(<GatewaySyncStatus locale="en" credential={null} syncState={base} syncError={new Error('poll failed')} onRetry={()=>{}} retrying={false} onRotate={()=>{}} rotating={false}/>);
   assert.match(pollingError,/Could not refresh sync status/i);
   assert.match(pollingError,/poll failed/);

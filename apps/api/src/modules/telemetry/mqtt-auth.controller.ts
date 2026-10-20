@@ -14,7 +14,7 @@ interface GatewayIdentity {
   id: string; external_gateway_id: string; site_id: string; external_site_id: string;
   lifecycle_state: string; retired_at: string | null; protocol: string;
   gateway_status: string; site_status: string; credential_id: string | null;
-  username: string | null; revoked_at: string | null;
+  username: string | null; revoked_at: string | null; mqtt_access_suspended:boolean;
 }
 interface DeviceIdentity { gateway_id: string; site_id: string; external_device_id: string; status: string }
 
@@ -116,7 +116,7 @@ export class MqttAuthController {
 
   private async registeredIdentity(username: string): Promise<GatewayIdentity | null> {
     const rows = (await this.db.query<GatewayIdentity>(`SELECT g.id,g.external_gateway_id,g.site_id,s.external_site_id,
-      g.lifecycle_state,g.retired_at,g.protocol,g.status AS gateway_status,s.status AS site_status,
+      g.lifecycle_state,g.retired_at,g.protocol,g.status AS gateway_status,s.status AS site_status,g.mqtt_access_suspended,
       c.id AS credential_id,c.username,c.revoked_at FROM gateways g JOIN sites s ON s.id=g.site_id
       LEFT JOIN gateway_mqtt_credentials c ON c.gateway_id=g.id AND c.revoked_at IS NULL
       WHERE g.external_gateway_id=$1 LIMIT 2`, [username])).rows;
@@ -124,6 +124,7 @@ export class MqttAuthController {
     if (rows.length !== 1 || !row || row.external_gateway_id !== username || !validIdentity(row.external_gateway_id)
       || row.username !== row.external_gateway_id || !row.credential_id || row.revoked_at !== null
       || row.retired_at !== null || row.protocol !== 'mqtt' || !['configuring', 'active'].includes(row.lifecycle_state)
+      || row.mqtt_access_suspended
       || !['online', 'offline', 'active'].includes(row.gateway_status)
       || !['online', 'offline', 'active'].includes(row.site_status)) return null;
     return row;

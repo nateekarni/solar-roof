@@ -1,9 +1,9 @@
-import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException, Optional, ServiceUnavailableException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { isIP } from 'node:net';
 import type { PoolClient } from 'pg';
 import { z } from 'zod';
-import type { ApproveGatewayProposalRequest, ConfirmGatewayRequest, ConfirmGatewayResponse, GatewayConfigPayload, GatewayDeviceConfig, GatewayEnabledDeviceConfig,
+import type { AdoptExistingGatewayRequest,ApproveGatewayProposalRequest, ConfirmGatewayRequest, ConfirmGatewayResponse,CorrectInitialGatewayConfigRequest, GatewayConfigPayload, GatewayDeviceConfig, GatewayEnabledDeviceConfig,
   GatewayRegisterMapping, GatewaySyncState, GatewayConfigProposal, GatewayControlKind, GatewayControlPayloads } from '@solar/api-contracts';
 import { applyGatewayRegisterPresetMappings, gatewayConnectionIssue, gatewayRegisterMappingIssue } from '@solar/api-contracts';
 import { DatabaseService } from '../../database/database.service.js';
@@ -11,6 +11,7 @@ import { GatewayCredentialService } from './gateway-credential.service.js';
 import { gatewayConfigHash, parseGatewayControlPayload } from './gateway-control-payload.js';
 import { validatePayloadProfile, type PayloadProfile } from '../telemetry/payload-profile.js';
 import { reserveGatewayIdentity } from '../assets/gateway-lifecycle.js';
+import { GatewaySessionRevoker } from './gateway-session-revoker.js';
 
 const uuid = z.uuid();
 const slaveId = z.number().int().min(1).max(247);
@@ -25,10 +26,10 @@ interface PreparedDevice { device: GatewayEnabledDeviceConfig; id: string; profi
 interface ExistingDevice {
   id:string;external_device_id:string;payload_profile_revision_id:string|null;device_type:string;
   model:string;serial_number:string;slave_id:number|null;profile_config:PayloadProfile|null;
-  registers:GatewayRegisterMapping[];billing:boolean;billing_bound:boolean;
+  registers:GatewayRegisterMapping[];billing:boolean;billing_bound:boolean;billing_source_binding_id:string|null;
 }
 interface GatewayRow {id:string;site_id:string;external_site_id:string;external_gateway_id:string;applied_config_version:number;
-  desired_config_version:number;desired_config_hash:string|null;active_config_hash:string|null;lifecycle_state:string;mqtt_broker_id:string|null;config_publication_epoch:string}
+  desired_config_version:number;desired_config_hash:string|null;active_config_hash:string|null;lifecycle_state:string;config_state:string;mqtt_broker_id:string|null;config_publication_epoch:string}
 function deviceClassification(type:string) { return type==='energy-meter'?'meter':type==='solar-logger'?'logger':type; }
 function validateRegisterStorage(mapping:GatewayRegisterMapping) {
   const issue=gatewayRegisterMappingIssue(mapping);
@@ -59,11 +60,70 @@ export function validateConfirmation(input: unknown): ConfirmGatewayRequest {
   });
 }
 
+export const BIND_APPLIED_DEVICES_SQL=`INSERT INTO gateway_configuration_device_bindings
+  (gateway_id,config_version,external_device_id,device_id,profile_revision_id)
+  SELECT $1,$2,configured.device->>'deviceId',d.id,d.payload_profile_revision_id
+  FROM gateway_configuration_revisions r
+  CROSS JOIN LATERAL jsonb_array_elements(r.config->'devices') configured(device)
+  JOIN devices d ON d.gateway_id=r.gateway_id AND d.external_device_id=configured.device->>'deviceId'
+  JOIN payload_profile_revisions p ON p.id=d.payload_profile_revision_id
+    AND (p.owner_device_id IS NULL OR p.owner_device_id=d.id)
+  WHERE r.gateway_id=$1 AND r.version=$2 AND configured.device->>'enabled'='true'
+    AND (SELECT count(*) FROM jsonb_array_elements(coalesce(r.config->'devices','[]'::jsonb)) sibling(device)
+      WHERE sibling.device->>'enabled'='true'
+        AND sibling.device->>'deviceId'=configured.device->>'deviceId')=1
+    AND d.status<>'disabled' AND d.payload_profile_revision_id IS NOT NULL
+    AND coalesce(p.config#>>'{sourceProfile,id}',p.config->>'id')=configured.device->>'profileId'
+    AND coalesce(p.config#>>'{sourceProfile,version}',p.config->>'version')=configured.device->>'profileVersion'
+    AND p.config->>'deviceType'=configured.device->>'deviceType'
+    AND jsonb_array_length(coalesce(p.config->'pollGroups','[]'::jsonb))=(
+      SELECT count(DISTINCT profile_group.name)
+      FROM jsonb_array_elements_text(coalesce(p.config->'pollGroups','[]'::jsonb)) profile_group(name))
+    AND jsonb_array_length(coalesce(configured.device->'pollGroups','[]'::jsonb))=(
+      SELECT count(DISTINCT configured_group.name)
+      FROM jsonb_array_elements_text(coalesce(configured.device->'pollGroups','[]'::jsonb)) configured_group(name))
+    AND ARRAY(SELECT profile_group.name
+      FROM jsonb_array_elements_text(coalesce(p.config->'pollGroups','[]'::jsonb)) profile_group(name)
+      ORDER BY profile_group.name)=ARRAY(SELECT configured_group.name
+      FROM jsonb_array_elements_text(coalesce(configured.device->'pollGroups','[]'::jsonb)) configured_group(name)
+      ORDER BY configured_group.name)
+    AND jsonb_array_length(coalesce(p.config->'fields','[]'::jsonb))=jsonb_array_length(coalesce(configured.device->'mappings','[]'::jsonb))
+    AND (SELECT count(*) FROM register_mapping_versions rm
+      WHERE rm.device_id=d.id AND rm.effective_to IS NULL)=jsonb_array_length(coalesce(configured.device->'mappings','[]'::jsonb))
+    AND NOT EXISTS (
+      SELECT 1 FROM jsonb_array_elements(coalesce(configured.device->'mappings','[]'::jsonb)) cm(mapping)
+      WHERE (SELECT count(*) FROM jsonb_array_elements(coalesce(p.config->'fields','[]'::jsonb)) pf(field)
+        WHERE pf.field->>'tag'=cm.mapping->>'tag'
+          AND coalesce(pf.field->>'sourceTag',pf.field->>'tag')=coalesce(cm.mapping->>'sourceTag',cm.mapping->>'tag')
+          AND pf.field->>'pollGroup'=cm.mapping->>'pollGroup'
+          AND pf.field->>'sourceUnit'=cm.mapping->>'sourceUnit'
+          AND pf.field->>'targetUnit'=cm.mapping->>'targetUnit'
+          AND pf.field->>'conversion'=cm.mapping->>'conversion'
+          AND coalesce(pf.field->>'role','none')=coalesce(cm.mapping->>'role','none')
+          AND coalesce(pf.field->>'required','false')=coalesce(cm.mapping->>'required','false')
+      )<>1 OR (SELECT count(*) FROM register_mapping_versions rm
+        WHERE rm.device_id=d.id AND rm.effective_to IS NULL
+          AND rm.semantic_field=cm.mapping->>'tag'
+          AND rm.register_address=cm.mapping->>'registerAddress'
+          AND to_jsonb(rm.register_count)=cm.mapping->'registerCount'
+          AND rm.data_type=cm.mapping->>'dataType'
+          AND rm.byte_order=cm.mapping->>'byteOrder'
+          AND rm.word_order=cm.mapping->>'wordOrder'
+          AND to_jsonb(rm.scale)=cm.mapping->'scale'
+          AND rm.unit=cm.mapping->>'sourceUnit'
+          AND rm.quality_rule->>'pollGroup'=cm.mapping->>'pollGroup'
+          AND coalesce(rm.quality_rule->'offset','0'::jsonb)=coalesce(cm.mapping->'offset','0'::jsonb)
+          AND rm.signed=((cm.mapping->>'dataType') IN ('int16','int32'))
+      )<>1
+    )
+  ON CONFLICT (gateway_id,config_version,external_device_id) DO NOTHING`;
+
 @Injectable()
 export class GatewayConfigurationService {
   private readonly desiredListeners = new Set<(gatewayId:string,version:number)=>Promise<unknown>>();
   constructor(@Inject(DatabaseService) private readonly db: DatabaseService,
-    @Inject(GatewayCredentialService) private readonly credentials: GatewayCredentialService) {}
+    @Inject(GatewayCredentialService) private readonly credentials: GatewayCredentialService,
+    @Optional() @Inject(GatewaySessionRevoker) private readonly sessionRevoker?:GatewaySessionRevoker) {}
 
   onDesiredConfig(listener:(gatewayId:string,version:number)=>Promise<unknown>):()=>void {
     this.desiredListeners.add(listener);
@@ -204,6 +264,76 @@ export class GatewayConfigurationService {
     });
   }
 
+  async adoptExisting(id:string,input:AdoptExistingGatewayRequest,actor:string):Promise<ConfirmGatewayResponse> {
+    const continuity=badInput(()=>{
+      uuid.parse(id);uuid.parse(actor);z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).parse(input.expectedDesiredConfigVersion);
+      const rows=z.array(z.object({deviceId:z.string().trim().min(1).max(128),expectedProfileRevisionId:uuid,
+        expectedBillingSourceBindingId:uuid}).strict()).max(32).parse(input.billingContinuity??[]);
+      if(new Set(rows.map(row=>row.deviceId)).size!==rows.length)throw new Error('Duplicate billing continuity device');
+      return new Map(rows.map(row=>[row.deviceId,row]));
+    });
+    const devices=validateConfirmation({discoveryRevision:1,siteId:id,devices:input.devices}).devices;
+    const result=await this.conflicts(()=>this.db.transaction(async client=>{
+      const gateway=await this.mutationGateway(client,id);
+      if(gateway.desired_config_version!==input.expectedDesiredConfigVersion)throw new ConflictException('Gateway configuration changed; review before adoption');
+      const managed=(await client.query<{managed:boolean}>(`SELECT EXISTS(SELECT 1 FROM gateway_configuration_revisions r
+        WHERE gateway_id=$1 AND config->>'messageType'='config' AND NOT EXISTS (
+          SELECT 1 FROM jsonb_array_elements(coalesce(r.config->'devices','[]'::jsonb)) entry(device)
+          WHERE entry.device ? 'profileRevisionId'
+        )) AS managed`,[id])).rows[0]?.managed;
+      if(managed)throw new ConflictException('Gateway is already managed by the control plane');
+      const existing=await this.existingDevices(client,id);
+      const prepared=await this.prepare(client,this.inheritSenderIdentity(devices,existing));
+      await this.validateExistingPlan(client,gateway,existing,prepared,continuity);
+      const normalized=devices.map(device=>prepared.find(entry=>entry.device.deviceId===device.deviceId)?.device??device);
+      const version=Number(gateway.desired_config_version)+1;
+      const config=this.config(gateway.external_gateway_id,gateway.external_site_id,version,actor,normalized);
+      await this.applyDevices(client,gateway,normalized,continuity);
+      await this.saveRevision(client,id,config,actor);
+      await this.bindAppliedDevices(client,id,version);
+      await client.query(`UPDATE gateway_configuration_revisions SET applied_at=coalesce(applied_at,now()) WHERE gateway_id=$1 AND version=$2`,[id,version]);
+      await client.query(`UPDATE gateways SET applied_config_version=$2,desired_config_version=$2,active_config_hash=$3,
+        desired_config_hash=$3,lifecycle_state='active',config_state='applied',control_managed_at=coalesce(control_managed_at,now()) WHERE id=$1`,[id,version,config.configHash]);
+      const credential=await this.credentials.issue(client,id,actor);
+      await this.audit(client,actor,'gateway.control_plane.adopted',id,{configVersion:version,configHash:config.configHash,
+        billingContinuity:[...continuity.values()]});
+      return {gatewayId:id,configVersion:version,configHash:config.configHash,credential,
+        syncState:{gatewayId:id,lifecycleState:'active' as const,configState:'applied' as const,connectionState:'unknown' as const,
+          desiredConfigVersion:version,desiredConfigHash:config.configHash,activeConfigVersion:version,activeConfigHash:config.configHash}};
+    }));
+    await this.desiredCommitted(id,result.configVersion);
+    return result;
+  }
+
+  async correctInitialConfig(id:string,input:CorrectInitialGatewayConfigRequest,actor:string):Promise<{configVersion:number;configHash:string}> {
+    badInput(()=>{uuid.parse(id);uuid.parse(actor);z.number().int().positive().max(Number.MAX_SAFE_INTEGER).parse(input.expectedBaseConfigVersion);
+      z.string().regex(/^[0-9a-f]{64}$/).parse(input.expectedBaseConfigHash);});
+    const devices=validateConfirmation({discoveryRevision:1,siteId:id,devices:input.devices}).devices;
+    const result=await this.conflicts(()=>this.db.transaction(async client=>{
+      const gateway=await this.mutationGateway(client,id);
+      if(gateway.lifecycle_state!=='configuring'||gateway.applied_config_version!==0||!['pending_sync','failed'].includes(gateway.config_state)) {
+        throw new ConflictException('Only a pending or failed initial configuration can be corrected');
+      }
+      if(gateway.desired_config_version!==input.expectedBaseConfigVersion||gateway.desired_config_hash!==input.expectedBaseConfigHash) {
+        throw new ConflictException('Desired configuration changed; review before correcting');
+      }
+      const base=(await client.query('SELECT config,config_hash FROM gateway_configuration_revisions WHERE gateway_id=$1 AND version=$2',
+        [id,input.expectedBaseConfigVersion])).rows[0];
+      if(!base||base.config_hash!==input.expectedBaseConfigHash||base.config?.messageType!=='config')throw new ConflictException('Initial configuration identity changed');
+      const existing=await this.existingDevices(client,id);
+      const prepared=await this.prepare(client,this.inheritSenderIdentity(devices,existing));
+      await this.validateExistingPlan(client,gateway,existing,prepared);
+      const normalized=devices.map(device=>prepared.find(entry=>entry.device.deviceId===device.deviceId)?.device??device);
+      const config=this.config(gateway.external_gateway_id,gateway.external_site_id,Number(gateway.desired_config_version)+1,actor,normalized);
+      await this.saveRevision(client,id,config,actor);
+      await this.audit(client,actor,'gateway.initial_config.corrected',id,{baseConfigVersion:input.expectedBaseConfigVersion,
+        baseConfigHash:input.expectedBaseConfigHash,configVersion:config.configVersion,configHash:config.configHash});
+      return {configVersion:config.configVersion,configHash:config.configHash};
+    }));
+    await this.desiredCommitted(id,result.configVersion);
+    return result;
+  }
+
   async recordConfigStatus(input: GatewayControlInput): Promise<{ activated: boolean }> {
     const payload = this.controlPayload('configStatus', input);
     return this.conflicts(() => this.db.transaction(async client => {
@@ -212,11 +342,17 @@ export class GatewayConfigurationService {
         VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb) ON CONFLICT DO NOTHING RETURNING id`,
       [gateway.id, payload.messageId, payload.configVersion, payload.configHash, payload.status, payload.reportedAt,
         payload.error ? JSON.stringify(payload.error) : null, JSON.stringify(payload)])).rows[0];
-      if (!inserted) return { activated: false };
       const revision = (await client.query(`SELECT config,config_hash FROM gateway_configuration_revisions WHERE gateway_id=$1 AND version=$2`,
         [gateway.id, payload.configVersion])).rows[0];
-      const matching = revision && revision.config_hash === payload.configHash
+      const revisionMatching=revision&&revision.config_hash===payload.configHash;
+      const matching = revisionMatching
         && gateway.desired_config_version === payload.configVersion && gateway.desired_config_hash === payload.configHash;
+      if (!inserted) {
+        if(payload.status==='applied'&&revisionMatching&&gateway.applied_config_version===payload.configVersion&&gateway.active_config_hash===payload.configHash) {
+          await this.bindAppliedDevices(client,gateway.id,payload.configVersion);
+        }
+        return { activated: false };
+      }
       if (!matching) {
         await client.query(`UPDATE gateways SET config_state='drifted',last_status_at=now() WHERE id=$1`, [gateway.id]);
         return { activated: false };
@@ -230,6 +366,7 @@ export class GatewayConfigurationService {
       if (payload.status !== 'applied' || !['active', 'configuring'].includes(gateway.lifecycle_state)) return { activated: false };
       if (gateway.applied_config_version >= payload.configVersion) {
         if (gateway.applied_config_version === payload.configVersion && gateway.active_config_hash === payload.configHash) {
+          await this.bindAppliedDevices(client,gateway.id,payload.configVersion);
           await client.query(`UPDATE gateways SET config_state='applied',last_status_at=now() WHERE id=$1`, [gateway.id]);
         }
         return { activated: false };
@@ -238,6 +375,7 @@ export class GatewayConfigurationService {
       if (config.gatewayId !== input.gatewayId || config.siteId !== gateway.external_site_id
         || config.configVersion !== payload.configVersion || config.configHash !== payload.configHash) throw new BadRequestException('Stored configuration identity mismatch');
       await this.applyDevices(client, gateway, config.devices);
+      await this.bindAppliedDevices(client,gateway.id,payload.configVersion);
       await client.query(`UPDATE gateway_configuration_revisions SET applied_at=coalesce(applied_at,now()) WHERE gateway_id=$1 AND version=$2`, [gateway.id, payload.configVersion]);
       await client.query(`UPDATE gateways SET applied_config_version=$2,active_config_hash=$3,lifecycle_state='active',config_state='applied',last_status_at=now() WHERE id=$1`,
         [gateway.id, payload.configVersion, payload.configHash]);
@@ -268,7 +406,8 @@ export class GatewayConfigurationService {
       (SELECT status FROM gateway_connection_events WHERE gateway_id=g.id ORDER BY received_at DESC,id DESC LIMIT 1) AS connection_state,
       (SELECT received_at FROM gateway_config_status_events WHERE gateway_id=g.id ORDER BY received_at DESC,id DESC LIMIT 1) AS last_received_at,
       (SELECT error FROM gateway_config_status_events WHERE gateway_id=g.id AND config_version=g.desired_config_version
-        AND config_hash=g.desired_config_hash ORDER BY received_at DESC,id DESC LIMIT 1) AS last_error
+        AND config_hash=g.desired_config_hash ORDER BY received_at DESC,id DESC LIMIT 1) AS last_error,
+      (SELECT config FROM gateway_configuration_revisions WHERE gateway_id=g.id AND version=g.desired_config_version) AS desired_config
       FROM gateways g WHERE g.id=$1 AND g.retired_at IS NULL`, [id])).rows[0];
     if (!row) throw new NotFoundException('Gateway not found');
     const configState = ['failed', 'drifted'].includes(row.config_state) ? row.config_state
@@ -276,6 +415,7 @@ export class GatewayConfigurationService {
     return { gatewayId: id, lifecycleState: row.lifecycle_state, configState, connectionState: row.connection_state ?? 'unknown',
       desiredConfigVersion: row.desired_config_version, desiredConfigHash: row.desired_config_hash,
       activeConfigVersion: row.applied_config_version, activeConfigHash: row.active_config_hash,
+      desiredConfig: row.desired_config ?? null,
       lastReceivedAt: row.last_received_at ?? null, lastError: row.last_error ?? null };
   }
 
@@ -293,12 +433,24 @@ export class GatewayConfigurationService {
 
   async rotateCredential(id: string, actor: string): Promise<{ username: string; password: string }> {
     badInput(() => { uuid.parse(id); uuid.parse(actor); });
-    return this.conflicts(() => this.db.transaction(async client => {
-      await this.mutationGateway(client, id);
-      const credential = await this.credentials.rotate(client, id, actor);
-      await this.audit(client, actor, 'gateway.credential.rotated', id, { username: credential.username });
-      return credential;
+    const pending=await this.conflicts(() => this.db.transaction(async client => {
+      const gateway=await this.mutationGateway(client, id);
+      await client.query('UPDATE gateways SET mqtt_access_suspended=true WHERE id=$1',[id]);
+      const credential = await this.credentials.rotateWithGeneration(client, id, actor);
+      await this.audit(client, actor, 'gateway.credential.rotation_started', id, { username: credential.username,credentialId:credential.id });
+      return {credential,brokerId:gateway.mqtt_broker_id,clientId:gateway.external_gateway_id};
     }));
+    if(!this.sessionRevoker)throw new ServiceUnavailableException('MQTT session termination is not configured');
+    try{await this.sessionRevoker.kick(pending.brokerId,pending.clientId);}
+    catch{throw new ServiceUnavailableException('MQTT session termination could not be confirmed');}
+    await this.conflicts(()=>this.db.transaction(async client=>{
+      await this.mutationGateway(client,id);
+      const current=(await client.query('SELECT id FROM gateway_mqtt_credentials WHERE gateway_id=$1 AND id=$2 AND revoked_at IS NULL',[id,pending.credential.id])).rows;
+      if(current.length!==1)throw new ConflictException('Credential rotation was superseded; retry');
+      await client.query('UPDATE gateways SET mqtt_access_suspended=false WHERE id=$1',[id]);
+      await this.audit(client,actor,'gateway.credential.rotated',id,{username:pending.credential.username,credentialId:pending.credential.id});
+    }));
+    return {username:pending.credential.username,password:pending.credential.password};
   }
 
   private controlPayload<K extends Exclude<GatewayControlKind, 'register' | 'config'>>(kind: K, input: GatewayControlInput): GatewayControlPayloads[K] {
@@ -310,7 +462,7 @@ export class GatewayConfigurationService {
   private async mutationGateway(client: PoolClient, identity: string | GatewayControlInput): Promise<GatewayRow> {
     const values: unknown[] = typeof identity === 'string' ? [identity] : [identity.gatewayId, identity.brokerId ?? null];
     const lookup = typeof identity === 'string' ? 'g.id=$1'
-      : 'g.external_gateway_id=$1 AND g.mqtt_broker_id IS NOT DISTINCT FROM $2::uuid';
+      : 'g.external_gateway_id=$1 AND g.mqtt_broker_id IS NOT DISTINCT FROM $2::uuid AND NOT g.mqtt_access_suspended';
     const select = `SELECT g.*,s.external_site_id FROM gateways g JOIN sites s ON s.id=g.site_id
       WHERE ${lookup} AND g.retired_at IS NULL AND s.status<>'archived'`;
     // Identify without locking the gateway: archive/ownership paths lock site
@@ -341,11 +493,11 @@ export class GatewayConfigurationService {
     return row;
   }
 
-  private async applyDevices(client: PoolClient, gateway: GatewayRow, devices: GatewayDeviceConfig[]) {
+  private async applyDevices(client: PoolClient, gateway: GatewayRow, devices: GatewayDeviceConfig[],continuity?:Map<string,{expectedProfileRevisionId:string;expectedBillingSourceBindingId:string}>) {
     const gatewayId = gateway.id, siteId = gateway.site_id;
     const existing = await this.existingDevices(client,gatewayId);
     const prepared = await this.prepare(client, this.inheritSenderIdentity(devices,existing), false);
-    await this.validateExistingPlan(client,gateway,existing,prepared);
+    await this.validateExistingPlan(client,gateway,existing,prepared,continuity);
     const enabled = prepared.map(p => p.device.deviceId);
     await client.query(`UPDATE devices SET status='disabled',payload_profile_revision_id=NULL WHERE gateway_id=$1 AND NOT(external_device_id=ANY($2::text[]))`, [gatewayId, enabled]);
     for (const entry of prepared) {
@@ -379,6 +531,8 @@ export class GatewayConfigurationService {
     return (await client.query<ExistingDevice>(`SELECT d.*,p.config AS profile_config,
       EXISTS(SELECT 1 FROM billing_meters b WHERE b.device_id=d.id AND b.site_id=d.site_id AND b.active) AS billing,
       EXISTS(SELECT 1 FROM billing_meters b WHERE b.device_id=d.id AND b.site_id=d.site_id AND b.active AND b.billing_source_binding_id IS NOT NULL) AS billing_bound,
+      (SELECT CASE WHEN count(*)=1 THEN (array_agg(b.billing_source_binding_id ORDER BY b.billing_source_binding_id))[1] ELSE NULL END
+        FROM billing_meters b WHERE b.device_id=d.id AND b.site_id=d.site_id AND b.active AND b.billing_source_binding_id IS NOT NULL) AS billing_source_binding_id,
       (SELECT coalesce(jsonb_agg(jsonb_build_object('tag',r.semantic_field,'registerAddress',r.register_address,'dataType',r.data_type,
         'registerCount',r.register_count,'byteOrder',r.byte_order,'wordOrder',r.word_order,'scale',r.scale,'sourceUnit',r.unit,
         'offset',coalesce((r.quality_rule->>'offset')::numeric,0),'pollGroup',r.quality_rule->>'pollGroup') ORDER BY r.semantic_field),'[]'::jsonb)
@@ -409,7 +563,7 @@ export class GatewayConfigurationService {
       &&gatewayConfigHash(physical(previous.registers??[]))===gatewayConfigHash(physical(next.device.mappings));
   }
 
-  private async validateExistingPlan(client:PoolClient,gateway:{id:string;applied_config_version:number},existing:ExistingDevice[],prepared:PreparedDevice[]) {
+  private async validateExistingPlan(client:PoolClient,gateway:{id:string;applied_config_version:number},existing:ExistingDevice[],prepared:PreparedDevice[],continuity?:Map<string,{expectedProfileRevisionId:string;expectedBillingSourceBindingId:string}>) {
     let activeDevices:GatewayDeviceConfig[]=[];
     if(existing.some(row=>row.billing_bound)) {
       const active=(await client.query('SELECT config FROM gateway_configuration_revisions WHERE gateway_id=$1 AND version=$2',
@@ -418,6 +572,9 @@ export class GatewayConfigurationService {
     }
     for(const previous of existing) {
       const next=prepared.find(p=>p.device.deviceId===previous.external_device_id);
+      const proof=continuity?.get(previous.external_device_id);
+      if(proof&&(!previous.billing_bound||proof.expectedProfileRevisionId!==previous.payload_profile_revision_id
+        ||proof.expectedBillingSourceBindingId!==previous.billing_source_binding_id))throw new ConflictException('Billing continuity evidence changed; review adoption again');
       if(!next) {
         if(previous.billing)throw new ConflictException('Active billing device removal requires explicit billing source review');
         continue;
@@ -429,11 +586,17 @@ export class GatewayConfigurationService {
       }
       if(previous.billing&&!next.profile.fields.some(field=>field.role==='billing-import'))throw new BadRequestException('Billing device requires a cumulative billing-import field');
       if(previous.billing_bound) {
+        if(continuity&&!proof)throw new ConflictException('Billing-bound legacy device requires explicit continuity review');
         const active=activeDevices.find(d=>d.deviceId===previous.external_device_id);
-        const connectionUnchanged=active&&gatewayConfigHash({protocol:active.protocol,connection:active.connection,serialNumber:active.serialNumber})
+        const hasLegacyConnection=active?.protocol!==undefined&&active.connection!==undefined&&active.serialNumber!==undefined;
+        const connectionUnchanged=hasLegacyConnection&&gatewayConfigHash({protocol:active.protocol,connection:active.connection,serialNumber:active.serialNumber})
           ===gatewayConfigHash({protocol:next.device.protocol,connection:next.device.connection,serialNumber:next.device.serialNumber});
-        if(!this.sameDecoder(previous,next)||!connectionUnchanged)throw new ConflictException('Billing source change requires explicit billing continuity review and rebind');
+        const reviewedLegacy=Boolean(continuity&&proof&&!hasLegacyConnection);
+        if(!this.sameDecoder(previous,next)||!connectionUnchanged&&!reviewedLegacy)throw new ConflictException('Billing source change requires explicit billing continuity review and rebind');
       }
+    }
+    if(continuity&&[...continuity.keys()].some(deviceId=>!existing.some(row=>row.external_device_id===deviceId&&row.billing_bound))) {
+      throw new ConflictException('Billing continuity evidence does not match a billing-bound device');
     }
   }
 
@@ -459,14 +622,15 @@ export class GatewayConfigurationService {
       }
       const prepared = await this.prepare(client, body.devices);
       const gatewayId = randomUUID();
-      await client.query(`INSERT INTO gateways(id,site_id,name,endpoint,external_gateway_id,mqtt_broker_id,protocol,status,lifecycle_state,config_state,polling_interval_seconds)
-        VALUES($1,$2,$3,$4,$5,$6,'mqtt','offline','configuring','pending_sync',60)`,
+      await client.query(`INSERT INTO gateways(id,site_id,name,endpoint,external_gateway_id,mqtt_broker_id,protocol,status,lifecycle_state,config_state,polling_interval_seconds,control_managed_at)
+        VALUES($1,$2,$3,$4,$5,$6,'mqtt','offline','configuring','pending_sync',60,now())`,
       [gatewayId, site.id, 'Gateway ' + discovery.external_gateway_id,
         `solar/v1/sites/${site.external_site_id}/gateways/${discovery.external_gateway_id}/devices/+/telemetry`, discovery.external_gateway_id, discovery.mqtt_broker_id]);
       for (const entry of prepared) await this.materialize(client, gatewayId, site.id, entry);
       const config = this.config(discovery.external_gateway_id, site.external_site_id, 1, actor,
         body.devices.map(d => prepared.find(p => p.device.deviceId === d.deviceId)?.device ?? d));
       await this.saveRevision(client, gatewayId, config, actor);
+      await this.bindAppliedDevices(client,gatewayId,config.configVersion);
       const credential = await this.credentials.issue(client, gatewayId, actor);
       await client.query(`UPDATE discovered_gateways SET status='configuring',assigned_site_id=$2,assigned_gateway_id=$3,assigned_at=now() WHERE id=$1`, [id, site.id, gatewayId]);
       await this.audit(client, actor, 'gateway.onboarding.confirmed', gatewayId,
@@ -574,6 +738,10 @@ export class GatewayConfigurationService {
     await client.query(`INSERT INTO gateway_configuration_revisions(id,gateway_id,version,config,config_hash,approved_by)
       VALUES($1,$2,$3,$4::jsonb,$5,$6)`, [randomUUID(), gatewayId, config.configVersion, JSON.stringify(config), config.configHash, actor]);
     await client.query(`UPDATE gateways SET desired_config_version=$2,desired_config_hash=$3,config_state='pending_sync' WHERE id=$1`, [gatewayId, config.configVersion, config.configHash]);
+  }
+
+  private async bindAppliedDevices(client:PoolClient,gatewayId:string,version:number):Promise<void> {
+    await client.query(BIND_APPLIED_DEVICES_SQL,[gatewayId,version]);
   }
 
   private async audit(client: PoolClient, actor: string, action: string, id: string, evidence: unknown) {

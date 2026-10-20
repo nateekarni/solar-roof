@@ -19,7 +19,7 @@ function fixture(verification?: GatewayCredentialVerification) {
   const gateway = { id: '11111111-1111-4111-8111-111111111111', external_gateway_id: 'GW-001', site_id: 'site-db-id',
     external_site_id: 'SITE-01', lifecycle_state: 'active', retired_at: null as string | null,
     protocol: 'mqtt', gateway_status: 'offline', site_status: 'online', credential_id: 'credential-id',
-    username: 'GW-001', password_hash: hash, revoked_at: null as string | null };
+    username: 'GW-001', password_hash: hash, revoked_at: null as string | null, mqtt_access_suspended:false };
   const devices = [{ external_device_id: 'METER-01', gateway_id: gateway.id, site_id: gateway.site_id, status: 'online' }];
   const queries: { sql: string; values: unknown[] }[] = [];
   let exists = true, fail = false, ambiguous = false;
@@ -28,8 +28,9 @@ function fixture(verification?: GatewayCredentialVerification) {
     if (fail) throw Error('driver failure containing a password/hash');
     assert.ok(!/^\s*(INSERT|UPDATE|DELETE)\b/i.test(sql), 'auth/ACL cannot write discovery or timestamps');
     if (/FROM gateway_mqtt_credentials/.test(sql)) {
-      assert.deepEqual(values, [gateway.id]);
-      return { rows: exists && gateway.revoked_at === null ? [gateway] : [] };
+      if(/c\.id=\$2/.test(sql))assert.deepEqual(values,[gateway.id,gateway.credential_id]);
+      else assert.deepEqual(values, [gateway.id]);
+      return { rows: exists && gateway.revoked_at === null ? [{...gateway,id:gateway.credential_id}] : [] };
     }
     if (/FROM devices/.test(sql)) {
       assert.deepEqual(values, [gateway.id, gateway.site_id]);
@@ -143,6 +144,13 @@ test('authentication and ACL deny invalid lifecycle, retirement, site, protocol 
     assert.deepEqual(await f.controller.authenticate({ ...registered, password }, headers), deny, JSON.stringify(change));
     assert.deepEqual(await f.controller.authorize(controlAcl, headers), deny, JSON.stringify(change));
   }
+});
+
+test('credential rotation suspension immediately denies both an old connected session ACL and new authentication',async()=>{
+  const f=fixture();f.gateway.mqtt_access_suspended=true;
+  assert.deepEqual(await f.controller.authenticate({...registered,password},headers),deny);
+  assert.deepEqual(await f.controller.authorize(controlAcl,headers),deny);
+  assert.deepEqual(await f.controller.authorize(telemetryAcl,headers),deny);
 });
 
 test('registered ACL permits own exact control publishes and config subscription', async () => {

@@ -9,8 +9,8 @@ const gatewayId = '11111111-1111-4111-8111-111111111111';
 const actorId = '22222222-2222-4222-8222-222222222222';
 function fixture(verification?: GatewayCredentialVerification) {
   const gateway = { id: gatewayId, external_gateway_id: 'GW-001', lifecycle_state: 'active',
-    retired_at: null as string | null, protocol: 'mqtt', gateway_status: 'offline', site_status: 'online' };
-  const credentials: { gateway_id: string; username: string; password_hash: string; revoked_at: string | null; created_by: string }[] = [];
+    retired_at: null as string | null, protocol: 'mqtt', gateway_status: 'offline', site_status: 'online',mqtt_access_suspended:false };
+  const credentials: { id:string;gateway_id: string; username: string; password_hash: string; revoked_at: string | null; created_by: string }[] = [];
   const queries: { sql: string; values: unknown[] }[] = [];
   let failInsert = false;
   const query = async (sql: string, values: unknown[] = []) => {
@@ -27,14 +27,18 @@ function fixture(verification?: GatewayCredentialVerification) {
     }
     if (/INSERT INTO gateway_mqtt_credentials/.test(sql)) {
       if (failInsert) throw Error('insert failed');
-      assert.deepEqual(values.slice(0, 2), [gatewayId, 'GW-001']);
-      assert.equal(values[3], actorId);
+      assert.deepEqual(values.slice(1, 3), [gatewayId, 'GW-001']);
+      assert.equal(values[4], actorId);
       assert.ok(!credentials.some(c => c.revoked_at === null), 'revoke must precede insert to obey partial unique index');
-      credentials.push({ gateway_id: String(values[0]), username: String(values[1]), password_hash: String(values[2]), created_by: String(values[3]), revoked_at: null });
+      credentials.push({ id:String(values[0]),gateway_id: String(values[1]), username: String(values[2]), password_hash: String(values[3]), created_by: String(values[4]), revoked_at: null });
       return { rows: [] };
     }
     assert.match(sql, /FROM gateway_mqtt_credentials[\s\S]*JOIN gateways/);
     assert.match(sql, /revoked_at IS NULL/);
+    if (/c\.id=\$2/.test(sql)) {
+      assert.deepEqual(values, [gatewayId, values[1]]);
+      return { rows: credentials.filter(c => c.gateway_id === values[0] && c.id === values[1] && !c.revoked_at).map(c => ({ ...gateway, ...c })) };
+    }
     assert.deepEqual(values, [gatewayId]);
     return { rows: credentials.filter(c => c.gateway_id === values[0] && !c.revoked_at).map(c => ({ ...gateway, ...c })) };
   };
@@ -74,6 +78,33 @@ test('rotate revokes the previous credential, keeps its history, and invalidates
   assert.equal(await f.service.verify(gatewayId, second.password), true);
 });
 
+test('verify rejects a credential generation rotated or suspended while Argon2 is still running', async () => {
+  let release!: (value: boolean) => void;
+  let started!: () => void;
+  const hashingStarted = new Promise<void>(resolve => { started = resolve; });
+  const verification = new GatewayCredentialVerification({ verifyHash: async () => {
+    started();
+    return await new Promise<boolean>(resolve => { release = resolve; });
+  } });
+  const f = fixture(verification);
+  const issued = await f.db.transaction(client => f.service.issue(client, gatewayId, actorId));
+  const pending = f.service.verify(gatewayId, issued.password);
+  await hashingStarted;
+  f.credentials[0]!.revoked_at = '2026-10-20T00:00:00Z';
+  f.credentials.push({ ...f.credentials[0]!, id: '33333333-3333-4333-8333-333333333333', revoked_at: null });
+  f.gateway.mqtt_access_suspended = true;
+  release(true);
+  assert.equal(await pending, false);
+});
+
+test('rotation exposes an internal immutable generation while the public issue result stays plaintext-only',async()=>{
+  const f=fixture();
+  const generation=await f.db.transaction(client=>f.service.rotateWithGeneration(client,gatewayId,actorId));
+  assert.match(generation.id,/^[0-9a-f-]{36}$/);
+  assert.equal(f.credentials[0]?.id,generation.id);
+  assert.deepEqual(Object.keys(await f.db.transaction(client=>f.service.issue(client,gatewayId,actorId))).sort(),['password','username']);
+});
+
 test('failed rotation rolls back revocation in the caller transaction', async () => {
   const f = fixture();
   const first = await f.db.transaction(client => f.service.issue(client, gatewayId, actorId));
@@ -102,6 +133,7 @@ test('verify denies missing, revoked, mismatched, malformed, inactive and ambigu
   for (const change of [
     { lifecycle_state: 'disabled' }, { lifecycle_state: 'discovered' }, { retired_at: '2026-10-19T01:00:00Z' },
     { gateway_status: 'inactive' }, { protocol: 'http' }, { site_status: 'archived' },
+    { mqtt_access_suspended: true },
   ]) {
     const original = { ...f.gateway };
     Object.assign(f.gateway, change);

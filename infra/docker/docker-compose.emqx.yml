@@ -22,6 +22,9 @@ services:
       - EMQX_DASHBOARD__LISTENERS__HTTP__BIND=0
       - EMQX_AUTHORIZATION__NO_MATCH=deny
       - EMQX_AUTHORIZATION__DENY_ACTION=ignore
+      # EMQX 5.8.3 HOCON path: do not retain a positive ACL decision after
+      # credential rotation suspends the gateway in the authoritative API.
+      - EMQX_AUTHORIZATION__CACHE__ENABLE=false
       - >-
         EMQX_AUTHENTICATION=[{"mechanism":"password_based","backend":"http","enable":true,"method":"post","url":"https://solar.fowir.com/v1/internal/mqtt/auth","headers":{"content-type":"application/json","x-internal-secret":"${INTERNAL_MQTT_SECRET:?required}"},"body":{"username":"$${username}","password":"$${password}","clientid":"$${clientid}","peerhost":"$${peerhost}"},"pool_size":8,"connect_timeout":"5s","request_timeout":"5s","ssl":{"enable":true,"verify":"verify_peer","cacertfile":"/opt/emqx/certs/webhook-ca.pem","server_name_indication":"solar.fowir.com"}}]
       - >-

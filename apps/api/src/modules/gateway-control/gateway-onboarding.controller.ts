@@ -8,6 +8,11 @@ interface AdminRequest { user?: { id?: string | undefined; role?: string | undef
 const uuid = z.uuid();
 const emptyBody = z.object({}).strict();
 const approveProposalBody=z.object({expectedProposalId:z.string().min(1).max(256),expectedBaseConfigVersion:z.number().int().min(1).max(Number.MAX_SAFE_INTEGER)}).strict();
+const adoptionBody=z.object({expectedDesiredConfigVersion:z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),devices:z.array(z.unknown()).max(32),
+  billingContinuity:z.array(z.object({deviceId:z.string().trim().min(1).max(128),expectedProfileRevisionId:uuid,
+    expectedBillingSourceBindingId:uuid}).strict()).max(32).optional()}).strict();
+const correctionBody=z.object({expectedBaseConfigVersion:z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
+  expectedBaseConfigHash:z.string().regex(/^[0-9a-f]{64}$/),devices:z.array(z.unknown()).max(32)}).strict();
 function parse<T>(schema: z.ZodType<T>, input: unknown): T {
   const result = schema.safeParse(input);
   if (!result.success) throw new BadRequestException('Invalid onboarding request');
@@ -45,6 +50,22 @@ export class GatewayOnboardingController {
   async rotate(@Param('id') id: string, @Body() body: unknown, @Req() req: AdminRequest) {
     const actor = this.admin(req); parse(emptyBody, body ?? {});
     return this.configuration.rotateCredential(parse(uuid, id), actor);
+  }
+
+  @Post(':id/adopt')
+  async adopt(@Param('id') id:string,@Body() body:unknown,@Req() req:AdminRequest){
+    const actor=this.admin(req),gatewayId=parse(uuid,id),input=parse(adoptionBody,body);
+    const devices=validateConfirmation({discoveryRevision:1,siteId:gatewayId,devices:input.devices}).devices;
+    return this.configuration.adoptExisting(gatewayId,input.billingContinuity
+      ?{expectedDesiredConfigVersion:input.expectedDesiredConfigVersion,devices,billingContinuity:input.billingContinuity}
+      :{expectedDesiredConfigVersion:input.expectedDesiredConfigVersion,devices},actor);
+  }
+
+  @Post(':id/configuration/correct')
+  async correct(@Param('id') id:string,@Body() body:unknown,@Req() req:AdminRequest){
+    const actor=this.admin(req),gatewayId=parse(uuid,id),input=parse(correctionBody,body);
+    const devices=validateConfirmation({discoveryRevision:1,siteId:gatewayId,devices:input.devices}).devices;
+    return this.configuration.correctInitialConfig(gatewayId,{...input,devices},actor);
   }
 
   @Get(':id/config-proposals')

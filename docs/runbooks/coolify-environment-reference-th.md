@@ -90,12 +90,20 @@ SMTP readiness, Finance flags, Owner confirmation และ site readiness เ�
 | `MQTT_URL` | ว่าง | URL ของ default broker เช่น `mqtts://mqtt-solar.example.com:8883` |
 | `MQTT_USERNAME` | ว่าง | บัญชี backend ของ default broker ไม่ใช่บัญชี Gateway |
 | `MQTT_PASSWORD` | Secret / ว่าง | รหัส backend ของ default broker |
+| `INTERNAL_MQTT_SECRET` | Secret / ว่าง | secret ที่ EMQX ส่งให้ HTTP auth/ACL callback |
+| `EMQX_MANAGEMENT_URL` | ว่าง | HTTPS base URL ของ EMQX Management API สำหรับตัด client session ตอนหมุน credential |
+| `EMQX_MANAGEMENT_API_KEY` | Secret / ว่าง | Application/API key ที่มีสิทธิ์จัดการ client session ไม่ใช่ Dashboard username |
+| `EMQX_MANAGEMENT_API_SECRET` | Secret / ว่าง | secret คู่กับ Management API key |
+| `EMQX_MANAGEMENT_DEFAULT_BROKER_ID` | ว่าง | UUID ของ broker record ที่ default Management URL จัดการจริง; บังคับเพื่อป้องกันตัด session ผิด cluster |
+| `EMQX_MANAGEMENT_BROKERS_JSON` | ว่าง | optional JSON map จาก broker UUID ไป `{url,apiKey,apiSecret}` สำหรับหลาย Broker |
 
 รูปแบบใช้งาน:
 
 - ยังไม่เปิด MQTT: `MQTT_ENABLED=false`, `MQTT_DEFAULT_BROKER_ENABLED=false` และปล่อย URL/account ว่าง
 - Broker ภายนอกที่บันทึกผ่าน Admin: `MQTT_ENABLED=true`, `MQTT_DEFAULT_BROKER_ENABLED=false` และปล่อย default broker ENV ว่าง
 - Broker ที่ระบบจัดการเอง: `MQTT_ENABLED=true`, `MQTT_DEFAULT_BROKER_ENABLED=true` และกรอก URL/backend account ให้ครบ
+
+Deployment ที่เปิดการหมุน Gateway credential ต้องกำหนด Management URL/key/secret/default broker UUID ให้ครบ เพราะระบบจะ fail closed และคง Gateway ไว้ในสถานะ MQTT suspended หาก broker UUID ไม่มี explicit mapping หรือยืนยันการตัด session เดิมไม่ได้ URL ต้องเป็น HTTPS และ secret ห้ามใส่ใน URL
 
 ### 1.7 Ingestion, connection pools และ timeout
 

@@ -8,6 +8,7 @@ import type {
   DiscoveredGatewayRow,
   GatewayConfigProposal,
   GatewaySyncState,
+  CorrectInitialGatewayConfigRequest,
 } from '@solar/api-contracts';
 import {apiClient} from '../../lib/api-client';
 import type {GatewayDiscoveryDetail} from './gateway-onboarding-draft';
@@ -116,4 +117,10 @@ export async function approveGatewayProposal(queryClient:QueryClient,gatewayId:s
 export async function rejectGatewayProposal(queryClient:QueryClient,gatewayId:string,proposalId:string,reason:string){
   await apiClient.post(`/v1/gateways/${encodeURIComponent(gatewayId)}/config-proposals/${encodeURIComponent(proposalId)}/reject`,{reason});
   await invalidateGatewayProposalState(queryClient,gatewayId);
+}
+
+export async function correctInitialGatewayConfig(queryClient:QueryClient,gatewayId:string,request:CorrectInitialGatewayConfigRequest){
+  const result=await apiClient.post<{configVersion:number;configHash:string}>(`/v1/gateways/${encodeURIComponent(gatewayId)}/configuration/correct`,request);
+  await invalidateGatewayProposalState(queryClient,gatewayId);
+  return result;
 }

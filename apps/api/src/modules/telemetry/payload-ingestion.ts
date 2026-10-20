@@ -14,7 +14,7 @@ export interface TelemetryAck {
   status: 'accepted';
   acceptedAt: string;
 }
-interface RegisteredBinding {deviceId:string;siteId:string;gatewayId:string;externalSiteId:string;externalGatewayId:string;externalDeviceId:string;revisionId:string;config:PayloadProfile;billing:boolean;appliedConfigVersion:number;activeConfigHash:string;billingSource?:{id:string;siteId:string;deviceId:string;profileRevisionId:string;sourceTag:string;canonicalTag:string;sourceUnit:string;targetUnit:string;conversion:string}|null}
+interface RegisteredBinding {deviceId:string;siteId:string;gatewayId:string;externalSiteId:string;externalGatewayId:string;externalDeviceId:string;revisionId:string;config:PayloadProfile;billing:boolean;appliedConfigVersion:number;activeConfigHash:string|null;controlManagedAt:string|null;billingSource?:{id:string;siteId:string;deviceId:string;profileRevisionId:string;sourceTag:string;canonicalTag:string;sourceUnit:string;targetUnit:string;conversion:string}|null}
 export class PayloadIngestion {
  constructor(private readonly db: DatabaseService) {}
   async acceptMany(
@@ -83,12 +83,13 @@ export class PayloadIngestion {
   const segments=/^solar\/v1\/sites\/([A-Za-z0-9_-]{1,128})\/gateways\/([A-Za-z0-9_-]{1,128})\/devices\/([A-Za-z0-9_-]{1,128})\/telemetry$/.exec(topic);
   if (!segments) return null;
   const site=segments[1]!, gateway=segments[2]!, device=segments[3]!;
-  const found=await this.db.query<RegisteredBinding>(`SELECT d.id AS "deviceId",d.site_id AS "siteId",g.id AS "gatewayId",s.external_site_id AS "externalSiteId",g.external_gateway_id AS "externalGatewayId",d.external_device_id AS "externalDeviceId",p.id AS "revisionId",p.config,g.applied_config_version AS "appliedConfigVersion",g.active_config_hash AS "activeConfigHash",EXISTS(SELECT 1 FROM billing_meters b WHERE b.device_id=d.id AND b.site_id=d.site_id AND b.active) AS billing,
+  const found=await this.db.query<RegisteredBinding>(`SELECT d.id AS "deviceId",d.site_id AS "siteId",g.id AS "gatewayId",s.external_site_id AS "externalSiteId",g.external_gateway_id AS "externalGatewayId",d.external_device_id AS "externalDeviceId",p.id AS "revisionId",p.config,g.applied_config_version AS "appliedConfigVersion",g.active_config_hash AS "activeConfigHash",g.control_managed_at AS "controlManagedAt",EXISTS(SELECT 1 FROM billing_meters b WHERE b.device_id=d.id AND b.site_id=d.site_id AND b.active) AS billing,
    (SELECT jsonb_build_object('id',bs.id,'siteId',bs.site_id,'deviceId',bs.device_id,'profileRevisionId',bs.profile_revision_id,'sourceTag',bs.source_tag,'canonicalTag',bs.canonical_tag,'sourceUnit',bs.source_unit,'targetUnit',bs.target_unit,'conversion',bs.conversion) FROM billing_meters b JOIN billing_source_bindings bs ON bs.id=b.billing_source_binding_id AND bs.meter_id=b.id WHERE b.device_id=d.id AND b.site_id=d.site_id AND b.active AND bs.site_id=d.site_id AND bs.device_id=d.id LIMIT 1) AS "billingSource"
    FROM devices d JOIN gateways g ON g.id=d.gateway_id AND g.site_id=d.site_id JOIN sites s ON s.id=d.site_id JOIN payload_profile_revisions p ON p.id=d.payload_profile_revision_id
    WHERE s.external_site_id=$1 AND g.external_gateway_id=$2 AND d.external_device_id=$3 AND s.status<>'archived'
-    AND g.protocol='mqtt' AND g.retired_at IS NULL AND g.lifecycle_state='active' AND g.applied_config_version>0
-    AND g.active_config_hash IS NOT NULL AND d.status<>'disabled' AND d.payload_profile_revision_id IS NOT NULL
+    AND g.protocol='mqtt' AND g.retired_at IS NULL AND g.lifecycle_state='active' AND NOT g.mqtt_access_suspended
+    AND ((g.applied_config_version>0 AND g.active_config_hash IS NOT NULL) OR g.control_managed_at IS NULL)
+    AND d.status<>'disabled' AND d.payload_profile_revision_id IS NOT NULL
     AND ($4::boolean OR g.mqtt_broker_id IS NOT DISTINCT FROM $5::uuid)`,[site,gateway,device,brokerId===undefined,brokerId??null]);
   const entity=found.rows.length===1?found.rows[0]:undefined;
   if (!entity) {
@@ -108,10 +109,22 @@ export class PayloadIngestion {
     const version=input.configurationVersion;
     if(!Number.isSafeInteger(version)||Number(version)<1){await this.reject(topic,'Invalid configuration version',entity);return null;}
     if(version!==entity.appliedConfigVersion){await this.reject(topic,'Telemetry configurationVersion is not the active configuration version',entity);return null;}
-    const configuration=(await this.db.query(`SELECT config FROM gateway_configuration_revisions WHERE gateway_id=$1 AND version=$2`,[entity.gatewayId,version])).rows[0];
-    const registered=configuration?.config?.devices?.find((d:{deviceId:string})=>d.deviceId===entity.externalDeviceId);
-    if(!registered?.profileRevisionId||revisionHint&&revisionHint!==registered.profileRevisionId){await this.reject(topic,'No registered device in configuration version',entity);return null;}
-    revisionHint=registered.profileRevisionId;
+    const bindings=(await this.db.query<{revisionId:string;config:PayloadProfile}>(`SELECT b.profile_revision_id AS "revisionId",p.config
+      FROM gateway_configuration_device_bindings b JOIN payload_profile_revisions p ON p.id=b.profile_revision_id
+      WHERE b.gateway_id=$1 AND b.config_version=$2 AND b.external_device_id=$3`,
+    [entity.gatewayId,version,entity.externalDeviceId])).rows;
+    let registered=bindings.length===1?bindings[0]:undefined;
+    let registeredRevisionId=registered?.revisionId;
+    if(!registered&&bindings.length===0&&entity.controlManagedAt===null){
+     const snapshots=(await this.db.query<{config:unknown}>('SELECT config FROM gateway_configuration_revisions WHERE gateway_id=$1 AND version=$2',[entity.gatewayId,version])).rows;
+     const config=snapshots.length===1&&snapshots[0]?.config&&typeof snapshots[0].config==='object'?snapshots[0].config as {devices?:unknown}:undefined;
+     const devices=Array.isArray(config?.devices)?config.devices.filter((candidate):candidate is {deviceId:string;profileRevisionId:string}=>Boolean(candidate&&typeof candidate==='object'
+      &&(candidate as {deviceId?:unknown}).deviceId===entity.externalDeviceId&&typeof (candidate as {profileRevisionId?:unknown}).profileRevisionId==='string'
+      &&(candidate as {profileRevisionId:string}).profileRevisionId.length>0)):[];
+     if(devices.length===1)registeredRevisionId=devices[0]!.profileRevisionId;
+    }
+    if(!registeredRevisionId||revisionHint&&revisionHint!==registeredRevisionId){await this.reject(topic,'No unambiguous registered device in configuration version',entity);return null;}
+    revisionHint=registeredRevisionId;
    }
    const candidates=assigned.filter(p=>{const source=p.config.sourceProfile??p.config;return (!revisionHint||revisionHint===p.revisionId)&&(!hint?.profileId||hint.profileId===source.id)&&(!hint?.profileVersion||hint.profileVersion===source.version);});
    if(candidates.length>1){
@@ -136,8 +149,9 @@ export class PayloadIngestion {
    if(!siteRow)throw Error('Gateway site changed; retry message');
    const gatewayRow=(await client.query(`SELECT id FROM gateways
     WHERE id=$1 AND site_id=$2 AND external_gateway_id=$3 AND retired_at IS NULL AND protocol='mqtt'
-      AND lifecycle_state='active' AND status IN ('online','offline','active')
-      AND applied_config_version=$6 AND active_config_hash=$7
+      AND lifecycle_state='active' AND status IN ('online','offline','active') AND NOT mqtt_access_suspended
+      AND ((applied_config_version=$6 AND active_config_hash=$7 AND active_config_hash IS NOT NULL) OR
+        (active_config_hash IS NULL AND control_managed_at IS NULL))
       AND ($4::boolean OR mqtt_broker_id IS NOT DISTINCT FROM $5::uuid) FOR UPDATE`,
    [entity.gatewayId,entity.siteId,entity.externalGatewayId,brokerId===undefined,brokerId??null,entity.appliedConfigVersion,entity.activeConfigHash])).rows[0];
    if(!gatewayRow)throw Error('Gateway admission changed; retry message');

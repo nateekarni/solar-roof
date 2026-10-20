@@ -74,6 +74,7 @@ try {
     "infra/migrations/065_payload_samples_device_tag_latest_idx.sql",
     "infra/migrations/066_gateway_onboarding_control_plane.sql",
     "infra/migrations/067_gateway_configuration_publication_fence.sql",
+    "infra/migrations/068_gateway_control_rollout_and_bindings.sql",
   ];
   for (const file of migrationFiles) {
     const sql = await readFile(new URL(`../../../../${file}`, import.meta.url), "utf8");

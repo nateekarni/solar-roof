@@ -30,6 +30,10 @@
 | `MQTT_CERTS_DIR` | directory ที่มี `fullchain.pem` และ `privkey.pem` |
 | `MQTT_WEBHOOK_CA_FILE` | PEM CA bundle สำหรับตรวจ TLS ของ `solar.fowir.com` |
 
+ที่ Web/API resource ต้องกำหนด `EMQX_MANAGEMENT_URL`, `EMQX_MANAGEMENT_API_KEY`, `EMQX_MANAGEMENT_API_SECRET` และ `EMQX_MANAGEMENT_DEFAULT_BROKER_ID` เพิ่มด้วย โดย UUID ตัวหลังต้องตรงกับ broker record ที่ URL นี้จัดการจริง หากเป็น remote broker ให้ใส่ target ใน `EMQX_MANAGEMENT_BROKERS_JSON`; ระบบจะไม่ fallback ไป broker เริ่มต้นที่ไม่เกี่ยวข้อง โดยสร้าง Application/API key ใน EMQX ที่มีสิทธิ์อ่าน/ลบ client session สำหรับ `DELETE /api/v5/clients/{clientid}` โดยเฉพาะ ห้ามใช้ Dashboard password และห้ามใส่ key/secret ใน URL ระบบใช้ค่านี้เพื่อตัด session เก่าก่อนยืนยันการหมุน Gateway credential
+
+Compose ของ EMQX 5.8.3 ต้องคง `EMQX_AUTHORIZATION__CACHE__ENABLE=false` ไว้ เพื่อไม่ให้ connected client ใช้ authorization cache เก่าหลัง gateway ถูก suspend/หมุน credential หลังแก้ค่านี้ต้อง recreate container (restart อย่างเดียวอาจไม่รับ environment ใหม่) และตรวจ effective configuration ก่อนเปิดการหมุน credential ห้าม deploy หาก assertion นี้ไม่ผ่าน
+
 Compose บังคับ callback ทั้งสองเส้นให้ใช้ `verify_peer`, CA bundle และ SNI `solar.fowir.com` ถ้า CA/hostname ไม่ตรงให้แก้ chain หรือ DNS ห้ามเปลี่ยนเป็น `verify_none`
 
 ### กรณีมี volume `emqx-data` เดิม

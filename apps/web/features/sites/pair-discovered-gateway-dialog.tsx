@@ -20,7 +20,7 @@ import {
   gatewayConfirmationRequest,gatewayOnboardingDraftFromDetail,isStaleDiscoveryConflict,
   validateGatewayOnboardingDraft,type GatewayDiscoveryDetail,type GatewayOnboardingDraft,
 } from './gateway-onboarding-draft';
-import {confirmGatewayWithoutCaching,useDiscoveredGateway,useGatewaySyncState} from './gateway-onboarding-api';
+import {confirmGatewayWithoutCaching,correctInitialGatewayConfig,useDiscoveredGateway,useGatewaySyncState} from './gateway-onboarding-api';
 import {GatewaySyncStatus,type OneTimeGatewayCredential} from './gateway-sync-status';
 import type {PayloadRevision} from './payload-contracts';
 import type {LegacyPreset} from './preset-picker';
@@ -228,7 +228,7 @@ function PairingBody({discovered,open,onOpenChange,onSuccess,inline=false}:{disc
   const content=<>
     <DialogHeader><DialogTitle><Radio/>{th?'เชื่อมต่อเกตเวย์กับไซต์งาน':'Pair gateway to site'}</DialogTitle><DialogDescription>{confirmed?(th?'ตั้งค่าข้อมูลเชื่อมต่อบนเครื่องและติดตามการซิงก์':'Configure the credential on the gateway and monitor synchronization.'):(th?'ตรวจสอบข้อมูล เลือกไซต์ และอนุมัติการตั้งค่าก่อนเริ่มรับข้อมูล':'Review reported facts, select a site, and approve configuration before data collection.')}</DialogDescription></DialogHeader>
     <div data-slot="dialog-body" className="min-h-0 flex-1 overflow-y-auto pr-1">
-      {surface==='sync'&&syncState?<GatewaySyncStatus locale={locale} credential={visibleGatewayPairingCredential(credential,discovered.id)} syncState={syncState} syncError={syncQuery.isError?syncQuery.error:null} onRetry={()=>syncQuery.refetch()} retrying={syncQuery.isFetching} onRotate={rotate} rotating={rotating}/>
+      {surface==='sync'&&syncState?<GatewaySyncStatus locale={locale} credential={visibleGatewayPairingCredential(credential,discovered.id)} syncState={syncState} syncError={syncQuery.isError?syncQuery.error:null} onRetry={()=>syncQuery.refetch()} retrying={syncQuery.isFetching} onRotate={rotate} rotating={rotating} onCorrect={request=>correctInitialGatewayConfig(queryClient,confirmed!.gatewayId,request)}/>
       :surface==='loading'?<div className="flex flex-col gap-3" aria-label={th?'กำลังโหลดขั้นตอนเชื่อมต่อ':'Loading pairing workflow'}><Skeleton className="h-10 w-full"/><Skeleton className="h-48 w-full"/></div>
       :surface==='error'?<Alert variant="destructive"><AlertTitle>{th?'โหลดข้อมูลเกตเวย์ไม่สำเร็จ':'Could not load gateway details'}</AlertTitle><AlertDescription>{detailQuery.error instanceof Error?detailQuery.error.message:(th?'โปรดลองอีกครั้ง':'Try again.')}</AlertDescription><AlertAction><Button type="button" size="sm" variant="outline" onClick={()=>void detailQuery.refetch()}>{th?'ลองอีกครั้ง':'Retry'}</Button></AlertAction></Alert>
       :draft?<div className="flex flex-col gap-4">

@@ -25,6 +25,14 @@ test('EMQX callbacks require the internal secret and verify the API TLS peer and
   assert.match(compose, /MQTT_WEBHOOK_CA_FILE:\?required/);
 });
 
+test('EMQX authorization cache is disabled so suspension and rotation take effect on connected clients',()=>{
+  const compose=readRepositoryFile('infra/docker/docker-compose.emqx.yml');
+  const runbook=readRepositoryFile('docs/runbooks/coolify-mqtt-deployment-th.md');
+  assert.match(compose,/^\s*- EMQX_AUTHORIZATION__CACHE__ENABLE=false\s*$/m);
+  assert.match(runbook,/EMQX_AUTHORIZATION__CACHE__ENABLE=false/);
+  assert.match(runbook,/authorization cache[\s\S]*(?:restart|recreate|สร้าง container ใหม่)/i);
+});
+
 test('EMQX deployment has no default dashboard or cluster credentials', () => {
   const compose = readRepositoryFile('infra/docker/docker-compose.emqx.yml');
   const example = readRepositoryFile('infra/docker/.env.emqx.example');
@@ -70,6 +78,10 @@ test('web and staging API deployments use one required EMQX connection contract'
     assert.match(compose, /MQTT_USERNAME: solar-backend/);
     assert.match(compose, /MQTT_PASSWORD: \$\{MQTT_PASSWORD:\?backend MQTT password required\}/);
     assert.match(compose, /INTERNAL_MQTT_SECRET: \$\{INTERNAL_MQTT_SECRET:\?EMQX callback secret required\}/);
+    assert.match(compose,/EMQX_MANAGEMENT_URL: \$\{EMQX_MANAGEMENT_URL:\?EMQX management HTTPS URL required\}/);
+    assert.match(compose,/EMQX_MANAGEMENT_API_KEY: \$\{EMQX_MANAGEMENT_API_KEY:\?EMQX management API key required\}/);
+    assert.match(compose,/EMQX_MANAGEMENT_API_SECRET: \$\{EMQX_MANAGEMENT_API_SECRET:\?EMQX management API secret required\}/);
+    assert.match(compose,/EMQX_MANAGEMENT_DEFAULT_BROKER_ID: \$\{EMQX_MANAGEMENT_DEFAULT_BROKER_ID:\?default broker UUID required\}/);
   }
   const staging = readRepositoryFile('infra/docker/docker-compose.staging.yml');
   assert.doesNotMatch(staging, /MQTT_IMAGE|mqtt-runtime\.py|mqtt:\/\/mqtt:1883/);

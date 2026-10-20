@@ -39,6 +39,8 @@ for (const role of ['owner', 'operator', 'accountant', 'customer_user', undefine
     for (const operation of [() => f.controller.list(undefined, request), () => f.controller.detail(id, request),
       () => f.controller.confirm(id, body, request), () => f.controller.syncState(id, request),
       () => f.controller.rotate(id, {}, request), () => f.controller.proposals(id, request),
+      () => f.controller.adopt(id, {expectedDesiredConfigVersion:0,devices:[]}, request),
+      () => f.controller.correct(id, {expectedBaseConfigVersion:1,expectedBaseConfigHash:'a'.repeat(64),devices:[]}, request),
       () => f.controller.approve(id, id, {}, request), () => f.controller.reject(id, id, { reason: 'wrong' }, request)]) {
       await assert.rejects(async () => operation(), http(403));
     }
@@ -54,9 +56,22 @@ test('validates UUIDs, discovery filters and request shapes before reaching SQL'
     () => f.controller.confirm(id, { ...body, unexpected: true }, admin),
     () => f.controller.syncState('invalid', admin), () => f.controller.rotate(id, { password: 'client-selected' }, admin),
     () => f.controller.proposals('invalid', admin), () => f.controller.approve(id, 'invalid', {}, admin),
+    () => f.controller.adopt(id,{expectedDesiredConfigVersion:-1,devices:[]},admin),
+    () => f.controller.correct(id,{expectedBaseConfigVersion:0,expectedBaseConfigHash:'bad',devices:[]},admin),
     () => f.controller.reject(id, id, { reason: ' ' }, admin)];
   for (const operation of invalid) await assert.rejects(async () => operation(), http(400));
   assert.equal(f.reads, 0);
+});
+
+test('adoption and initial correction validate then forward optimistic admin review fields',async()=>{
+ const f=fixture();let adopted:unknown[]|undefined,corrected:unknown[]|undefined;
+ f.configuration.adoptExisting=(async(...args:unknown[])=>{adopted=args;return {} as never;}) as typeof f.configuration.adoptExisting;
+ f.configuration.correctInitialConfig=(async(...args:unknown[])=>{corrected=args;return {configVersion:2,configHash:'b'.repeat(64)};}) as typeof f.configuration.correctInitialConfig;
+ const adoption={expectedDesiredConfigVersion:0,devices:[],billingContinuity:[{deviceId:'M1',expectedProfileRevisionId:id,expectedBillingSourceBindingId:id}]};
+ const correction={expectedBaseConfigVersion:1,expectedBaseConfigHash:'a'.repeat(64),devices:[]};
+ await f.controller.adopt(id,adoption,admin);await f.controller.correct(id,correction,admin);
+ assert.deepEqual(adopted,[id,adoption,actor]);assert.deepEqual(corrected,[id,correction,actor]);
+ await assert.rejects(f.controller.adopt(id,{...adoption,billingContinuity:[{...adoption.billingContinuity[0]!,expectedProfileRevisionId:'bad'}]},admin),http(400));
 });
 
 test('approval validates and forwards both optimistic concurrency fields', async () => {
@@ -92,6 +107,8 @@ test('onboarding owns the only discovery routes and the old assignment bypass is
   const paths = routes(GatewayOnboardingController);
   assert.deepEqual(paths.filter(r => r.path === 'discovered'), [{ path: 'discovered', method: RequestMethod.GET }]);
   assert.deepEqual(paths.filter(r => r.path === 'discovered/:id/confirm'), [{ path: 'discovered/:id/confirm', method: RequestMethod.POST }]);
+  assert.deepEqual(paths.filter(r=>r.path===':id/adopt'),[{path:':id/adopt',method:RequestMethod.POST}]);
+  assert.deepEqual(paths.filter(r=>r.path===':id/configuration/correct'),[{path:':id/configuration/correct',method:RequestMethod.POST}]);
   assert.ok(!routes(AssetsController).some(r => /gateways\/(?:discovered|assign-discovered)/.test(r.path)));
   assert.ok(routes(AssetsController).some(r => r.path === 'sites/:id/payload-config'));
 });

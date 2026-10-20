@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import type {GatewaySyncState} from '@solar/api-contracts';
+import type {CorrectInitialGatewayConfigRequest,GatewaySyncState} from '@solar/api-contracts';
 import {Copy,KeyRound,RefreshCw} from 'lucide-react';
 import {Alert,AlertAction,AlertDescription,AlertTitle} from '../../components/ui/alert';
 import {
@@ -12,6 +12,7 @@ import {Badge} from '../../components/ui/badge';
 import {Button} from '../../components/ui/button';
 import {Card,CardContent,CardDescription,CardHeader,CardTitle} from '../../components/ui/card';
 import {Spinner} from '../../components/ui/spinner';
+import {GatewayInitialConfigCorrection} from './gateway-initial-config-correction';
 
 export interface OneTimeGatewayCredential {username:string;password:string}
 
@@ -28,7 +29,7 @@ function syncMessage(state:GatewaySyncState,th:boolean){
   return {title:th?'กำลังส่งการตั้งค่า':'Delivering configuration',description:th?'เกตเวย์เชื่อมต่อแล้ว ระบบกำลังรอสถานะรับการตั้งค่า':'The gateway is connected; waiting for its configuration receipt status.',terminal:false};
 }
 
-export function GatewaySyncStatus({locale,credential,syncState,syncError=null,onRetry,retrying=false,onRotate,rotating}:{
+export function GatewaySyncStatus({locale,credential,syncState,syncError=null,onRetry,retrying=false,onRotate,rotating,onCorrect}:{
   locale:string;
   credential:OneTimeGatewayCredential|null;
   syncState:GatewaySyncState;
@@ -37,6 +38,7 @@ export function GatewaySyncStatus({locale,credential,syncState,syncError=null,on
   retrying?:boolean;
   onRotate:()=>void|Promise<void>;
   rotating:boolean;
+  onCorrect?:(request:CorrectInitialGatewayConfigRequest)=>Promise<unknown>;
 }){
   const th=locale==='th';
   const message=syncMessage(syncState,th);
@@ -76,6 +78,7 @@ export function GatewaySyncStatus({locale,credential,syncState,syncError=null,on
       </CardContent>
     </Card>
 
+    {onCorrect&&<GatewayInitialConfigCorrection gatewayId={syncState.gatewayId} syncState={syncState} onCorrect={onCorrect} locale={locale}/>}
     <AlertDialog>
       <AlertDialogTrigger asChild><Button type="button" variant="outline" disabled={rotating}><RefreshCw data-icon="inline-start"/>{th?'หมุนรหัสเชื่อมต่อ':'Rotate credential'}</Button></AlertDialogTrigger>
       <AlertDialogContent>

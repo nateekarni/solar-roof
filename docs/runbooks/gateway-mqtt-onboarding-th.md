@@ -12,6 +12,7 @@
    - `solar/v1/gateways/+/status`
    - `solar/v1/sites/+/gateways/+/devices/+/telemetry`
 3. ตั้ง MQTTBox: host `mqtt-solar.fowir.com`, port `8883`, TLS เปิด, ตรวจ CA และ hostname, QoS `1` ห้ามเลือก ignore/skip certificate validation
+4. API ต้องมี `EMQX_MANAGEMENT_URL` (HTTPS), `EMQX_MANAGEMENT_API_KEY` และ `EMQX_MANAGEMENT_API_SECRET` ของ Application/API key ที่มีสิทธิ์อ่านและลบ client session; ใช้ Dashboard username/password แทนไม่ได้ หากมีหลาย Broker ให้ใส่ `EMQX_MANAGEMENT_BROKERS_JSON` เป็น object ที่ key คือ broker UUID และ value คือ `{ "url", "apiKey", "apiSecret" }`
 
 Topic control plane ที่อนุมัติแล้วมีเพียง:
 
@@ -62,7 +63,51 @@ solar/v1/gateways/GW-TEST-001/register
 
 ระบบจะแสดง Username/Password ถาวรครั้งเดียว บันทึกลง secret store ของ Gateway ก่อนปิด Modal รหัสผ่านเดิมเปิดดูซ้ำไม่ได้ ถ้าสูญหายให้ใช้ **หมุนรหัสเชื่อมต่อ** ซึ่งทำให้รหัสเดิมใช้ไม่ได้ทันที
 
+ระหว่างหมุน credential ระบบจะ suspend auth/ACL ของ Gateway ก่อน, revoke รหัสเดิม, แล้วเรียก EMQX Management API เพื่อตัด session ตาม Client ID ระบบจะคืนรหัสใหม่และปลด suspend เฉพาะเมื่อ EMQX ตอบยืนยันว่าตัด session แล้วหรือ session ไม่มีอยู่ หาก API ตัด session ไม่สำเร็จ endpoint จะตอบล้มเหลวและ Gateway จะยังถูก suspend เพื่อไม่ให้ session เก่า publish/subscribe ต่อ ห้ามนำ credential จาก response ที่ล้มเหลวไปใช้; แก้ Management API แล้วกดหมุนใหม่
+
 หลังยืนยัน row อยู่สถานะ configuring/pending sync และระบบ publish retained config QoS 1 ไปที่ `solar/v1/gateways/GW-TEST-001/config`
+
+ถ้า initial config ส่งไม่สำเร็จหรือ Gateway ตอบ `failed` ก่อนเคย active Admin เปิด **แก้ไขการตั้งค่าเริ่มต้น** จาก Modal หรือหน้า Gateway ได้ ระบบจะ snapshot `expectedBaseConfigVersion`/`expectedBaseConfigHash` และ JSON ทั้งชุดตอนเปิด Modal การ polling ระหว่างแก้ไขจะไม่เลื่อน base ที่กำลัง review หาก API ตอบ 409 ต้องปิดแล้วเปิด Modal ใหม่เพื่อโหลด snapshot ล่าสุด ห้าม submit ซ้ำด้วย base เดิม จากนั้นระบบสร้าง desired revision ใหม่และ publish retained config ใหม่ แต่ lifecycle ยังคง `configuring` จนได้รับ `configStatus: applied` ที่ตรง version/hash ไม่มี legacy bypass และไม่อนุมัติอัตโนมัติ
+
+## Upgrade Gateway เดิมเข้าสู่ control plane แบบ explicit adoption
+
+Migration `068_gateway_control_rollout_and_bindings.sql` ไม่ activate Gateway เดิมและไม่สร้าง mapping ให้เอง Deployment ที่ปลอดภัยต้องทำตามลำดับนี้:
+
+1. รัน migration 068 แล้ว deploy API/Web รุ่นใหม่ก่อน Gateway เดิมที่ยังไม่มี strict `messageType: config` revision ยังส่ง canonical telemetry ด้วย binding เดิมได้ชั่วคราว จึงไม่ hard-cut ระหว่าง rollout
+2. ให้ Admin ดึงข้อมูล Gateway/device/mapping ปัจจุบันและตรวจ register address, decoder, scale, unit, site และ external device ID ทั้งชุด ห้ามส่งเฉพาะ diff และห้ามสร้างค่าที่ไม่ทราบ สำหรับ device ที่ผูก billing อยู่ ต้องอ่าน exact `devices.payload_profile_revision_id` และ active `billing_meters.billing_source_binding_id` จากฐานข้อมูล production แบบ read-only แล้วเทียบกับ decoder/register ที่ติดตั้งจริง เก็บสอง UUID นี้เป็น continuity proof; ถ้ามีมากกว่าหนึ่ง active binding, ไม่มี binding หรือ decoder ไม่ตรงให้หยุด adoption และแก้ข้อมูลก่อน
+3. เรียก `POST /v1/gateways/{internalGatewayUuid}/adopt` ด้วย Owner token และ optimistic version ปัจจุบัน ตัวอย่าง body:
+
+```json
+{
+  "expectedDesiredConfigVersion": 0,
+  "devices": [
+    {
+      "deviceId": "METER-01",
+      "enabled": true,
+      "mappingSource": "manual",
+      "deviceType": "energy-meter",
+      "model": "รุ่นที่ตรวจแล้ว",
+      "serialNumber": "เลขจริง",
+      "protocol": "modbus-tcp",
+      "connection": {"host": "192.0.2.10", "port": 502, "slaveId": 1},
+      "pollGroups": ["energy"],
+      "mappings": [{"tag":"energy.active.import.total","displayName":"Import energy","pollGroup":"energy","sourceUnit":"Wh","targetUnit":"kWh","conversion":"wh-to-kwh","role":"billing-import","registerAddress":"3204","registerCount":2,"dataType":"uint32","byteOrder":"big_endian","wordOrder":"big_word_first","scale":0.01,"offset":0}]
+    }
+  ],
+  "billingContinuity": [
+    {
+      "deviceId": "METER-01",
+      "expectedProfileRevisionId": "<exact devices.payload_profile_revision_id>",
+      "expectedBillingSourceBindingId": "<exact active billing_meters.billing_source_binding_id>"
+    }
+  ]
+}
+```
+
+4. `billingContinuity` ต้องมีครบทุก device ที่ billing-bound และห้ามใส่ให้ device อื่น Endpoint จะ reject หาก UUID ใดเปลี่ยน, decoder เปลี่ยน, Gateway ถูก adopt แล้ว หรือ version เปลี่ยนระหว่าง review Snapshot legacy ที่ไม่มี protocol/connection/serial จึง adopt ได้เฉพาะเมื่อ Admin ยืนยัน exact deployed decoder/billing binding นี้ ระบบไม่เติมค่าที่ขาดและไม่ rebind billing ให้เอง เมื่อสำเร็จจึงสร้าง immutable approved active/desired revision, immutable device/profile bindings และ credential ครั้งเดียวจาก snapshot ที่ Admin ส่งมาเท่านั้น
+5. บันทึก credential, ตั้งเครื่อง, subscribe retained `config`, ตรวจ version/hash และทดสอบ telemetry หลัง adoption ตั้งแต่นี้ telemetry ที่มี `configurationVersion` จะ resolve decoder ผ่าน immutable binding ของ revision นั้น ไม่อ่าน `profileRevisionId` จาก payload config และไม่เดาจาก mutable mapping
+
+Migration จะ backfill binding ได้เฉพาะ legacy snapshot ที่มี `profileRevisionId` UUID ชัดเจนตรง device เดียว หรือ strict applied snapshot ที่ decoder ตรงทุก field เท่านั้น กรณีขาด/กำกวมจะปล่อย unbound และ telemetry versioned ถูก reject แทนการเดา ห้ามวนเรียก adoption อัตโนมัติใน migration/deploy และห้ามถือว่าการมี Gateway row เดิมคือการอนุมัติ mapping แล้ว ถ้าต้อง rollback ก่อน adoption ให้ rollback application ได้โดยไม่มี strict revision; หลัง adoption ต้องใช้ config correction/proposal flow ไม่ลบ revision เพื่อย้อนกลับ
 
 ## ระยะที่ 2 — reconnect, รับ config และเปิดใช้งาน
 

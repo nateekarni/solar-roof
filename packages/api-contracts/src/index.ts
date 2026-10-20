@@ -6,6 +6,7 @@ export type {
   GatewayRegisterPayload, GatewayConfigPayload, GatewayConfigUpdatePayload,
   GatewayConfigStatusPayload, GatewayStatusPayload, GatewayControlPayloads, DiscoveredGatewayDetail,
   ConfirmGatewayRequest, ConfirmGatewayResponse, GatewaySyncState, GatewayConfigProposal, ApproveGatewayProposalRequest,
+  AdoptExistingGatewayRequest,GatewayBillingContinuityProof,CorrectInitialGatewayConfigRequest,
 } from './gateway-control.js';
 export {applyGatewayRegisterPresetMappings,gatewayConnectionIssue,gatewayRegisterIdentity,gatewayRegisterMappingCollectionIssue,gatewayRegisterMappingIssue,gatewayRegisterMappingValueIssue,GATEWAY_REGISTER_BYTE_ORDERS,GATEWAY_REGISTER_DATA_TYPES,GATEWAY_REGISTER_WORD_ORDERS} from './gateway-control.js';
 export type {GatewayConnectionIssue,GatewayRegisterMappingCollectionIssue,GatewayRegisterMappingIssue,GatewayRegisterPresetApplyResult} from './gateway-control.js';

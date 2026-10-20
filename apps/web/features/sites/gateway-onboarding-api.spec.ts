@@ -9,6 +9,7 @@ import {
   registeredGatewaysQueryOptions,
   approveGatewayProposal,
   rejectGatewayProposal,
+  correctInitialGatewayConfig,
 } from './gateway-onboarding-api';
 
 test('secret-returning confirmation bypasses TanStack mutation and query caches',async()=>{
@@ -32,6 +33,15 @@ test('secret-returning confirmation bypasses TanStack mutation and query caches'
     client.clear();
     globalThis.fetch=originalFetch;
   }
+});
+
+test('initial correction posts optimistic revision/hash and invalidates live gateway state',async()=>{
+ const originalFetch=globalThis.fetch;let captured:{url:string;body:unknown}|undefined;
+ globalThis.fetch=(async(input,init)=>{captured={url:String(input),body:JSON.parse(String(init?.body))};return Response.json({configVersion:2,configHash:'b'.repeat(64)});}) as typeof fetch;
+ const client=new QueryClient();client.setQueryData(gatewayOnboardingKeys.sync('gw-1'),{configState:'failed'});
+ const request={expectedBaseConfigVersion:1,expectedBaseConfigHash:'a'.repeat(64),devices:[]};
+ try{await correctInitialGatewayConfig(client,'gw-1',request);assert.ok(captured?.url.endsWith('/v1/gateways/gw-1/configuration/correct'));assert.deepEqual(captured?.body,request);assert.equal(client.getQueryState(gatewayOnboardingKeys.sync('gw-1'))?.isInvalidated,true);}
+ finally{client.clear();globalThis.fetch=originalFetch;}
 });
 
 test('registered gateway reads and confirmation invalidation share the observed index key',async()=>{
