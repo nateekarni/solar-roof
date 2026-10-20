@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Exercise the actual web deployment file without broker credentials or published ports.
+# Exercise the actual web deployment file without broker infrastructure or published ports.
 set -euo pipefail
 export MSYS_NO_PATHCONV=1
 project="solar-web-first-$(node -e 'console.log(require("node:crypto").randomUUID())')"
@@ -13,7 +13,11 @@ export PILOT_ADMIN_EMAIL=web-ci@example.invalid PILOT_ADMIN_PASSWORD=Web-test-on
 export PILOT_OWNER_EMAIL=owner-ci@example.invalid PILOT_OWNER_PASSWORD=Owner-test-only-123!
 export PILOT_CUSTOMER_EMAIL=customer-ci@example.invalid PILOT_CUSTOMER_PASSWORD=Customer-test-only-123!
 export MQTT_ENABLED=false MQTT_DEFAULT_BROKER_ENABLED=false
-unset BOOTSTRAP_ADMIN_EMAIL BOOTSTRAP_ADMIN_PASSWORD MQTT_PASSWORD MQTT_URL MQTT_USERNAME MQTT_GATEWAY_CREDENTIALS CLOUDFLARE_API_TOKEN ACME_EMAIL MQTT_IMAGE CERTBOT_IMAGE
+export MQTT_URL=mqtt://127.0.0.1:1 MQTT_USERNAME=disabled MQTT_PASSWORD=disabled-mqtt-placeholder
+export INTERNAL_MQTT_SECRET=disabled-callback-placeholder
+export EMQX_MANAGEMENT_URL=https://emqx.example.invalid EMQX_MANAGEMENT_API_KEY=disabled-management-key
+export EMQX_MANAGEMENT_API_SECRET=disabled-management-secret EMQX_MANAGEMENT_DEFAULT_BROKER_ID=00000000-0000-4000-8000-000000000001
+unset BOOTSTRAP_ADMIN_EMAIL BOOTSTRAP_ADMIN_PASSWORD MQTT_GATEWAY_CREDENTIALS CLOUDFLARE_API_TOKEN ACME_EMAIL MQTT_IMAGE CERTBOT_IMAGE
 compose=(docker compose -p "$project" -f infra/docker/docker-compose.web.yml)
 created=false
 cleanup() {
@@ -77,4 +81,4 @@ const r=await fetch("http://127.0.0.1:3001/v1/auth/login",{method:"POST",headers
 assert.equal(r.status,200,"login works while configured broker is unreachable");
 '
 "${compose[@]}" exec -T web node -e "fetch('http://127.0.0.1:3000/login').then(r=>{if(!r.ok)throw Error('website unavailable during broker outage')})"
-echo 'PASS: web-first Compose starts and authenticates without any MQTT infrastructure or credentials'
+echo 'PASS: web-first Compose starts and authenticates without any MQTT infrastructure'
