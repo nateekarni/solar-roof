@@ -58,3 +58,40 @@ test('neighbor routes and non-POST issuance paths retain ordinary resource scope
   await assert.rejects(new PlatformAccessGuard(db,new Reflector()).canActivate(context),/Resource not found/);
  }
 });
+
+test('gateway discovery routes defer gateway lookup to the admin onboarding controller',async()=>{
+ for(const [method,path] of [
+  ['GET','/v1/gateways/discovered'],
+  ['GET','/v1/gateways/discovered/11111111-1111-4111-8111-111111111111'],
+  ['POST','/v1/gateways/discovered/11111111-1111-4111-8111-111111111111/confirm'],
+ ]){
+  const siteId='22222222-2222-4222-8222-222222222222';
+  const lookupIds:string[]=[];
+  const request={path,method,body:method==='POST'?{siteId}:{},user:{id:'admin',role:'admin'}};
+  const db={query:async(_sql:string,values:unknown[]=[])=>{lookupIds.push(String(values[0]));return {rows:[{site_id:siteId,customer_id:'customer-a'}]};}} as unknown as DatabaseService;
+  const context={getHandler:()=>()=>{},getClass:()=>class {},switchToHttp:()=>({getRequest:()=>request})} as unknown as ExecutionContext;
+  assert.equal(await new PlatformAccessGuard(db,new Reflector()).canActivate(context),true,`${method} ${path}`);
+  assert.equal(lookupIds.includes('discovered'),false,`${method} ${path} must not look up a gateway named discovered`);
+  assert.equal(lookupIds.length,method==='POST'?1:0,`${method} ${path} must retain body resource scope checks`);
+ }
+});
+
+test('gateway member routes retain persisted gateway resource scope enforcement',async()=>{
+ const gatewayId='11111111-1111-4111-8111-111111111111';
+ let reads=0;
+ const request={path:`/v1/gateways/${gatewayId}/sync-state`,method:'GET',body:{},user:{id:'admin',role:'admin'}};
+ const db={query:async()=>{reads++;return {rows:[{site_id:'site-a',customer_id:'customer-a'}]};}} as unknown as DatabaseService;
+ const context={getHandler:()=>()=>{},getClass:()=>class {},switchToHttp:()=>({getRequest:()=>request})} as unknown as ExecutionContext;
+ assert.equal(await new PlatformAccessGuard(db,new Reflector()).canActivate(context),true);
+ assert.equal(reads,1);
+});
+
+test('a gateway named discovered cannot bypass member route site scope',async()=>{
+ const authorization=effectiveAuthorization('operator',1,[{domain:'technical',preset:{'technical.gateways.edit':true},overrides:{},scope:{mode:'selected',siteIds:['site-b']}}]);
+ let reads=0;
+ const request={path:'/v1/gateways/discovered/hardware-config',method:'POST',body:{},user:{id:'operator',role:'operator',authorization}};
+ const db={query:async()=>{reads++;return {rows:[{site_id:'site-a',customer_id:'customer-a'}]};}} as unknown as DatabaseService;
+ const context={getHandler:()=>()=>{},getClass:()=>class {},switchToHttp:()=>({getRequest:()=>request})} as unknown as ExecutionContext;
+ await assert.rejects(new PlatformAccessGuard(db,new Reflector()).canActivate(context),/outside permission domain site scope/);
+ assert.equal(reads,1);
+});

@@ -55,6 +55,9 @@ export class PlatformAccessGuard implements CanActivate {
     const parts = path.split("/").filter(Boolean);
     const kind = parts[1];
     const id = parts[2];
+    const gatewayDiscoveryRoute =
+      (["GET", "HEAD"].includes(req.method) && /^\/v1\/gateways\/discovered(?:\/[^/]+)?$/.test(path)) ||
+      (req.method === "POST" && /^\/v1\/gateways\/discovered\/[^/]+\/confirm$/.test(path));
     const queries: Record<string, string> = {
       sites: "SELECT id AS site_id, customer_id FROM sites WHERE id::text = $1",
       customers: "SELECT id AS customer_id FROM customers WHERE id::text = $1",
@@ -65,7 +68,7 @@ export class PlatformAccessGuard implements CanActivate {
       documents: "SELECT s.id AS site_id,s.customer_id FROM documents d JOIN sites s ON s.id=d.site_id WHERE d.id::text=$1",
       alerts: "SELECT s.id AS site_id,s.customer_id FROM alerts a JOIN sites s ON s.id=a.site_id WHERE a.id::text=$1",
     };
-    if (kind && id && queries[kind] && !["test-connection", "acknowledge-all", "payload-preview", "identity-draft", "site-options"].includes(id)) resources.push({sql:queries[kind]!,id});
+    if (kind && id && queries[kind] && !gatewayDiscoveryRoute && !["test-connection", "acknowledge-all", "payload-preview", "identity-draft", "site-options"].includes(id)) resources.push({sql:queries[kind]!,id});
     for (const [field, resource] of [["siteId", "sites"], ["customerId", "customers"], ["deviceId", "devices"]]) {
       const value = req.body?.[field!];
       if (typeof value === "string" && value) resources.push({sql:queries[resource!]!,id:value});
