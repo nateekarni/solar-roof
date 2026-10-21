@@ -4,7 +4,7 @@ export type { NormalizedPromptPayId } from './promptpay.js';
 export type { CustomerPortalRange, CustomerBillingStatus, CustomerPortalBill, CustomerPortalHomeResponse, CustomerPaymentInstructions } from './customer-portal.js';
 export type {
   GatewayControlKind, GatewayConfigApplyStatus, GatewayLifecycleState, GatewayConfigState,
-  GatewayConnectionState, GatewayJsonValue, GatewayRegisterMapping, GatewayReportedDevice,
+  GatewayConnectionState, GatewayJsonValue, GatewayRegisterMapping, GatewayReportedDevice,TelemetryDiscoveryDevice,TelemetryDiscoveryEnvelope,
   GatewayDeviceConfig, GatewayEnabledDeviceConfig, GatewayDisabledDeviceConfig, GatewayDisabledRegisterMapping,
   GatewayRegisterPayload, GatewayConfigPayload, GatewayConfigUpdatePayload,
   GatewayConfigStatusPayload, GatewayStatusPayload, GatewayControlPayloads, DiscoveredGatewayDetail,
@@ -154,6 +154,7 @@ export type {ArchiveManifest,HistoryRestoreRequest,HistoryRestoreAccepted} from 
 export interface DiscoveredGatewayRow {
   id: string;
   externalGatewayId: string;
+  gatewaySerial?:string|null;
   reportedSiteId?: string | null;
   reportedDeviceId?: string | null;
   manufacturer?: string | null;

@@ -44,19 +44,45 @@ export const DEFAULT_PAYLOAD_PROFILES: readonly PayloadProfile[] = freeze([
 ]);
 const timestamp = z.iso.datetime({ offset: true });
 const envelopeSchema = z.object({
-  schemaVersion: z.literal("1.1"), messageType: z.literal("telemetry"), messageId: z.string().min(1).max(256), sequence: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER), lotNumber: z.number().int().min(1).max(4294967295), siteId: identifier, gatewayId: identifier,
-  device: z.object({ deviceId: identifier, deviceType: identifier, profileId: identifier.optional(), profileVersion: z.string().min(1).max(64).optional() }).passthrough(), pollGroup: identifier,
+  schemaVersion: z.union([z.literal("1.1"),z.literal("1.2")]), messageType: z.literal("telemetry"), messageId: z.string().min(1).max(256), sequence: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER), lotNumber: z.number().int().min(1).max(4294967295), siteId: identifier, gatewayId: identifier,
+  gatewaySerial:identifier.optional(),
+  device: z.object({ deviceId: identifier, deviceSerial:identifier.optional(),deviceType: identifier, profileId: identifier.optional(), profileVersion: z.string().min(1).max(64).optional() }).passthrough(), pollGroup: identifier,
   timestamps: z.object({ polledAt: timestamp, sentAt: timestamp, measuredAt: timestamp.optional() }).passthrough(),
   data: z.object({ values: z.record(tag, z.number().finite()), units: z.record(tag, unit) }).passthrough(),
   quality: z.object({ status: z.string().min(1).max(64), communication: z.string().min(1).max(64), pollDurationMs: z.number().finite().nonnegative().optional(), queueDelayMs: z.number().finite().nonnegative().optional() }).passthrough(),
-}).passthrough();
+}).passthrough().superRefine((value,context)=>{
+  if(value.schemaVersion==='1.2'&&!value.gatewaySerial)context.addIssue({code:'custom',path:['gatewaySerial'],message:'Schema 1.2 requires gatewaySerial'});
+  if(value.schemaVersion==='1.2'&&!value.device.deviceSerial)context.addIssue({code:'custom',path:['device','deviceSerial'],message:'Schema 1.2 requires deviceSerial'});
+});
 export type PayloadEnvelope = z.infer<typeof envelopeSchema>;
+export interface TelemetryDiscoveryEnvelope {
+  schemaVersion:'1.2';messageId:string;siteId:string;gatewayId:string;gatewaySerial:string;
+  device:{deviceId:string;deviceSerial:string;deviceType:string;manufacturer?:string;model?:string;profileId?:string;profileVersion?:string;protocol?:string};
+  raw:PayloadEnvelope;
+}
 export interface PayloadBinding { profile: PayloadProfile; siteId: string; gatewayId: string; deviceId: string }
 export interface RawPayloadField { tag: string; rawValue: number; rawUnit: string }
 export interface CanonicalPayloadSample extends RawPayloadField { sourceTag?:string; value: number; unit: string; displayName: string; pollGroup: string; polledAt: string; measuredAt?: string; role?: PayloadProfileField["role"] }
 export interface NormalizedPayloadEnvelope {
   raw: PayloadEnvelope; siteId: string; gatewayId: string; deviceId: string; messageId: string; sequence: number; lotNumber: number; pollGroup: string; profileId: string; profileVersion: string;
+  gatewaySerial?:string;deviceSerial?:string;
   polledAt: string; sentAt: string; measuredAt?: string; quality: PayloadEnvelope["quality"]; samples: CanonicalPayloadSample[]; unmapped: RawPayloadField[]; digest: string;
+}
+export function parseTelemetryDiscoveryEnvelope(input:unknown,topic:string):TelemetryDiscoveryEnvelope {
+  const serialized=JSON.stringify(input);
+  if(!serialized||Buffer.byteLength(serialized,'utf8')>262144)throw new Error('Payload exceeds 256 KiB');
+  const raw=envelopeSchema.parse(JSON.parse(serialized));
+  if(raw.schemaVersion!=='1.2'||!raw.gatewaySerial||!raw.device.deviceSerial)throw new Error('Telemetry discovery requires schema 1.2 serial identity');
+  if(topic!==`solar/v1/sites/${raw.siteId}/gateways/${raw.gatewayId}/devices/${raw.device.deviceId}/telemetry`)throw new Error('Topic/envelope identity does not match claimed aliases');
+  const reported=raw.device as PayloadEnvelope['device']&{manufacturer?:unknown;model?:unknown;protocol?:unknown};
+  const manufacturer=typeof reported.manufacturer==='string'&&reported.manufacturer.length>0?reported.manufacturer:undefined;
+  const model=typeof reported.model==='string'&&reported.model.length>0?reported.model:undefined;
+  const protocol=typeof reported.protocol==='string'&&reported.protocol.length>0?reported.protocol:undefined;
+  return {schemaVersion:'1.2',messageId:raw.messageId,siteId:raw.siteId,gatewayId:raw.gatewayId,gatewaySerial:raw.gatewaySerial,
+    device:{deviceId:raw.device.deviceId,deviceSerial:raw.device.deviceSerial,deviceType:raw.device.deviceType,
+      ...(manufacturer?{manufacturer}:{}),...(model?{model}:{}),
+      ...(raw.device.profileId?{profileId:raw.device.profileId}:{}),...(raw.device.profileVersion?{profileVersion:raw.device.profileVersion}:{}),
+      ...(protocol?{protocol}:{})},raw};
 }
 /** Throws for invalid input. No state is retained; callers own freshness and persistence. */
 export function normalizePayloadEnvelope(input: unknown, binding: PayloadBinding, topic: string): NormalizedPayloadEnvelope {
@@ -83,7 +109,9 @@ export function normalizePayloadEnvelope(input: unknown, binding: PayloadBinding
     if (!Number.isFinite(canonical)) throw new Error("Nonfinite canonical value");
     samples.push({ ...source,tag:mapping.tag,...(mapping.sourceTag?{sourceTag:name}:{}), value: canonical, unit: mapping.targetUnit, displayName: mapping.displayName, pollGroup: raw.pollGroup, polledAt: raw.timestamps.polledAt, ...(raw.timestamps.measuredAt ? { measuredAt: raw.timestamps.measuredAt } : {}), ...(mapping.role ? { role: mapping.role } : {}) });
   }
-  return { raw, siteId: raw.siteId, gatewayId: raw.gatewayId, deviceId: raw.device.deviceId, messageId: raw.messageId, sequence: raw.sequence, lotNumber: raw.lotNumber, pollGroup: raw.pollGroup, profileId: profile.id, profileVersion: profile.version, polledAt: raw.timestamps.polledAt, sentAt: raw.timestamps.sentAt, ...(raw.timestamps.measuredAt ? { measuredAt: raw.timestamps.measuredAt } : {}), quality: raw.quality, samples, unmapped, digest: logicalPayloadDigest(raw) };
+  return { raw, siteId: raw.siteId, gatewayId: raw.gatewayId, deviceId: raw.device.deviceId, messageId: raw.messageId, sequence: raw.sequence, lotNumber: raw.lotNumber, pollGroup: raw.pollGroup, profileId: profile.id, profileVersion: profile.version,
+    ...(raw.gatewaySerial?{gatewaySerial:raw.gatewaySerial}:{}),...(raw.device.deviceSerial?{deviceSerial:raw.device.deviceSerial}:{}),
+    polledAt: raw.timestamps.polledAt, sentAt: raw.timestamps.sentAt, ...(raw.timestamps.measuredAt ? { measuredAt: raw.timestamps.measuredAt } : {}), quality: raw.quality, samples, unmapped, digest: logicalPayloadDigest(raw) };
 }
 /** Hash the full logical payload with recursively sorted keys; only timestamps.sentAt is omitted. */
 export function logicalPayloadDigest(input: unknown): string {

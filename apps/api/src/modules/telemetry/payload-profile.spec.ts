@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
-import { DEFAULT_PAYLOAD_PROFILES, normalizePayloadEnvelope, validatePayloadProfile, logicalPayloadDigest } from "./payload-profile.js";
+import { DEFAULT_PAYLOAD_PROFILES, normalizePayloadEnvelope, parseTelemetryDiscoveryEnvelope, validatePayloadProfile, logicalPayloadDigest } from "./payload-profile.js";
 
 const examples = JSON.parse(readFileSync(new URL("./fixtures/payload-examples-v1.1.json", import.meta.url), "utf8")).payloads;
 test("automatic conversion normalizes incoming power while retaining the source reading", () => {
@@ -104,4 +104,31 @@ test('active-power roles require W and one unambiguous mapping',()=>{
  const p=structuredClone(DEFAULT_PAYLOAD_PROFILES[0]!);
  p.fields[0]!.role='active-power';assert.throws(()=>validatePayloadProfile(p),/active-power|Active power/);
  const duplicate=structuredClone(DEFAULT_PAYLOAD_PROFILES[0]!);duplicate.fields.push({...duplicate.fields.find(f=>f.role==='active-power')!,tag:'another.power'});assert.throws(()=>validatePayloadProfile(duplicate),/active-power|Active power/);
+});
+
+test('schema 1.2 exposes gateway and device serial identity for discovery',()=>{
+ const payload={...structuredClone(examples.smartLoggerPlant),schemaVersion:'1.2',gatewaySerial:'GW-SN-A1B2C3D4',
+  device:{...structuredClone(examples.smartLoggerPlant.device),deviceSerial:'SL-SN-000001'}};
+ const identity=parseTelemetryDiscoveryEnvelope(payload,'solar/v1/sites/SITE-001/gateways/GW-001/devices/SMARTLOGGER-001/telemetry');
+ assert.deepEqual(identity,{schemaVersion:'1.2',messageId:'GW-001-000001260',siteId:'SITE-001',gatewayId:'GW-001',
+  gatewaySerial:'GW-SN-A1B2C3D4',device:{deviceId:'SMARTLOGGER-001',deviceSerial:'SL-SN-000001',deviceType:'solar-logger',
+   manufacturer:'Huawei',model:'SmartLogger3000A',profileId:'huawei-smartlogger3000a',profileVersion:'1.0.0',protocol:'modbus-tcp'},raw:payload});
+ const normalized=normalize(payload);
+ assert.equal(normalized.gatewaySerial,'GW-SN-A1B2C3D4');
+ assert.equal(normalized.deviceSerial,'SL-SN-000001');
+});
+
+test('schema 1.2 discovery requires valid serials and exact topic aliases',()=>{
+ const base={...structuredClone(examples.smartLoggerPlant),schemaVersion:'1.2',gatewaySerial:'GW-SN-A1B2C3D4',
+  device:{...structuredClone(examples.smartLoggerPlant.device),deviceSerial:'SL-SN-000001'}};
+ const topic='solar/v1/sites/SITE-001/gateways/GW-001/devices/SMARTLOGGER-001/telemetry';
+ for(const mutate of [
+  (p:any)=>delete p.gatewaySerial,
+  (p:any)=>delete p.device.deviceSerial,
+  (p:any)=>p.gatewaySerial='contains spaces',
+  (p:any)=>p.device.deviceSerial='contains/slash',
+  (p:any)=>p.gatewayId='OTHER',
+  (p:any)=>p.device.deviceId='OTHER',
+ ]){const payload=structuredClone(base);mutate(payload);assert.throws(()=>parseTelemetryDiscoveryEnvelope(payload,topic));}
+ assert.throws(()=>parseTelemetryDiscoveryEnvelope({...structuredClone(examples.smartLoggerPlant),schemaVersion:'1.1'},topic));
 });

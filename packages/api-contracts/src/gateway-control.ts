@@ -46,6 +46,27 @@ export interface GatewayReportedDevice {
   mappings?: GatewayRegisterMapping[];
 }
 
+export interface TelemetryDiscoveryDevice {
+  deviceId:string;
+  deviceSerial:string;
+  deviceType:string;
+  manufacturer?:string;
+  model?:string;
+  profileId?:string;
+  profileVersion?:string;
+  protocol?:string;
+}
+
+export interface TelemetryDiscoveryEnvelope {
+  schemaVersion:'1.2';
+  messageType:'telemetry';
+  messageId:string;
+  siteId:string;
+  gatewayId:string;
+  gatewaySerial:string;
+  device:TelemetryDiscoveryDevice;
+}
+
 interface GatewayDeviceConfigBase extends Omit<GatewayReportedDevice,'mappings'> {
   mappingSource: 'preset' | 'manual' | 'gateway';
   presetId?: string;
