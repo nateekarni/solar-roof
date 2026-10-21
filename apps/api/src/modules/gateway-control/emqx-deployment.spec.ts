@@ -6,9 +6,12 @@ import { parseGatewayControlPayload } from './gateway-control-payload.js';
 const repositoryRoot = new URL('../../../../..', import.meta.url);
 const readRepositoryFile = (path: string) => readFileSync(new URL(path, repositoryRoot), 'utf8');
 
-test('EMQX deployment pins 5.8.3 and exposes only public MQTTS', () => {
+test('EMQX deployment builds from the pinned 5.8.3 base and exposes only public MQTTS', () => {
   const compose = readRepositoryFile('infra/docker/docker-compose.emqx.yml');
-  assert.match(compose, /^\s*image: emqx\/emqx:5\.8\.3\s*$/m);
+  const dockerfile = readRepositoryFile('infra/docker/Dockerfile.emqx');
+  assert.doesNotMatch(compose, /^\s*image:\s+/m);
+  assert.match(compose, /^\s*dockerfile: infra\/docker\/Dockerfile\.emqx\s*$/m);
+  assert.match(dockerfile, /^FROM emqx\/emqx:5\.8\.3\s*$/m);
   assert.match(compose, /ports:\s*\r?\n\s*- ['"]8883:8883['"]/);
   assert.doesNotMatch(compose, /- ['"](?:1883|18083):(?:1883|18083)['"]/);
   assert.match(compose, /expose:\s*\r?\n\s*- ['"]1883['"]\s*\r?\n\s*- ['"]18083['"]/);

@@ -1,0 +1,5 @@
+FROM emqx/emqx:5.8.3
+
+# Coolify runs Compose from a helper container while Docker resolves bind mounts
+# on the host. Repository files therefore must travel inside the built image.
+COPY infra/docker/emqx/emqx.conf /opt/emqx/etc/emqx.conf

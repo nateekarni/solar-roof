@@ -2,7 +2,9 @@
 # TCP 1883 and the HTTPS dashboard remain reachable only on the Compose/private network.
 services:
   mqtt:
-    image: emqx/emqx:5.8.3
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.emqx
     restart: unless-stopped
     ports:
       - '8883:8883'
@@ -30,9 +32,6 @@ services:
       - >-
         EMQX_AUTHORIZATION__SOURCES=[{"type":"http","enable":true,"method":"post","url":"https://solar.fowir.com/v1/internal/mqtt/acl","headers":{"content-type":"application/json","x-internal-secret":"${INTERNAL_MQTT_SECRET:?required}"},"body":{"username":"$${username}","clientid":"$${clientid}","topic":"$${topic}","action":"$${action}"},"pool_size":8,"connect_timeout":"5s","request_timeout":"5s","ssl":{"enable":true,"verify":"verify_peer","cacertfile":"/opt/emqx/certs/webhook-ca.pem","server_name_indication":"solar.fowir.com"}}]
     volumes:
-      # Coolify invokes Compose with the repository root as --project-directory,
-      # so repository files must be addressed from that root.
-      - ./infra/docker/emqx/emqx.conf:/opt/emqx/etc/emqx.conf:ro
       # Coolify rejects variable interpolation in bind-mount sources. Keep these
       # host paths literal and prepare them on the destination server before deploy.
       - /data/mqtt-certs:/opt/emqx/certs/server:ro

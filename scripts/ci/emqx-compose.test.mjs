@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {statSync} from 'node:fs';
+import {readFileSync, statSync} from 'node:fs';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {dirname, join, resolve} from 'node:path';
@@ -7,7 +7,7 @@ import test from 'node:test';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
-test('Coolify project-root rendering mounts the checked-in EMQX config file', () => {
+test('Coolify project-root rendering bakes EMQX config into the image without a host file bind', () => {
   const result = spawnSync(
     'docker',
     [
@@ -30,10 +30,20 @@ test('Coolify project-root rendering mounts the checked-in EMQX config file', ()
   const configMount = compose.services.mqtt.volumes.find(
     volume => volume.target === '/opt/emqx/etc/emqx.conf',
   );
-  const expectedSource = join(repositoryRoot, 'infra/docker/emqx/emqx.conf');
+  const expectedContext = repositoryRoot;
+  const dockerfilePath = join(repositoryRoot, 'infra/docker/Dockerfile.emqx');
+  const configPath = join(repositoryRoot, 'infra/docker/emqx/emqx.conf');
 
-  assert.ok(configMount, 'EMQX config mount is missing');
-  assert.equal(configMount.type, 'bind');
-  assert.equal(configMount.source, expectedSource);
-  assert.ok(statSync(configMount.source).isFile(), `${configMount.source} must be a file`);
+  assert.equal(configMount, undefined, 'Coolify cannot deploy repository files as host bind mounts');
+  assert.equal(compose.services.mqtt.build.context, expectedContext);
+  assert.equal(compose.services.mqtt.build.dockerfile, 'infra/docker/Dockerfile.emqx');
+  assert.ok(statSync(dockerfilePath).isFile(), `${dockerfilePath} must be a file`);
+  assert.ok(statSync(configPath).isFile(), `${configPath} must be a file`);
+
+  const dockerfile = readFileSync(dockerfilePath, 'utf8');
+  assert.match(dockerfile, /^FROM emqx\/emqx:5\.8\.3$/m);
+  assert.match(
+    dockerfile,
+    /^COPY infra\/docker\/emqx\/emqx\.conf \/opt\/emqx\/etc\/emqx\.conf$/m,
+  );
 });

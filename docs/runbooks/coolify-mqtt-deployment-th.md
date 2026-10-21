@@ -82,7 +82,7 @@ INTERNAL_MQTT_SECRET=<ค่าเดียวกับ EMQX resource>
 docker compose --project-directory . --env-file infra/docker/.env.emqx.example -f infra/docker/docker-compose.emqx.yml config
 ```
 
-ต้องรันจาก repository root และคง `--project-directory .` ไว้เพื่อจำลองวิธีที่ Coolify resolve bind mount ให้ตรงกับ production จากนั้นตรวจว่า source ของ `/opt/emqx/etc/emqx.conf` ชี้ไปที่ `infra/docker/emqx/emqx.conf` และเป็นไฟล์จริง อย่าแนบ output จาก environment จริง เพราะอาจมี callback secret และ Dashboard password
+ต้องรันจาก repository root และคง `--project-directory .` ไว้เพื่อจำลองวิธีที่ Coolify resolve path ให้ตรงกับ production ตรวจว่า service `mqtt` build ด้วย `infra/docker/Dockerfile.emqx` และไม่มี bind mount ไปที่ `/opt/emqx/etc/emqx.conf` เพราะ Coolify ไม่ได้คัดลอก relative bind source จาก build artifact ไปยัง Docker host ไฟล์ config ต้องถูก `COPY` เข้า image เท่านั้น อย่าแนบ output จาก environment จริง เพราะอาจมี callback secret และ Dashboard password
 
 หลัง deploy ตรวจตามลำดับ:
 
