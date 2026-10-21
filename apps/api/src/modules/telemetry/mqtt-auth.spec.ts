@@ -102,18 +102,18 @@ test('known gateway cannot downgrade to anonymous even when retired or credentia
   }
 });
 
-test('anonymous ACL permits only own exact registration publish', async () => {
+test('anonymous ACL permits only exact telemetry publish for discovery', async () => {
   const f = fixture(); f.unknown();
-  assert.deepEqual(await f.controller.authorize({ clientid: 'GW-001', action: 'publish', topic: 'solar/v1/gateways/GW-001/register' }, headers), allow);
-  for (const topic of ['solar/v1/gateways/GW-OTHER/register', 'solar/v1/gateways/+/register', 'solar/v1/gateways/GW-001/#',
+  assert.deepEqual(await f.controller.authorize({ clientid: 'GW-001', action: 'publish', topic: telemetryAcl.topic }, headers), allow);
+  for (const topic of ['solar/v1/gateways/GW-001/register','solar/v1/gateways/GW-OTHER/register', 'solar/v1/gateways/+/register', 'solar/v1/gateways/GW-001/#',
     'solar/v1/gateways/GW-001/register/extra', 'solar/v1/sites/SITE-01/gateways/GW-001/register',
-    telemetryAcl.topic, 'energy/GW-001/telemetry', ...['config', 'configUpdate', 'configStatus', 'status'].map(kind => `solar/v1/gateways/GW-001/${kind}`)]) {
+    'solar/v1/sites/SITE-01/gateways/GW-001/devices/+/telemetry','energy/GW-001/telemetry', ...['config', 'configUpdate', 'configStatus', 'status'].map(kind => `solar/v1/gateways/GW-001/${kind}`)]) {
     assert.deepEqual(await f.controller.authorize({ clientid: 'GW-001', action: 'publish', topic }, headers), deny, topic);
   }
   for (const topic of ['solar/v1/gateways/GW-001/register', 'solar/v1/gateways/GW-001/config', '#']) {
     assert.deepEqual(await f.controller.authorize({ clientid: 'GW-001', action: 'subscribe', topic }, headers), deny);
   }
-  assert.deepEqual(await f.controller.authorize({ clientid: 'GW-001', password: 'unexpected', action: 'publish', topic: 'solar/v1/gateways/GW-001/register' }, headers), deny);
+  assert.deepEqual(await f.controller.authorize({ clientid: 'GW-001', password: 'unexpected', action: 'publish', topic: telemetryAcl.topic }, headers), deny);
 });
 
 test('registered authentication requires matching username, client ID, DB identity and real active password', async () => {
@@ -236,6 +236,20 @@ test('anonymous authentication and every ACL path stay outside Argon2 admission'
   assert.deepEqual(await f.controller.authorize(controlAcl, headers), allow);
   f.unknown();
   assert.deepEqual(await f.controller.authenticate({ clientid: 'GW-001', peerhost: '192.0.2.1' }, headers), { result: 'allow', is_superuser: false });
-  assert.deepEqual(await f.controller.authorize({ clientid: 'GW-001', action: 'publish', topic: 'solar/v1/gateways/GW-001/register' }, headers), allow);
+  assert.deepEqual(await f.controller.authorize({ clientid: 'GW-001', action: 'publish', topic: telemetryAcl.topic }, headers), allow);
   assert.equal(calls, 0);
+});
+
+test('unbound Gateway Serial may publish telemetry for discovery but never register or subscribe',async()=>{
+  const queries:{sql:string;values:unknown[]}[]=[];
+  const db={query:async(sql:string,values:unknown[]=[]):Promise<{rows:any[]}>=>{queries.push({sql,values});return {rows:[]};}} as unknown as DatabaseService;
+  const controller=new MqttAuthController(db,new GatewayCredentialService(db));
+  const clientid='GW-SN-A1B2C3D4';
+  const telemetry='solar/v1/sites/SITE-001/gateways/GW-001/devices/SMARTLOGGER-001/telemetry';
+  assert.deepEqual(await controller.authenticate({clientid},headers),{result:'allow',is_superuser:false});
+  assert.deepEqual(await controller.authorize({clientid,action:'publish',topic:telemetry},headers),allow);
+  assert.deepEqual(await controller.authorize({clientid,action:'publish',topic:`solar/v1/gateways/${clientid}/register`},headers),deny);
+  assert.deepEqual(await controller.authorize({clientid,action:'subscribe',topic:'#'},headers),deny);
+  assert.ok(queries.every(query=>query.sql.includes('gateway_serial')));
+  assert.ok(queries.every(query=>query.values[0]===clientid));
 });

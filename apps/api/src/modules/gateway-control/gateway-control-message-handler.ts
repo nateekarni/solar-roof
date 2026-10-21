@@ -17,33 +17,26 @@ type Rejection = 'invalid_topic' | 'outbound_only' | 'invalid_payload' | 'identi
 @Injectable()
 export class GatewayControlMessageHandler {
   private readonly logger = new Logger(GatewayControlMessageHandler.name);
-  constructor(@Inject(GatewayRegistrationService) private readonly registration: GatewayRegistrationService,
+  constructor(@Inject(GatewayRegistrationService) _registration: GatewayRegistrationService,
     @Inject(GatewayConfigurationService) private readonly configuration: GatewayConfigurationService) {}
 
   async handle(input: GatewayControlMessage): Promise<{ accepted: boolean }> {
     const route = parseGatewayControlTopic(input.topic);
     if (!route) return this.reject('invalid_topic');
+    if(route.kind==='register')return this.reject('invalid_topic');
     if (route.kind === 'config') return this.reject('outbound_only');
     let payload;
     try { payload = parseGatewayControlPayload(route.kind, parseBoundedPayload(input.payload)); }
     catch { return this.reject('invalid_payload'); }
-    const identity = payload.messageType === 'register' ? payload.gateway.gatewayId : payload.gatewayId;
+    const identity = payload.gatewayId;
     if (route.gatewayId !== identity || input.clientMetadata?.clientId !== undefined && input.clientMetadata.clientId !== identity) {
       return this.reject('identity_mismatch');
     }
     try {
-      if (payload.messageType === 'register') {
-        // Subscriber PUBLISH packets do not expose the originating client ID.
-        // The route is the broker-ACL-bound identity, unless a trusted adapter
-        // supplied authenticated client metadata (which was checked above).
-        await this.registration.record({ brokerId: input.brokerId, clientId: route.gatewayId,
-          sourceAddress: input.clientMetadata?.sourceAddress, topic: input.topic, payload });
-      } else {
-        const control = { brokerId: input.brokerId, gatewayId: route.gatewayId, payload };
-        if (payload.messageType === 'configUpdate') await this.configuration.recordProposal(control);
-        else if (payload.messageType === 'configStatus') await this.configuration.recordConfigStatus(control);
-        else await this.configuration.recordConnectionStatus(control);
-      }
+      const control = { brokerId: input.brokerId, gatewayId: route.gatewayId, payload };
+      if (payload.messageType === 'configUpdate') await this.configuration.recordProposal(control);
+      else if (payload.messageType === 'configStatus') await this.configuration.recordConfigStatus(control);
+      else await this.configuration.recordConnectionStatus(control);
       observeValue('gateway_control_accepted', 1);
       return { accepted: true };
     } catch { return this.reject('handler_failed'); }

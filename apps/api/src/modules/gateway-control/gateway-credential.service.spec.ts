@@ -7,8 +7,8 @@ import { GatewayCredentialService, GatewayCredentialVerification } from './gatew
 
 const gatewayId = '11111111-1111-4111-8111-111111111111';
 const actorId = '22222222-2222-4222-8222-222222222222';
-function fixture(verification?: GatewayCredentialVerification) {
-  const gateway = { id: gatewayId, external_gateway_id: 'GW-001', lifecycle_state: 'active',
+function fixture(verification?: GatewayCredentialVerification,gatewaySerial:string|null=null) {
+  const gateway = { id: gatewayId, external_gateway_id: 'GW-001',gateway_serial:gatewaySerial,lifecycle_state: 'active',
     retired_at: null as string | null, protocol: 'mqtt', gateway_status: 'offline', site_status: 'online',mqtt_access_suspended:false };
   const credentials: { id:string;gateway_id: string; username: string; password_hash: string; revoked_at: string | null; created_by: string }[] = [];
   const queries: { sql: string; values: unknown[] }[] = [];
@@ -27,7 +27,7 @@ function fixture(verification?: GatewayCredentialVerification) {
     }
     if (/INSERT INTO gateway_mqtt_credentials/.test(sql)) {
       if (failInsert) throw Error('insert failed');
-      assert.deepEqual(values.slice(1, 3), [gatewayId, 'GW-001']);
+      assert.deepEqual(values.slice(1, 3), [gatewayId, gatewaySerial??'GW-001']);
       assert.equal(values[4], actorId);
       assert.ok(!credentials.some(c => c.revoked_at === null), 'revoke must precede insert to obey partial unique index');
       credentials.push({ id:String(values[0]),gateway_id: String(values[1]), username: String(values[2]), password_hash: String(values[3]), created_by: String(values[4]), revoked_at: null });
@@ -64,6 +64,13 @@ test('issue returns a fresh 32-byte password and persists only a real Argon2id h
   assert.equal(await f.service.verify(gatewayId, issued.password), true);
   assert.equal(await f.service.verify(gatewayId, 'incorrect'), false);
   assert.equal(await f.service.verify(gatewayId, ''), false);
+});
+
+test('new onboarding credentials use Gateway Serial instead of the claimed gateway code',async()=>{
+  const f=fixture(undefined,'GW-SN-A1B2C3D4');
+  const issued=await f.db.transaction(client=>f.service.issue(client,gatewayId,actorId));
+  assert.equal(issued.username,'GW-SN-A1B2C3D4');
+  assert.equal(await f.service.verify(gatewayId,issued.password),true);
 });
 
 test('rotate revokes the previous credential, keeps its history, and invalidates its password', async () => {

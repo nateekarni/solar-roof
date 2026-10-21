@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { MqttIngestionService } from "./mqtt-ingestion.service.js";
+import { MqttIngestionService,requiredSubscriptions } from "./mqtt-ingestion.service.js";
 import { DatabaseService } from "../../database/database.service.js";
 import { GatewayControlMessageHandler } from '../gateway-control/gateway-control-message-handler.js';
 import { GatewayConfigurationService } from '../gateway-control/gateway-configuration.service.js';
@@ -32,6 +32,11 @@ function fixture(options: { unknown?: boolean; fail?: boolean; mappings?: object
   return { service, writes, sent,calls };
 }
 const payload = (metrics: object, timestamp = '2026-09-30T01:00:00Z') => JSON.stringify({ deviceId: 'dev', gateway: 'GW-1', timestamp, metrics });
+
+test('required MQTT subscriptions use telemetry for discovery and omit register',()=>{
+  assert.ok(requiredSubscriptions.includes('solar/v1/sites/+/gateways/+/devices/+/telemetry'));
+  assert.equal(requiredSubscriptions.some(topic=>topic.endsWith('/register')),false);
+});
 
 test('control namespace routes once before suffix exclusion or telemetry parsing',async context=>{
  const f=fixture();const inputs:any[]=[];

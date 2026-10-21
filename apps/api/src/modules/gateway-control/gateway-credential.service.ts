@@ -4,11 +4,11 @@ import { isIP } from 'node:net';
 import * as argon2 from 'argon2';
 import type { PoolClient } from 'pg';
 import { DatabaseService } from '../../database/database.service.js';
-import { parseGatewayControlTopic } from './gateway-control-payload.js';
 
 interface CredentialRow {
   id: string;
   external_gateway_id: string;
+  gateway_serial:string|null;
   username: string;
   password_hash: string;
   revoked_at: string | null;
@@ -28,6 +28,7 @@ interface VerificationOptions {
 
 export interface GatewayCredentialContext { sourceAddress?: string }
 export const GATEWAY_CREDENTIAL_VERIFICATION = Symbol('GATEWAY_CREDENTIAL_VERIFICATION');
+const validMqttIdentity=(value:unknown):value is string=>typeof value==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(value);
 
 /** Only numeric transport IPs become keys; never retain arbitrary input. */
 export function normalizeMqttSourceAddress(input: unknown): string {
@@ -127,12 +128,12 @@ export class GatewayCredentialService {
   private async create(client: PoolClient, gatewayId: string, createdBy: string): Promise<{ id:string;username: string; password: string }> {
     // The caller owns BEGIN/COMMIT so issuance is atomic with approval. Locking
     // the gateway also serializes concurrent rotations before the partial indexes.
-    const rows = (await client.query(`SELECT id,external_gateway_id,retired_at,protocol FROM gateways WHERE id=$1 FOR UPDATE`, [gatewayId])).rows;
+    const rows = (await client.query(`SELECT id,external_gateway_id,gateway_serial,retired_at,protocol FROM gateways WHERE id=$1 FOR UPDATE`, [gatewayId])).rows;
     const gateway = rows[0];
-    const username: unknown = gateway?.external_gateway_id;
+    const username: unknown = gateway?.gateway_serial??gateway?.external_gateway_id;
     if (rows.length !== 1 || gateway.retired_at !== null || gateway.protocol !== 'mqtt'
       || typeof username !== 'string' || username === 'solar-backend'
-      || !parseGatewayControlTopic(`solar/v1/gateways/${username}/register`)) {
+      || !validMqttIdentity(username)) {
       throw new Error('Gateway cannot receive MQTT credentials');
     }
     const password = randomBytes(32).toString('base64url');
@@ -162,7 +163,7 @@ export class GatewayCredentialService {
     if (typeof password !== 'string' || !password) return false;
     try {
       const rows = (await this.db.query<CredentialRow>(`SELECT c.id,c.username,c.password_hash,c.revoked_at,
-        g.external_gateway_id,g.retired_at,g.lifecycle_state,g.protocol,g.status AS gateway_status,s.status AS site_status,g.mqtt_access_suspended
+        g.external_gateway_id,g.gateway_serial,g.retired_at,g.lifecycle_state,g.protocol,g.status AS gateway_status,s.status AS site_status,g.mqtt_access_suspended
         FROM gateway_mqtt_credentials c JOIN gateways g ON g.id=c.gateway_id JOIN sites s ON s.id=g.site_id
         WHERE c.gateway_id=$1 AND c.revoked_at IS NULL LIMIT 2`, [gatewayId])).rows;
       const row = rows[0];
@@ -171,8 +172,8 @@ export class GatewayCredentialService {
         || !['online', 'offline', 'active'].includes(row.gateway_status)
         || !['online', 'offline', 'active'].includes(row.site_status)
         || row.mqtt_access_suspended
-        || row.username !== row.external_gateway_id || row.username === 'solar-backend'
-        || !parseGatewayControlTopic(`solar/v1/gateways/${row.external_gateway_id}/register`)
+        || row.username !== (row.gateway_serial??row.external_gateway_id) || row.username === 'solar-backend'
+        || !validMqttIdentity(row.username)
         || typeof row.password_hash !== 'string' || !row.password_hash.startsWith('$argon2id$')) return false;
       const verified=await this.verification.verify(gatewayId, row.password_hash, password, context?.sourceAddress);
       if(!verified)return false;

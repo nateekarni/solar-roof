@@ -21,15 +21,15 @@ async function fixture(fail=false){
 }
 // Breaks: wrong handler, missing route identity, trusting payload transport metadata,
 // invalid-envelope fallthrough, outbound acceptance, unbounded/sensitive diagnostics.
-for(const kind of Object.keys(messages) as (keyof typeof messages)[])test(`${kind} dispatches exactly once with trusted broker scope`,async()=>{
+for(const kind of ['configUpdate','configStatus','status'] as const)test(`${kind} dispatches exactly once with trusted broker scope`,async()=>{
  const f=await fixture();const result=await f.handler.handle({topic:`solar/v1/gateways/GW-1/${kind}`,payload:Buffer.from(JSON.stringify(messages[kind])),brokerId:'broker-trusted',clientMetadata:{clientId:'GW-1',sourceAddress:'192.0.2.1'}});
  assert.equal(result.accepted,true);assert.equal(f.calls.length,1);assert.equal(f.calls[0]?.method,kind);
  assert.equal(f.calls[0]?.input.brokerId,'broker-trusted');assert.deepEqual(f.calls[0]?.input.payload,messages[kind]);
- if(kind==='register'){assert.equal(f.calls[0]?.input.clientId,'GW-1');assert.equal(f.calls[0]?.input.sourceAddress,'192.0.2.1');}
- else assert.equal(f.calls[0]?.input.gatewayId,'GW-1');
+ assert.equal(f.calls[0]?.input.gatewayId,'GW-1');
 });
 for(const [name,topic,payload,clientMetadata] of [
  ['identity','solar/v1/gateways/OTHER/status',JSON.stringify(messages.status),undefined],
+ ['removed register route','solar/v1/gateways/GW-1/register',JSON.stringify(messages.register),undefined],
  ['client identity','solar/v1/gateways/GW-1/register',JSON.stringify(messages.register),{clientId:'OTHER'}],
  ['strict envelope','solar/v1/gateways/GW-1/register',JSON.stringify({...messages.register,brokerId:'spoof',password:'secret'}),undefined],
  ['kind mismatch','solar/v1/gateways/GW-1/status',JSON.stringify(messages.configStatus),undefined],

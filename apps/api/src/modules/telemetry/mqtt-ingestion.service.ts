@@ -15,7 +15,7 @@ import { GatewayRegistrationService } from '../gateway-control/gateway-registrat
 import { GatewayCredentialService } from '../gateway-control/gateway-credential.service.js';
 import { gatewayControlTopic, parseGatewayControlTopic } from '../gateway-control/gateway-control-payload.js';
 
-const requiredSubscriptions = ['solar/v1/gateways/+/register', 'solar/v1/gateways/+/configUpdate',
+export const requiredSubscriptions = ['solar/v1/gateways/+/configUpdate',
   'solar/v1/gateways/+/configStatus', 'solar/v1/gateways/+/status', 'solar/v1/sites/+/gateways/+/devices/+/telemetry'];
 type RemoteSession = {client:mqtt.MqttClient;topics:Set<string>;desired:string[];ready:boolean;settings:string;generation:number};
 function subscriptionMatches(filter:string,topic:string):boolean {

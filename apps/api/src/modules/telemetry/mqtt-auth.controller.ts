@@ -3,7 +3,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { Public } from '../identity/public.decorator.js';
 import { DatabaseService } from '../../database/database.service.js';
 import { GatewayCredentialService, normalizeMqttSourceAddress } from '../gateway-control/gateway-credential.service.js';
-import { gatewayControlTopic, parseGatewayControlTopic } from '../gateway-control/gateway-control-payload.js';
+import { gatewayControlTopic } from '../gateway-control/gateway-control-payload.js';
 import { gatewayPrefix, payloadTopic } from './payload-ingestion.js';
 
 export interface EmqxAuthDto { clientid?: string; username?: string; password?: string; peerhost?: string }
@@ -11,7 +11,7 @@ export interface EmqxAclDto { clientid?: string; username?: string; password?: s
 export interface EmqxAuthResponse { result: 'allow' | 'deny'; is_superuser?: boolean }
 export interface EmqxAclResponse { result: 'allow' | 'deny' }
 interface GatewayIdentity {
-  id: string; external_gateway_id: string; site_id: string; external_site_id: string;
+  id: string; external_gateway_id: string; gateway_serial:string|null;site_id: string; external_site_id: string;
   lifecycle_state: string; retired_at: string | null; protocol: string;
   gateway_status: string; site_status: string; credential_id: string | null;
   username: string | null; revoked_at: string | null; mqtt_access_suspended:boolean;
@@ -28,7 +28,10 @@ function callbackAllowed(headers?: Record<string, string>): boolean {
   return !secret || equalSecret(headers?.['x-internal-secret'], secret);
 }
 function validIdentity(value: unknown): value is string {
-  return typeof value === 'string' && !!parseGatewayControlTopic(`solar/v1/gateways/${value}/register`);
+  return typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value);
+}
+function telemetryTopic(value:string):boolean {
+  return /^solar\/v1\/sites\/[A-Za-z0-9_-]{1,128}\/gateways\/[A-Za-z0-9_-]{1,128}\/devices\/[A-Za-z0-9_-]{1,128}\/telemetry$/.test(value);
 }
 function bodyValid(dto: unknown): dto is EmqxAuthDto & EmqxAclDto {
   return !!dto && typeof dto === 'object' && !Array.isArray(dto)
@@ -80,8 +83,7 @@ export class MqttAuthController {
     if (!validIdentity(dto.clientid) || dto.clientid === 'solar-backend') return { result: 'deny' };
     try {
       if ((dto.username ?? '') === '') {
-        const registration = gatewayControlTopic(dto.clientid, 'register');
-        return !dto.password && dto.action === 'publish' && dto.topic === registration && await this.isAnonymous(dto.clientid)
+        return !dto.password && dto.action === 'publish' && telemetryTopic(dto.topic) && await this.isAnonymous(dto.clientid)
           ? { result: 'allow' } : { result: 'deny' };
       }
       if (dto.username !== dto.clientid) return { result: 'deny' };
@@ -111,18 +113,20 @@ export class MqttAuthController {
 
   private async isAnonymous(clientId: string): Promise<boolean> {
     // Include retired identities: a failed/disabled gateway cannot downgrade.
-    return (await this.db.query('SELECT g.id FROM gateways g WHERE g.external_gateway_id=$1 LIMIT 1', [clientId])).rows.length === 0;
+    return (await this.db.query(`SELECT g.id FROM gateways g
+      WHERE g.gateway_serial=$1 OR (g.gateway_serial IS NULL AND g.external_gateway_id=$1) LIMIT 1`, [clientId])).rows.length === 0;
   }
 
   private async registeredIdentity(username: string): Promise<GatewayIdentity | null> {
-    const rows = (await this.db.query<GatewayIdentity>(`SELECT g.id,g.external_gateway_id,g.site_id,s.external_site_id,
+    const rows = (await this.db.query<GatewayIdentity>(`SELECT g.id,g.external_gateway_id,g.gateway_serial,g.site_id,s.external_site_id,
       g.lifecycle_state,g.retired_at,g.protocol,g.status AS gateway_status,s.status AS site_status,g.mqtt_access_suspended,
       c.id AS credential_id,c.username,c.revoked_at FROM gateways g JOIN sites s ON s.id=g.site_id
       LEFT JOIN gateway_mqtt_credentials c ON c.gateway_id=g.id AND c.revoked_at IS NULL
-      WHERE g.external_gateway_id=$1 LIMIT 2`, [username])).rows;
+      WHERE coalesce(g.gateway_serial,g.external_gateway_id)=$1 LIMIT 2`, [username])).rows;
     const row = rows[0];
-    if (rows.length !== 1 || !row || row.external_gateway_id !== username || !validIdentity(row.external_gateway_id)
-      || row.username !== row.external_gateway_id || !row.credential_id || row.revoked_at !== null
+    const mqttIdentity=row?.gateway_serial??row?.external_gateway_id;
+    if (rows.length !== 1 || !row || mqttIdentity !== username || !validIdentity(row.external_gateway_id)||!validIdentity(mqttIdentity)
+      || row.username !== mqttIdentity || !row.credential_id || row.revoked_at !== null
       || row.retired_at !== null || row.protocol !== 'mqtt' || !['configuring', 'active'].includes(row.lifecycle_state)
       || row.mqtt_access_suspended
       || !['online', 'offline', 'active'].includes(row.gateway_status)
