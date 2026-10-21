@@ -63,6 +63,15 @@ test('existing unmanaged canonical gateway remains compatible until explicit adm
  const admission=f.calls.find(call=>call.sql.includes('FROM devices d'))!;
  assert.match(admission.sql,/control_managed_at IS NULL/);
 });
+test('schema 1.2 bound telemetry requires both gateway and device serials in admission',async()=>{
+  const f=fixture();
+  const message={...structuredClone(examples.pm2230Energy),schemaVersion:'1.2',gatewaySerial:'GW-SN-A1B2C3D4',
+    device:{...structuredClone(examples.pm2230Energy.device),deviceSerial:'METER-SN-0001'}};
+  assert.ok(await f.ingest.accept(topic,message,'broker'));
+  const admission=f.calls.find(call=>call.sql.includes('FROM devices d'))!;
+  assert.match(admission.sql,/g\.gateway_serial=\$6 AND d\.serial_number=\$7/);
+  assert.deepEqual(admission.values,['SITE-001','GW-001','METER-001',false,'broker','GW-SN-A1B2C3D4','METER-SN-0001']);
+});
 test('suspended gateway is rejected at telemetry admission',async()=>{
  const f=fixture({mqttSuspended:true});
  assert.equal(await f.ingest.accept(topic,examples.pm2230Energy),null);
@@ -153,7 +162,7 @@ test('registered acceptance locks site and gateway before device locks and every
  assert.ok(siteLock>=0&&gatewayLock>siteLock&&deviceLock>gatewayLock);
  for(const [index,call]of f.calls.entries())if(/INSERT INTO (payload_messages|payload_samples|telemetry_raw)/.test(call.sql))assert.ok(index>deviceLock);
  assert.match(admission.sql,/g\.lifecycle_state='active'/);assert.match(admission.sql,/g\.applied_config_version>0/);assert.match(admission.sql,/g\.active_config_hash IS NOT NULL/);assert.match(admission.sql,/NOT g\.mqtt_access_suspended/);
- assert.match(admission.sql,/d\.status<>'disabled'/);assert.match(admission.sql,/d\.payload_profile_revision_id IS NOT NULL/);assert.deepEqual(admission.values,['SITE-001','GW-001','METER-001',false,'broker']);
+ assert.match(admission.sql,/d\.status<>'disabled'/);assert.match(admission.sql,/d\.payload_profile_revision_id IS NOT NULL/);assert.deepEqual(admission.values,['SITE-001','GW-001','METER-001',false,'broker',null,null]);
  const query=f.calls[gatewayLock]!;
  assert.match(query.sql,/retired_at IS NULL/);assert.match(query.sql,/lifecycle_state='active'/);assert.match(query.sql,/applied_config_version=\$6/);assert.match(query.sql,/active_config_hash=\$7/);assert.match(query.sql,/mqtt_broker_id IS NOT DISTINCT FROM/);assert.match(query.sql,/NOT mqtt_access_suspended/);
  assert.ok(query.values.includes('broker'));assert.ok(query.values.includes('GW-001'));assert.ok(query.values.includes('s'));

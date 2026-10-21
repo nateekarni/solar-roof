@@ -155,6 +155,7 @@ export interface DiscoveredGatewayRow {
   id: string;
   externalGatewayId: string;
   gatewaySerial?:string|null;
+  identityConflict?:boolean;
   reportedSiteId?: string | null;
   reportedDeviceId?: string | null;
   manufacturer?: string | null;

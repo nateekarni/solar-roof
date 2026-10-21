@@ -17,7 +17,7 @@ DROP INDEX IF EXISTS discovered_gateways_broker_gateway_unique;
 
 CREATE UNIQUE INDEX IF NOT EXISTS discovered_gateways_broker_serial_unique
   ON discovered_gateways ((coalesce(mqtt_broker_id::text, 'default')), gateway_serial)
-  WHERE gateway_serial IS NOT NULL;
+  WHERE gateway_serial IS NOT NULL AND status = 'unassigned';
 
 CREATE UNIQUE INDEX IF NOT EXISTS discovered_gateways_legacy_broker_gateway_unique
   ON discovered_gateways ((coalesce(mqtt_broker_id::text, 'default')), external_gateway_id)

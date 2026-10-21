@@ -2,41 +2,46 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { PayloadIngestion } from './payload-ingestion.js';
 
-for (const path of ['accept', 'acceptMany'] as const)
-for (const brokerId of ['11111111-1111-4111-8111-111111111111', null] as const)
-test(`${path} rejects unknown telemetry in the ${brokerId ?? 'default'} broker without discovery, config, or dataAcept`, async () => {
-  const queries: { sql: string; values: unknown[] }[] = [];
-  const acknowledgements: unknown[] = [];
-  const configurations: unknown[] = [];
-  const db = { query: async (sql: string, values: unknown[] = []) => {
-    queries.push({ sql, values });
-    return { rows: [] };
-  } };
-  const ingest = new PayloadIngestion(db as any);
-  const topic = 'solar/v1/sites/SITE-UNKNOWN/gateways/GW-SHARED/devices/DEV-01/telemetry';
-  const payload = { messageId: 'not-registration', device: { deviceId: 'DEV-01', model: 'PowerLogic PM2230' } };
+const topic='solar/v1/sites/SITE-001/gateways/GW-001/devices/SMARTLOGGER-001/telemetry';
+const payload={schemaVersion:'1.2',messageType:'telemetry',messageId:'GW-001-1260',sequence:1260,lotNumber:1260,
+  siteId:'SITE-001',gatewayId:'GW-001',gatewaySerial:'GW-SN-A1B2C3D4',device:{deviceId:'SMARTLOGGER-001',
+    deviceSerial:'SL-SN-000001',deviceType:'solar-logger',manufacturer:'Huawei',model:'SmartLogger3000A',
+    profileId:'huawei-smartlogger3000a',profileVersion:'1.0.0',protocol:'modbus-tcp'},pollGroup:'plant',
+  timestamps:{polledAt:'2026-10-21T03:30:00Z',sentAt:'2026-10-21T03:30:01Z'},
+  data:{values:{'solar.active_power':820400},units:{'solar.active_power':'W'}},quality:{status:'good',communication:'online'}};
 
-  if (path === 'accept') assert.equal(await ingest.accept(topic, payload, brokerId), null);
-  else await ingest.acceptMany(topic, payload, brokerId, ack => acknowledgements.push(ack), (...args) => configurations.push(args));
+test('unknown schema 1.2 telemetry creates serial discovery evidence without production acknowledgement',async()=>{
+  const queries:{sql:string;values:unknown[]}[]=[];
+  const discovery={id:'22222222-2222-4222-8222-222222222222',externalGatewayId:'GW-001',gatewaySerial:'GW-SN-A1B2C3D4',
+    mqttBrokerId:null,clientId:'GW-SN-A1B2C3D4',reportedSiteId:'SITE-001',reportedDeviceId:'SMARTLOGGER-001',manufacturer:'Huawei',
+    model:'SmartLogger3000A',profileId:'huawei-smartlogger3000a',protocol:'modbus-tcp',firmwareVersion:null,status:'unassigned',
+    assignedSiteId:null,assignedGatewayId:null,assignedAt:null,sourceAddress:null,firstSeenAt:'2026-10-21T03:30:01Z',lastSeenAt:'2026-10-21T03:30:01Z',
+    discoveryRevision:1,rawPayload:payload,devices:[]};
+  const query=async(sql:string,values:unknown[]=[]):Promise<{rows:any[]}>=>{
+    queries.push({sql,values});
+    if(sql.includes('FROM devices d JOIN gateways'))return {rows:[]};
+    if(sql.includes('FROM gateways g JOIN sites'))return {rows:[]};
+    if(sql.includes('INSERT INTO discovered_gateways'))return {rows:[discovery]};
+    return {rows:[]};
+  };
+  const db={query,transaction:async(work:(client:{query:typeof query})=>Promise<unknown>)=>work({query})};
+  const acknowledgement=await new PayloadIngestion(db as any).accept(topic,payload,null);
 
-  assert.equal(acknowledgements.length, 0);
-  assert.equal(configurations.length, 0);
-  assert.equal(queries.some(query => query.sql.includes('INSERT INTO discovered_gateways')), false);
-  assert.equal(queries.some(query => query.sql.includes('FROM meter_presets')), false);
-  assert.equal(queries.some(query => query.sql.includes('gateway_configuration_revisions')), false);
+  assert.equal(acknowledgement,null);
+  assert.ok(queries.some(query=>query.sql.includes('INSERT INTO discovered_gateways')));
+  assert.ok(queries.some(query=>query.sql.includes('INSERT INTO gateway_discovery_snapshots')));
+  assert.equal(queries.some(query=>query.sql.includes('INSERT INTO payload_messages')),false);
+  assert.equal(queries.some(query=>query.sql.includes('INSERT INTO payload_samples')),false);
 });
 
-test('a known gateway with an unknown device records a bounded rejection without acknowledging', async () => {
-  const queries: { sql: string; values: unknown[] }[] = [];
-  const db = { query: async (sql: string, values: unknown[] = []) => {
-    queries.push({ sql, values });
-    if (sql.includes('FROM gateways g') && sql.includes('JOIN sites s')) return { rows: [{ siteId: 'site', gatewayId: 'gateway' }] };
-    return { rows: [] };
-  } };
-  const ingest = new PayloadIngestion(db as any);
-  const result = await ingest.accept('solar/v1/sites/SITE-001/gateways/GW-001/devices/UNKNOWN/telemetry', {}, null);
+test('unknown schema 1.1 telemetry remains rejected and cannot create discovery evidence',async()=>{
+  const queries:{sql:string;values:unknown[]}[]=[];
+  const db={query:async(sql:string,values:unknown[]=[]):Promise<{rows:any[]}>=>{queries.push({sql,values});return {rows:[]};}};
+  const legacy=structuredClone(payload) as any;
+  legacy.schemaVersion='1.1';
+  delete legacy.gatewaySerial;
+  delete legacy.device.deviceSerial;
 
-  assert.equal(result, null);
-  assert.ok(queries.some(query => query.sql.includes('INSERT INTO payload_rejections')));
-  assert.equal(queries.some(query => query.sql.includes('INSERT INTO discovered_gateways')), false);
+  assert.equal(await new PayloadIngestion(db as any).accept(topic,legacy,null),null);
+  assert.equal(queries.some(query=>query.sql.includes('INSERT INTO discovered_gateways')),false);
 });

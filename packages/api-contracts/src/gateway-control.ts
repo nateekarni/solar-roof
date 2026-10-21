@@ -127,7 +127,7 @@ export interface GatewayControlPayloads {
 
 export interface DiscoveredGatewayDetail extends DiscoveredGatewayRow {
   discoveryRevision: number;
-  snapshot: GatewayRegisterPayload;
+  snapshot: GatewayRegisterPayload | TelemetryDiscoveryEnvelope;
   devices: GatewayReportedDevice[];
 }
 export interface ConfirmGatewayRequest {

@@ -110,7 +110,8 @@ test('duplicate message IDs return the original logical revision even after a ne
   ]);
   const result = await f.service.record(input());
   assert.equal(result.discoveryRevision, 1);
-  assert.equal(result.snapshot.gateway.firmwareVersion, '2.4');
+  assert.equal(result.snapshot.messageType,'register');
+  if(result.snapshot.messageType==='register')assert.equal(result.snapshot.gateway.firmwareVersion, '2.4');
   f.done();
 });
 
@@ -379,5 +380,38 @@ test('snapshot receipt time is measured when it is persisted after the identity 
   };
   const f = database(steps);
   await f.service.record(input(report('fresh-receipt')));
+  f.done();
+});
+
+test('telemetry observation creates a serial-keyed candidate with a reviewable device draft',async()=>{
+  const payload={schemaVersion:'1.2',messageType:'telemetry',messageId:'GW-001-1260',sequence:1260,lotNumber:1260,
+    siteId:'SITE-001',gatewayId:'GW-001',gatewaySerial:'GW-SN-A1B2C3D4',device:{deviceId:'SMARTLOGGER-001',
+      deviceSerial:'SL-SN-000001',deviceType:'solar-logger',manufacturer:'Huawei',model:'SmartLogger3000A',
+      profileId:'huawei-smartlogger3000a',profileVersion:'1.0.0',protocol:'modbus-tcp'},pollGroup:'plant',
+    timestamps:{polledAt:'2026-10-21T03:30:00Z',sentAt:'2026-10-21T03:30:01Z'},
+    data:{values:{'solar.active_power':820400},units:{'solar.active_power':'W'}},quality:{status:'good',communication:'online'}};
+  const observedDevice={deviceId:'SMARTLOGGER-001',serialNumber:'SL-SN-000001',deviceType:'solar-logger',manufacturer:'Huawei',
+    model:'SmartLogger3000A',profileId:'huawei-smartlogger3000a',profileVersion:'1.0.0',protocol:'modbus-tcp',pollGroups:['plant'],
+    mappings:[{tag:'solar.active_power',displayName:'solar.active_power',pollGroup:'plant',sourceUnit:'W',targetUnit:'W',conversion:'identity'}]};
+  const observedRow={...row(report(),1),externalGatewayId:'GW-001',gatewaySerial:'GW-SN-A1B2C3D4',clientId:'GW-SN-A1B2C3D4',
+    reportedSiteId:'SITE-001',reportedDeviceId:'SMARTLOGGER-001',manufacturer:'Huawei',model:'SmartLogger3000A',firmwareVersion:null,
+    profileId:'huawei-smartlogger3000a',protocol:'modbus-tcp',rawPayload:payload,devices:[observedDevice],onboardingState:'ready' as const};
+  const f=database([
+    {sql:/pg_advisory_xact_lock/,check:values=>assert.deepEqual(values,[JSON.stringify([broker,'GW-SN-A1B2C3D4'])])},
+    {sql:/FROM discovered_gateways[\s\S]*gateway_serial[\s\S]*status='unassigned'[\s\S]*FOR UPDATE/,rows:[]},
+    {sql:/INSERT INTO discovered_gateways[\s\S]*gateway_serial/,rows:[observedRow],check:(values,sql)=>{
+      assert.match(sql,/ON CONFLICT[\s\S]*gateway_serial/);
+      assert.deepEqual(values.slice(0,5),[broker,'GW-001','GW-SN-A1B2C3D4','SITE-001','SMARTLOGGER-001']);
+      assert.deepEqual(JSON.parse(String(values[10])),payload);
+      assert.deepEqual(JSON.parse(String(values[11])),[observedDevice]);
+      assert.equal(values[13],'GW-SN-A1B2C3D4');
+    }},
+    {sql:/INSERT INTO gateway_discovery_snapshots/,check:values=>{
+      assert.deepEqual(values.slice(0,3),[discoveryId,1,'GW-001-1260']);
+      assert.deepEqual(JSON.parse(String(values[3])),payload);
+    }},
+  ]);
+  const result=await f.service.observeTelemetry({brokerId:broker,topic:'solar/v1/sites/SITE-001/gateways/GW-001/devices/SMARTLOGGER-001/telemetry',payload});
+  assert.deepEqual(result,{id:discoveryId,discoveryRevision:1,changed:true});
   f.done();
 });

@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import type { DatabaseService } from '../../database/database.service.js';
-import { logicalPayloadDigest, normalizePayloadEnvelope, type PayloadProfile } from './payload-profile.js';
+import { logicalPayloadDigest, normalizePayloadEnvelope,parseTelemetryDiscoveryEnvelope,type TelemetryDiscoveryEnvelope, type PayloadProfile } from './payload-profile.js';
 import { decodePayloadMessages, validateReceiveConfig } from './payload-receive.js';
+import { GatewayRegistrationService } from '../gateway-control/gateway-registration.service.js';
 export function payloadTopic(site: string, gateway: string, device = '+') { return `solar/v1/sites/${site}/gateways/${gateway}/devices/${device}/telemetry`; }
 export function gatewayPrefix(site: string, gateway: string) { return `solar/v1/sites/${site}/gateways/${gateway}`; }
 export interface TelemetryAck {
@@ -83,6 +84,10 @@ export class PayloadIngestion {
   const segments=/^solar\/v1\/sites\/([A-Za-z0-9_-]{1,128})\/gateways\/([A-Za-z0-9_-]{1,128})\/devices\/([A-Za-z0-9_-]{1,128})\/telemetry$/.exec(topic);
   if (!segments) return null;
   const site=segments[1]!, gateway=segments[2]!, device=segments[3]!;
+   let discovery:TelemetryDiscoveryEnvelope|null=null;
+   if(input&&typeof input==='object'&&(input as {schemaVersion?:unknown}).schemaVersion==='1.2'){
+    try{discovery=parseTelemetryDiscoveryEnvelope(input,topic);}catch{return null;}
+   }
   const found=await this.db.query<RegisteredBinding>(`SELECT d.id AS "deviceId",d.site_id AS "siteId",g.id AS "gatewayId",s.external_site_id AS "externalSiteId",g.external_gateway_id AS "externalGatewayId",d.external_device_id AS "externalDeviceId",p.id AS "revisionId",p.config,g.applied_config_version AS "appliedConfigVersion",g.active_config_hash AS "activeConfigHash",g.control_managed_at AS "controlManagedAt",EXISTS(SELECT 1 FROM billing_meters b WHERE b.device_id=d.id AND b.site_id=d.site_id AND b.active) AS billing,
    (SELECT jsonb_build_object('id',bs.id,'siteId',bs.site_id,'deviceId',bs.device_id,'profileRevisionId',bs.profile_revision_id,'sourceTag',bs.source_tag,'canonicalTag',bs.canonical_tag,'sourceUnit',bs.source_unit,'targetUnit',bs.target_unit,'conversion',bs.conversion) FROM billing_meters b JOIN billing_source_bindings bs ON bs.id=b.billing_source_binding_id AND bs.meter_id=b.id WHERE b.device_id=d.id AND b.site_id=d.site_id AND b.active AND bs.site_id=d.site_id AND bs.device_id=d.id LIMIT 1) AS "billingSource"
    FROM devices d JOIN gateways g ON g.id=d.gateway_id AND g.site_id=d.site_id JOIN sites s ON s.id=d.site_id JOIN payload_profile_revisions p ON p.id=d.payload_profile_revision_id
@@ -90,9 +95,12 @@ export class PayloadIngestion {
     AND g.protocol='mqtt' AND g.retired_at IS NULL AND g.lifecycle_state='active' AND NOT g.mqtt_access_suspended
     AND ((g.applied_config_version>0 AND g.active_config_hash IS NOT NULL) OR g.control_managed_at IS NULL)
     AND d.status<>'disabled' AND d.payload_profile_revision_id IS NOT NULL
-    AND ($4::boolean OR g.mqtt_broker_id IS NOT DISTINCT FROM $5::uuid)`,[site,gateway,device,brokerId===undefined,brokerId??null]);
+     AND ($4::boolean OR g.mqtt_broker_id IS NOT DISTINCT FROM $5::uuid)
+     AND ($6::text IS NULL OR (g.gateway_serial=$6 AND d.serial_number=$7))`,
+   [site,gateway,device,brokerId===undefined,brokerId??null,discovery?.gatewaySerial??null,discovery?.device.deviceSerial??null]);
   const entity=found.rows.length===1?found.rows[0]:undefined;
   if (!entity) {
+    if(discovery){await new GatewayRegistrationService(this.db).observeTelemetry({topic,payload:input,brokerId:brokerId??null});return null;}
    const context=await this.db.query<{siteId:string;gatewayId:string}>(`SELECT g.site_id AS "siteId",g.id AS "gatewayId" FROM gateways g JOIN sites s ON s.id=g.site_id WHERE s.external_site_id=$1 AND g.external_gateway_id=$2 AND s.status<>'archived' AND g.retired_at IS NULL AND g.protocol='mqtt' AND ($3::boolean OR g.mqtt_broker_id IS NOT DISTINCT FROM $4::uuid)`,[site,gateway,brokerId===undefined,brokerId??null]);
    if (!context.rows[0]) return null;
    await this.reject(topic,'No registered device/profile binding',context.rows[0]);return null;
