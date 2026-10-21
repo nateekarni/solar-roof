@@ -15,8 +15,9 @@ import { GatewayRegistrationService } from '../gateway-control/gateway-registrat
 import { GatewayCredentialService } from '../gateway-control/gateway-credential.service.js';
 import { gatewayControlTopic, parseGatewayControlTopic } from '../gateway-control/gateway-control-payload.js';
 
+export const secureTelemetrySubscription = '$solar/internal/telemetry/+/solar/v1/sites/+/gateways/+/devices/+/telemetry';
 export const requiredSubscriptions = ['solar/v1/gateways/+/configUpdate',
-  'solar/v1/gateways/+/configStatus', 'solar/v1/gateways/+/status', 'solar/v1/sites/+/gateways/+/devices/+/telemetry'];
+  'solar/v1/gateways/+/configStatus', 'solar/v1/gateways/+/status', secureTelemetrySubscription];
 type RemoteSession = {client:mqtt.MqttClient;topics:Set<string>;desired:string[];ready:boolean;settings:string;generation:number};
 function subscriptionMatches(filter:string,topic:string):boolean {
   const control=parseGatewayControlTopic(topic);
@@ -56,6 +57,10 @@ export function telemetryTopicMatches(filter: string, topic: string): boolean {
   const parts = filter.split('/'); const actual = topic.split('/');
   return parts.every((part, index) => part === '#' && index === parts.length - 1 || part === '+' && actual[index] !== undefined || part === actual[index])
     && (parts.at(-1) === '#' || parts.length === actual.length);
+}
+export function unwrapSecureTelemetryTopic(topic:string):{publisherId:string;topic:string}|null {
+  const match=/^\$solar\/internal\/telemetry\/([A-Za-z0-9_-]{1,128})\/(solar\/v1\/sites\/[A-Za-z0-9_-]{1,128}\/gateways\/[A-Za-z0-9_-]{1,128}\/devices\/[A-Za-z0-9_-]{1,128}\/telemetry)$/.exec(topic);
+  return match&&match[1]&&match[2]?{publisherId:match[1],topic:match[2]}:null;
 }
 function numberOrNull(value: unknown): number | null {
   if (value === undefined || value === null) return null;
@@ -234,9 +239,10 @@ export class MqttIngestionService implements OnModuleInit, OnModuleDestroy {
     }
     this.remoteDiscovered = true;
   }
-  private subscriptionFilters(endpoints:string[]):string[]{
+  private subscriptionFilters(endpoints:string[],secureManagedBroker=false):string[]{
     if(endpoints.length>1024||endpoints.some(topic=>typeof topic!=='string'||Buffer.byteLength(topic)>1024))throw Error('Gateway subscription resource limit');
-    return [...new Set([...requiredSubscriptions,...endpoints.filter(topic=>!topic.startsWith('solar/v1/')),
+    const base=secureManagedBroker?requiredSubscriptions:requiredSubscriptions.map(topic=>topic===secureTelemetrySubscription?'solar/v1/sites/+/gateways/+/devices/+/telemetry':topic);
+    return [...new Set([...base,...endpoints.filter(topic=>!topic.startsWith('solar/v1/')),
       ...(this.legacyConfigEnabled?['solar/v1/sites/+/gateways/+/configAck']:[])])];
   }
   private async retryConnectedConfigurations():Promise<void> {
@@ -292,7 +298,7 @@ export class MqttIngestionService implements OnModuleInit, OnModuleDestroy {
       const result = await this.ingress.query("SELECT endpoint FROM gateways WHERE protocol = 'mqtt' AND mqtt_broker_id IS NULL AND retired_at IS NULL ORDER BY id LIMIT 1025");
       if (result.rows.length > 1024 || result.rows.some(row => typeof row.endpoint !== 'string' || Buffer.byteLength(row.endpoint) > 1024)) throw new Error('Gateway subscription resource limit');
       if (generation !== this.connectionGeneration || !client.connected) return;
-      const topics = new Set(this.subscriptionFilters(result.rows.map(row=>row.endpoint)));
+      const topics = new Set(this.subscriptionFilters(result.rows.map(row=>row.endpoint),true));
       for (const topic of this.subscribedTopics) if (!topics.has(topic) && typeof client.unsubscribe === 'function') client.unsubscribe(topic);
       for (const topic of topics) if (!this.subscribedTopics.has(topic)) {
         await subscribeGranted(client,topic);
@@ -307,6 +313,9 @@ export class MqttIngestionService implements OnModuleInit, OnModuleDestroy {
   }
 async handleIncomingMessage(topic: string, messageStr: string | Buffer, sourceClient = this.client, brokerId: string | null = null) {
     const started = performance.now();
+    const secureTelemetry=unwrapSecureTelemetryTopic(topic);
+    const publisherId=secureTelemetry?.publisherId;
+    if(secureTelemetry)topic=secureTelemetry.topic;
     if(topic.startsWith('solar/v1/gateways/')){await this.control.handle({topic,payload:messageStr,brokerId});return;}
     if (['response','config','ack','dataAcept','status'].includes(topic.split('/').at(-1)!)) return;
     if(topic.endsWith('/configAck')&&!this.legacyConfigEnabled)return;
@@ -319,13 +328,14 @@ async handleIncomingMessage(topic: string, messageStr: string | Buffer, sourceCl
       return;
     }
     if (topic.startsWith('solar/v1/')) {
+      if(topic.endsWith('/telemetry')&&brokerId===null&&!publisherId){observeValue('ingress_rejected',1);return;}
       let accepted=0;
       await new PayloadIngestion(this.ingress).acceptMany(topic,data,brokerId,ack=>{
         accepted++;
         if (this.acknowledgmentsEnabled && this.limiter.withinDrainDeadline() && sourceClient?.connected) sourceClient.publish(gatewayPrefix(ack.siteId,ack.gatewayId)+'/dataAcept',JSON.stringify(ack),{qos:1});
       }, (siteId, gatewayId, configPayload) => {
         if (this.legacyConfigEnabled && this.acknowledgmentsEnabled && this.limiter.withinDrainDeadline() && sourceClient?.connected) sourceClient.publish(gatewayPrefix(siteId, gatewayId)+'/config', JSON.stringify(configPayload), {qos:1});
-      });
+      },publisherId);
       observeValue(accepted?'ingress_accepted':'ingress_rejected',accepted||1);return;
     }
     if (!data || typeof data !== 'object' || ['acknowledged', 'ack', 'config'].includes(data.status ?? data.type)) return;

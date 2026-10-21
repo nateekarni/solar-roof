@@ -39,12 +39,12 @@ export function assertDataAcceptedPacket(packet: Pick<IPublishPacket, 'qos' | 'r
   assert.equal(packet.retain, false, 'dataAcept must not be retained');
 }
 
-export function buildAppliedConfigTelemetry(config:GatewayConfigPayload,input:{messageId:string;sequence:number;lotNumber:number;deviceId:string;value:number;polledAt:string;sentAt:string}) {
+export function buildAppliedConfigTelemetry(config:GatewayConfigPayload,input:{messageId:string;sequence:number;lotNumber:number;deviceId:string;gatewaySerial:string;value:number;polledAt:string;sentAt:string}) {
   const device=config.devices.find(candidate=>candidate.deviceId===input.deviceId&&candidate.enabled);
   assert.ok(device?.deviceType&&device.profileId&&device.profileVersion,'applied config must pin an enabled device profile');
-  return {schemaVersion:'1.1',messageType:'telemetry',messageId:input.messageId,sequence:input.sequence,lotNumber:input.lotNumber,
-    configurationVersion:config.configVersion,siteId:config.siteId,gatewayId:config.gatewayId,
-    device:{deviceId:input.deviceId,deviceType:device.deviceType,profileId:device.profileId,profileVersion:device.profileVersion},
+  return {schemaVersion:'1.2',messageType:'telemetry',messageId:input.messageId,sequence:input.sequence,lotNumber:input.lotNumber,
+    configurationVersion:config.configVersion,siteId:config.siteId,gatewayId:config.gatewayId,gatewaySerial:input.gatewaySerial,
+    device:{deviceId:input.deviceId,deviceSerial:device.serialNumber,deviceType:device.deviceType,profileId:device.profileId,profileVersion:device.profileVersion},
     pollGroup:'energy',timestamps:{polledAt:input.polledAt,sentAt:input.sentAt},
     data:{values:{'energy.active.import.total':input.value},units:{'energy.active.import.total':'Wh'}},
     quality:{status:'good',communication:'online'}};
@@ -377,10 +377,12 @@ async function clearRetainedControlState(config: GatewayOnboardingE2EConfig, mqt
 async function executeGatewayOnboardingVerification(config: GatewayOnboardingE2EConfig, signal: AbortSignal): Promise<GatewayOnboardingVerificationResult> {
   const runId = randomUUID().replaceAll('-', '').slice(0, 16);
   const gatewayId = `E2E-GW-${runId}`;
+  const gatewaySerial = `E2E-GW-SN-${runId}`;
   const deviceId = `E2E-METER-${runId}`;
+  const deviceSerial = `E2E-DEVICE-SN-${runId}`;
   const sessionId = `E2E-BOOT-${runId}`;
-  const registerMessageId = randomUUID();
-  const messageIds = [registerMessageId];
+  const discoveryMessageId = randomUUID();
+  const messageIds = [discoveryMessageId];
   const checks: string[] = [];
   const versions: { version: number; hash: string }[] = [];
   if (!config.cleanupUsername || !config.cleanupPassword) {
@@ -403,7 +405,6 @@ async function executeGatewayOnboardingVerification(config: GatewayOnboardingE2E
   let primaryError: unknown;
   let mqttBase: IClientOptions = {};
 
-  const registerTopic = `solar/v1/gateways/${gatewayId}/register`;
   const configTopic = `solar/v1/gateways/${gatewayId}/config`;
   const configStatusTopic = `solar/v1/gateways/${gatewayId}/configStatus`;
   const configUpdateTopic = `solar/v1/gateways/${gatewayId}/configUpdate`;
@@ -424,40 +425,37 @@ async function executeGatewayOnboardingVerification(config: GatewayOnboardingE2E
     const telemetryTopic = `solar/v1/sites/${externalSiteId}/gateways/${gatewayId}/devices/${deviceId}/telemetry`;
 
     // Prove that cleanup credentials can tombstone this unique control scope
-    // before registration can create any durable or retained state.
+    // before discovery can create any durable or retained state.
     await clearRetainedControlState(config, mqttBase, gatewayId, signal);
 
-    anonymous = await connectClient(config.mqttUrl, { ...mqttBase, clientId: gatewayId }, config.operationTimeoutMs, signal);
+    anonymous = await connectClient(config.mqttUrl, { ...mqttBase, clientId: gatewaySerial }, config.operationTimeoutMs, signal);
     clients.add(anonymous);
     await expectSubscribeDenied(anonymous, configTopic, config.operationTimeoutMs, signal);
     checks.push('anonymous config subscription denied by broker');
 
-    const register = {
-      schemaVersion: '1.1', messageType: 'register', messageId: registerMessageId, sentAt: new Date().toISOString(),
-      gateway: { gatewayId, model: 'E2E-Simulator', firmwareVersion: 'e2e-1.0.0' },
-      reportedSiteId: `UNTRUSTED-${runId}`,
-      devices: [{ deviceId, deviceType: 'energy-meter', manufacturer: 'Synthetic E2E fixture', model: 'UNVERIFIED-METER',
-        firmwareVersion: 'e2e-1.0.0', serialNumber: `E2E-SERIAL-${runId}`, protocol: 'modbus-tcp',
-        connection: { host: '192.0.2.10', port: 502, slaveId: 1 }, pollGroups: ['energy'],
-        mappings: [{ tag: 'energy.active.import.total', required: true, registerAddress: '1',
-          displayName: 'Synthetic cumulative import', pollGroup: 'energy', sourceUnit: 'Wh', targetUnit: 'kWh',
-          conversion: 'wh-to-kwh', role: 'billing-import', registerCount: 2, dataType: 'uint32',
-          byteOrder: 'big_endian', wordOrder: 'big_word_first', scale: 1, offset: 0 }] }],
-    };
+    const discoveryTelemetry = {schemaVersion:'1.2',messageType:'telemetry',messageId:discoveryMessageId,sequence:0,lotNumber:0,
+      siteId:externalSiteId,gatewayId,gatewaySerial,device:{deviceId,deviceSerial,deviceType:'energy-meter',
+        manufacturer:'Synthetic E2E fixture',model:'UNVERIFIED-METER',profileId:'e2e-meter',profileVersion:'1.0.0',protocol:'modbus-tcp'},
+      pollGroup:'energy',timestamps:{polledAt:new Date(Date.now()-1_000).toISOString(),sentAt:new Date().toISOString()},
+      data:{values:{'energy.active.import.total':123_454},units:{'energy.active.import.total':'Wh'}},quality:{status:'good',communication:'online'}};
     stateMayExist = true;
-    await publish(anonymous, registerTopic, JSON.stringify(register), { qos: 1, retain: false }, config.operationTimeoutMs, signal);
+    await publish(anonymous, telemetryTopic, JSON.stringify(discoveryTelemetry), { qos: 1, retain: false }, config.operationTimeoutMs, signal);
 
-    type Discovery = { id: string; externalGatewayId: string; discoveryRevision: number };
+    type Discovery = { id: string; externalGatewayId: string; gatewaySerial:string|null; discoveryRevision: number };
     const discovery = await poll(async () => {
       const rows = await apiRequest<Discovery[]>(config, '/v1/gateways/discovered?status=unassigned', undefined, signal);
-      return rows.find(row => row.externalGatewayId === gatewayId);
+      return rows.find(row => row.gatewaySerial === gatewaySerial);
     }, Boolean, 'discovered gateway admin row', config.pollTimeoutMs, signal);
     assert.ok(discovery);
     discoveryId = discovery.id;
-    checks.push('anonymous registration appeared in the unconnected admin API');
+    checks.push('anonymous telemetry appeared in the unconnected admin API');
 
     const deviceConfig = {
-      ...register.devices[0], mappingSource: 'manual', enabled: true,
+      deviceId,deviceType:'energy-meter',manufacturer:'Synthetic E2E fixture',model:'UNVERIFIED-METER',
+      serialNumber:deviceSerial,protocol:'modbus-tcp',connection:{host:'192.0.2.10',port:502,slaveId:1},pollGroups:['energy'],
+      mappings:[{tag:'energy.active.import.total',required:true,registerAddress:'1',displayName:'Synthetic cumulative import',
+        pollGroup:'energy',sourceUnit:'Wh',targetUnit:'kWh',conversion:'wh-to-kwh',role:'billing-import',registerCount:2,
+        dataType:'uint32',byteOrder:'big_endian',wordOrder:'big_word_first',scale:1,offset:0}],mappingSource:'manual',enabled:true,
     };
     type Confirmation = { gatewayId: string; configVersion: number; configHash: string;
       credential: { username: string; password: string } };
@@ -466,7 +464,7 @@ async function executeGatewayOnboardingVerification(config: GatewayOnboardingE2E
     }, signal);
     internalGatewayId = confirmation.gatewayId;
     assert.equal(confirmation.configVersion, 1);
-    assert.equal(confirmation.credential.username, gatewayId);
+    assert.equal(confirmation.credential.username, gatewaySerial);
     assert.ok(confirmation.credential.password.length >= 32);
     const credentialRow = (await databaseQuery(pool, 'SELECT password_hash FROM gateway_mqtt_credentials WHERE gateway_id=$1 AND revoked_at IS NULL', [internalGatewayId], config.operationTimeoutMs, 'credential hash proof', signal)).rows[0];
     assert.ok(credentialRow?.password_hash && credentialRow.password_hash !== confirmation.credential.password, 'database stores only the credential hash');
@@ -477,7 +475,7 @@ async function executeGatewayOnboardingVerification(config: GatewayOnboardingE2E
 
     const firstWill = statusPayload(gatewayId, sessionId, 'offline', null, null);
     messageIds.push(firstWill.messageId);
-    gateway = await connectClient(config.mqttUrl, { ...mqttBase, clientId: gatewayId, username: confirmation.credential.username,
+    gateway = await connectClient(config.mqttUrl, { ...mqttBase, clientId: gatewaySerial, username: confirmation.credential.username,
       password: confirmation.credential.password, will: { topic: statusTopic, payload: JSON.stringify(firstWill), qos: 1, retain: true } }, config.operationTimeoutMs, signal);
     clients.add(gateway);
     const messages = new Messages(gateway);
@@ -499,7 +497,7 @@ async function executeGatewayOnboardingVerification(config: GatewayOnboardingE2E
     assert.ok(configuredDevice?.profileId && configuredDevice.profileVersion, 'retained config pins the generated device profile');
     const preApplyMessageId = randomUUID();
     messageIds.push(preApplyMessageId);
-    const preApplyTelemetry = buildAppliedConfigTelemetry(desired1,{messageId:preApplyMessageId,sequence:0,lotNumber:1,deviceId,value:123_455,
+    const preApplyTelemetry = buildAppliedConfigTelemetry(desired1,{messageId:preApplyMessageId,sequence:0,lotNumber:1,deviceId,gatewaySerial,value:123_455,
       polledAt:new Date(Date.now()-1_000).toISOString(),sentAt:new Date().toISOString()});
     await expectSubscribeDenied(gateway, ackTopic, config.operationTimeoutMs, signal);
     await expectPublishDenied(gateway, telemetryTopic, preApplyTelemetry, config.operationTimeoutMs, signal);
@@ -536,7 +534,7 @@ async function executeGatewayOnboardingVerification(config: GatewayOnboardingE2E
 
     const telemetryMessageId = randomUUID();
     messageIds.push(telemetryMessageId);
-    const telemetry=buildAppliedConfigTelemetry(desired1,{messageId:telemetryMessageId,sequence:1,lotNumber:1,deviceId,value:123_456,
+    const telemetry=buildAppliedConfigTelemetry(desired1,{messageId:telemetryMessageId,sequence:1,lotNumber:1,deviceId,gatewaySerial,value:123_456,
       polledAt:new Date(Date.now()-1_000).toISOString(),sentAt:new Date().toISOString()});
     const barrier = await withTimeout(pool.connect(), 'database commit barrier connection', config.operationTimeoutMs, signal);
     let barrierOpen = false;
@@ -670,7 +668,7 @@ async function executeGatewayOnboardingVerification(config: GatewayOnboardingE2E
 
     const lwt = statusPayload(gatewayId, sessionId, 'offline', 2, desired2.configHash);
     messageIds.push(lwt.messageId);
-    gateway = await connectClient(config.mqttUrl, { ...mqttBase, clientId: gatewayId, username: confirmation.credential.username,
+    gateway = await connectClient(config.mqttUrl, { ...mqttBase, clientId: gatewaySerial, username: confirmation.credential.username,
       password: confirmation.credential.password, will: { topic: statusTopic, payload: JSON.stringify(lwt), qos: 1, retain: true } }, config.operationTimeoutMs, signal);
     clients.add(gateway);
     await subscribe(gateway, [configTopic, ackTopic], config.operationTimeoutMs, signal);
@@ -686,7 +684,7 @@ async function executeGatewayOnboardingVerification(config: GatewayOnboardingE2E
 
     const finalWill = statusPayload(gatewayId, sessionId, 'offline', 2, desired2.configHash);
     messageIds.push(finalWill.messageId);
-    gateway = await connectClient(config.mqttUrl, { ...mqttBase, clientId: gatewayId, username: confirmation.credential.username,
+    gateway = await connectClient(config.mqttUrl, { ...mqttBase, clientId: gatewaySerial, username: confirmation.credential.username,
       password: confirmation.credential.password, will: { topic: statusTopic, payload: JSON.stringify(finalWill), qos: 1, retain: true } }, config.operationTimeoutMs, signal);
     clients.add(gateway);
     await subscribe(gateway, [configTopic, ackTopic], config.operationTimeoutMs, signal);

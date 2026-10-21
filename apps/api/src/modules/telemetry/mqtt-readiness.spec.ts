@@ -10,7 +10,7 @@ import type { DatabaseService } from "../../database/database.service.js";
 
 const flush = () => new Promise<void>(resolve => setImmediate(resolve));
 
-const required=['solar/v1/gateways/+/register','solar/v1/gateways/+/configUpdate','solar/v1/gateways/+/configStatus','solar/v1/gateways/+/status','solar/v1/sites/+/gateways/+/devices/+/telemetry'];
+const required=['solar/v1/gateways/+/configUpdate','solar/v1/gateways/+/configStatus','solar/v1/gateways/+/status','$solar/internal/telemetry/+/solar/v1/sites/+/gateways/+/devices/+/telemetry'];
 test('empty default broker subscribes all control and telemetry filters once at QoS 1',async context=>{
  const subscriptions:string[]=[];const client=Object.assign(new EventEmitter(),{connected:true,end(){},subscribe(topic:string,options:any,done:Function){assert.equal(options.qos,1);subscriptions.push(topic);done(null,[{topic,qos:1}]);}});
  context.mock.method(mqttRuntime,'connect',()=>client);

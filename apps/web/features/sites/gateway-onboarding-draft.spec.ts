@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type {DiscoveredGatewayDetail, GatewayRegisterPayload} from '@solar/api-contracts';
+import type {DiscoveredGatewayDetail, GatewayRegisterPayload,TelemetryDiscoveryEnvelope} from '@solar/api-contracts';
 import type {PayloadRevision} from './payload-contracts';
 import {
   gatewayConfirmationRequest,
@@ -40,6 +40,34 @@ test('full registration snapshot is preserved while every reported device field 
   draft.devices[0]!.config.fields[0]!.displayName='Admin label';
   assert.equal(draft.reported.devices[0]!.model,'PM2230');
   assert.equal(draft.reported.devices[0]!.mappings![0]!.displayName,'Imported energy');
+});
+
+test('schema 1.2 telemetry becomes a complete pairing draft without a register snapshot',()=>{
+  const telemetry:TelemetryDiscoveryEnvelope={schemaVersion:'1.2',messageType:'telemetry',messageId:'telemetry-1',siteId:'SITE-ALPHA',gatewayId:'GW-001',gatewaySerial:'GW-SN-A1B2C3D4',device:{deviceId:'METER-01',deviceSerial:'PM2230-SN-000001',deviceType:'energy-meter',manufacturer:'Schneider',model:'PM2230',profileId:'pm2230',profileVersion:'3',protocol:'modbus-tcp'}};
+  const telemetryDetail:DiscoveredGatewayDetail={...detail,gatewaySerial:telemetry.gatewaySerial,snapshot:telemetry,devices:[snapshot.devices[0]!],rawPayload:telemetry as unknown as Record<string,unknown>};
+  const draft=gatewayOnboardingDraftFromDetail(telemetryDetail,[{id:siteId,code:'SITE-ALPHA'}]);
+  assert.equal(draft.reported.gateway.gatewayId,'GW-001');
+  assert.equal(draft.reported.gateway.gatewaySerial,'GW-SN-A1B2C3D4');
+  assert.equal(draft.reportedSiteId,'SITE-ALPHA');
+  assert.equal(draft.selectedSiteId,siteId);
+  assert.equal(draft.devices[0]!.serialNumber,'SN-01');
+  assert.equal(draft.reported.devices[0]!.deviceId,'METER-01');
+});
+
+test('schema 1.1 telemetry without serials opens an editable pairing draft keyed by claimed IDs',()=>{
+  const telemetry:TelemetryDiscoveryEnvelope={schemaVersion:'1.1',messageType:'telemetry',messageId:'telemetry-legacy-1',
+    siteId:'SITE-ALPHA',gatewayId:'GW-001',device:{deviceId:'METER-01',deviceType:'energy-meter',manufacturer:'Schneider',
+      model:'PM2230',profileId:'pm2230',profileVersion:'3',protocol:'modbus-tcp'}};
+  const reportedDevice=structuredClone(snapshot.devices[0]!);
+  delete reportedDevice.serialNumber;
+  const telemetryDetail:DiscoveredGatewayDetail={...detail,gatewaySerial:null,snapshot:telemetry,devices:[reportedDevice],
+    rawPayload:telemetry as unknown as Record<string,unknown>};
+  const draft=gatewayOnboardingDraftFromDetail(telemetryDetail,[{id:siteId,code:'SITE-ALPHA'}]);
+  assert.equal(draft.reported.gateway.gatewayId,'GW-001');
+  assert.equal(draft.reported.gateway.gatewaySerial,undefined);
+  assert.equal(draft.selectedSiteId,siteId);
+  assert.equal(draft.devices[0]!.externalDeviceId,'METER-01');
+  assert.equal(draft.devices[0]!.serialNumber,'');
 });
 
 test('reported site is only a matched preselection and confirmation keeps the discovery revision',()=>{

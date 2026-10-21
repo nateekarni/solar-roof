@@ -33,6 +33,14 @@ test('EMQX authorization cache is disabled so suspension and rotation take effec
   assert.match(runbook,/authorization cache[\s\S]*(?:restart|recreate|สร้าง container ใหม่)/i);
 });
 
+test('EMQX republish rule carries authenticated publisher identity on a private telemetry topic',()=>{
+  const config=readRepositoryFile('infra/docker/emqx/emqx.conf');
+  assert.match(config,/FROM \\\"solar\/v1\/sites\/\+\/gateways\/\+\/devices\/\+\/telemetry\\\"/);
+  assert.match(config,/topic = "\$solar\/internal\/telemetry\/\$\{clientid\}\/\$\{topic\}"/);
+  assert.match(config,/payload = "\$\{payload\}"/);
+  assert.match(config,/direct_dispatch = true/);
+});
+
 test('EMQX deployment has no default dashboard or cluster credentials', () => {
   const compose = readRepositoryFile('infra/docker/docker-compose.emqx.yml');
   const example = readRepositoryFile('infra/docker/.env.emqx.example');

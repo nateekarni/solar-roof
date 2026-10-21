@@ -652,20 +652,25 @@ _Avoid_: ภาพรวมระบบ (ในฐานะชื่อหน้
 - **บทบาทเริ่มต้นเมื่อเชิญพนักงาน (Staff Invitation Role Defaulting)**: หากไม่มีการส่งฟิลด์ `role` มาในคำขอสร้างคำเชิญ (`/v1/users/invite`) ระบบจะถือว่าเป็นบทบาทพนักงานฝ่ายปฏิบัติการ (`operator`) โดยอัตโนมัติเมื่อไม่มี `customerId` ระบุมา (และถือว่าเป็น `customer_user` เมื่อมี `customerId`) โดย `PlatformAccessGuard` และ `InvitationService` ต้องใช้ตรรกะนี้ตรงกันเพื่อไม่ให้บล็อกคำขอที่เป็นสิทธิ์ชอบธรรมของผู้ดูแลระบบ
 - **การนำเข้าข้อมูลจำลองแบบไม่ทำลายข้อมูลเดิม (Idempotent Realistic Seed)**: การสร้างข้อมูลรอบบิลและเอกสารจำลองในสภาพแวดล้อมทดสอบ ต้องตรวจสอบการมีอยู่ของข้อมูลเดิมก่อนทำการแทรก ไม่ใช้คำสั่งลบเอกสารที่ออกแล้ว (`DELETE FROM documents`) เนื่องจากขัดกับกลไกความปลอดภัยด้านความคงสภาพของเอกสารทางบัญชี (`preserve_local_issued_document()`)
 
-### การตรวจจับเกตเวย์ใหม่และการจับคู่โปรไฟล์ (Gateway Discovery & Register Mapping Configuration)
+### การตรวจจับเกตเวย์ใหม่จาก Telemetry และการจับคู่โปรไฟล์ (Telemetry-first Gateway Discovery & Mapping Configuration)
 
 **เกตเวย์ที่ยังไม่เชื่อมต่อ (Unconnected / Discovered Gateway)**:
-เกตเวย์ใหม่ที่ส่งข้อมูลเข้ามายัง MQTT Broker (`solar/v1/sites/+/gateways/+/devices/+/telemetry`) แต่รหัสเกตเวย์ยังไม่มีการจับคู่กับไซต์งานในระบบ โดยระบบจะตรวจจับและจัดเก็บเข้าสู่ตารางเกตเวย์ใหม่พร้อมข้อมูลอุปกรณ์ (`device.manufacturer`, `device.model`, `device.deviceId`, `device.profileId`) และแสดงในแท็บ "ยังไม่เชื่อมต่อ" พร้อมตัวเลขกำกับ
+เกตเวย์ใหม่ที่ส่ง telemetry เข้ามายัง MQTT Broker (`solar/v1/sites/+/gateways/+/devices/+/telemetry`) แต่ identity ยังไม่ได้รับการผูกโดย Admin ระบบจะเก็บเป็น discovery evidence และแสดงในแท็บ "ยังไม่เชื่อมต่อ" โดยยังไม่สร้าง production sample, billing input หรือ ACK รองรับทั้ง schema `1.1` ที่ไม่มี Serial และ schema `1.2` ที่มี Serial ครบคู่ ระบบไม่ใช้ `/register`; telemetry Topic เดียวเป็นทั้ง first contact และ data plane หลังเชื่อมต่อ
+
+EMQX ส่งต่อ canonical telemetry ภายในผ่าน `$solar/internal/telemetry/{authenticatedClientId}/{originalTopic}`; public client ไม่มีสิทธิ์ publish เส้น private ระบบใช้ identity ใน Topic/payload เพื่อจัดกลุ่ม discovery และไม่บังคับ Client ID ให้ตรงกับ Serial
 _Avoid_: เกตเวย์หลุดการเชื่อมต่อ (เมื่อหมายถึงเกตเวย์ใหม่ที่ยังไม่เคยผูกกับระบบ)
+
+**Serial จริงและรหัสที่อ้าง (Physical Serials & Claimed IDs)**:
+เมื่อส่ง `gatewaySerial` และ `deviceSerial` ทั้งคู่ ระบบใช้เป็นตัวตนถาวรของฮาร์ดแวร์ ส่วน `siteId`, `gatewayId` และ `deviceId` ใน Topic/payload เป็นรหัสที่เครื่องอ้างเพื่อ routing หากไม่ส่ง Serial ระบบใช้ `gatewayId`/`deviceId` เป็น identity ชั่วคราว Candidate แบบมี Serial และไม่มี Serial ต้องไม่รวมกัน ระบบตรวจ binding ที่ Admin อนุมัติก่อน: route ที่ผูกแล้วเข้าสู่ production ingestion ส่วน route ที่ยังไม่ผูกอยู่ใน "ยังไม่เชื่อมต่อ" เพื่อให้ Admin ตั้งค่าต่อได้
 
 **แท็บการจัดการเกตเวย์ (Gateway Workspace Tabs)**:
 หน้าจัดการเกตเวย์แบ่งการแสดงผลออกเป็น 3 แท็บหลักพร้อมตัวเลขนับจำนวน (Badges):
 1. **ทั้งหมด (All)**: แสดงรายการเกตเวย์ทั้งหมดในระบบ
-2. **เชื่อมต่อแล้ว (Connected)**: เกตเวย์ที่ลงทะเบียนและผูกเข้ากับไซต์งานในระบบเรียบร้อยแล้ว
+2. **เชื่อมต่อแล้ว (Connected)**: เกตเวย์ที่ Admin อนุมัติ identity และผูกเข้ากับไซต์งานในระบบเรียบร้อยแล้ว
 3. **ยังไม่เชื่อมต่อ (Unconnected)**: เกตเวย์ใหม่ที่ยิงเข้ามาแต่ยังไม่ได้จับคู่กับไซต์งาน ผู้ดูแลระบบสามารถกดเปิดหน้าต่างเชื่อมต่อไซต์งานเพื่อเลือกไซต์และนำเกตเวย์เข้าสู่ระบบได้ทันที
 
 **การส่งโปรไฟล์และ Register Mapping คืนให้เกตเวย์ (Register Mapping Profile Push)**:
-เมื่อเกตเวย์เปิดใช้งานครั้งแรกและยิงข้อความเข้ามาพร้อมระบุรุ่นอุปกรณ์ใน `device.model` (เช่น `PowerLogic PM2230`) ระบบจะจับคู่กับ `meter_presets` ในการตั้งค่า และส่งชุด Register Mapping กลับไปยัง MQTT Config Topic (`solar/v1/sites/{siteId}/gateways/{gatewayId}/config`) เพื่อให้เกตเวย์นำไปตั้งค่าระบบการอ่านค่าของตัวเองให้ตรงกับมาตรฐานส่วนกลางโดยอัตโนมัติ
+เมื่อเกตเวย์ส่ง telemetry พร้อมระบุรุ่นอุปกรณ์ใน `device.model` (เช่น `PowerLogic PM2230`) ระบบเสนอ `meter_presets` ให้ Admin ตรวจและเลือกโดยไม่จับคู่อัตโนมัติ หลังอนุมัติแล้วจึงส่งชุด Register Mapping กลับไปยัง MQTT Config Topic (`solar/v1/gateways/{gatewayId}/config`) เพื่อให้เกตเวย์นำไปตั้งค่าระบบการอ่านค่าของตัวเองให้ตรงกับมาตรฐานส่วนกลาง
 
 ### บันทึกเอกสารการเงินรวมและวงจรชีวิตการชำระเงิน (Unified Financial Record & Billing Lifecycle)
 

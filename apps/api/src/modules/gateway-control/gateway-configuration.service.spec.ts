@@ -22,6 +22,7 @@ const siteId = '22222222-2222-4222-8222-222222222222';
 const actor = '33333333-3333-4333-8333-333333333333';
 const broker = '44444444-4444-4444-8444-444444444444';
 const gatewayId = '55555555-5555-4555-8555-555555555555';
+const gatewaySerial = 'GW-SN-A1B2C3D4';
 const presetId = '66666666-6666-4666-8666-666666666666';
 const now = '2026-10-19T01:00:00Z';
 const http = (status: number) => (e: unknown) => e instanceof HttpException && e.getStatus() === status;
@@ -39,11 +40,13 @@ function fixture(options: { revision?: number; status?: string; occupied?: boole
   preset?: unknown; registerPreset?:unknown; active?: number; desired?: number; hash?: string; proposalStatus?: string; base?: number;
   duplicateEvent?: boolean; existingDevice?: boolean; missing?: boolean; connection?: string; retiredDuplicate?: boolean;
   proposalDevices?: GatewayDeviceConfig[]; desiredDevices?: GatewayDeviceConfig[]; activeDevices?: GatewayDeviceConfig[];
-  existingRows?: Record<string, unknown>[]; controlManaged?:boolean;lifecycleState?:string;configState?:string;kickError?:boolean;mqttSuspended?:boolean } = {}) {
+  existingRows?: Record<string, unknown>[]; controlManaged?:boolean;lifecycleState?:string;configState?:string;kickError?:boolean;mqttSuspended?:boolean;
+  discoverySerial?:string|null } = {}) {
   const calls: Write[] = [], pending: Write[] = [], committed: Write[] = [];
   const events:string[]=[];
+  const kickedClientIds:string[]=[];
   let rolledBack = false;
-  const gateway = { id: gatewayId, site_id: siteId, external_gateway_id: 'GW-001', external_site_id: 'SELECTED',
+  const gateway = { id: gatewayId, site_id: siteId, external_gateway_id: 'GW-001', gateway_serial: gatewaySerial, external_site_id: 'SELECTED',
     mqtt_broker_id: broker, retired_at: null, protocol: 'mqtt', mqtt_access_suspended:options.mqttSuspended??false,lifecycle_state: options.lifecycleState??'active', config_state: options.configState??'applied',config_publication_epoch:'0',
     desired_config_version: options.desired ?? 1, applied_config_version: options.active ?? 1,
     desired_config_hash: options.hash ?? 'a'.repeat(64), active_config_hash: 'a'.repeat(64), connection_state: options.connection ?? 'unknown',
@@ -61,9 +64,12 @@ function fixture(options: { revision?: number; status?: string; occupied?: boole
       return { rows: /RETURNING/.test(sql) ? [{ id: gatewayId }] : [], rowCount: 1 };
     }
     if (/pg_advisory_xact_lock/.test(sql)) return { rows: [] };
-    if (/FROM discovered_gateways/.test(sql)) return { rows: [{ id: discoveryId, external_gateway_id: 'GW-001',
-      client_id: 'GW-001', mqtt_broker_id: broker, discovery_revision: options.revision ?? 2,
-      status: options.status ?? 'unassigned', reported_site_id: 'REPORTED', raw_payload: { reportedSiteId: 'REPORTED' } }] };
+    if (/FROM discovered_gateways/.test(sql)) {
+      const discoverySerial=options.discoverySerial===undefined?gatewaySerial:options.discoverySerial;
+      return { rows: [{ id: discoveryId, external_gateway_id: 'GW-001',
+        gateway_serial: discoverySerial, client_id: discoverySerial??'GW-001', mqtt_broker_id: broker, discovery_revision: options.revision ?? 2,
+        status: options.status ?? 'unassigned', reported_site_id: 'REPORTED', raw_payload: { reportedSiteId: 'REPORTED' } }] };
+    }
     if (/FROM sites/.test(sql)) return { rows: [{ id: siteId, external_site_id: 'SELECTED', status: 'online' }] };
     if (/FROM payload_profile_revisions/.test(sql)) return { rows: options.preset ? [options.preset] : [] };
     if (/FROM meter_presets/.test(sql)) return { rows: options.registerPreset?[options.registerPreset]:[] };
@@ -84,9 +90,10 @@ function fixture(options: { revision?: number; status?: string; occupied?: boole
         gatewayId: 'GW-001', siteId: 'SELECTED', configVersion: options.desired ?? 1, configHash: options.hash ?? 'a'.repeat(64), issuedAt: now,
         approvedBy: actor, devices: values[1] === (options.active ?? 1) && options.activeDevices ? options.activeDevices : options.desiredDevices ?? [device()] } }] };
     if (/FROM devices/.test(sql)) return { rows: options.existingRows ?? (options.existingDevice ? [{ id: presetId, external_device_id: 'M1' }] : []) };
-    if (/SELECT id,external_gateway_id,retired_at,protocol FROM gateways/.test(sql)) {
+    if (/SELECT id,external_gateway_id,gateway_serial,retired_at,protocol FROM gateways/.test(sql)) {
       const inserted = pending.find(w => /INSERT INTO gateways\(/.test(w.sql));
-      return { rows: [{ ...gateway, id: inserted?.values[0] ?? gatewayId }] };
+      return { rows: [{ ...gateway, id: inserted?.values[0] ?? gatewayId,
+        gateway_serial:inserted?.values[5]===undefined?gateway.gateway_serial:inserted.values[5] }] };
     }
     if (/^SELECT id FROM gateways/.test(sql) && /site_id=\$1|external_gateway_id=\$1/.test(sql)) {
       return { rows: options.occupied || options.duplicate || options.retiredDuplicate && !sql.includes('retired_at IS NULL')
@@ -97,8 +104,8 @@ function fixture(options: { revision?: number; status?: string; occupied?: boole
   };
   const db = { query, pool: { connect: async () => ({ query, release() {} }) },
     transaction: DatabaseService.prototype.transaction } as unknown as DatabaseService;
-  const revoker={kick:async()=>{events.push('KICK');if(options.kickError)throw new Error('broker unavailable');}} as unknown as GatewaySessionRevoker;
-  return { service: new GatewayConfigurationService(db, new GatewayCredentialService(db),revoker), db, calls, committed,events,
+  const revoker={kick:async(_brokerId:string|null,clientId:string)=>{events.push('KICK');kickedClientIds.push(clientId);if(options.kickError)throw new Error('broker unavailable');}} as unknown as GatewaySessionRevoker;
+  return { service: new GatewayConfigurationService(db, new GatewayCredentialService(db),revoker), db, calls, committed,events,kickedClientIds,
     get rolledBack() { return rolledBack; } };
 }
 const confirm = (devices:GatewayDeviceConfig[] = [device()]) => ({ discoveryRevision: 2, siteId, devices });
@@ -160,7 +167,8 @@ test('confirms manual configuration atomically with trusted identity, local prof
   const f = fixture();
   const response = await f.service.confirm(discoveryId, confirm(), actor);
   const g = write(f, /INSERT INTO gateways\(/);
-  assert.deepEqual(g.values.slice(1, 6), [siteId, 'Gateway GW-001', 'solar/v1/sites/SELECTED/gateways/GW-001/devices/+/telemetry', 'GW-001', broker]);
+  assert.match(g.sql, /gateway_serial/);
+  assert.deepEqual(g.values.slice(1, 7), [siteId, 'Gateway GW-001', 'solar/v1/sites/SELECTED/gateways/GW-001/devices/+/telemetry', 'GW-001', gatewaySerial, broker]);
   assert.match(g.sql, /'offline'[\s\S]*'configuring'[\s\S]*'pending_sync'/);
   const p = write(f, /INSERT INTO payload_profile_revisions/);
   const config = JSON.parse(String(p.values[3]));
@@ -183,7 +191,7 @@ test('confirms manual configuration atomically with trusted identity, local prof
   assert.equal(response.syncState.activeConfigVersion, 0);
   assert.equal(response.syncState.activeConfigHash, null);
   const credential = write(f, /INSERT INTO gateway_mqtt_credentials/);
-  assert.equal(credential.values[2], 'GW-001');
+  assert.equal(credential.values[2], gatewaySerial);
   assert.ok(await argon2.verify(String(credential.values[3]), response.credential.password));
   assert.ok(!JSON.stringify(f.calls).includes(response.credential.password));
   assert.match(write(f, /UPDATE discovered_gateways/).sql, /'configuring'/);
@@ -191,12 +199,23 @@ test('confirms manual configuration atomically with trusted identity, local prof
   assert.equal(f.calls.filter(c => c.sql === 'BEGIN').length, 1);
 });
 
+test('confirms telemetry discovery without serials using the claimed gateway ID as MQTT identity',async()=>{
+  const f=fixture({discoverySerial:null});
+  const response=await f.service.confirm(discoveryId,confirm(),actor);
+  const gateway=write(f,/INSERT INTO gateways\(/);
+  assert.equal(gateway.values[4],'GW-001');
+  assert.equal(gateway.values[5],null);
+  const credential=write(f,/INSERT INTO gateway_mqtt_credentials/);
+  assert.equal(credential.values[2],'GW-001');
+  assert.equal(response.credential.username,'GW-001');
+});
+
 test('explicit admin adoption snapshots and activates reviewed legacy configuration without inventing mappings',async()=>{
  const existing={id:presetId,external_device_id:'M1',payload_profile_revision_id:'77777777-7777-4777-8777-777777777777',device_type:'meter',
   model:'Verified Model',serial_number:'SERIAL-1',slave_id:3,profile_config:null,registers:[],billing:false,billing_bound:false};
  const f=fixture({desired:4,active:4,controlManaged:false,existingRows:[existing]});
  const result=await f.service.adoptExisting(gatewayId,{expectedDesiredConfigVersion:4,devices:[device()]},actor);
- assert.equal(result.configVersion,5);assert.equal(result.credential.username,'GW-001');
+ assert.equal(result.configVersion,5);assert.equal(result.credential.username,gatewaySerial);
  const revision=JSON.parse(String(write(f,/INSERT INTO gateway_configuration_revisions/).values[3]));
  assert.deepEqual(revision.devices[0].mappings,device().mappings);
  const activation=write(f,/UPDATE gateways SET applied_config_version=/);
@@ -586,11 +605,12 @@ test('sync state separates desired and active and computes proposal staleness wi
 
 test('rotation is transactional, one-time and audits no plaintext or hash', async () => {
   const f = fixture(); const secret = await f.service.rotateCredential(gatewayId, actor);
-  assert.equal(secret.username, 'GW-001');
+  assert.equal(secret.username, gatewaySerial);
   assert.ok(await argon2.verify(String(write(f, /INSERT INTO gateway_mqtt_credentials/).values[3]), secret.password));
   assert.ok(!JSON.stringify(f.calls).includes(secret.password));
   const audit = write(f, /INSERT INTO audit_events/); assert.ok(!String(audit.values[4]).includes('argon2'));
   assert.deepEqual(f.events.filter(event=>event==='COMMIT'||event==='KICK'),['COMMIT','KICK','COMMIT']);
+  assert.deepEqual(f.kickedClientIds,[gatewaySerial]);
   assert.ok(f.committed.some(row=>/mqtt_access_suspended=true/.test(row.sql)));
   assert.ok(f.committed.some(row=>/mqtt_access_suspended=false/.test(row.sql)));
   const fail = fixture({ fail: /INSERT INTO audit_events/ });

@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import type {ConfirmGatewayResponse,DiscoveredGatewayRow} from '@solar/api-contracts';
-import {GatewayRegistrationRequiredNotice} from './gateway-registration-required';
+import {GatewayTelemetryRequiredNotice} from './gateway-telemetry-required';
 import {useQueryClient} from '@tanstack/react-query';
 import {AlertTriangle,Radio} from 'lucide-react';
 import {Alert,AlertAction,AlertDescription,AlertTitle} from '../../components/ui/alert';
@@ -21,7 +21,7 @@ import {
   gatewayConfirmationRequest,gatewayOnboardingDraftFromDetail,isStaleDiscoveryConflict,
   validateGatewayOnboardingDraft,type GatewayDiscoveryDetail,type GatewayOnboardingDraft,
 } from './gateway-onboarding-draft';
-import {confirmGatewayWithoutCaching,correctInitialGatewayConfig,isGatewayRegistrationRequired,useDiscoveredGateway,useGatewaySyncState} from './gateway-onboarding-api';
+import {confirmGatewayWithoutCaching,correctInitialGatewayConfig,isGatewayTelemetryRequired,useDiscoveredGateway,useGatewaySyncState} from './gateway-onboarding-api';
 import {GatewaySyncStatus,type OneTimeGatewayCredential} from './gateway-sync-status';
 import type {PayloadRevision} from './payload-contracts';
 import type {LegacyPreset} from './preset-picker';
@@ -180,7 +180,10 @@ function PairingBody({discovered,open,onOpenChange,onSuccess,inline=false}:{disc
 
   const currentIndex=GATEWAY_PAIRING_STEPS.findIndex(item=>item.id===step);
   const stepIssue=draft?gatewayPairingStepIssue(step,draft,locale):null;
-  const confirmationIssue=draft?gatewayPairingStepIssue('confirm',draft,locale):(th?'กำลังโหลดข้อมูล':'Loading pairing draft.');
+  const identityConflictIssue=discovered.identityConflict
+    ?(th?'Gateway ID ที่อ้างถูกใช้งานโดย Gateway Serial อื่น ให้แก้ Gateway ID ที่เครื่องแล้วส่ง telemetry ใหม่':'The claimed Gateway ID is already used by another Gateway Serial. Change the Gateway ID on the device and publish telemetry again.')
+    :null;
+  const confirmationIssue=identityConflictIssue??(draft?gatewayPairingStepIssue('confirm',draft,locale):(th?'กำลังโหลดข้อมูล':'Loading pairing draft.'));
   const syncState=syncQuery.data??confirmed?.syncState??null;
 
   const busy=confirming||rotating;
@@ -231,9 +234,10 @@ function PairingBody({discovered,open,onOpenChange,onSuccess,inline=false}:{disc
     <div data-slot="dialog-body" className="min-h-0 flex-1 overflow-y-auto pr-1">
       {surface==='sync'&&syncState?<GatewaySyncStatus locale={locale} credential={visibleGatewayPairingCredential(credential,discovered.id)} syncState={syncState} syncError={syncQuery.isError?syncQuery.error:null} onRetry={()=>syncQuery.refetch()} retrying={syncQuery.isFetching} onRotate={rotate} rotating={rotating} onCorrect={request=>correctInitialGatewayConfig(queryClient,confirmed!.gatewayId,request)}/>
       :surface==='loading'?<div className="flex flex-col gap-3" aria-label={th?'กำลังโหลดขั้นตอนเชื่อมต่อ':'Loading pairing workflow'}><Skeleton className="h-10 w-full"/><Skeleton className="h-48 w-full"/></div>
-      :surface==='error'&&isGatewayRegistrationRequired(detailQuery.error)?<div className="space-y-3"><GatewayRegistrationRequiredNotice gateway={discovered} locale={locale}/><Button type="button" size="sm" variant="outline" onClick={()=>void detailQuery.refetch()}>{th?'ตรวจสอบอีกครั้ง':'Check again'}</Button></div>
+      :surface==='error'&&isGatewayTelemetryRequired(detailQuery.error)?<div className="space-y-3"><GatewayTelemetryRequiredNotice gateway={discovered} locale={locale}/><Button type="button" size="sm" variant="outline" onClick={()=>void detailQuery.refetch()}>{th?'ตรวจสอบอีกครั้ง':'Check again'}</Button></div>
       :surface==='error'?<Alert variant="destructive"><AlertTitle>{th?'โหลดข้อมูลเกตเวย์ไม่สำเร็จ':'Could not load gateway details'}</AlertTitle><AlertDescription>{detailQuery.error instanceof Error?detailQuery.error.message:(th?'โปรดลองอีกครั้ง':'Try again.')}</AlertDescription><AlertAction><Button type="button" size="sm" variant="outline" onClick={()=>void detailQuery.refetch()}>{th?'ลองอีกครั้ง':'Retry'}</Button></AlertAction></Alert>
       :draft?<div className="flex flex-col gap-4">
+        {identityConflictIssue&&<Alert variant="destructive"><AlertTriangle/><AlertTitle>{th?'รหัส Gateway ซ้ำกับเครื่องที่เชื่อมต่อแล้ว':'Gateway ID conflicts with a connected device'}</AlertTitle><AlertDescription>{identityConflictIssue}</AlertDescription></Alert>}
         <Tabs value={step} onValueChange={value=>{const index=GATEWAY_PAIRING_STEPS.findIndex(item=>item.id===value);if(index>=0&&index<=maxStep)setStep(value as GatewayPairingStep);}}>
           <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-4">{GATEWAY_PAIRING_STEPS.map((item,index)=><TabsTrigger key={item.id} value={item.id} disabled={index>maxStep} aria-label={`${index+1}. ${th?item.th:item.en}`}><span>{index+1}</span><span className="hidden sm:inline">{th?item.th:item.en}</span></TabsTrigger>)}</TabsList>
           <TabsContent value="review" className="pt-4"><GatewayDiscoveryReview draft={draft} sites={sites} onSiteChange={siteId=>setDraft({...draft,selectedSiteId:siteId})} locale={locale} showSiteSelector={false}/></TabsContent>
@@ -242,7 +246,7 @@ function PairingBody({discovered,open,onOpenChange,onSuccess,inline=false}:{disc
           <TabsContent value="confirm" className="pt-4"><div className="flex flex-col gap-3"><GatewayPairingSummary draft={draft} sites={sites} locale={locale}/>{confirmationIssue&&<Alert variant="destructive"><AlertTriangle/><AlertTitle>{th?'ยังยืนยันไม่ได้':'Cannot confirm yet'}</AlertTitle><AlertDescription>{confirmationIssue}</AlertDescription></Alert>}</div></TabsContent>
         </Tabs>
         {stale&&<Alert variant="destructive"><AlertTriangle/><AlertTitle>{th?'ข้อมูลจากเกตเวย์เปลี่ยนแล้ว':'Gateway snapshot changed'}</AlertTitle><AlertDescription>{th?'ปิดการยืนยันไว้เพื่อไม่ให้เขียนทับข้อมูลใหม่ โหลด Snapshot ล่าสุดทั้งหมดก่อนดำเนินการต่อ':'Confirmation is disabled to protect the newer report. Reload the complete latest snapshot before continuing.'}</AlertDescription><AlertAction><Button type="button" size="sm" variant="outline" disabled={reloading} onClick={()=>void reload()}>{reloading&&<Spinner data-icon="inline-start"/>}{th?'โหลดข้อมูลล่าสุด':'Reload latest snapshot'}</Button></AlertAction></Alert>}
-      </div>:<Alert><AlertTitle>{th?'ยังไม่มี Snapshot':'Snapshot unavailable'}</AlertTitle><AlertDescription>{th?'รอข้อมูลลงทะเบียนล่าสุดจากเกตเวย์':'Waiting for the latest gateway registration.'}</AlertDescription></Alert>}
+      </div>:<Alert><AlertTitle>{th?'ยังไม่มี Snapshot':'Snapshot unavailable'}</AlertTitle><AlertDescription>{th?'รอ telemetry ล่าสุดจากเกตเวย์':'Waiting for the latest gateway telemetry.'}</AlertDescription></Alert>}
       {error&&<Alert variant="destructive" className="mt-4"><AlertTitle>{th?'ดำเนินการไม่สำเร็จ':'Action failed'}</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>}
       {busy&&<Alert className="mt-4"><Spinner/><AlertTitle>{th?'กำลังออกข้อมูลเชื่อมต่อ':'Issuing credential'}</AlertTitle><AlertDescription>{th?'โปรดรอจนเสร็จ หน้าต่างนี้จะปิดไม่ได้ระหว่างดำเนินการ':'Please wait. This dialog cannot be dismissed while the credential request is in flight.'}</AlertDescription></Alert>}
     </div>

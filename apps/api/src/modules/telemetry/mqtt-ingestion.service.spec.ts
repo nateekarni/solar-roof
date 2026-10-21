@@ -4,6 +4,7 @@ import { MqttIngestionService,requiredSubscriptions } from "./mqtt-ingestion.ser
 import { DatabaseService } from "../../database/database.service.js";
 import { GatewayControlMessageHandler } from '../gateway-control/gateway-control-message-handler.js';
 import { GatewayConfigurationService } from '../gateway-control/gateway-configuration.service.js';
+import { PayloadIngestion } from './payload-ingestion.js';
 
 function fixture(options: { unknown?: boolean; fail?: boolean; mappings?: object[]; commit?: () => Promise<void> } = {}) {
   const writes: unknown[][] = []; const sent: string[] = []; const seen = new Set<string>();const calls:string[]=[];
@@ -34,8 +35,18 @@ function fixture(options: { unknown?: boolean; fail?: boolean; mappings?: object
 const payload = (metrics: object, timestamp = '2026-09-30T01:00:00Z') => JSON.stringify({ deviceId: 'dev', gateway: 'GW-1', timestamp, metrics });
 
 test('required MQTT subscriptions use telemetry for discovery and omit register',()=>{
-  assert.ok(requiredSubscriptions.includes('solar/v1/sites/+/gateways/+/devices/+/telemetry'));
+  assert.ok(requiredSubscriptions.includes('$solar/internal/telemetry/+/solar/v1/sites/+/gateways/+/devices/+/telemetry'));
   assert.equal(requiredSubscriptions.some(topic=>topic.endsWith('/register')),false);
+});
+
+test('broker publisher identity does not prevent payload serial or claimed-ID discovery',async context=>{
+  let accepted=0;const sent:string[]=[];
+  context.mock.method(PayloadIngestion.prototype,'acceptMany',async()=>{accepted++;});
+  const db={query:async()=>({rows:[]})};
+  const service=new MqttIngestionService(db as any,db as any);
+  const body=JSON.stringify({schemaVersion:'1.2',gatewaySerial:'BOUND-SERIAL'});
+  await service.handleIncomingMessage('$solar/internal/telemetry/UNBOUND-SERIAL/solar/v1/sites/SITE/gateways/GW/devices/DEVICE/telemetry',body,{connected:true,publish(topic:string){sent.push(topic);}} as any);
+  assert.equal(accepted,1);assert.deepEqual(sent,[]);
 });
 
 test('control namespace routes once before suffix exclusion or telemetry parsing',async context=>{

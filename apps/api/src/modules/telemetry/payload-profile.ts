@@ -53,11 +53,12 @@ const envelopeSchema = z.object({
 }).passthrough().superRefine((value,context)=>{
   if(value.schemaVersion==='1.2'&&!value.gatewaySerial)context.addIssue({code:'custom',path:['gatewaySerial'],message:'Schema 1.2 requires gatewaySerial'});
   if(value.schemaVersion==='1.2'&&!value.device.deviceSerial)context.addIssue({code:'custom',path:['device','deviceSerial'],message:'Schema 1.2 requires deviceSerial'});
+  if(Boolean(value.gatewaySerial)!==Boolean(value.device.deviceSerial))context.addIssue({code:'custom',path:['device','deviceSerial'],message:'Gateway and device serials must be provided together'});
 });
 export type PayloadEnvelope = z.infer<typeof envelopeSchema>;
 export interface TelemetryDiscoveryEnvelope {
-  schemaVersion:'1.2';messageId:string;siteId:string;gatewayId:string;gatewaySerial:string;
-  device:{deviceId:string;deviceSerial:string;deviceType:string;manufacturer?:string;model?:string;profileId?:string;profileVersion?:string;protocol?:string};
+  schemaVersion:'1.1'|'1.2';messageId:string;siteId:string;gatewayId:string;gatewaySerial?:string;
+  device:{deviceId:string;deviceSerial?:string;deviceType:string;manufacturer?:string;model?:string;profileId?:string;profileVersion?:string;protocol?:string};
   raw:PayloadEnvelope;
 }
 export interface PayloadBinding { profile: PayloadProfile; siteId: string; gatewayId: string; deviceId: string }
@@ -72,14 +73,14 @@ export function parseTelemetryDiscoveryEnvelope(input:unknown,topic:string):Tele
   const serialized=JSON.stringify(input);
   if(!serialized||Buffer.byteLength(serialized,'utf8')>262144)throw new Error('Payload exceeds 256 KiB');
   const raw=envelopeSchema.parse(JSON.parse(serialized));
-  if(raw.schemaVersion!=='1.2'||!raw.gatewaySerial||!raw.device.deviceSerial)throw new Error('Telemetry discovery requires schema 1.2 serial identity');
   if(topic!==`solar/v1/sites/${raw.siteId}/gateways/${raw.gatewayId}/devices/${raw.device.deviceId}/telemetry`)throw new Error('Topic/envelope identity does not match claimed aliases');
   const reported=raw.device as PayloadEnvelope['device']&{manufacturer?:unknown;model?:unknown;protocol?:unknown};
   const manufacturer=typeof reported.manufacturer==='string'&&reported.manufacturer.length>0?reported.manufacturer:undefined;
   const model=typeof reported.model==='string'&&reported.model.length>0?reported.model:undefined;
   const protocol=typeof reported.protocol==='string'&&reported.protocol.length>0?reported.protocol:undefined;
-  return {schemaVersion:'1.2',messageId:raw.messageId,siteId:raw.siteId,gatewayId:raw.gatewayId,gatewaySerial:raw.gatewaySerial,
-    device:{deviceId:raw.device.deviceId,deviceSerial:raw.device.deviceSerial,deviceType:raw.device.deviceType,
+  return {schemaVersion:raw.schemaVersion,messageId:raw.messageId,siteId:raw.siteId,gatewayId:raw.gatewayId,
+    ...(raw.gatewaySerial?{gatewaySerial:raw.gatewaySerial}:{}),
+    device:{deviceId:raw.device.deviceId,...(raw.device.deviceSerial?{deviceSerial:raw.device.deviceSerial}:{}),deviceType:raw.device.deviceType,
       ...(manufacturer?{manufacturer}:{}),...(model?{model}:{}),
       ...(raw.device.profileId?{profileId:raw.device.profileId}:{}),...(raw.device.profileVersion?{profileVersion:raw.device.profileVersion}:{}),
       ...(protocol?{protocol}:{})},raw};

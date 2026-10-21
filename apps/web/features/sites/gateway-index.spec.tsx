@@ -35,7 +35,7 @@ const rows:GatewayRow[]=[
  {id:'pending',siteId:'s1',siteName:'Roof Pending',siteCode:'S1',name:'Gateway Pending',externalGatewayId:'GW-P',status:'offline',lifecycleState:'configuring',configState:'pending_sync',desiredVersion:2,publishedVersion:1,acknowledgedVersion:1,appliedVersion:1},
  {id:'failed',siteId:'s2',siteName:'Roof Failed',siteCode:'S2',name:'Gateway Failed',externalGatewayId:'GW-F',status:'offline',lifecycleState:'configuring',configState:'failed',desiredVersion:2,publishedVersion:2,acknowledgedVersion:2,appliedVersion:1},
 ];
-const discovered=[{id:'disc',externalGatewayId:'GW-D',reportedSiteId:null,reportedDeviceId:null,manufacturer:null,model:null,profileId:null,protocol:'mqtt',status:'unassigned' as const,onboardingState:'registration_required' as const,assignedSiteId:null,assignedGatewayId:null,firstSeenAt:'2026-10-19T01:00:00Z',lastSeenAt:'2026-10-19T01:01:00Z',rawPayload:{}}];
+const discovered=[{id:'disc',externalGatewayId:'GW-D',reportedSiteId:null,reportedDeviceId:null,manufacturer:null,model:null,profileId:null,protocol:'mqtt',status:'unassigned' as const,onboardingState:'telemetry_required' as const,assignedSiteId:null,assignedGatewayId:null,firstSeenAt:'2026-10-19T01:00:00Z',lastSeenAt:'2026-10-19T01:01:00Z',rawPayload:{}}];
 const html=renderToStaticMarkup(<GatewayIndex rows={rows} discoveredRows={discovered} locale="en" onSelect={()=>{}}/>);
 assert.equal((html.match(/aria-label="Gateway status: Connecting"/g)??[]).length,4);
 assert.equal((html.match(/aria-label="Gateway status: Not connected"/g)??[]).length,2);
@@ -86,12 +86,13 @@ test('every persisted gateway is connected to a site while only discoveries are 
   ];
   const discovered=[
     {id:'duplicate',externalGatewayId:'GW-P',reportedSiteId:null,reportedDeviceId:null,status:'unassigned' as const,onboardingState:'ready' as const,assignedSiteId:null,assignedGatewayId:'pending',firstSeenAt:'2026-10-19T01:00:00Z',lastSeenAt:'2026-10-19T01:01:00Z',rawPayload:{}},
+    {id:'serial-collision',externalGatewayId:'GW-P',gatewaySerial:'GW-SN-OTHER',reportedSiteId:null,reportedDeviceId:null,status:'unassigned' as const,onboardingState:'ready' as const,identityConflict:true,assignedSiteId:null,assignedGatewayId:null,firstSeenAt:'2026-10-19T01:00:00Z',lastSeenAt:'2026-10-19T01:01:00Z',rawPayload:{}},
     {id:'new',externalGatewayId:'GW-N',reportedSiteId:null,reportedDeviceId:null,status:'unassigned' as const,onboardingState:'ready' as const,assignedSiteId:null,assignedGatewayId:null,firstSeenAt:'2026-10-19T01:00:00Z',lastSeenAt:'2026-10-19T01:01:00Z',rawPayload:{}},
   ];
   const partitions=gatewayIndexPartitions(rows,discovered,false);
   assert.deepEqual(partitions.connectedItems.map(item=>item.id),['active','draft','pending','failed']);
-  assert.deepEqual(partitions.unconnectedItems.map(item=>item.id),['new']);
-  assert.equal(partitions.allItems.filter(item=>item.externalGatewayId==='GW-P').length,1);
+  assert.deepEqual(partitions.unconnectedItems.map(item=>item.id),['serial-collision','new']);
+  assert.equal(partitions.allItems.filter(item=>item.externalGatewayId==='GW-P').length,2);
 });
 
 test('initial discovery failure is explicitly unavailable while registered rows remain visible',()=>{
@@ -122,13 +123,13 @@ test('external gateway reconciliation is exact and case-sensitive',()=>{
   assert.deepEqual(partitions.allItems.map(item=>item.id),['persisted','discovered']);
 });
 
-test('discovery readiness routes operators to pairing or registration guidance',()=>{
+test('discovery readiness routes operators to pairing or telemetry guidance',()=>{
   const base={reportedSiteId:null,reportedDeviceId:null,status:'unassigned' as const,assignedSiteId:null,assignedGatewayId:null,firstSeenAt:'2026-10-19T01:00:00Z',lastSeenAt:'2026-10-19T01:01:00Z',rawPayload:{}};
   const discovered=[
     {...base,id:'ready',externalGatewayId:'GW-READY',onboardingState:'ready' as const},
-    {...base,id:'legacy',externalGatewayId:'GW-LEGACY',onboardingState:'registration_required' as const},
+    {...base,id:'legacy',externalGatewayId:'GW-LEGACY',onboardingState:'telemetry_required' as const},
   ];
-  const html=renderToStaticMarkup(<GatewayIndex rows={[]} discoveredRows={discovered} locale="en" onSelect={()=>{}} onPairDiscovered={()=>{}} onRegistrationRequired={()=>{}}/>);
+  const html=renderToStaticMarkup(<GatewayIndex rows={[]} discoveredRows={discovered} locale="en" onSelect={()=>{}} onPairDiscovered={()=>{}} onTelemetryRequired={()=>{}}/>);
   assert.match(html,/Pair site/);
-  assert.match(html,/Publish registration/);
+  assert.match(html,/Publish telemetry/);
 });

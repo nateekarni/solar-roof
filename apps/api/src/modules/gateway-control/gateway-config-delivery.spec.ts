@@ -15,6 +15,7 @@ import { gatewayConfigHash } from './gateway-control-payload.js';
 const runtime=createRequire(import.meta.url)('mqtt/mqtt');
 const siteId='22222222-2222-4222-8222-222222222222',discoveryId='11111111-1111-4111-8111-111111111111';
 const brokerId='44444444-4444-4444-8444-444444444444',otherBrokerId='55555555-5555-4555-8555-555555555555';
+const gatewaySerial='GW-SN-DELIVERY';
 const admin={user:{id:'33333333-3333-4333-8333-333333333333',role:'admin'}};
 const flush=()=>new Promise<void>(resolve=>setImmediate(resolve));
 async function until(predicate:()=>boolean){const deadline=Date.now()+2000;while(!predicate()&&Date.now()<deadline)await flush();assert.ok(predicate(),'Expected asynchronous production operation to finish');}
@@ -40,10 +41,10 @@ function fixture(context:TestContext,scope:string|null=null){
   if(sql.startsWith('INSERT INTO gateway_configuration_publications')){current.attempts.set(values[0],{id:values[0],gateway_id:values[1],version:values[2],config_hash:values[3],mqtt_broker_id:values[4],publication_epoch:values[5]});return {rows:[]};}
   if(sql.startsWith('DELETE FROM gateway_configuration_publications')){if(failCompletion)throw Error('Completion database failure');current.attempts.delete(values[1]);return {rows:[]};}
   if(sql.includes('FROM gateway_configuration_publications'))return {rows:current.attempts.has(values[1])?[current.attempts.get(values[1])]:[]};
-  if(sql.includes('FROM discovered_gateways'))return {rows:[{id:discoveryId,discovery_revision:1,status:'unassigned',external_gateway_id:'GW-DELIVERY',client_id:'GW-DELIVERY',mqtt_broker_id:scope}]};
+  if(sql.includes('FROM discovered_gateways'))return {rows:[{id:discoveryId,discovery_revision:1,status:'unassigned',external_gateway_id:'GW-DELIVERY',gateway_serial:gatewaySerial,client_id:gatewaySerial,mqtt_broker_id:scope}]};
   if(sql.includes('FROM sites'))return {rows:[{id:siteId,external_site_id:'SITE-DELIVERY'}]};
   if(sql.startsWith('INSERT INTO gateways')){
-   current.gateway={id:values[0],site_id:siteId,external_site_id:'SITE-DELIVERY',external_gateway_id:'GW-DELIVERY',mqtt_broker_id:scope,
+   current.gateway={id:values[0],site_id:siteId,external_site_id:'SITE-DELIVERY',external_gateway_id:'GW-DELIVERY',gateway_serial:gatewaySerial,mqtt_broker_id:scope,
     retired_at:null,protocol:'mqtt',lifecycle_state:'configuring',desired_config_version:0,applied_config_version:0,published_config_version:0,acknowledged_config_version:0,desired_config_hash:null,active_config_hash:null,config_publication_epoch:'0'};
    return {rows:[]};
   }

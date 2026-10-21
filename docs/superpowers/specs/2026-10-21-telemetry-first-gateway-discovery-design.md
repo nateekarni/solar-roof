@@ -6,6 +6,10 @@ Use the per-device telemetry topic as the only first-contact MQTT path. A
 gateway must not publish a separate `/register` message before it can be found
 and paired.
 
+> Requirement update: discovery supports both schema 1.1 without serials and
+> schema 1.2 with both serials. The dual-mode rules below supersede the earlier
+> serial-only wording retained in this design history.
+
 ## Canonical identity
 
 The codes in the MQTT topic are claims supplied by the sender:
@@ -15,11 +19,11 @@ solar/v1/sites/{siteId}/gateways/{gatewayId}/devices/{deviceId}/telemetry
 ```
 
 They are useful labels but are not proof that the sender is already connected.
-Physical identity is carried in the schema 1.2 telemetry envelope:
+When available, physical identity is carried in the schema 1.2 telemetry envelope:
 
 - `gatewaySerial` identifies one physical gateway.
 - `device.deviceSerial` identifies one physical device below that gateway.
-- A device observation is keyed by `gatewaySerial + deviceSerial`.
+- A serial-bearing device observation is keyed by `gatewaySerial + deviceSerial`.
 - An approved binding connects those serials to internal Site, Gateway, and
   Device records.
 
@@ -59,19 +63,22 @@ The topic identity and the envelope `siteId`, `gatewayId`, and
 `device.deviceId` must match exactly. Serials are trimmed, case-sensitive
 identifiers of 1–128 characters using `A-Z`, `a-z`, `0-9`, `_`, and `-`.
 
-Schema 1.1 remains accepted only for gateways/devices that were already bound
-before this rollout. It cannot create a discovery candidate. New discovery
-requires schema 1.2.
+Schema 1.1 without serials is also accepted for new discovery. It is keyed by
+broker + claimed `gatewayId`, and devices merge by claimed `deviceId`. Serial
+and no-serial candidates are stored separately and never merge automatically.
+If an exact claimed route is already bound, schema 1.1 continues through normal
+production ingestion; otherwise it becomes a configurable not-connected candidate.
 
 ## Classification and storage
 
-For each valid schema 1.2 message the ingestion boundary classifies the sender:
+For each valid schema 1.1 or 1.2 message the ingestion boundary classifies the sender:
 
 1. When broker, gateway serial, device serial, and approved topic aliases all
    match an active binding, ingest telemetry normally and return `dataAcept`.
-2. Otherwise, upsert a discovery candidate keyed by broker and gateway serial,
-   merge the observed device by device serial, and do not acknowledge it as
-   production telemetry.
+2. Otherwise, upsert a discovery candidate keyed by broker + gateway serial
+   when present, or broker + claimed gateway ID when absent. Merge devices by
+   device serial when present, otherwise by claimed device ID, and do not
+   acknowledge it as production telemetry.
 3. Store only a bounded latest evidence snapshot for pairing. Discovery
    messages never enter production samples, aggregates, billing, or reports.
 4. A later observation from the same serial with different claimed codes
@@ -93,12 +100,12 @@ Confirmation is optimistic-concurrency protected by `discoveryRevision`. The
 transaction:
 
 1. locks the candidate and target Site;
-2. validates that the gateway serial is not already bound to another active
-   gateway;
-3. creates the Gateway with `gateway_serial` and materializes enabled Devices
-   with their observed serials;
+2. validates serial identity when serials were supplied;
+3. creates the Gateway with optional `gateway_serial` and materializes enabled
+   Devices with optional observed serials;
 4. creates the immutable desired configuration;
-5. issues MQTT credentials whose username/client ID is `gatewaySerial`;
+5. issues MQTT credentials whose username/client ID is `gatewaySerial` when
+   present, otherwise the claimed `gatewayId`;
 6. marks the candidate configuring and publishes configuration.
 
 The first discovery message is not replayed. The gateway reconnects with its
@@ -106,14 +113,14 @@ new credentials and publishes the next current telemetry message.
 
 ## MQTT authorization
 
-- First contact uses no username/password and a Client ID equal to
-  `gatewaySerial`.
-- Anonymous clients may publish only schema 1.2 telemetry topics; they may not
+- First contact uses no username/password. Client ID should use the serial when
+  present or the claimed gateway ID when serials are absent.
+- Anonymous clients may publish only canonical telemetry topics; they may not
   subscribe, publish control/status messages, or receive `dataAcept`.
 - A serial already bound to an active or retired Gateway cannot downgrade to
   anonymous access.
-- After pairing, username and Client ID both equal `gatewaySerial` and the
-  issued password is required.
+- After pairing, username and Client ID both equal the approved MQTT identity
+  (gateway serial when present, otherwise gateway ID) and the issued password is required.
 - Authenticated clients may publish only the Site/Gateway/Device topic aliases
   in their approved binding.
 - QoS is 1, Retain is false, and existing payload, nesting, rate, and bounded
@@ -143,16 +150,18 @@ status badges.
 ## Documentation
 
 The Thai MQTT onboarding runbook and checked-in JSON examples must document
-schema 1.2, `gatewaySerial`, `deviceSerial`, serial-based Client IDs, the single
+both schema modes, optional paired `gatewaySerial`/`deviceSerial`, the single
 telemetry discovery path, and the connected/unconnected decision table. No
 instruction may require publishing `/register`.
 
 ## Acceptance criteria
 
-- A valid schema 1.2 telemetry message from an unseen gateway serial creates or
+- A valid schema 1.1 no-serial or schema 1.2 serial telemetry message creates or
   refreshes a not-connected candidate without writing production telemetry.
 - Multiple devices from one gateway serial merge into one candidate and remain
   individually identifiable by `deviceSerial`.
+- Multiple no-serial devices from one gateway ID merge into one candidate and
+  remain individually identifiable by `deviceId`.
 - Duplicate claimed Site/Gateway/Device codes do not reuse an existing binding.
 - An exact serial and approved alias match ingests and acknowledges normally.
 - A new device serial under a connected gateway becomes reviewable without

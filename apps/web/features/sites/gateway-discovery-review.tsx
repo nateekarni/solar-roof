@@ -36,6 +36,7 @@ export function GatewayDiscoveryReview({draft,sites,onSiteChange,locale,showSite
   const mismatch=Boolean(draft.selectedSiteId&&draft.reportedSiteId&&!gatewaySelectedSiteMatchesReport(draft,sites));
   const facts=[
     [th?'Gateway ID':'Gateway ID',snapshot.gateway.gatewayId],
+    [th?'Gateway Serial':'Gateway Serial',snapshot.gateway.gatewaySerial??'—'],
     [th?'รุ่นเกตเวย์':'Gateway model',snapshot.gateway.model],
     [th?'เวอร์ชันเฟิร์มแวร์':'Firmware version',snapshot.gateway.firmwareVersion],
     [th?'ไซต์ที่เครื่องรายงาน':'Reported site',draft.reportedSiteId??'—'],

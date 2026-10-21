@@ -59,7 +59,7 @@ const onboardingState = `CASE WHEN ((d.gateway_serial IS NOT NULL AND d.client_i
     OR (d.gateway_serial IS NULL AND d.client_id=d.external_gateway_id)) AND EXISTS(
     SELECT 1 FROM gateway_discovery_snapshots ready_snapshot
     WHERE ready_snapshot.discovered_gateway_id=d.id AND ready_snapshot.revision=d.discovery_revision
-  ) THEN 'ready' ELSE 'registration_required' END AS "onboardingState",
+  ) THEN 'ready' ELSE 'telemetry_required' END AS "onboardingState",
   EXISTS(SELECT 1 FROM gateways claimed_gateway WHERE claimed_gateway.external_gateway_id=d.external_gateway_id
     AND claimed_gateway.retired_at IS NULL AND claimed_gateway.gateway_serial IS DISTINCT FROM d.gateway_serial) AS "identityConflict"`;
 
@@ -71,26 +71,32 @@ export class GatewayRegistrationService {
     const brokerId=input.brokerId??null;
     const sourceAddress=input.sourceAddress?.trim()||null;
     const reported=this.reportedDevice(evidence);
+    const gatewaySerial=evidence.gatewaySerial??null;
+    const identity=gatewaySerial??evidence.gatewayId;
+    const identityPredicate=gatewaySerial?'d.gateway_serial=$2':"d.gateway_serial IS NULL AND d.external_gateway_id=$2";
+    const conflictTarget=gatewaySerial
+      ?"((coalesce(mqtt_broker_id::text, 'default')),gateway_serial) WHERE gateway_serial IS NOT NULL AND status='unassigned'"
+      :"((coalesce(mqtt_broker_id::text, 'default')),external_gateway_id) WHERE gateway_serial IS NULL";
     return this.db.transaction(async client=>{
-      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',[JSON.stringify([brokerId??'default',evidence.gatewaySerial])]);
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',[JSON.stringify([brokerId??'default',gatewaySerial?`serial:${identity}`:`claimed:${identity}`])]);
       let row=(await client.query<DiscoveryRow>(`SELECT ${columns} FROM discovered_gateways d
-        WHERE d.mqtt_broker_id IS NOT DISTINCT FROM $1::uuid AND d.gateway_serial=$2 AND d.status='unassigned' FOR UPDATE`,
-      [brokerId,evidence.gatewaySerial])).rows[0];
+        WHERE d.mqtt_broker_id IS NOT DISTINCT FROM $1::uuid AND ${identityPredicate} AND d.status='unassigned' FOR UPDATE`,
+      [brokerId,identity])).rows[0];
       let inserted=false;
       if(!row){
         row=(await client.query<DiscoveryRow>(`INSERT INTO discovered_gateways AS d
           (mqtt_broker_id,external_gateway_id,client_id,reported_site_id,reported_device_id,manufacturer,model,profile_id,protocol,
            firmware_version,raw_payload,devices,source_address,gateway_serial)
           VALUES($1::uuid,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13,$14)
-          ON CONFLICT ((coalesce(mqtt_broker_id::text, 'default')),gateway_serial) WHERE gateway_serial IS NOT NULL AND status='unassigned'
+          ON CONFLICT ${conflictTarget}
           DO NOTHING RETURNING ${columns}`,
-        [brokerId,evidence.gatewayId,evidence.gatewaySerial,evidence.siteId,evidence.device.deviceId,evidence.device.manufacturer??null,
+        [brokerId,evidence.gatewayId,identity,evidence.siteId,evidence.device.deviceId,evidence.device.manufacturer??null,
           evidence.device.model??null,evidence.device.profileId??null,evidence.device.protocol??null,null,JSON.stringify(evidence.raw),
-          JSON.stringify([reported]),sourceAddress,evidence.gatewaySerial])).rows[0];
+          JSON.stringify([reported]),sourceAddress,gatewaySerial])).rows[0];
         inserted=!!row;
         if(!row)row=(await client.query<DiscoveryRow>(`SELECT ${columns} FROM discovered_gateways d
-          WHERE d.mqtt_broker_id IS NOT DISTINCT FROM $1::uuid AND d.gateway_serial=$2 AND d.status='unassigned' FOR UPDATE`,
-        [brokerId,evidence.gatewaySerial])).rows[0];
+          WHERE d.mqtt_broker_id IS NOT DISTINCT FROM $1::uuid AND ${identityPredicate} AND d.status='unassigned' FOR UPDATE`,
+        [brokerId,identity])).rows[0];
       }
       if(!row)throw new ConflictException('Discovery serial changed; retry telemetry');
       if(inserted){
@@ -102,7 +108,7 @@ export class GatewayRegistrationService {
         ||JSON.stringify(row.devices)!==JSON.stringify(devices);
       if(!changed){
         await client.query(`UPDATE discovered_gateways SET raw_payload=$2::jsonb,client_id=$3,source_address=$4,last_seen_at=clock_timestamp()
-          WHERE id=$1 AND status='unassigned'`,[row.id,JSON.stringify(evidence.raw),evidence.gatewaySerial,sourceAddress]);
+          WHERE id=$1 AND status='unassigned'`,[row.id,JSON.stringify(evidence.raw),identity,sourceAddress]);
         return {id:row.id,discoveryRevision:row.discoveryRevision,changed:false};
       }
       const first=devices[0];
@@ -110,7 +116,7 @@ export class GatewayRegistrationService {
         reported_device_id=$5,manufacturer=$6,model=$7,profile_id=$8,protocol=$9,raw_payload=$10::jsonb,devices=$11::jsonb,
         source_address=$12,discovery_revision=discovery_revision+1,last_seen_at=clock_timestamp()
         WHERE id=$1 AND status='unassigned' RETURNING ${columns}`,
-      [row.id,evidence.gatewayId,evidence.gatewaySerial,evidence.siteId,evidence.device.deviceId,first?.manufacturer??null,first?.model??null,
+      [row.id,evidence.gatewayId,identity,evidence.siteId,evidence.device.deviceId,first?.manufacturer??null,first?.model??null,
         first?.profileId??null,first?.protocol??null,JSON.stringify(evidence.raw),JSON.stringify(devices),sourceAddress])).rows[0];
       if(!row)throw new ConflictException('Discovery is no longer available');
       await this.insertEvidence(client,row.id,row.discoveryRevision,evidence.messageId,evidence.raw,sourceAddress);
@@ -122,7 +128,7 @@ export class GatewayRegistrationService {
     const raw=evidence.raw;
     const values=raw.data.values,units=raw.data.units;
     const mappings=Object.keys(values).sort().map(tag=>({tag,displayName:tag,pollGroup:raw.pollGroup,sourceUnit:units[tag]!,targetUnit:units[tag]!,conversion:'identity' as const}));
-    return {deviceId:evidence.device.deviceId,serialNumber:evidence.device.deviceSerial,deviceType:evidence.device.deviceType,
+    return {deviceId:evidence.device.deviceId,...(evidence.device.deviceSerial?{serialNumber:evidence.device.deviceSerial}:{}),deviceType:evidence.device.deviceType,
       ...(evidence.device.manufacturer?{manufacturer:evidence.device.manufacturer}:{}),...(evidence.device.model?{model:evidence.device.model}:{}),
       ...(evidence.device.profileId?{profileId:evidence.device.profileId}:{}),...(evidence.device.profileVersion?{profileVersion:evidence.device.profileVersion}:{}),
       ...(evidence.device.protocol?{protocol:evidence.device.protocol}:{}),pollGroups:[raw.pollGroup],mappings};
@@ -130,8 +136,11 @@ export class GatewayRegistrationService {
 
   private mergeReportedDevices(current:GatewayReportedDevice[],next:GatewayReportedDevice):GatewayReportedDevice[] {
     const devices=current.map(device=>structuredClone(device));
-    const index=devices.findIndex(device=>device.serialNumber===next.serialNumber);
-    if(index<0)devices.push(next);
+    const index=devices.findIndex(device=>next.serialNumber?device.serialNumber===next.serialNumber:!device.serialNumber&&device.deviceId===next.deviceId);
+    if(index<0){
+      if(devices.length>=128)throw new Error('Telemetry discovery device limit: maximum 128 serials per gateway');
+      devices.push(next);
+    }
     else {
       const previous=devices[index]!;
       const mappings=new Map((previous.mappings??[]).map(mapping=>[`${mapping.pollGroup}:${mapping.tag}`,mapping]));
@@ -142,8 +151,14 @@ export class GatewayRegistrationService {
   }
 
   private async insertEvidence(client:Queryable,id:string,revision:number,messageId:string,payload:unknown,sourceAddress:string|null):Promise<void>{
+    const recent=await client.query(`SELECT id FROM gateway_discovery_snapshots
+      WHERE discovered_gateway_id=$1 AND nullif(btrim(source_address),'') IS NOT DISTINCT FROM $2::text
+        AND received_at > clock_timestamp() - interval '1 minute' ORDER BY received_at DESC LIMIT 12`,[id,sourceAddress]);
+    if(recent.rows.length>=12)throw new Error('Telemetry discovery rate limit: maximum 12 evidence changes per minute per gateway/source');
     await client.query(`INSERT INTO gateway_discovery_snapshots(discovered_gateway_id,revision,message_id,payload,source_address,received_at)
       VALUES($1,$2,$3,$4::jsonb,$5,clock_timestamp())`,[id,revision,messageId,JSON.stringify(payload),sourceAddress]);
+    await client.query(`DELETE FROM gateway_discovery_snapshots WHERE discovered_gateway_id=$1 AND id NOT IN
+      (SELECT id FROM gateway_discovery_snapshots WHERE discovered_gateway_id=$1 ORDER BY received_at DESC,id DESC LIMIT 100)`,[id]);
   }
   async record(input: RegistrationInput): Promise<DiscoveredGatewayDetail> {
     const payload = parseGatewayControlPayload('register', input.payload);
@@ -222,8 +237,8 @@ export class GatewayRegistrationService {
     if (!row) throw new NotFoundException('Discovered gateway not found');
     if (!row.snapshot || (row.gatewaySerial?row.clientId!==row.gatewaySerial:row.clientId!==row.externalGatewayId)) throw new ConflictException({
       statusCode: 409,
-      code: 'GATEWAY_REGISTRATION_REQUIRED',
-      message: 'Gateway must publish a current schema 1.1 registration before pairing',
+      code: 'GATEWAY_TELEMETRY_REQUIRED',
+      message: 'Gateway must publish a valid telemetry snapshot before pairing',
     });
     const snapshot=row.snapshot;
     const devices=snapshot.messageType==='register'?snapshot.devices:row.devices;

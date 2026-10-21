@@ -23,12 +23,27 @@ export class PayloadIngestion {
     input: unknown,
     brokerId: string | null,
     acknowledged: (ack: TelemetryAck) => void,
-    _onConfigPush?: (siteId: string, gatewayId: string, config: Record<string, unknown>) => void
+    _onConfigPush?: (siteId: string, gatewayId: string, config: Record<string, unknown>) => void,
+    _publisherId?:string
   ) {
    const match=/^solar\/v1\/sites\/([A-Za-z0-9_-]{1,128})\/gateways\/([A-Za-z0-9_-]{1,128})\/devices\/([A-Za-z0-9_-]{1,128})\/telemetry$/.exec(topic);
    if (!match || !match[1] || !match[2] || !match[3]) return;
    const site=match[1], gateway=match[2], topicDevice=match[3];
-   const context=(await this.db.query<{siteId:string;gatewayId:string;externalSiteId:string;externalGatewayId:string}>(`SELECT g.id AS "gatewayId",g.site_id AS "siteId",s.external_site_id AS "externalSiteId",g.external_gateway_id AS "externalGatewayId" FROM gateways g JOIN sites s ON s.id=g.site_id WHERE s.external_site_id=$1 AND g.external_gateway_id=$2 AND s.status<>'archived' AND g.protocol='mqtt' AND g.mqtt_broker_id IS NOT DISTINCT FROM $3::uuid`,[site,gateway,brokerId])).rows[0];
+   let discovery:TelemetryDiscoveryEnvelope|null=null;
+   if(input&&typeof input==='object'&&['1.1','1.2'].includes(String((input as {schemaVersion?:unknown}).schemaVersion))){
+    try{discovery=parseTelemetryDiscoveryEnvelope(input,topic);}catch{discovery=null;}
+   }
+   const context=(await this.db.query<{siteId:string;gatewayId:string;externalSiteId:string;externalGatewayId:string;gatewaySerial:string|null;deviceBound:boolean}>(`SELECT g.id AS "gatewayId",g.site_id AS "siteId",s.external_site_id AS "externalSiteId",g.external_gateway_id AS "externalGatewayId",g.gateway_serial AS "gatewaySerial",
+    EXISTS(SELECT 1 FROM devices bound_device WHERE bound_device.gateway_id=g.id AND bound_device.site_id=g.site_id
+      AND bound_device.external_device_id=$4 AND ($5::text IS NULL OR bound_device.serial_number=$5)) AS "deviceBound"
+    FROM gateways g JOIN sites s ON s.id=g.site_id WHERE s.external_site_id=$1 AND g.external_gateway_id=$2 AND s.status<>'archived'
+      AND g.protocol='mqtt' AND g.mqtt_broker_id IS NOT DISTINCT FROM $3::uuid`,
+   [site,gateway,brokerId,topicDevice,discovery?.device.deviceSerial??null])).rows[0];
+   // A different serial, or a claimed device that has never been bound, is
+   // discovery evidence and must never enter an existing custom decoder.
+   if(context&&discovery&&(discovery.gatewaySerial!==undefined&&discovery.gatewaySerial!==context.gatewaySerial||context.deviceBound===false)){
+    await this.accept(topic,input,brokerId);return;
+   }
    // Existing single-envelope validation still verifies device, broker and topic scope.
    if(!context) {
     const ack=await this.accept(topic,input,brokerId);
@@ -85,8 +100,8 @@ export class PayloadIngestion {
   if (!segments) return null;
   const site=segments[1]!, gateway=segments[2]!, device=segments[3]!;
    let discovery:TelemetryDiscoveryEnvelope|null=null;
-   if(input&&typeof input==='object'&&(input as {schemaVersion?:unknown}).schemaVersion==='1.2'){
-    try{discovery=parseTelemetryDiscoveryEnvelope(input,topic);}catch{return null;}
+   if(input&&typeof input==='object'&&['1.1','1.2'].includes(String((input as {schemaVersion?:unknown}).schemaVersion))){
+    try{discovery=parseTelemetryDiscoveryEnvelope(input,topic);}catch{discovery=null;}
    }
   const found=await this.db.query<RegisteredBinding>(`SELECT d.id AS "deviceId",d.site_id AS "siteId",g.id AS "gatewayId",s.external_site_id AS "externalSiteId",g.external_gateway_id AS "externalGatewayId",d.external_device_id AS "externalDeviceId",p.id AS "revisionId",p.config,g.applied_config_version AS "appliedConfigVersion",g.active_config_hash AS "activeConfigHash",g.control_managed_at AS "controlManagedAt",EXISTS(SELECT 1 FROM billing_meters b WHERE b.device_id=d.id AND b.site_id=d.site_id AND b.active) AS billing,
    (SELECT jsonb_build_object('id',bs.id,'siteId',bs.site_id,'deviceId',bs.device_id,'profileRevisionId',bs.profile_revision_id,'sourceTag',bs.source_tag,'canonicalTag',bs.canonical_tag,'sourceUnit',bs.source_unit,'targetUnit',bs.target_unit,'conversion',bs.conversion) FROM billing_meters b JOIN billing_source_bindings bs ON bs.id=b.billing_source_binding_id AND bs.meter_id=b.id WHERE b.device_id=d.id AND b.site_id=d.site_id AND b.active AND bs.site_id=d.site_id AND bs.device_id=d.id LIMIT 1) AS "billingSource"
@@ -100,10 +115,19 @@ export class PayloadIngestion {
    [site,gateway,device,brokerId===undefined,brokerId??null,discovery?.gatewaySerial??null,discovery?.device.deviceSerial??null]);
   const entity=found.rows.length===1?found.rows[0]:undefined;
   if (!entity) {
-    if(discovery){await new GatewayRegistrationService(this.db).observeTelemetry({topic,payload:input,brokerId:brokerId??null});return null;}
-   const context=await this.db.query<{siteId:string;gatewayId:string}>(`SELECT g.site_id AS "siteId",g.id AS "gatewayId" FROM gateways g JOIN sites s ON s.id=g.site_id WHERE s.external_site_id=$1 AND g.external_gateway_id=$2 AND s.status<>'archived' AND g.retired_at IS NULL AND g.protocol='mqtt' AND ($3::boolean OR g.mqtt_broker_id IS NOT DISTINCT FROM $4::uuid)`,[site,gateway,brokerId===undefined,brokerId??null]);
-   if (!context.rows[0]) return null;
-   await this.reject(topic,'No registered device/profile binding',context.rows[0]);return null;
+   const context=await this.db.query<{siteId:string;gatewayId:string;deviceBound:boolean}>(`SELECT g.site_id AS "siteId",g.id AS "gatewayId",
+    EXISTS(SELECT 1 FROM devices bound_device WHERE bound_device.gateway_id=g.id AND bound_device.site_id=g.site_id
+      AND bound_device.external_device_id=$5 AND ($6::text IS NULL OR bound_device.serial_number=$6)) AS "deviceBound"
+    FROM gateways g JOIN sites s ON s.id=g.site_id WHERE s.external_site_id=$1 AND g.external_gateway_id=$2
+      AND s.status<>'archived' AND g.retired_at IS NULL AND g.protocol='mqtt'
+      AND ($3::boolean OR g.mqtt_broker_id IS NOT DISTINCT FROM $4::uuid)`,
+   [site,gateway,brokerId===undefined,brokerId??null,device,discovery?.device.deviceSerial??null]);
+   const boundContext=context.rows[0];
+   if(discovery&&(!boundContext||boundContext.deviceBound===false)){
+    await new GatewayRegistrationService(this.db).observeTelemetry({topic,payload:input,brokerId:brokerId??null});return null;
+   }
+   if (!boundContext) return null;
+   await this.reject(topic,'No eligible registered device/profile binding',boundContext);return null;
   }
   // A committed retry is interpreted using its original immutable revision, even after upgrade.
   const messageHint=input && typeof input==='object' && 'messageId' in input ? input.messageId : undefined;

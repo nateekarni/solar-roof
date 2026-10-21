@@ -163,7 +163,7 @@ export interface DiscoveredGatewayRow {
   profileId?: string | null;
   protocol?: string | null;
   status: 'unassigned' | 'configuring' | 'assigned' | 'ignored';
-  onboardingState: 'ready' | 'registration_required';
+  onboardingState: 'ready' | 'telemetry_required';
   assignedSiteId?: string | null;
   assignedGatewayId?: string | null;
   firstSeenAt: string;

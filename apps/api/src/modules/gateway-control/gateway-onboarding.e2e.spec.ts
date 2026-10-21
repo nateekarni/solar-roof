@@ -41,7 +41,7 @@ test('required mode runs and fails configuration instead of silently skipping', 
   assert.deepEqual(gatewayOnboardingE2EDecision(Object.fromEntries(requiredEnvironment.map(name => [name, 'configured']))), { skip: false });
 });
 
-test('the anonymous broker URL cannot smuggle credentials into the registration client', () => {
+test('the anonymous broker URL cannot smuggle credentials into the discovery client', () => {
   const environment = Object.fromEntries(requiredEnvironment.map(name => [name, 'configured']));
   environment.MQTT_E2E_URL = 'mqtt://hidden-user:hidden-password@broker.example:1883';
   environment.E2E_SITE_ID = '00000000-0000-4000-8000-000000000001';
@@ -96,9 +96,10 @@ test('production E2E telemetry shape carries the applied configuration version w
       deviceType:'energy-meter',model:'M',serialNumber:'S',protocol:'modbus-tcp',connection:{host:'192.0.2.1',port:502,slaveId:1},pollGroups:['energy'],
       profileId:'local-profile',profileVersion:'1.0.0',mappings:[{tag:'energy.active.import.total',displayName:'Energy',pollGroup:'energy',sourceUnit:'Wh',targetUnit:'kWh',conversion:'wh-to-kwh',registerAddress:'1',registerCount:2,dataType:'uint32',byteOrder:'big_endian',wordOrder:'big_word_first',scale:1,offset:0}]}]} as GatewayConfigPayload;
   assert.equal('profileRevisionId' in config.devices[0]!,false);
-  const telemetry=buildAppliedConfigTelemetry(config,{messageId:'telemetry-1',sequence:1,lotNumber:1,deviceId:'METER-01',value:123,
+  const telemetry=buildAppliedConfigTelemetry(config,{messageId:'telemetry-1',sequence:1,lotNumber:1,deviceId:'METER-01',gatewaySerial:'GW-SN-001',value:123,
     polledAt:'2026-10-19T00:00:01Z',sentAt:'2026-10-19T00:00:02Z'});
-  assert.equal(telemetry.configurationVersion,7);assert.equal(telemetry.device.profileId,'local-profile');
+  assert.equal(telemetry.schemaVersion,'1.2');assert.equal(telemetry.gatewaySerial,'GW-SN-001');
+  assert.equal(telemetry.device.deviceSerial,'S');assert.equal(telemetry.configurationVersion,7);assert.equal(telemetry.device.profileId,'local-profile');
 });
 
 test('cleanup failures retain the original scenario failure for diagnosis', () => {
@@ -150,6 +151,6 @@ const decision = gatewayOnboardingE2EDecision(process.env);
 const scenarioTimeoutMs = Number(process.env.MQTT_E2E_SCENARIO_TIMEOUT_MS ?? 300_000);
 const cleanupAllowanceMs = Number(process.env.MQTT_E2E_OPERATION_TIMEOUT_MS ?? 10_000) * 20;
 
-test('register -> approve -> config -> applied -> telemetry -> dataAcept', { skip: decision.skip, timeout: scenarioTimeoutMs + cleanupAllowanceMs }, async () => {
+test('telemetry discovery -> approve -> config -> applied -> telemetry -> dataAcept', { skip: decision.skip, timeout: scenarioTimeoutMs + cleanupAllowanceMs }, async () => {
   await runGatewayOnboardingVerification(process.env);
 });

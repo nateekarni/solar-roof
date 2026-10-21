@@ -4,6 +4,17 @@ import { readFileSync } from "node:fs";
 import { DEFAULT_PAYLOAD_PROFILES, normalizePayloadEnvelope, parseTelemetryDiscoveryEnvelope, validatePayloadProfile, logicalPayloadDigest } from "./payload-profile.js";
 
 const examples = JSON.parse(readFileSync(new URL("./fixtures/payload-examples-v1.1.json", import.meta.url), "utf8")).payloads;
+const discoveryExamples = JSON.parse(readFileSync(new URL("../../../../../docs/runbooks/MQTT_Payload_Examples_v1.2.json", import.meta.url), "utf8")).payloads;
+
+test("documented schema 1.2 telemetry examples are valid discovery envelopes",()=>{
+  for(const name of ["pm2230Realtime","pm2230Energy","smartLoggerPlant","smartLoggerEnvironment"]){
+    const payload=discoveryExamples[name];
+    const topic=`solar/v1/sites/${payload.siteId}/gateways/${payload.gatewayId}/devices/${payload.device.deviceId}/telemetry`;
+    const parsed=parseTelemetryDiscoveryEnvelope(payload,topic);
+    assert.equal(parsed.gatewaySerial,payload.gatewaySerial);
+    assert.equal(parsed.device.deviceSerial,payload.device.deviceSerial);
+  }
+});
 test("automatic conversion normalizes incoming power while retaining the source reading", () => {
   const payload = structuredClone(examples.pm2230Realtime);
   payload.data.values["power.active.total"] = 28.24;
@@ -118,7 +129,7 @@ test('schema 1.2 exposes gateway and device serial identity for discovery',()=>{
  assert.equal(normalized.deviceSerial,'SL-SN-000001');
 });
 
-test('schema 1.2 discovery requires valid serials and exact topic aliases',()=>{
+test('telemetry discovery accepts either complete serial identity or the legacy claimed identity',()=>{
  const base={...structuredClone(examples.smartLoggerPlant),schemaVersion:'1.2',gatewaySerial:'GW-SN-A1B2C3D4',
   device:{...structuredClone(examples.smartLoggerPlant.device),deviceSerial:'SL-SN-000001'}};
  const topic='solar/v1/sites/SITE-001/gateways/GW-001/devices/SMARTLOGGER-001/telemetry';
@@ -130,5 +141,9 @@ test('schema 1.2 discovery requires valid serials and exact topic aliases',()=>{
   (p:any)=>p.gatewayId='OTHER',
   (p:any)=>p.device.deviceId='OTHER',
  ]){const payload=structuredClone(base);mutate(payload);assert.throws(()=>parseTelemetryDiscoveryEnvelope(payload,topic));}
- assert.throws(()=>parseTelemetryDiscoveryEnvelope({...structuredClone(examples.smartLoggerPlant),schemaVersion:'1.1'},topic));
+ const legacy={...structuredClone(examples.smartLoggerPlant),schemaVersion:'1.1'};
+ const parsed=parseTelemetryDiscoveryEnvelope(legacy,topic);
+ assert.equal(parsed.schemaVersion,'1.1');
+ assert.equal(parsed.gatewaySerial,undefined);
+ assert.equal(parsed.device.deviceSerial,undefined);
 });

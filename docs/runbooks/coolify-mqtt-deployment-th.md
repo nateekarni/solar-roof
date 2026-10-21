@@ -95,7 +95,7 @@ curl -fsS http://127.0.0.1:3001/ready/mqtt
 - TLS ต้องตรวจ chain และ hostname ผ่าน
 - `/ready/mqtt` ต้องตอบ HTTP `200` และ JSON `{"status":"ready","configuredBrokers":1,"readyBrokers":1}` เมื่อมี Broker เดียว
 - EMQX Dashboard ต้องเข้าผ่าน private network/SSH tunnel เท่านั้น และต้องไม่มี default credential
-- API backend ต้องเป็น client อย่างน้อย 1 รายและมี subscription QoS 1 ห้าเส้น: `register`, `configUpdate`, `configStatus`, `status` และ canonical `telemetry`; API ไม่ subscribe เส้น `config`
+- API backend ต้องเป็น client อย่างน้อย 1 รายและมี subscription QoS 1 สี่เส้น: `configUpdate`, `configStatus`, `status` และ `$solar/internal/telemetry/+/solar/v1/sites/+/gateways/+/devices/+/telemetry`; EMQX ต้องมี rule `telemetry_ingress` ที่ republish canonical telemetry พร้อม `${clientid}` ไปเส้น private นี้ ส่วน API ไม่ subscribe เส้น `config` และไม่ใช้ `/register`
 
 จำนวน clients/subscriptions ใน Dashboard เป็นค่าปัจจุบันและอาจมี session อื่น ให้เทียบ delta กับ baseline ก่อนเปิด MQTTBox แทนการยึดเลขรวมคงที่
 

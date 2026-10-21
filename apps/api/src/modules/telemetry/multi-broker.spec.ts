@@ -8,7 +8,7 @@ import { PayloadIngestion } from './payload-ingestion.js';
 const runtime=createRequire(import.meta.url)('mqtt/mqtt');
 const flush=()=>new Promise<void>(r=>setImmediate(r));
 
-test('unassigned remote broker gets all five required subscriptions and control stays on its source scope',async context=>{
+test('unassigned remote broker gets all four required subscriptions and control stays on its source scope',async context=>{
  const previous=process.env.MQTT_DEFAULT_BROKER_ENABLED;process.env.MQTT_DEFAULT_BROKER_ENABLED='false';
  const subscriptions:string[]=[],received:any[]=[],queries:string[]=[];
  const client=Object.assign(new EventEmitter(),{connected:false,end(){},reconnect(){},subscribe(topic:string,options:any,done:Function){assert.equal(options.qos,1);subscriptions.push(topic);done(null,[{topic,qos:1}]);},unsubscribe(){}});
@@ -17,7 +17,7 @@ test('unassigned remote broker gets all five required subscriptions and control 
  const service=new MqttIngestionService(db as any,db as any);
  context.mock.method(service,'handleIncomingMessage',async(topic:string,_payload:unknown,_client:unknown,brokerId:string|null)=>{received.push({topic,brokerId});});
  try{await service.onModuleInit();await flush();client.connected=true;client.emit('connect');await flush();
-  assert.deepEqual(subscriptions.sort(),['solar/v1/gateways/+/configStatus','solar/v1/gateways/+/configUpdate','solar/v1/gateways/+/register','solar/v1/gateways/+/status','solar/v1/sites/+/gateways/+/devices/+/telemetry']);
+  assert.deepEqual(subscriptions.sort(),['solar/v1/gateways/+/configStatus','solar/v1/gateways/+/configUpdate','solar/v1/gateways/+/status','solar/v1/sites/+/gateways/+/devices/+/telemetry']);
   assert.ok(queries.some(sql=>sql.includes('FROM mqtt_brokers')&&sql.includes('LEFT JOIN')),'unassigned brokers must survive gateway discovery');
   client.emit('message','solar/v1/gateways/NEW/status',Buffer.from('{}'));await flush();
   assert.deepEqual(received,[{topic:'solar/v1/gateways/NEW/status',brokerId:'unassigned'}]);
@@ -46,7 +46,7 @@ test('registered payload binding query verifies broker ownership',async()=>{
  let parameters:unknown[]=[];
  const db={query:async(sql:string,values:unknown[])=>{if(sql.includes('FROM devices d'))parameters=values;return {rows:[]};}};
  await new PayloadIngestion(db as any).accept('solar/v1/sites/S/gateways/G/devices/D/telemetry',{},'broker-a');
- assert.deepEqual(parameters,['S','G','D',false,'broker-a']);
+ assert.deepEqual(parameters,['S','G','D',false,'broker-a',null,null]);
 });
 
 test('late rejected remote SUBACK cannot invalidate a recovered broker session',async context=>{

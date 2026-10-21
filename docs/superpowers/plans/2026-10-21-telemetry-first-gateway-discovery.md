@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace first-contact `/register` messages with schema 1.2 telemetry discovery keyed by Gateway and Device serials.
+**Goal:** Replace first-contact `/register` messages with telemetry discovery supporting both claimed-ID and Serial identity.
 
-**Architecture:** The ingestion boundary classifies schema 1.2 telemetry before production normalization. Exact approved serial bindings continue through normal ingestion; every unknown or mismatched serial is stored as bounded discovery evidence and reviewed through the existing pairing workspace. MQTT credentials and client IDs use `gatewaySerial`, while topic IDs remain admin-approved aliases.
+**Architecture:** The ingestion boundary classifies schema 1.1/1.2 telemetry before production normalization. Exact approved bindings continue through normal ingestion; unknown routes are stored as bounded discovery evidence and reviewed through the existing pairing workspace. Serial candidates key by physical serials, while no-serial candidates key by claimed Gateway/Device IDs and never merge into serial candidates.
 
 **Tech Stack:** TypeScript 7, NestJS 12, PostgreSQL migrations, MQTT.js/EMQX HTTP auth, React 19/Next.js 16, Node test runner, pnpm/Turbo.
 
@@ -12,9 +12,9 @@
 
 ## Global Constraints
 
-- New discovery requires schema version `1.2` with required `gatewaySerial` and `device.deviceSerial`.
-- Existing bound schema 1.1 telemetry remains compatible but cannot discover assets.
-- Topic codes are claims; serial bindings are authoritative.
+- New discovery supports schema `1.1` without serials and schema `1.2` with both serials.
+- Serial fields must be provided together; the two identity modes remain separate.
+- Topic codes are claims; they are the fallback identity when serials are absent.
 - Discovery evidence must never enter production telemetry, aggregates, reports, or billing.
 - The `/register` topic is not subscribed, authorized, or documented.
 - MQTT QoS is 1 and Retain is false.

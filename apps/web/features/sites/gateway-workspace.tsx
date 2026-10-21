@@ -14,7 +14,7 @@ import { GatewayDetailModal } from './gateway-detail-modal';
 import { GatewayFormDialog } from './gateway-form-dialog';
 import { GatewayEditDialog } from './gateway-edit-dialog';
 import { PairDiscoveredGatewayDialog } from './pair-discovered-gateway-dialog';
-import {GatewayRegistrationRequiredDialog} from './gateway-registration-required';
+import {GatewayTelemetryRequiredDialog} from './gateway-telemetry-required';
 import { Alert,AlertAction,AlertDescription,AlertTitle } from '../../components/ui/alert';
 import type { MetricSources } from './dashboard-source-model';
 import type { PayloadConfig } from './payload-contracts';
@@ -66,15 +66,15 @@ export function GatewayWorkspace() {
   const [editOpen, setEditOpen] = useState(false);
   const [pairGateway, setPairGateway] = useState<DiscoveredGatewayRow | null>(null);
   const [pairOpen, setPairOpen] = useState(false);
-  const [registrationGateway,setRegistrationGateway]=useState<DiscoveredGatewayRow|null>(null);
-  const [registrationRetrying,setRegistrationRetrying]=useState(false);
-  const [registrationError,setRegistrationError]=useState('');
-  const registrationEpoch=useRef(0);
+  const [telemetryGateway,setTelemetryGateway]=useState<DiscoveredGatewayRow|null>(null);
+  const [telemetryRetrying,setTelemetryRetrying]=useState(false);
+  const [telemetryError,setTelemetryError]=useState('');
+  const telemetryEpoch=useRef(0);
   const [addOpen, setAddOpen] = useState(false);
   const onboardingAccess=gatewayOnboardingAccessState(canOnboard,{pairOpen,pairGateway,discoveredRows:discoveredQuery.data??[]});
 
   useEffect(()=>{
-    if(!canOnboard){registrationEpoch.current+=1;setPairOpen(false);setPairGateway(null);setRegistrationGateway(null);setRegistrationRetrying(false);setRegistrationError('');}
+    if(!canOnboard){telemetryEpoch.current+=1;setPairOpen(false);setPairGateway(null);setTelemetryGateway(null);setTelemetryRetrying(false);setTelemetryError('');}
   },[canOnboard]);
 
   const handleOpenDetail = (row: GatewayRow) => {
@@ -92,28 +92,28 @@ export function GatewayWorkspace() {
     setPairOpen(true);
   };
 
-  const handleRegistrationRequired=(row:DiscoveredGatewayRow)=>{
+  const handleTelemetryRequired=(row:DiscoveredGatewayRow)=>{
     if(!canOnboard)return;
-    registrationEpoch.current+=1;
-    setRegistrationRetrying(false);setRegistrationError('');
-    setRegistrationGateway(row);
+    telemetryEpoch.current+=1;
+    setTelemetryRetrying(false);setTelemetryError('');
+    setTelemetryGateway(row);
   };
 
-  async function retryRegistration(){
-    if(!registrationGateway)return;
-    const operation=++registrationEpoch.current;
-    setRegistrationRetrying(true);setRegistrationError('');
+  async function retryTelemetry(){
+    if(!telemetryGateway)return;
+    const operation=++telemetryEpoch.current;
+    setTelemetryRetrying(true);setTelemetryError('');
     try{
       const result=await discoveredQuery.refetch();
-      if(operation!==registrationEpoch.current)return;
+      if(operation!==telemetryEpoch.current)return;
       if(result.isError)throw result.error;
-      const refreshed=result.data?.find(row=>row.id===registrationGateway.id);
+      const refreshed=result.data?.find(row=>row.id===telemetryGateway.id);
       if(refreshed?.onboardingState==='ready'){
-        setRegistrationGateway(null);
+        setTelemetryGateway(null);
         handleOpenPair(refreshed);
-      }else setRegistrationError(th?'ยังไม่ได้รับ registration snapshot ใหม่':'A new registration snapshot has not arrived yet.');
-    }catch(cause){if(operation===registrationEpoch.current)setRegistrationError(cause instanceof Error?cause.message:(th?'ตรวจสอบสถานะไม่สำเร็จ':'Could not check registration status.'));}
-    finally{if(operation===registrationEpoch.current)setRegistrationRetrying(false);}
+      }else setTelemetryError(th?'ยังไม่ได้รับ telemetry ที่ใช้ตั้งค่าได้':'No configurable telemetry snapshot has arrived yet.');
+    }catch(cause){if(operation===telemetryEpoch.current)setTelemetryError(cause instanceof Error?cause.message:(th?'ตรวจสอบสถานะไม่สำเร็จ':'Could not check telemetry status.'));}
+    finally{if(operation===telemetryEpoch.current)setTelemetryRetrying(false);}
   }
 
   return (
@@ -145,7 +145,7 @@ export function GatewayWorkspace() {
         onSelect={handleOpenEdit}
         onViewDetail={handleOpenDetail}
         {...(canOnboard?{onPairDiscovered:handleOpenPair}:{})}
-        {...(canOnboard?{onRegistrationRequired:handleRegistrationRequired}:{})}
+        {...(canOnboard?{onTelemetryRequired:handleTelemetryRequired}:{})}
       />
 
       <GatewayDetailModal
@@ -166,7 +166,7 @@ export function GatewayWorkspace() {
         onSuccess={() => {void registeredQuery.refetch();}}
       />
 
-      <GatewayRegistrationRequiredDialog gateway={canOnboard?registrationGateway:null} locale={locale} open={canOnboard&&Boolean(registrationGateway)} onOpenChange={open=>{if(!open){registrationEpoch.current+=1;setRegistrationGateway(null);setRegistrationRetrying(false);setRegistrationError('');}}} onRetry={()=>{void retryRegistration();}} retrying={registrationRetrying} error={registrationError}/>
+      <GatewayTelemetryRequiredDialog gateway={canOnboard?telemetryGateway:null} locale={locale} open={canOnboard&&Boolean(telemetryGateway)} onOpenChange={open=>{if(!open){telemetryEpoch.current+=1;setTelemetryGateway(null);setTelemetryRetrying(false);setTelemetryError('');}}} onRetry={()=>{void retryTelemetry();}} retrying={telemetryRetrying} error={telemetryError}/>
 
       <GatewayFormDialog
         open={addOpen}

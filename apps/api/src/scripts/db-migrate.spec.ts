@@ -5,7 +5,7 @@ import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 
-for(const migration of ['infra/migrations/058_user_document_identity.sql','infra/migrations/059_billing_issuance_approval.sql','infra/migrations/060_payload_samples_generation_energy_idx.sql','infra/migrations/066_gateway_onboarding_control_plane.sql','infra/migrations/067_gateway_configuration_publication_fence.sql','infra/migrations/068_gateway_control_rollout_and_bindings.sql','infra/migrations/069_customer_invoice_notification_links.sql','infra/migrations/070_payment_method_transfer_channel_cash.sql'])
+for(const migration of ['infra/migrations/058_user_document_identity.sql','infra/migrations/059_billing_issuance_approval.sql','infra/migrations/060_payload_samples_generation_energy_idx.sql','infra/migrations/066_gateway_onboarding_control_plane.sql','infra/migrations/067_gateway_configuration_publication_fence.sql','infra/migrations/068_gateway_control_rollout_and_bindings.sql','infra/migrations/069_customer_invoice_notification_links.sql','infra/migrations/070_payment_method_transfer_channel_cash.sql','infra/migrations/071_telemetry_first_gateway_discovery.sql'])
 for(const scenario of ['fresh','duplicate','already-applied','matching-applied'] as const)test(`supported migration runner handles ${migration}: ${scenario}`, async () => {
   const root = new URL('../../../../', import.meta.url);
   const entry = new URL('./db-migrate.ts', import.meta.url);

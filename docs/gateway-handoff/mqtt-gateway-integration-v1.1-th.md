@@ -1,5 +1,7 @@
 # คู่มือเชื่อมต่อ Gateway กับ Solar Platform ผ่าน MQTT เวอร์ชัน 1.1
 
+> **ยกเลิก Flow `/register`:** เอกสารนี้เก็บไว้เป็นข้อมูลอ้างอิงของ schema 1.1 เท่านั้น Gateway ใหม่ให้ส่ง telemetry โดยตรง ระบบรองรับทั้ง schema 1.1 แบบไม่มี Serial และ schema 1.2 ที่มี `gatewaySerial`/`deviceSerial` ตาม [คู่มือ Gateway onboarding ปัจจุบัน](../runbooks/gateway-mqtt-onboarding-th.md) และ [ตัวอย่าง payload v1.2](../runbooks/MQTT_Payload_Examples_v1.2.json)
+
 เอกสารนี้เป็นข้อตกลงสำหรับทีมพัฒนา Gateway ใช้เชื่อมต่อกับ Solar Platform ตั้งแต่ลงทะเบียนเครื่องครั้งแรก รับการตั้งค่าที่ Admin อนุมัติ รายงานสถานะ ส่ง telemetry และรอผลยืนยันการบันทึกข้อมูล เพื่อนำข้อมูลไปใช้ในระบบและออกเอกสาร
 
 ข้อตกลงนี้ใช้ชื่อ `dataAcept` ตาม protocol 1.1 เดิม แม้ตัวสะกดจะไม่ใช่ `dataAccept` และใช้ `configStatus` แทน `configAck`

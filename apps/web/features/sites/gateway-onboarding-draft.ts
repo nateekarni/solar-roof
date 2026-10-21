@@ -6,6 +6,7 @@ import type {
   GatewayRegisterMapping,
   GatewayRegisterPayload,
   GatewayReportedDevice,
+  TelemetryDiscoveryEnvelope,
 } from '@solar/api-contracts';
 import {applyGatewayRegisterPresetMappings,gatewayConnectionIssue,gatewayRegisterMappingCollectionIssue,gatewayRegisterMappingIssue,gatewayRegisterMappingValueIssue} from '@solar/api-contracts';
 import type {PayloadRevision} from './payload-contracts';
@@ -63,8 +64,18 @@ export interface GatewayOnboardingDraft {
   discoveryRevision:number;
   reportedSiteId:string|null;
   selectedSiteId:string;
-  reported:Readonly<GatewayRegisterPayload & {assignedSiteId?:never}>;
+  reported:Readonly<GatewayOnboardingReportedSnapshot & {assignedSiteId?:never}>;
   devices:GatewayOnboardingDeviceDraft[];
+}
+
+export interface GatewayOnboardingReportedSnapshot {
+  schemaVersion:'1.1'|'1.2';
+  messageType:'register'|'telemetry';
+  messageId:string;
+  sentAt:string;
+  reportedSiteId?:string;
+  gateway:{gatewayId:string;gatewaySerial?:string;model?:string;firmwareVersion?:string};
+  devices:GatewayReportedDevice[];
 }
 
 const clone=<T>(value:T):T=>structuredClone(value);
@@ -117,18 +128,32 @@ function reportedDeviceDraft(device:GatewayReportedDevice,suggestedPreset?:Gatew
 }
 
 export function gatewayOnboardingDraftFromDetail(detail:GatewayDiscoveryDetail,sites:readonly GatewaySiteOption[]):GatewayOnboardingDraft {
-  const reportedSiteId=detail.snapshot.reportedSiteId?.trim()||null;
+  const reported=deepFreeze(clone(normalizeReportedSnapshot(detail))) as Readonly<GatewayOnboardingReportedSnapshot & {assignedSiteId?:never}>;
+  const reportedSiteId=reported.reportedSiteId?.trim()||null;
   const normalized=reportedSiteId?.toLocaleLowerCase();
   const matched=normalized?sites.find(site=>[site.code,site.externalSiteId,site.id].some(value=>value?.toLocaleLowerCase()===normalized)):undefined;
   const suggestions=new Map((detail.presetSuggestions??[]).map(row=>[row.deviceId,row.suggestions[0]]));
-  const reported=deepFreeze(clone(detail.snapshot)) as Readonly<GatewayRegisterPayload & {assignedSiteId?:never}>;
   return {
     discoveryId:detail.id,
     discoveryRevision:detail.discoveryRevision,
     reportedSiteId,
     selectedSiteId:matched?.id??'',
     reported,
-    devices:detail.snapshot.devices.map(device=>reportedDeviceDraft(device,suggestions.get(device.deviceId))),
+    devices:reported.devices.map(device=>reportedDeviceDraft(device,suggestions.get(device.deviceId))),
+  };
+}
+
+function normalizeReportedSnapshot(detail:GatewayDiscoveryDetail):GatewayOnboardingReportedSnapshot {
+  const snapshot=detail.snapshot;
+  if(snapshot.messageType==='register')return snapshot;
+  const telemetry=snapshot as TelemetryDiscoveryEnvelope;
+  const firmwareVersion=(detail as {firmwareVersion?:string|null}).firmwareVersion;
+  return {
+    schemaVersion:'1.2',messageType:'telemetry',messageId:telemetry.messageId,sentAt:detail.lastSeenAt,
+    reportedSiteId:telemetry.siteId,
+    gateway:{gatewayId:telemetry.gatewayId,...(telemetry.gatewaySerial?{gatewaySerial:telemetry.gatewaySerial}:{}),...(detail.model?{model:detail.model}:{}),
+      ...(firmwareVersion?{firmwareVersion}: {})},
+    devices:detail.devices,
   };
 }
 

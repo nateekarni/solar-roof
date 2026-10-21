@@ -28,7 +28,7 @@ interface ExistingDevice {
   model:string;serial_number:string;slave_id:number|null;profile_config:PayloadProfile|null;
   registers:GatewayRegisterMapping[];billing:boolean;billing_bound:boolean;billing_source_binding_id:string|null;
 }
-interface GatewayRow {id:string;site_id:string;external_site_id:string;external_gateway_id:string;applied_config_version:number;
+interface GatewayRow {id:string;site_id:string;external_site_id:string;external_gateway_id:string;gateway_serial:string|null;applied_config_version:number;
   desired_config_version:number;desired_config_hash:string|null;active_config_hash:string|null;lifecycle_state:string;config_state:string;mqtt_broker_id:string|null;config_publication_epoch:string}
 function deviceClassification(type:string) { return type==='energy-meter'?'meter':type==='solar-logger'?'logger':type; }
 function validateRegisterStorage(mapping:GatewayRegisterMapping) {
@@ -438,7 +438,7 @@ export class GatewayConfigurationService {
       await client.query('UPDATE gateways SET mqtt_access_suspended=true WHERE id=$1',[id]);
       const credential = await this.credentials.rotateWithGeneration(client, id, actor);
       await this.audit(client, actor, 'gateway.credential.rotation_started', id, { username: credential.username,credentialId:credential.id });
-      return {credential,brokerId:gateway.mqtt_broker_id,clientId:gateway.external_gateway_id};
+      return {credential,brokerId:gateway.mqtt_broker_id,clientId:gateway.gateway_serial??gateway.external_gateway_id};
     }));
     if(!this.sessionRevoker)throw new ServiceUnavailableException('MQTT session termination is not configured');
     try{await this.sessionRevoker.kick(pending.brokerId,pending.clientId);}
@@ -610,7 +610,9 @@ export class GatewayConfigurationService {
         statusCode:409,code:'GATEWAY_DISCOVERY_STALE',message:'Discovery changed; reload before confirming',
       });
       if (discovery.status !== 'unassigned') throw new ConflictException('Discovery is no longer available for confirmation');
-      if (discovery.client_id !== discovery.external_gateway_id) throw new BadRequestException('Discovery client identity mismatch');
+      if (discovery.client_id !== (discovery.gateway_serial ?? discovery.external_gateway_id)) {
+        throw new BadRequestException('Discovery MQTT identity mismatch');
+      }
       const site = (await client.query(`SELECT id,external_site_id FROM sites WHERE id=$1 AND status<>'archived' FOR UPDATE`, [body.siteId])).rows[0];
       if (!site) throw new NotFoundException('Active site not found');
       if (!site.external_site_id) throw new BadRequestException('Site requires an external identity');
@@ -622,10 +624,11 @@ export class GatewayConfigurationService {
       }
       const prepared = await this.prepare(client, body.devices);
       const gatewayId = randomUUID();
-      await client.query(`INSERT INTO gateways(id,site_id,name,endpoint,external_gateway_id,mqtt_broker_id,protocol,status,lifecycle_state,config_state,polling_interval_seconds,control_managed_at)
-        VALUES($1,$2,$3,$4,$5,$6,'mqtt','offline','configuring','pending_sync',60,now())`,
+      await client.query(`INSERT INTO gateways(id,site_id,name,endpoint,external_gateway_id,gateway_serial,mqtt_broker_id,protocol,status,lifecycle_state,config_state,polling_interval_seconds,control_managed_at)
+        VALUES($1,$2,$3,$4,$5,$6,$7,'mqtt','offline','configuring','pending_sync',60,now())`,
       [gatewayId, site.id, 'Gateway ' + discovery.external_gateway_id,
-        `solar/v1/sites/${site.external_site_id}/gateways/${discovery.external_gateway_id}/devices/+/telemetry`, discovery.external_gateway_id, discovery.mqtt_broker_id]);
+        `solar/v1/sites/${site.external_site_id}/gateways/${discovery.external_gateway_id}/devices/+/telemetry`,
+        discovery.external_gateway_id, discovery.gateway_serial, discovery.mqtt_broker_id]);
       for (const entry of prepared) await this.materialize(client, gatewayId, site.id, entry);
       const config = this.config(discovery.external_gateway_id, site.external_site_id, 1, actor,
         body.devices.map(d => prepared.find(p => p.device.deviceId === d.deviceId)?.device ?? d));

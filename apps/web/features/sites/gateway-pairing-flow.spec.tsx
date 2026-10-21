@@ -22,8 +22,8 @@ import {GatewayDiscoveryReview} from './gateway-discovery-review';
 import {GatewayDeviceConfiguration} from './gateway-device-configuration';
 import {applyGatewayDeviceEditorChange,clearGatewayPresetError,gatewayDeviceMatchState,parseGatewayConnectionDraft} from './gateway-device-configuration';
 import {GatewaySyncStatus} from './gateway-sync-status';
-import {GatewayRegistrationRequiredNotice,gatewayRegistrationTopic} from './gateway-registration-required';
-import {isGatewayRegistrationRequired} from './gateway-onboarding-api';
+import {GatewayTelemetryRequiredNotice,gatewayTelemetryTopic} from './gateway-telemetry-required';
+import {isGatewayTelemetryRequired} from './gateway-onboarding-api';
 import {gatewayOnboardingDraftFromDetail,selectGatewayRegisterPreset} from './gateway-onboarding-draft';
 import {applyRegisterDecoderCommit,commitRegisterDecoderDraft,createRegisterDecoderDraft,REGISTERED_REGISTER_DECODER_CONSTRAINTS} from './register-decoder-editor';
 
@@ -45,14 +45,17 @@ const sites=[
   {id:siteBeta,code:'SITE-BETA',externalSiteId:'SITE-BETA',name:'Beta roof',active:true,assignedGatewayId:null},
 ];
 
-test('registration prerequisite gives the exact MQTT identity and a stable API error guard',()=>{
-  const html=renderToStaticMarkup(<LocaleProvider initialLocale="en"><GatewayRegistrationRequiredNotice gateway={detail} locale="en"/></LocaleProvider>);
-  assert.match(html,/Gateway registration is required/);
+test('telemetry prerequisite gives the exact MQTT identity and a stable API error guard',()=>{
+  const telemetryGateway={...detail,gatewaySerial:'GW-SN-A1B2C3D4'};
+  const html=renderToStaticMarkup(<LocaleProvider initialLocale="en"><GatewayTelemetryRequiredNotice gateway={telemetryGateway} locale="en"/></LocaleProvider>);
+  assert.match(html,/Telemetry is required/);
   assert.match(html,/GW-001/);
-  assert.match(html,/solar\/v1\/gateways\/GW-001\/register/);
-  assert.equal(gatewayRegistrationTopic('GW-001'),'solar/v1/gateways/GW-001/register');
-  assert.equal(isGatewayRegistrationRequired({code:'GATEWAY_REGISTRATION_REQUIRED'}),true);
-  assert.equal(isGatewayRegistrationRequired({code:'OTHER'}),false);
+  assert.match(html,/GW-SN-A1B2C3D4/);
+  assert.match(html,/solar\/v1\/sites\/SITE-ALPHA\/gateways\/GW-001\/devices\/METER-01\/telemetry/);
+  assert.doesNotMatch(html,/\/register/);
+  assert.equal(gatewayTelemetryTopic('SITE-ALPHA','GW-001','METER-01'),'solar/v1/sites/SITE-ALPHA/gateways/GW-001/devices/METER-01/telemetry');
+  assert.equal(isGatewayTelemetryRequired({code:'GATEWAY_TELEMETRY_REQUIRED'}),true);
+  assert.equal(isGatewayTelemetryRequired({code:'OTHER'}),false);
 });
 
 test('pairing exposes four ordered named steps and blocks skipping incomplete work',()=>{

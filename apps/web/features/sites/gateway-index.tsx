@@ -81,9 +81,7 @@ const persistedDisplayItem=(row:GatewayRow):DisplayGatewayItem=>({
 export function gatewayIndexPartitions(rows:readonly GatewayRow[],discoveredRows:readonly DiscoveredGatewayRow[],th:boolean){
   const persisted=rows.map(persistedDisplayItem);
   const persistedIds=new Set(rows.map(row=>row.id));
-  const persistedExternalIds=new Set(rows.map(row=>row.externalGatewayId));
-  const discovered=discoveredRows.filter(row=>!(row.assignedGatewayId&&persistedIds.has(row.assignedGatewayId))&&
-    !persistedExternalIds.has(row.externalGatewayId)).map((d):DisplayGatewayItem=>({
+  const discovered=discoveredRows.filter(row=>!(row.assignedGatewayId&&persistedIds.has(row.assignedGatewayId))).map((d):DisplayGatewayItem=>({
       id:d.id,name:d.model?`${d.model} (${d.externalGatewayId})`:`Gateway ${d.externalGatewayId}`,externalGatewayId:d.externalGatewayId,
       siteName:d.reportedSiteId?`${th?'ไซต์ที่ระบุ':'Reported'}: ${d.reportedSiteId}`:th?'ยังไม่เชื่อมต่อไซต์':'Unassigned site',
       siteCode:d.reportedSiteId||'—',status:'unconnected',deviceCount:d.reportedDeviceId?1:0,currentProductionKw:null,
@@ -103,7 +101,7 @@ export function GatewayIndex({
   onSelect,
   onViewDetail,
   onPairDiscovered,
-  onRegistrationRequired,
+  onTelemetryRequired,
   now,
 }: {
   rows: GatewayRow[];
@@ -114,7 +112,7 @@ export function GatewayIndex({
   onSelect: (row: GatewayRow) => void;
   onViewDetail?: (row: GatewayRow) => void;
   onPairDiscovered?: (row: DiscoveredGatewayRow) => void;
-  onRegistrationRequired?: (row: DiscoveredGatewayRow) => void;
+  onTelemetryRequired?: (row: DiscoveredGatewayRow) => void;
   now?:number;
 }) {
   const th = locale === 'th';
@@ -163,7 +161,7 @@ export function GatewayIndex({
   const actions = (item: DisplayGatewayItem) => {
     if (item.isDiscovered && item.discoveredRow) {
       const ready=item.discoveredRow.onboardingState==='ready';
-      const handler=ready?onPairDiscovered:onRegistrationRequired;
+      const handler=ready?onPairDiscovered:onTelemetryRequired;
       if(!handler)return null;
       return (
         <Button
@@ -175,7 +173,7 @@ export function GatewayIndex({
             handler(item.discoveredRow!);
           }}
         >
-          {ready?(th ? 'เชื่อมต่อไซต์งาน' : 'Pair site'):(th?'ส่งข้อมูลลงทะเบียน':'Publish registration')}
+          {ready?(th ? 'เชื่อมต่อไซต์งาน' : 'Pair site'):(th?'ส่ง Telemetry':'Publish telemetry')}
         </Button>
       );
     }
@@ -206,7 +204,7 @@ export function GatewayIndex({
   const handleRowClick = (item: DisplayGatewayItem) => {
     if (item.isDiscovered && item.discoveredRow) {
       if(item.discoveredRow.onboardingState==='ready')onPairDiscovered?.(item.discoveredRow);
-      else onRegistrationRequired?.(item.discoveredRow);
+      else onTelemetryRequired?.(item.discoveredRow);
     } else if (item.originalRow) {
       onViewDetail?.(item.originalRow);
     }

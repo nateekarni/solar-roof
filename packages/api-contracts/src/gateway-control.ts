@@ -48,7 +48,7 @@ export interface GatewayReportedDevice {
 
 export interface TelemetryDiscoveryDevice {
   deviceId:string;
-  deviceSerial:string;
+  deviceSerial?:string;
   deviceType:string;
   manufacturer?:string;
   model?:string;
@@ -58,12 +58,12 @@ export interface TelemetryDiscoveryDevice {
 }
 
 export interface TelemetryDiscoveryEnvelope {
-  schemaVersion:'1.2';
+  schemaVersion:'1.1'|'1.2';
   messageType:'telemetry';
   messageId:string;
   siteId:string;
   gatewayId:string;
-  gatewaySerial:string;
+  gatewaySerial?:string;
   device:TelemetryDiscoveryDevice;
 }
 
