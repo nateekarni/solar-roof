@@ -20,6 +20,8 @@
 4. สร้าง secret เป็น hexadecimal เพื่อไม่ให้ HOCON ตีความ `#`, `:` หรือ `=` เช่น `openssl rand -hex 32`; เก็บผลใน secret manager ไม่ใส่ Git, ticket หรือ log
 5. `INTERNAL_MQTT_SECRET` ต้องเป็นค่าเดียวกับ API ส่วน `EMQX_NODE_COOKIE`, Dashboard password และ `MQTT_PASSWORD` ต้องเป็นคนละค่า
 
+Compose ใช้ bind mount แบบ path คงที่ `/data/mqtt-certs` และ `/etc/ssl/certs/ca-certificates.crt` โดยตั้งใจ เพราะ Coolify ปฏิเสธ `${...}` ใน volume source เพื่อป้องกัน command injection ต้องสร้างไฟล์บน host ตามข้อ 1 ก่อน deploy และไม่ต้องเพิ่ม `MQTT_CERTS_DIR` หรือ `MQTT_WEBHOOK_CA_FILE` ใน Environment Variables ของ resource
+
 ค่า deploy ที่บังคับ:
 
 | ตัวแปร | ใช้ทำอะไร |
@@ -27,8 +29,6 @@
 | `EMQX_NODE_COOKIE` | secret ภายใน node/cluster |
 | `EMQX_DASHBOARD_USER`, `EMQX_DASHBOARD_PASSWORD` | บัญชี Dashboard ที่ไม่ใช่ค่า default |
 | `INTERNAL_MQTT_SECRET` | header `x-internal-secret` สำหรับ auth และ ACL callback |
-| `MQTT_CERTS_DIR` | directory ที่มี `fullchain.pem` และ `privkey.pem` |
-| `MQTT_WEBHOOK_CA_FILE` | PEM CA bundle สำหรับตรวจ TLS ของ `solar.fowir.com` |
 
 ที่ Web/API resource ต้องกำหนด `EMQX_MANAGEMENT_URL`, `EMQX_MANAGEMENT_API_KEY`, `EMQX_MANAGEMENT_API_SECRET` และ `EMQX_MANAGEMENT_DEFAULT_BROKER_ID` เพิ่มด้วย โดย UUID ตัวหลังต้องตรงกับ broker record ที่ URL นี้จัดการจริง หากเป็น remote broker ให้ใส่ target ใน `EMQX_MANAGEMENT_BROKERS_JSON`; ระบบจะไม่ fallback ไป broker เริ่มต้นที่ไม่เกี่ยวข้อง โดยสร้าง Application/API key ใน EMQX ที่มีสิทธิ์อ่าน/ลบ client session สำหรับ `DELETE /api/v5/clients/{clientid}` โดยเฉพาะ ห้ามใช้ Dashboard password และห้ามใส่ key/secret ใน URL ระบบใช้ค่านี้เพื่อตัด session เก่าก่อนยืนยันการหมุน Gateway credential
 

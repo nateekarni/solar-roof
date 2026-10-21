@@ -22,7 +22,17 @@ test('EMQX callbacks require the internal secret and verify the API TLS peer and
   assert.equal((compose.match(/"server_name_indication":"solar\.fowir\.com"/g) ?? []).length, 2);
   assert.equal((compose.match(/"cacertfile":"\/opt\/emqx\/certs\/webhook-ca\.pem"/g) ?? []).length, 2);
   assert.doesNotMatch(compose, /"verify":"verify_none"/);
-  assert.match(compose, /MQTT_WEBHOOK_CA_FILE:\?required/);
+  assert.match(compose, /\/etc\/ssl\/certs\/ca-certificates\.crt:\/opt\/emqx\/certs\/webhook-ca\.pem:ro/);
+});
+
+test('EMQX certificate mounts use Coolify-safe literal host paths', () => {
+  const compose = readRepositoryFile('infra/docker/docker-compose.emqx.yml');
+  const volumeSources = [...compose.matchAll(/^\s*-\s+([^\s][^:]*):\/opt\/emqx\/certs\//gm)].map(
+    match => match[1],
+  );
+
+  assert.deepEqual(volumeSources, ['/data/mqtt-certs', '/etc/ssl/certs/ca-certificates.crt']);
+  assert.ok(volumeSources.every(source => !source.includes('${')));
 });
 
 test('EMQX authorization cache is disabled so suspension and rotation take effect on connected clients',()=>{
