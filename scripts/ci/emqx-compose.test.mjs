@@ -47,3 +47,25 @@ test('Coolify project-root rendering bakes EMQX config into the image without a 
     /^COPY infra\/docker\/emqx\/emqx\.conf \/opt\/emqx\/etc\/emqx\.conf$/m,
   );
 });
+
+test('custom EMQX config passes the pinned broker schema validation', () => {
+  const configPath = join(repositoryRoot, 'infra/docker/emqx/emqx.conf');
+  const result = spawnSync(
+    'docker',
+    [
+      'run',
+      '--rm',
+      '--entrypoint',
+      '/opt/emqx/bin/emqx',
+      '--mount',
+      `type=bind,source=${configPath},target=/opt/emqx/etc/emqx.conf,readonly`,
+      '-e',
+      'EMQX_NODE__COOKIE=test-cookie',
+      'emqx/emqx:5.8.3',
+      'check_config',
+    ],
+    {cwd: repositoryRoot, encoding: 'utf8'},
+  );
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+});
