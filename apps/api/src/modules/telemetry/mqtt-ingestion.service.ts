@@ -330,12 +330,16 @@ async handleIncomingMessage(topic: string, messageStr: string | Buffer, sourceCl
     if (topic.startsWith('solar/v1/')) {
       if(topic.endsWith('/telemetry')&&brokerId===null&&!publisherId){observeValue('ingress_rejected',1);return;}
       let accepted=0;
+      const acknowledgementPublications:Promise<void>[]=[];
       await new PayloadIngestion(this.ingress).acceptMany(topic,data,brokerId,ack=>{
         accepted++;
-        if (this.acknowledgmentsEnabled && this.limiter.withinDrainDeadline() && sourceClient?.connected) sourceClient.publish(gatewayPrefix(ack.siteId,ack.gatewayId)+'/dataAcept',JSON.stringify(ack),{qos:1});
+        if (this.acknowledgmentsEnabled && this.limiter.withinDrainDeadline() && sourceClient?.connected) acknowledgementPublications.push(new Promise<void>((resolve,reject)=>{
+          sourceClient.publish(gatewayPrefix(ack.siteId,ack.gatewayId)+'/dataAcept',JSON.stringify(ack),{qos:1},error=>error?reject(error):resolve());
+        }));
       }, (siteId, gatewayId, configPayload) => {
         if (this.legacyConfigEnabled && this.acknowledgmentsEnabled && this.limiter.withinDrainDeadline() && sourceClient?.connected) sourceClient.publish(gatewayPrefix(siteId, gatewayId)+'/config', JSON.stringify(configPayload), {qos:1});
       },publisherId);
+      await Promise.all(acknowledgementPublications);
       observeValue(accepted?'ingress_accepted':'ingress_rejected',accepted||1);return;
     }
     if (!data || typeof data !== 'object' || ['acknowledged', 'ack', 'config'].includes(data.status ?? data.type)) return;

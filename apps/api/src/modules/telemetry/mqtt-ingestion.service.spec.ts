@@ -49,6 +49,27 @@ test('broker publisher identity does not prevent payload serial or claimed-ID di
   assert.equal(accepted,1);assert.deepEqual(sent,[]);
 });
 
+test('accepted canonical telemetry waits for the broker to confirm its dataAcept publication',async context=>{
+  const db={query:async()=>({rows:[]})};
+  const service=new MqttIngestionService(db as any,db as any);
+  context.mock.method(PayloadIngestion.prototype,'acceptMany',async(_topic:string,_data:unknown,_brokerId:unknown,acknowledged:Function)=>{
+    acknowledged({schemaVersion:'1.1',messageType:'dataAcept',siteId:'SITE-001',gatewayId:'GW-001',lotNumber:42,messageId:'message-42',status:'accepted',acceptedAt:'2026-10-22T16:00:00.000Z'});
+  });
+  let confirm:((error?:Error)=>void)|undefined,settled=false;
+  const client={connected:true,publish(topic:string,body:string,options:unknown,callback?:(error?:Error)=>void){
+    assert.equal(topic,'solar/v1/sites/SITE-001/gateways/GW-001/dataAcept');
+    assert.equal(JSON.parse(body).messageId,'message-42');
+    assert.deepEqual(options,{qos:1});
+    confirm=callback;
+  }};
+  const pending=service.handleIncomingMessage('$solar/internal/telemetry/GW-001/solar/v1/sites/SITE-001/gateways/GW-001/devices/SPM91-01/telemetry','{}',client as any).then(()=>{settled=true;});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(settled,false,'ingestion must remain pending until MQTT PUBACK');
+  assert.ok(confirm,'dataAcept publish must request completion notification');
+  confirm();await pending;
+  assert.equal(settled,true);
+});
+
 test('control namespace routes once before suffix exclusion or telemetry parsing',async context=>{
  const f=fixture();const inputs:any[]=[];
  context.mock.method(GatewayControlMessageHandler.prototype,'handle',async(input:any)=>{inputs.push(input);return {accepted:false};});
