@@ -166,6 +166,8 @@ solar/v1/sites/SITE-001/gateways/GW-001/devices/SMARTLOGGER-001/telemetry
 - schema `1.1` สามารถละ Serial ทั้งคู่ได้; ห้ามส่งมาเพียงค่าเดียว
 - Retry ข้อความเดิมต้องใช้ `messageId`, `sequence` และ `lotNumber` เดิม
 - ข้อความใหม่ต้องใช้ `messageId` ใหม่และเพิ่ม `sequence`/`lotNumber`
+- ถ้าอ่านอุปกรณ์ไม่ได้แต่ Gateway ยังส่งสถานะได้ ให้ส่ง `data.values={}` และ `data.units={}` พร้อม `quality.status="unavailable"` และ `quality.communication="offline"`; ระบบจะเก็บ raw status โดยไม่สร้าง measurement sample และส่ง `dataAcept` หลัง commit
+- Empty payload ใช้ได้เฉพาะสถานะ `unavailable`/`offline` และสอง object ต้องว่างทั้งคู่; empty `good`/`online` หรือจำนวน key ไม่ตรงกันจะถูกปฏิเสธ
 - Anonymous client publish ได้เฉพาะ telemetry Topic แบบเต็ม ห้าม wildcard, subscribe, control หรือ `/register`
 - First contact เป็นหลักฐานรออนุมัติ ระบบยังไม่บันทึกเป็น production sample, ไม่คำนวณ billing และไม่ส่ง `dataAcept`
 

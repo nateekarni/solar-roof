@@ -111,6 +111,37 @@ test("optional measured time is retained and poor quality remains distinct from 
   assert.equal(result.samples[0]?.value, 152430.275);
 });
 
+test("explicit unavailable offline telemetry accepts an empty status-only reading", () => {
+  const payload = structuredClone(examples.smartLoggerEnvironment);
+  payload.data = { values: {}, units: {} };
+  payload.quality = {
+    status: "unavailable",
+    communication: "offline",
+    pollDurationMs: 0,
+    queueDelayMs: 0,
+    simulated: true,
+    reason: "empty-demo-no-device-poll",
+  };
+
+  const result = normalize(payload);
+
+  assert.deepEqual(result.samples, []);
+  assert.deepEqual(result.unmapped, []);
+  assert.equal(result.quality.status, "unavailable");
+  assert.equal(result.quality.communication, "offline");
+});
+
+test("empty telemetry still rejects healthy or asymmetric value and unit maps", () => {
+  const healthy = structuredClone(examples.smartLoggerEnvironment);
+  healthy.data = { values: {}, units: {} };
+  assert.throws(() => normalize(healthy), /value\/unit pairs/i);
+
+  const asymmetric = structuredClone(healthy);
+  asymmetric.quality = { status: "unavailable", communication: "offline" };
+  asymmetric.data.units = { "solar.active_power": "W" };
+  assert.throws(() => normalize(asymmetric), /value\/unit pairs/i);
+});
+
 test('active-power roles require W and one unambiguous mapping',()=>{
  const p=structuredClone(DEFAULT_PAYLOAD_PROFILES[0]!);
  p.fields[0]!.role='active-power';assert.throws(()=>validatePayloadProfile(p),/active-power|Active power/);

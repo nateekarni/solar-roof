@@ -97,9 +97,11 @@ export function normalizePayloadEnvelope(input: unknown, binding: PayloadBinding
   if (raw.device.deviceType !== profile.deviceType || raw.device.profileId !== undefined && raw.device.profileId !== sourceProfile.id || raw.device.profileVersion !== undefined && raw.device.profileVersion !== sourceProfile.version) throw new Error("Profile reference does not match assigned revision");
   if (!profile.pollGroups.includes(raw.pollGroup)) throw new Error("Unsupported poll group");
   const entries = Object.entries(raw.data.values);
-  if (!entries.length || entries.length > 256 || Object.keys(raw.data.units).length !== entries.length) throw new Error("Expected 1..256 value/unit pairs");
+  const unitCount=Object.keys(raw.data.units).length;
+  const statusOnly=entries.length===0&&unitCount===0&&raw.quality.status==='unavailable'&&raw.quality.communication==='offline';
+  if (!statusOnly && (!entries.length || entries.length > 256 || unitCount !== entries.length)) throw new Error("Expected 1..256 value/unit pairs");
   const samples: CanonicalPayloadSample[] = []; const unmapped: RawPayloadField[] = [];
-  for(const f of profile.fields)if(f.required&&f.pollGroup===raw.pollGroup&&!Object.hasOwn(raw.data.values,f.sourceTag??f.tag))throw new Error(`Required field missing: ${f.sourceTag??f.tag}`);
+  if(!statusOnly)for(const f of profile.fields)if(f.required&&f.pollGroup===raw.pollGroup&&!Object.hasOwn(raw.data.values,f.sourceTag??f.tag))throw new Error(`Required field missing: ${f.sourceTag??f.tag}`);
   for (const [name, value] of entries) {
     const rawUnit = raw.data.units[name]; if (!rawUnit) throw new Error(`Missing unit for ${name}`);
     const source = { tag: name, rawValue: value, rawUnit };

@@ -89,6 +89,14 @@ test('telemetry cannot claim a desired configuration version that is not active 
  assert.equal(await f.ingest.accept(topic,{...examples.pm2230Energy,configurationVersion:2}),null);assert.equal(f.raws.length,0);assert.match(String(f.rejects[0]?.[4]),/active configuration version/i);
 });
 test('poor quality preserves samples and excludes billing cumulative energy',async()=>{const f=fixture();await f.ingest.accept(topic,{...examples.pm2230Energy,quality:{status:'bad',communication:'offline'}});assert.ok(f.samples.length);assert.equal(f.raws[0]?.[6],null);assert.equal(f.raws[0]?.[7],"invalid");});
+test('status-only offline telemetry commits without samples and returns a data acceptance ACK',async()=>{
+ const f=fixture(),payload=structuredClone(examples.pm2230Energy);
+ payload.data={values:{},units:{}};payload.quality={status:'unavailable',communication:'offline',reason:'empty-demo-no-device-poll'};
+ const ack=await f.ingest.accept(topic,payload);
+ assert.equal(ack?.messageType,'dataAcept');assert.equal(ack?.messageId,payload.messageId);
+ assert.equal(f.samples.length,0);assert.equal(f.raws.length,1);assert.equal(f.raws[0]?.[6],null);assert.equal(f.raws[0]?.[7],'invalid');
+ assert.equal(f.events.at(-1),'commit');
+});
 test('independent groups and late readings all persist with original polledAt',async()=>{const f=fixture();await f.ingest.accept(topic,examples.pm2230Energy);await f.ingest.accept(topic,examples.pm2230Realtime);const late=structuredClone(examples.pm2230Energy);late.messageId='late';late.timestamps.polledAt='2020-01-01T00:00:00Z';await f.ingest.accept(topic,late);assert.equal(f.raws.length,3);assert.ok(f.samples.some(v=>v.includes('2020-01-01T00:00:00Z')));});
 
 

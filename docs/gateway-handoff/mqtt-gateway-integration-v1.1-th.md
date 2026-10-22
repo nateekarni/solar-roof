@@ -703,6 +703,42 @@ solar/v1/sites/SITE-001/gateways/GW-001/devices/SMARTLOGGER-001/telemetry
 
 Field ที่ Gateway ส่งจริงต้องตรงกับ mappings ใน `config` ไม่จำเป็นต้องส่งครบทุกตัวอย่างข้างต้นถ้า config ของ Site ไม่มี field นั้น แต่ field ที่มี `required: true` ต้องครบใน poll group นั้น
 
+### 8.6 Status-only telemetry เมื่ออ่านอุปกรณ์ไม่ได้
+
+เมื่อ Gateway ยังเชื่อมต่อ Cloud ได้ แต่อ่านอุปกรณ์ปลายทางใน poll group นั้นไม่ได้ สามารถส่ง envelope เดิมโดยใช้ `data.values` และ `data.units` เป็น object ว่างทั้งคู่ พร้อมระบุ `quality.status` เป็น `unavailable` และ `quality.communication` เป็น `offline` ระบบจะบันทึก raw payload เพื่อ audit โดยไม่สร้าง measurement sample และส่ง `dataAcept` หลัง commit สำเร็จ:
+
+```json
+{
+  "schemaVersion": "1.1",
+  "messageType": "telemetry",
+  "messageId": "GW-001-offline-000001",
+  "sequence": 1262,
+  "lotNumber": 1262,
+  "configurationVersion": 1,
+  "siteId": "SITE-001",
+  "gatewayId": "GW-001",
+  "device": {
+    "deviceId": "SMARTLOGGER-001",
+    "deviceType": "solar-logger",
+    "profileId": "huawei-smartlogger3000a",
+    "profileVersion": "1.0.0"
+  },
+  "pollGroup": "environment",
+  "timestamps": {
+    "polledAt": "2026-10-20T10:00:20.125+07:00",
+    "sentAt": "2026-10-20T10:00:20.250+07:00"
+  },
+  "data": { "values": {}, "units": {} },
+  "quality": {
+    "status": "unavailable",
+    "communication": "offline",
+    "reason": "device-poll-failed"
+  }
+}
+```
+
+ข้อยกเว้นนี้ใช้เฉพาะคู่ `unavailable`/`offline` และต้องว่างทั้ง `values` กับ `units` เท่านั้น ข้อความว่างที่ระบุ `good`/`online` หรือมีจำนวน key ของสอง object ไม่ตรงกันจะถูกปฏิเสธตามเดิม `dataAcept` ในกรณีนี้หมายถึง Cloud บันทึกเหตุการณ์สถานะสำเร็จ ไม่ได้หมายความว่ามีค่าการวัดหรือข้อมูลสำหรับคำนวณ Billing
+
 รอบอ่านที่ใช้เป็นค่าเริ่มต้นสำหรับประสานงานคือ PM2230 realtime ทุก 1 วินาที, PM2230 energy ทุก 5 วินาที, SmartLogger plant ทุก 5 วินาที และ SmartLogger environment ทุก 10 วินาที หาก Admin หรือ firmware กำหนดค่าอื่นให้ยึดค่าที่ตกลงและทดสอบกับ Site นั้น
 
 ## 9 Payload dataAcept จาก Cloud
