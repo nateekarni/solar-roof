@@ -1,11 +1,28 @@
-name: CI and staging
+name: Deep Verification
 on:
   pull_request:
-    paths-ignore:
-      - 'docs/**'
-      - '**.md'
+    paths:
+      - '.github/workflows/**'
+      - 'scripts/ci/**'
+      - 'infra/ci/**'
+      - 'infra/docker/Dockerfile.mqtt'
+      - 'infra/docker/Dockerfile.certbot'
+      - 'infra/docker/postgres-backup/**'
+      - 'infra/docker/mosquitto/**'
+      - 'infra/docker/docker-compose*.yml'
   push:
     branches: [main]
+    paths:
+      - '.github/workflows/**'
+      - 'scripts/ci/**'
+      - 'infra/ci/**'
+      - 'infra/docker/Dockerfile.mqtt'
+      - 'infra/docker/Dockerfile.certbot'
+      - 'infra/docker/postgres-backup/**'
+      - 'infra/docker/mosquitto/**'
+      - 'infra/docker/docker-compose*.yml'
+  schedule:
+    - cron: '23 18 * * *'
   workflow_dispatch:
 permissions:
   contents: read
@@ -14,29 +31,6 @@ concurrency:
   group: solar-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 jobs:
-  verify-fast:
-    name: Fast Verification (Unit, Lint, Build)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 11.24.0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24.20.0
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter './packages/**' --recursive build
-      - run: pnpm build && pnpm lint && pnpm test
-      - run: node --test scripts/ci/*.test.mjs
-      - run: python3 scripts/ci/recovery-sampler.test.py
-      - run: pnpm --filter @solar/api exec tsx --test test/performance/capacity-policy.test.ts test/performance/page-budget.test.ts
-
   verify-platform:
     name: Platform Regression, Smokes & Acceptance
     runs-on: ubuntu-24.04
@@ -151,7 +145,7 @@ jobs:
       - name: Publish the tested image IDs
         timeout-minutes: 10
         id: publish
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && github.repository == 'nateekarni/solar-roof'
+        if: github.event_name != 'pull_request' && github.event_name != 'schedule' && github.ref == 'refs/heads/main' && github.repository == 'nateekarni/solar-roof'
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -242,46 +236,3 @@ jobs:
             test/artifacts/platform-capacity-*.json
             test/artifacts/browser-server.log
           retention-days: 7
-
-  deploy-staging:
-    name: Deploy Tested Digests to Staging
-    needs: [verify-fast, verify-platform, drills-capacity]
-    if: vars.STAGING_DEPLOY_ENABLED == 'true' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && github.repository == 'nateekarni/solar-roof'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    environment: staging
-    concurrency:
-      group: solar-staging-deployment
-      cancel-in-progress: false
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24.20.0
-      - name: Reject stale main workflow reruns
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          current=$(gh api repos/nateekarni/solar-roof/git/ref/heads/main --jq '.object.sha')
-          if [ "$current" != "$GITHUB_SHA" ]; then
-            echo 'Refusing stale release: tested commit is no longer main. Run the latest main workflow.' >&2
-            exit 1
-          fi
-      - name: Deploy exact tested digests and await completion
-        env:
-          COOLIFY_URL: ${{ vars.COOLIFY_URL }}
-          COOLIFY_APPLICATION_UUID: ${{ vars.COOLIFY_APPLICATION_UUID }}
-          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
-          API_IMAGE: ${{ needs.verify-platform.outputs.api }}
-          WORKER_IMAGE: ${{ needs.verify-platform.outputs.worker }}
-          WEB_IMAGE: ${{ needs.verify-platform.outputs.web }}
-          MQTT_IMAGE: ${{ needs.verify-platform.outputs.mqtt }}
-          CERTBOT_IMAGE: ${{ needs.verify-platform.outputs.certbot }}
-          STAGING_WEB_URL: ${{ vars.STAGING_WEB_URL }}
-        run: |
-          : "${STAGING_WEB_URL:?Set staging environment STAGING_WEB_URL before enabling deployments}"
-          node scripts/ci/coolify-deploy.mjs
-          node scripts/ci/coolify-deploy.mjs wait "${STAGING_WEB_URL%/}/login"
-          node scripts/ci/coolify-deploy.mjs wait "${STAGING_WEB_URL%/}/health"

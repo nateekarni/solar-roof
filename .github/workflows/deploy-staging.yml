@@ -1,0 +1,79 @@
+name: Deploy Staging
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: Verified main commit (40 lowercase hex characters)
+        required: true
+        type: string
+      api_image:
+        description: Immutable API GHCR digest
+        required: true
+        type: string
+      worker_image:
+        description: Immutable Worker GHCR digest
+        required: true
+        type: string
+      web_image:
+        description: Immutable Web GHCR digest
+        required: true
+        type: string
+      mqtt_image:
+        description: Immutable MQTT GHCR digest from Deep Verification
+        required: true
+        type: string
+      certbot_image:
+        description: Immutable Certbot GHCR digest from Deep Verification
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: solar-staging-deployment
+  cancel-in-progress: false
+
+jobs:
+  deploy-staging:
+    name: Deploy immutable digests to staging
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.20.0
+      - name: Reject malformed or stale main commit
+        env:
+          DEPLOY_SHA: ${{ inputs.commit_sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$DEPLOY_SHA" =~ ^[a-f0-9]{40}$ ]]
+          current=$(gh api repos/nateekarni/solar-roof/git/ref/heads/main --jq '.object.sha')
+          [[ "$current" == "$DEPLOY_SHA" ]]
+      - name: Deploy exact digests and await readiness
+        env:
+          COOLIFY_URL: ${{ vars.COOLIFY_URL }}
+          COOLIFY_APPLICATION_UUID: ${{ vars.COOLIFY_APPLICATION_UUID }}
+          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
+          GITHUB_SHA: ${{ inputs.commit_sha }}
+          API_IMAGE: ${{ inputs.api_image }}
+          WORKER_IMAGE: ${{ inputs.worker_image }}
+          WEB_IMAGE: ${{ inputs.web_image }}
+          MQTT_IMAGE: ${{ inputs.mqtt_image }}
+          CERTBOT_IMAGE: ${{ inputs.certbot_image }}
+          STAGING_WEB_URL: ${{ vars.STAGING_WEB_URL }}
+        run: |
+          set -euo pipefail
+          : "${STAGING_WEB_URL:?Set staging environment STAGING_WEB_URL before deployment}"
+          node scripts/ci/coolify-deploy.mjs
+          node scripts/ci/coolify-deploy.mjs wait "${STAGING_WEB_URL%/}/login"
+          node scripts/ci/coolify-deploy.mjs wait "${STAGING_WEB_URL%/}/health"

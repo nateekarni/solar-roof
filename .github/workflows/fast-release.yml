@@ -1,0 +1,152 @@
+name: Fast Release
+
+on:
+  pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: solar-fast-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  classify:
+    name: Classify release path
+    runs-on: ubuntu-24.04
+    outputs:
+      infrastructure: ${{ steps.paths.outputs.infrastructure }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Classify changed paths
+        id: paths
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ -n "$BASE_SHA" && ! "$BASE_SHA" =~ ^0+$ ]] && git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
+            node scripts/ci/classify-release.mjs "$BASE_SHA" "$HEAD_SHA"
+          else
+            git ls-files | node scripts/ci/classify-release.mjs
+          fi
+
+  verify-fast:
+    name: Fast Verification (Unit, Lint, Build)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.24.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter './packages/**' --recursive build
+      - run: pnpm build && pnpm lint && pnpm test
+      - run: node --test scripts/ci/*.test.mjs
+      - run: python3 scripts/ci/recovery-sampler.test.py
+      - run: pnpm --filter @solar/api exec tsx --test test/performance/capacity-policy.test.ts test/performance/page-budget.test.ts
+
+  application-candidate:
+    name: Application Candidate and Publication
+    needs: [classify, verify-fast]
+    if: needs.classify.outputs.infrastructure != 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      api: ${{ steps.publish.outputs.api }}
+      worker: ${{ steps.publish.outputs.worker }}
+      web: ${{ steps.publish.outputs.web }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build application candidates and smoke fixture in parallel
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          pids=()
+          for app in api worker web; do
+            docker buildx build \
+              --cache-from="type=gha,scope=$app" \
+              --cache-to="type=gha,mode=max,scope=$app" \
+              --label org.opencontainers.image.revision="$GITHUB_SHA" \
+              -f "infra/docker/Dockerfile.$app" \
+              -t "solar-$app:ci" \
+              --load . &
+            pids+=("$!")
+          done
+          docker buildx build \
+            --cache-from=type=gha,scope=postgres-backup \
+            --cache-to=type=gha,mode=max,scope=postgres-backup \
+            --label org.opencontainers.image.revision="$GITHUB_SHA" \
+            -f infra/docker/postgres-backup/Dockerfile \
+            -t solar-postgres-backup:ci \
+            --load . &
+          pids+=("$!")
+          failed=0
+          for pid in "${pids[@]}"; do wait "$pid" || failed=1; done
+          exit "$failed"
+      - name: Verify web-first application stack
+        run: bash infra/ci/web-first-smoke.sh
+      - name: Login to GHCR
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && github.repository == 'nateekarni/solar-roof'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish immutable application images in parallel
+        id: publish
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && github.repository == 'nateekarni/solar-roof'
+        timeout-minutes: 8
+        run: |
+          set -euo pipefail
+          digest_dir="$RUNNER_TEMP/solar-fast-release-digests"
+          mkdir -p "$digest_dir"
+          pids=()
+          for app in api worker web; do
+            (
+              ref="ghcr.io/nateekarni/solar-roof/$app:$GITHUB_SHA"
+              docker tag "solar-$app:ci" "$ref"
+              docker push "$ref"
+              digest=$(docker inspect --format '{{index .RepoDigests 0}}' "$ref")
+              [[ "$digest" =~ ^ghcr.io/nateekarni/solar-roof/$app@sha256:[a-f0-9]{64}$ ]]
+              printf '%s\n' "$digest" > "$digest_dir/$app"
+            ) &
+            pids+=("$!")
+          done
+          failed=0
+          for pid in "${pids[@]}"; do wait "$pid" || failed=1; done
+          [[ "$failed" == 0 ]]
+          for app in api worker web; do
+            digest=$(cat "$digest_dir/$app")
+            [[ "$digest" =~ ^ghcr.io/nateekarni/solar-roof/$app@sha256:[a-f0-9]{64}$ ]]
+            printf '%s=%s\n' "$app" "$digest" >> "$GITHUB_OUTPUT"
+            printf '%s_IMAGE=%s\n' "${app^^}" "$digest" >> "$GITHUB_STEP_SUMMARY"
+          done
