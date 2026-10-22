@@ -40,8 +40,9 @@ function fixture(verification?: GatewayCredentialVerification) {
       assert.match(sql, /gateway_id=\$1/); assert.match(sql, /site_id=\$2/);
       return { rows: devices };
     }
-    assert.match(sql, /FROM gateways/); assert.deepEqual(values, ['GW-001']);
-    if (!exists) return { rows: [] };
+    assert.match(sql, /FROM gateways/);
+    if (!exists) { assert.equal(values.length,1);assert.equal(typeof values[0],'string');return { rows: [] }; }
+    assert.deepEqual(values, ['GW-001']);
     if (/JOIN gateway_mqtt_credentials/.test(sql)) {
       assert.match(sql, /c\.revoked_at IS NULL/); assert.match(sql, /JOIN sites/);
       return { rows: ambiguous ? [gateway, { ...gateway, id: 'other-gateway' }] : [gateway] };
@@ -134,7 +135,7 @@ test('known gateway cannot downgrade to anonymous even when retired or credentia
   }
 });
 
-test('demo anonymous mode lets an approved credential-free gateway subscribe to every topic but publish only to its assigned topics',async()=>{
+test('demo anonymous mode decouples telemetry publish and all subscriptions from the client ID',async()=>{
   process.env.GATEWAY_AUTH_MODE='demo-anonymous';
   const f=fixture();
   Object.assign(f.gateway,{credential_id:null,username:null,revoked_at:null,lifecycle_state:'active'});
@@ -144,18 +145,17 @@ test('demo anonymous mode lets an approved credential-free gateway subscribe to 
   assert.deepEqual(await f.controller.authorize({...anonymous,action:'publish',topic:'solar/v1/gateways/GW-001/status'},headers),allow);
   assert.deepEqual(await f.controller.authorize({...anonymous,action:'publish',topic:'solar/v1/gateways/GW-001/configStatus'},headers),allow);
   assert.deepEqual(await f.controller.authorize({...anonymous,action:'publish',topic:telemetryAcl.topic},headers),allow);
+  assert.deepEqual(await f.controller.authorize({...anonymous,action:'publish',topic:'solar/v1/sites/OTHER/gateways/OTHER/devices/OTHER/telemetry'},headers),allow);
   assert.deepEqual(await f.controller.authorize({...anonymous,action:'subscribe',topic:ackAcl.topic},headers),allow);
   for(const topic of ['#','solar/v1/gateways/OTHER/config','solar/v1/sites/OTHER/gateways/GW-001/dataAcept','arbitrary/topic']){
     assert.deepEqual(await f.controller.authorize({...anonymous,action:'subscribe',topic},headers),allow,topic);
   }
-  for(const topic of ['solar/v1/gateways/OTHER/status',
-    'solar/v1/sites/OTHER/gateways/GW-001/devices/METER-01/telemetry',
-    'solar/v1/sites/SITE-01/gateways/GW-001/devices/OTHER/telemetry','#']){
+  for(const topic of ['solar/v1/gateways/OTHER/status','#']){
     assert.deepEqual(await f.controller.authorize({...anonymous,action:'publish',topic},headers),deny,topic);
   }
 });
 
-test('demo anonymous mode ignores stored gateway credentials while preserving publish isolation',async()=>{
+test('demo anonymous mode ignores stored gateway credentials while keeping non-telemetry publish restricted',async()=>{
   process.env.GATEWAY_AUTH_MODE='demo-anonymous';
   const f=fixture();
   const anonymous={clientid:'GW-001'};
@@ -164,8 +164,20 @@ test('demo anonymous mode ignores stored gateway credentials while preserving pu
   assert.deepEqual(await f.controller.authorize({...anonymous,action:'publish',topic:telemetryAcl.topic},headers),allow);
   assert.deepEqual(await f.controller.authorize({...anonymous,action:'subscribe',topic:ackAcl.topic},headers),allow);
   assert.deepEqual(await f.controller.authorize({...anonymous,action:'subscribe',topic:'#'},headers),allow);
-  assert.deepEqual(await f.controller.authorize({...anonymous,action:'publish',topic:'solar/v1/sites/SITE-01/gateways/GW-001/devices/OTHER/telemetry'},headers),deny);
+  assert.deepEqual(await f.controller.authorize({...anonymous,action:'publish',topic:'solar/v1/sites/SITE-01/gateways/GW-001/devices/OTHER/telemetry'},headers),allow);
   assert.deepEqual(await f.controller.authorize({...anonymous,action:'subscribe',topic:'solar/v1/sites/OTHER/gateways/GW-001/dataAcept'},headers),allow);
+});
+
+test('demo anonymous mode lets an unregistered observer client subscribe to any topic',async()=>{
+  process.env.GATEWAY_AUTH_MODE='demo-anonymous';
+  const f=fixture();f.unknown();
+  const observer={clientid:'MQTTBOX-OBSERVER'};
+
+  assert.deepEqual(await f.controller.authenticate(observer,headers),{result:'allow',is_superuser:false});
+  for(const topic of ['#','solar/v1/sites/SITE-001/gateways/GW-001/dataAcept','arbitrary/topic']){
+    assert.deepEqual(await f.controller.authorize({...observer,action:'subscribe',topic},headers),allow,topic);
+  }
+  assert.deepEqual(await f.controller.authorize({...observer,action:'publish',topic:'arbitrary/topic'},headers),deny);
 });
 
 test('anonymous ACL permits only exact telemetry publish for discovery', async () => {

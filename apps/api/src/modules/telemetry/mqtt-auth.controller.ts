@@ -91,8 +91,10 @@ export class MqttAuthController {
       if ((dto.username ?? '') === '') {
         if(dto.password)return {result:'deny'};
         if(gatewayAuthenticationMode()==='demo-anonymous'){
+          if(dto.action==='subscribe')return {result:'allow'};
+          if(dto.action==='publish'&&telemetryTopic(dto.topic))return {result:'allow'};
           const gateway=await this.gatewayIdentity(dto.clientid);
-          if(gateway)return dto.action==='subscribe'?{result:'allow'}:this.authorizeGateway(dto,gateway);
+          if(gateway)return this.authorizeGateway(dto,gateway);
         }
         return dto.action==='publish'&&telemetryTopic(dto.topic)&&await this.isAnonymous(dto.clientid)?{result:'allow'}:{result:'deny'};
       }

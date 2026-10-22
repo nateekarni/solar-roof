@@ -236,8 +236,8 @@
     "lotNumber": "Unsigned 32-bit running number. Retry of the same logical message must retain the same lotNumber.",
     "pm2230": "Values and canonical fields are examples. Use a verified Schneider PM2230 register map for addresses, scaling and data types.",
     "energy": "Canonical energy values are normalized to Wh/varh before publishing.",
-    "firstContact": "Anonymous first contact receives no dataAcept and creates no production sample. In demo-anonymous mode, admin pairing activates the exact approved site/gateway/device routes immediately; keep the same client ID and blank username/password, with no credential reconnect.",
-    "security": "demo-anonymous is for controlled demonstrations only. Client ID is not a secret and can be spoofed. Set GATEWAY_AUTH_MODE=credential for production provisioning and per-gateway credentials.",
+    "firstContact": "Anonymous first contact receives no dataAcept and creates no production sample. In demo-anonymous mode, admin pairing activates the exact approved site/gateway/device routes immediately; a syntactically valid Client ID and blank username/password may be used without a credential reconnect.",
+    "security": "demo-anonymous is for controlled demonstrations only. Any anonymous client with a syntactically valid Client ID can subscribe to every topic and wildcard and publish to any full telemetry topic; ingestion still requires matching topic/payload identities and an approved binding before persistence. Control and non-telemetry publishing remain restricted. Set GATEWAY_AUTH_MODE=credential for production provisioning and per-gateway credentials.",
     "register": "The /register topic is not used. Discovery occurs on the telemetry topic only."
   }
 }
