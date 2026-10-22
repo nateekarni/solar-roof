@@ -16,6 +16,7 @@ test('secret-returning confirmation bypasses TanStack mutation and query caches'
   const originalFetch=globalThis.fetch;
   const response={
     gatewayId:'33333333-3333-4333-8333-333333333333',configVersion:1,configHash:'hash',
+    authenticationMode:'credential',
     credential:{username:'GW-001',password:'plain-secret-never-cache'},
     syncState:{gatewayId:'33333333-3333-4333-8333-833333333333',lifecycleState:'configuring',configState:'pending_sync',connectionState:'offline',desiredConfigVersion:1,desiredConfigHash:'hash',activeConfigVersion:null,activeConfigHash:null},
   } as const;
@@ -52,6 +53,12 @@ test('registered gateway reads and confirmation invalidation share the observed 
   await invalidateGatewayOnboarding(client,'discovery','gateway');
   assert.equal(client.getQueryState(options.queryKey)?.isInvalidated,true);
   client.clear();
+});
+
+test('registered gateway list polls so live telemetry timestamps and production do not freeze after pairing',()=>{
+  const options=registeredGatewaysQueryOptions();
+  assert.equal(options.refetchInterval,5_000);
+  assert.equal(options.refetchIntervalInBackground,false);
 });
 
 test('disabled discovery query does not call the admin-only endpoint',async()=>{

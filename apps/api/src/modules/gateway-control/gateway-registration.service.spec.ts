@@ -418,6 +418,31 @@ test('telemetry observation creates a serial-keyed candidate with a reviewable d
   f.done();
 });
 
+test('repeat interval telemetry does not advance discovery revision for jsonb key-order differences',async()=>{
+  const payload={schemaVersion:'1.2',messageType:'telemetry',messageId:'GW-001-repeat',sequence:1261,lotNumber:1261,
+    siteId:'SITE-001',gatewayId:'GW-001',gatewaySerial:'GW-SN-A1B2C3D4',device:{deviceId:'SMARTLOGGER-001',
+      deviceSerial:'SL-SN-000001',deviceType:'solar-logger',manufacturer:'Huawei',model:'SmartLogger3000A',
+      profileId:'huawei-smartlogger3000a',profileVersion:'1.0.0',protocol:'modbus-tcp'},pollGroup:'plant',
+    timestamps:{polledAt:'2026-10-21T03:30:05Z',sentAt:'2026-10-21T03:30:06Z'},
+    data:{values:{'solar.active_power':821000},units:{'solar.active_power':'W'}},quality:{status:'good',communication:'online'}};
+  // PostgreSQL jsonb returns object keys in a different order than the parser creates.
+  const persistedDevice={model:'SmartLogger3000A',deviceId:'SMARTLOGGER-001',mappings:[{tag:'solar.active_power',pollGroup:'plant',
+    conversion:'identity' as const,sourceUnit:'W',targetUnit:'W',displayName:'solar.active_power'}],protocol:'modbus-tcp',
+    profileId:'huawei-smartlogger3000a',deviceType:'solar-logger',pollGroups:['plant'],manufacturer:'Huawei',
+    serialNumber:'SL-SN-000001',profileVersion:'1.0.0'};
+  const existingRow={...row(report(),7),externalGatewayId:'GW-001',gatewaySerial:'GW-SN-A1B2C3D4',clientId:'GW-SN-A1B2C3D4',
+    reportedSiteId:'SITE-001',reportedDeviceId:'SMARTLOGGER-001',devices:[persistedDevice]};
+  const f=database([
+    {sql:/pg_advisory_xact_lock/},
+    {sql:/FROM discovered_gateways[\s\S]*gateway_serial[\s\S]*status='unassigned'[\s\S]*FOR UPDATE/,rows:[existingRow]},
+    {sql:/UPDATE discovered_gateways SET raw_payload=/,check:(_values,sql)=>assert.doesNotMatch(sql,/discovery_revision/)},
+  ]);
+  const result=await f.service.observeTelemetry({brokerId:broker,
+    topic:'solar/v1/sites/SITE-001/gateways/GW-001/devices/SMARTLOGGER-001/telemetry',payload});
+  assert.deepEqual(result,{id:discoveryId,discoveryRevision:7,changed:false});
+  f.done();
+});
+
 test('telemetry from logger and meter serials is merged into one gateway candidate',async()=>{
   const loggerPayload={schemaVersion:'1.2',messageType:'telemetry',messageId:'GW-001-1260',sequence:1260,lotNumber:1260,
     siteId:'SITE-001',gatewayId:'GW-001',gatewaySerial:'GW-SN-A1B2C3D4',device:{deviceId:'SMARTLOGGER-001',

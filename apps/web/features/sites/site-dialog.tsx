@@ -868,7 +868,7 @@ function SiteEditDialogInternal({
                 </TabsTrigger>
               </TabsList>
             )}
-            <TabsContent value="settings" className="min-h-0 overflow-y-auto px-1">
+            <TabsContent value="settings" className="min-h-0 overflow-y-auto p-1">
               <form onSubmit={handleSubmit(onSubmit, (errors) => focusInvalidFields(errors))} className={siteFormClassName}>
                 <div className="space-y-3">
                   <div className="flex items-center gap-1.5 text-sm font-semibold text-foreground">

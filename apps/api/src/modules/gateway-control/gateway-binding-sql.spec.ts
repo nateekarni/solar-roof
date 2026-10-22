@@ -80,6 +80,29 @@ test('runtime binding accepts shared or same-device revisions and rejects anothe
   }finally{await db.close();}
 });
 
+test('runtime binding accepts logical telemetry mappings without physical register decoder rows',async()=>{
+  const db=new PGlite();
+  try{
+    await seed(db,false);
+    const logicalConfig=structuredClone(config);
+    for(const device of logicalConfig.devices)for(const field of device.mappings){
+      for(const key of ['registerAddress','registerCount','dataType','byteOrder','wordOrder','scale','offset'] as const){
+        delete (field as Record<string,unknown>)[key];
+      }
+    }
+    const logicalProfile=structuredClone(profile);
+    for(const field of logicalProfile.fields)delete (field as Record<string,unknown>).registerAddress;
+    await db.query('UPDATE gateway_configuration_revisions SET config=$2::jsonb WHERE gateway_id=$1',[gatewayId,JSON.stringify(logicalConfig)]);
+    await db.query('UPDATE payload_profile_revisions SET config=$1::jsonb',[JSON.stringify(logicalProfile)]);
+    await db.exec('TRUNCATE register_mapping_versions');
+    await db.exec(`CREATE TABLE gateway_configuration_device_bindings(gateway_id uuid NOT NULL,config_version integer NOT NULL,
+      external_device_id text NOT NULL,device_id uuid NOT NULL,profile_revision_id uuid NOT NULL,
+      PRIMARY KEY(gateway_id,config_version,external_device_id),UNIQUE(gateway_id,config_version,device_id));`);
+    await db.query(BIND_APPLIED_DEVICES_SQL,[gatewayId,1]);
+    assert.deepEqual(await bound(db),['OWNED-SAME','SHARED']);
+  }finally{await db.close();}
+});
+
 test('runtime poll groups are an order-independent unique set with exact membership',async()=>{
   const db=new PGlite();
   try{

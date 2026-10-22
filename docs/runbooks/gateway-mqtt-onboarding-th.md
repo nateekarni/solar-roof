@@ -2,6 +2,8 @@
 
 คู่มือนี้เป็นแหล่งอ้างอิงหลักสำหรับการค้นหา จับคู่ และทดสอบ Gateway ผ่าน MQTT ระบบ **ไม่ใช้ `/register`** อีกแล้ว ข้อความแรกของ Gateway คือ telemetry ปกติบน Topic เดียวกับที่ใช้หลังเชื่อมต่อ รองรับทั้ง schema `1.1` ที่ไม่มี Serial และ schema `1.2` ที่มี Serial
 
+> โหมดสาธิตปัจจุบันใช้ `GATEWAY_AUTH_MODE=demo-anonymous`: Gateway ใช้ Client ID เดิมและเว้น Username/Password ว่างทั้งก่อนและหลังจับคู่ เมื่อ Admin เลือก Site และยืนยัน ระบบจะเปิดรับเฉพาะ route ของ Gateway/Device ที่อนุมัติทันที ไม่ต้องคัดลอก credential หรือรอ Gateway apply config โหมดนี้เหมาะกับเครือข่ายสาธิตที่ควบคุมได้เท่านั้น เพราะ Client ID ไม่ใช่ความลับและปลอมแปลงได้ ก่อน production ให้เปลี่ยนกลับเป็น `credential`
+
 ตัวอย่างในเอกสารใช้:
 
 - Site ID ที่อ้างจากเครื่อง: `SITE-001`
@@ -35,14 +37,14 @@ solar/v1/sites/{siteId}/gateways/{gatewayId}/devices/{deviceId}/telemetry
 solar/v1/sites/SITE-001/gateways/GW-001/devices/SMARTLOGGER-001/telemetry
 ```
 
-สถานะหลักในหน้า Admin มีค่าเดียวและเดินตามวงจร:
+ในโหมดสาธิต สถานะหลักในหน้า Admin เดินตามวงจร:
 
 ```text
-ยังไม่เชื่อมต่อ → กำลังเชื่อมต่อ → ออนไลน์ → ออฟไลน์
+ยังไม่เชื่อมต่อ → ออนไลน์ → ออฟไลน์
 ```
 
 - **ยังไม่เชื่อมต่อ** — พบ Serial จาก telemetry แล้ว แต่ Admin ยังไม่ได้ผูก Site/Gateway/Device
-- **กำลังเชื่อมต่อ** — Admin ยืนยันแล้ว ระบบออก credential และรอ Gateway รับ config
+- **กำลังเชื่อมต่อ** — ใช้เฉพาะโหมด `credential` ขณะรอ Gateway รับ credential/config
 - **ออนไลน์** — Gateway apply config และส่งข้อมูลล่าสุดภายในช่วงเวลาที่กำหนด
 - **ออฟไลน์** — เคยเชื่อมต่อแล้ว แต่ไม่มีข้อมูลล่าสุดหรือส่ง offline status
 
@@ -188,7 +190,7 @@ solar/v1/sites/SITE-001/gateways/GW-001/devices/SPM91-01/telemetry
 - SPM91-01 ใช้ `deviceSerial` ของ Meter ซึ่งต้องต่างจาก Logger
 - แบบไม่มี Serial: ทั้งสอง payload ละ Serial และใช้ `gatewayId: "GW-001"`; ระบบแยก Device ด้วย `deviceId`
 - หน้า Admin จะแสดงหนึ่ง Gateway candidate พร้อม Device สองตัวให้ตรวจและตั้งค่า
-- หลัง Admin ผูก Site/Gateway, เปิดใช้งาน Device ทั้งสอง และ Gateway apply config แล้ว telemetry ของทั้ง Logger และ Meter จะเข้าสู่ production ingestion และ flow ตรวจสอบความถูกต้องเดิมตาม profile/mapping ของแต่ละ Device
+- หลัง Admin ผูก Site/Gateway และเปิดใช้งาน Device ทั้งสอง telemetry บน route ที่อนุมัติจะเข้าสู่ production ingestion และ flow ตรวจสอบความถูกต้องเดิมตาม profile/mapping ของแต่ละ Device ทันที
 
 หากส่งเพียงอุปกรณ์ใดอุปกรณ์หนึ่ง ระบบจะรู้จักเฉพาะอุปกรณ์ที่มีหลักฐาน telemetry แล้วเท่านั้น อุปกรณ์ตัวที่สองจะถูกเพิ่มใน candidate เดิมเมื่อส่ง telemetry ด้วย identity mode เดียวกัน
 
@@ -207,30 +209,30 @@ solar/v1/sites/SITE-001/gateways/GW-001/devices/SPM91-01/telemetry
 
 ## 4. Admin จับคู่ Site และ Device
 
-กดแถวใน Tab **ยังไม่เชื่อมต่อ** แล้วทำ 4 ขั้นตอน:
+กดแถวใน Tab **ยังไม่เชื่อมต่อ** แล้วทำ 3 ขั้นตอน:
 
-1. ตรวจ Gateway Serial, claimed IDs และข้อมูล Device
-2. เลือก Site จริง ค่า Admin เป็น authoritative แม้ต่างจาก `siteId` ที่ Gateway อ้าง
-3. ตรวจ Device Serial, รุ่น, protocol, connection และ mapping; ห้ามเดา register mapping ที่ไม่มีข้อมูล
-4. ยืนยันและเริ่ม sync
+1. ตรวจข้อมูล Gateway และเลือก Site จริง ค่า Admin เป็น authoritative
+2. ตรวจ Device Serial, รุ่น, ประเภท และ mapping; ห้ามเดา register mapping ที่ไม่มีข้อมูล
+3. ยืนยันและเริ่มรับข้อมูล
 
 เมื่อยืนยันสำเร็จ ระบบจะ:
 
 - บันทึก `gatewaySerial` และ `deviceSerial` เมื่อ payload ส่งมา; ถ้าไม่มีจะใช้ claimed IDs เป็น identity
-- เปลี่ยนสถานะเป็น **กำลังเชื่อมต่อ**
-- ออก Username/Password ให้ดูครั้งเดียว โดย Username เท่ากับ `gatewaySerial` เมื่อมี Serial มิฉะนั้นเท่ากับ `gatewayId`
-- publish retained config QoS 1 ไปที่ `solar/v1/gateways/GW-001/config`
+- ไม่สร้างหรือแสดง Username/Password
+- เปิด Gateway และ config revision ที่ตรวจแล้วเป็น active ทันที
+- อนุญาตเฉพาะ Topic ของ Site/Gateway/Device ที่ Admin ยืนยัน
+- publish retained config QoS 1 ไปที่ `solar/v1/gateways/GW-001/config` ได้ตามเดิม เพื่อให้ Gateway รุ่นที่รองรับนำไปใช้ แต่ไม่ใช้เป็นเงื่อนไขเริ่มรับ telemetry ในโหมดสาธิต
 
-บันทึกรหัสผ่านลง secret store ของ Gateway ก่อนปิดหน้าต่าง หากสูญหายต้องหมุน credential ซึ่งจะยกเลิกรหัสเดิมและตัด session เดิม
+Gateway ต้อง publish ต่อด้วยรหัส `siteId`, `gatewayId` และ `deviceId` ที่ตรงกับ route ที่ Admin อนุมัติ หาก Admin เลือก Site คนละรหัสกับที่เครื่องกำลังส่ง Gateway ยังต้องรับ config หรือเปลี่ยน route ให้ตรงก่อนจึงจะรับเป็น production telemetry ได้
 
-## 5. Reconnect ด้วย credential และ apply config
+## 5. ส่งข้อมูลต่อโดยไม่ต้อง provision Gateway
 
-ตัด anonymous connection แล้ว reconnect:
+ไม่ต้อง disconnect หรือแก้บัญชี MQTT หลังจับคู่ ให้ใช้ค่าต่อไปนี้ต่อเนื่อง:
 
 ```text
 Client ID: GW-SN-A1B2C3D4 หรือ GW-001 ตาม identity ที่ใช้ตอนยืนยัน
-Username:  ค่าเดียวกับ Client ID ที่ระบบออกให้
-Password:  ค่าที่ระบบออกให้ครั้งเดียว
+Username:  เว้นว่าง
+Password:  เว้นว่าง
 ```
 
 ตั้ง Last Will retained QoS 1 ก่อน CONNECT ที่:
@@ -245,12 +247,12 @@ solar/v1/gateways/GW-001/status
 - abnormal disconnect: ให้ Last Will ส่ง `offline`
 - reconnect: subscribe config และรอ SUBACK สำเร็จก่อน publish `online`
 
-จากนั้น:
+Gateway สามารถทำรายการต่อไปนี้ได้ แต่ข้อ 1–3 ไม่ใช่เงื่อนไขเปิดรับ telemetry ในโหมดสาธิต:
 
 1. Subscribe QoS 1 ที่ `solar/v1/gateways/GW-001/config`
 2. รับ retained config และตรวจ `configVersion`/`configHash`
-3. Publish `configStatus: received` และเมื่อใช้งานจริงสำเร็จ publish `configStatus: applied` ไปที่ `solar/v1/gateways/GW-001/configStatus`
-4. เมื่อ active แล้ว subscribe `solar/v1/sites/SITE-001/gateways/GW-001/dataAcept`
+3. Publish `configStatus: received`/`applied` ไปที่ `solar/v1/gateways/GW-001/configStatus` ถ้ารองรับ
+4. Subscribe `solar/v1/sites/SITE-001/gateways/GW-001/dataAcept`
 5. Publish telemetry schema `1.2` ต่อบน Topic เดิม
 
 หลังผูกแล้วระบบรับทั้ง schema `1.1` และ `1.2` ต่อเนื่อง ถ้าเริ่มแบบไม่มี Serial แล้วต้องการเปลี่ยนเป็น Serial ภายหลัง ให้สร้าง/ตรวจ candidate แบบ Serial แยกและให้ Admin ยืนยันอย่างตั้งใจ ระบบจะไม่รวมสอง identity mode อัตโนมัติ
@@ -263,9 +265,10 @@ solar/v1/gateways/GW-001/status
 - [ ] Serial มีครบคู่หรือไม่มีทั้งคู่
 - [ ] Gateway ปรากฏใน **ยังไม่เชื่อมต่อ** และกดแถวแล้วเปิดตั้งค่าได้
 - [ ] Duplicate claimed ID ไม่ถูกผูกอัตโนมัติ
-- [ ] ยืนยันแล้ว credential username เท่ากับ Serial หรือ Gateway ID ตาม identity ของ candidate
-- [ ] Config รับผ่าน exact Gateway control Topic
-- [ ] `configStatus: applied` ตรง version/hash ก่อนเปลี่ยนเป็น active
+- [ ] Local API ตั้ง `GATEWAY_AUTH_MODE=demo-anonymous`
+- [ ] หลังยืนยัน UI ไม่แสดง credential/ปุ่มหมุน credential และ Gateway เป็น active ทันที
+- [ ] Gateway ยังใช้ Client ID เดิม พร้อม Username/Password ว่าง
+- [ ] Config รับผ่าน exact Gateway control Topic ได้ถ้า Gateway รองรับ (ไม่บังคับใน demo)
 - [ ] Telemetry หลังผูกแล้วได้รับ `dataAcept`
 - [ ] หยุดส่งเกิน freshness window แล้วสถานะเดียวเปลี่ยนเป็น **ออฟไลน์**
 
@@ -286,9 +289,14 @@ solar/v1/gateways/GW-001/status
 **มี PUBACK แต่ไม่มี `dataAcept`**
 
 - First contact จะไม่ ACK โดยตั้งใจ
-- หลังยืนยันต้อง reconnect ด้วย credential, apply config และ subscribe exact `dataAcept` Topic
+- หลังยืนยันไม่ต้อง reconnect; ตรวจว่า Topic ใช้ Site/Gateway/Device ตรงกับ route ที่ Admin อนุมัติ และ subscribe exact `dataAcept` Topic
 
 **Gateway เคยเชื่อมต่อแล้วแต่ anonymous connect ไม่ได้**
 
-- เป็นพฤติกรรมปกติ Serial ที่ผูกแล้วห้าม downgrade เป็น anonymous
-- ใช้ credential ล่าสุดหรือหมุน credential จากหน้า Admin
+- ตรวจว่า API รันด้วย `GATEWAY_AUTH_MODE=demo-anonymous` และรีสตาร์ต process หลังเปลี่ยน env
+- ตรวจว่า Client ID เท่ากับ Serial (เมื่อมี) หรือ Gateway ID ที่ใช้ยืนยัน
+- ถ้าใช้ `GATEWAY_AUTH_MODE=credential` จะต้องใช้ credential ล่าสุดตาม production flow เดิม
+
+## 8. กลับไปใช้โหมดปลอดภัยสำหรับ production
+
+ตั้ง `GATEWAY_AUTH_MODE=credential` แล้วรีสตาร์ต API โหมดนี้จะกลับไปสร้าง Username/Password แยกตาม Gateway, รอ `configStatus: applied` ก่อน active และรองรับการหมุน credential ตามเดิม ห้ามใช้ `demo-anonymous` บน broker สาธารณะหรือ production เพราะผู้ที่ทราบ Client ID อาจปลอมเป็น Gateway ได้

@@ -5,6 +5,7 @@ import { DatabaseService } from '../../database/database.service.js';
 import { GatewayCredentialService, normalizeMqttSourceAddress } from '../gateway-control/gateway-credential.service.js';
 import { gatewayControlTopic } from '../gateway-control/gateway-control-payload.js';
 import { gatewayPrefix, payloadTopic } from './payload-ingestion.js';
+import {gatewayAuthenticationMode} from '../gateway-control/gateway-authentication-mode.js';
 
 export interface EmqxAuthDto { clientid?: string; username?: string; password?: string; peerhost?: string }
 export interface EmqxAclDto { clientid?: string; username?: string; password?: string; action?: 'publish' | 'subscribe'; topic?: string }
@@ -61,6 +62,9 @@ export class MqttAuthController {
     if (!validIdentity(dto.clientid) || dto.clientid === 'solar-backend') return { result: 'deny' };
     try {
       if (username === '' && password === '') {
+        if(gatewayAuthenticationMode()==='demo-anonymous'&&await this.uncredentialedIdentity(dto.clientid)){
+          return {result:'allow',is_superuser:false};
+        }
         return await this.isAnonymous(dto.clientid) ? { result: 'allow', is_superuser: false } : { result: 'deny' };
       }
       if (username !== dto.clientid || !password) return { result: 'deny' };
@@ -85,12 +89,24 @@ export class MqttAuthController {
     if (!validIdentity(dto.clientid) || dto.clientid === 'solar-backend') return { result: 'deny' };
     try {
       if ((dto.username ?? '') === '') {
-        return !dto.password && dto.action === 'publish' && telemetryTopic(dto.topic) && await this.isAnonymous(dto.clientid)
-          ? { result: 'allow' } : { result: 'deny' };
+        if(dto.password)return {result:'deny'};
+        if(gatewayAuthenticationMode()==='demo-anonymous'){
+          const gateway=await this.uncredentialedIdentity(dto.clientid);
+          if(gateway)return this.authorizeGateway(dto,gateway);
+        }
+        return dto.action==='publish'&&telemetryTopic(dto.topic)&&await this.isAnonymous(dto.clientid)?{result:'allow'}:{result:'deny'};
       }
       if (dto.username !== dto.clientid) return { result: 'deny' };
       const gateway = await this.registeredIdentity(dto.username);
       if (!gateway) return { result: 'deny' };
+      return this.authorizeGateway(dto,gateway);
+    } catch {
+      return { result: 'deny' };
+    }
+  }
+
+  private async authorizeGateway(dto:EmqxAclDto,gateway:GatewayIdentity):Promise<EmqxAclResponse>{
+    try{
       const id = gateway.external_gateway_id;
       const allowedControl = dto.action === 'subscribe'
         ? dto.topic === gatewayControlTopic(id, 'config')
@@ -120,6 +136,18 @@ export class MqttAuthController {
   }
 
   private async registeredIdentity(username: string): Promise<GatewayIdentity | null> {
+    const row=await this.gatewayIdentity(username);
+    const mqttIdentity=row?.gateway_serial??row?.external_gateway_id;
+    if(!row||row.username!==mqttIdentity||!row.credential_id||row.revoked_at!==null)return null;
+    return row;
+  }
+
+  private async uncredentialedIdentity(clientId:string):Promise<GatewayIdentity|null>{
+    const row=await this.gatewayIdentity(clientId);
+    return row&&!row.credential_id&&row.username===null?row:null;
+  }
+
+  private async gatewayIdentity(username:string):Promise<GatewayIdentity|null>{
     const rows = (await this.db.query<GatewayIdentity>(`SELECT g.id,g.external_gateway_id,g.gateway_serial,g.site_id,s.external_site_id,
       g.lifecycle_state,g.retired_at,g.protocol,g.status AS gateway_status,s.status AS site_status,g.mqtt_access_suspended,
       c.id AS credential_id,c.username,c.revoked_at FROM gateways g JOIN sites s ON s.id=g.site_id
@@ -128,7 +156,6 @@ export class MqttAuthController {
     const row = rows[0];
     const mqttIdentity=row?.gateway_serial??row?.external_gateway_id;
     if (rows.length !== 1 || !row || mqttIdentity !== username || !validIdentity(row.external_gateway_id)||!validIdentity(mqttIdentity)
-      || row.username !== mqttIdentity || !row.credential_id || row.revoked_at !== null
       || row.retired_at !== null || row.protocol !== 'mqtt' || !['configuring', 'active'].includes(row.lifecycle_state)
       || row.mqtt_access_suspended
       || !['online', 'offline', 'active'].includes(row.gateway_status)

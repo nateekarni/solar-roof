@@ -1,9 +1,10 @@
 'use client';
 
+import {Info} from 'lucide-react';
 import {Alert,AlertDescription,AlertTitle} from '../../components/ui/alert';
 import {Badge} from '../../components/ui/badge';
 import {Card,CardContent,CardDescription,CardHeader,CardTitle} from '../../components/ui/card';
-import {Field,FieldDescription,FieldLabel} from '../../components/ui/field';
+import {Field,FieldLabel} from '../../components/ui/field';
 import {Select,SelectContent,SelectGroup,SelectItem,SelectTrigger,SelectValue} from '../../components/ui/select';
 import type {GatewayOnboardingDraft,GatewaySiteOption} from './gateway-onboarding-draft';
 
@@ -14,6 +15,15 @@ export interface GatewayPairingSiteOption extends GatewaySiteOption {
 }
 
 function normalized(value:string|null|undefined){return value?.trim().toLocaleLowerCase()??'';}
+
+export function sortGatewayPairingSites(sites:readonly GatewayPairingSiteOption[]):GatewayPairingSiteOption[] {
+  return [...sites].sort((left,right)=>{
+    const assignmentOrder=Number(Boolean(left.assignedGatewayId))-Number(Boolean(right.assignedGatewayId));
+    if(assignmentOrder!==0)return assignmentOrder;
+    const nameOrder=left.name.localeCompare(right.name,undefined,{sensitivity:'base'});
+    return nameOrder!==0?nameOrder:left.id.localeCompare(right.id);
+  });
+}
 
 export function gatewaySelectedSiteMatchesReport(draft:GatewayOnboardingDraft,sites:readonly GatewayPairingSiteOption[]):boolean {
   if(!draft.reportedSiteId||!draft.selectedSiteId)return true;
@@ -32,7 +42,6 @@ export function GatewayDiscoveryReview({draft,sites,onSiteChange,locale,showSite
 }){
   const th=locale==='th';
   const snapshot=draft.reported;
-  const selected=sites.find(site=>site.id===draft.selectedSiteId);
   const mismatch=Boolean(draft.selectedSiteId&&draft.reportedSiteId&&!gatewaySelectedSiteMatchesReport(draft,sites));
   const facts=[
     [th?'Gateway ID':'Gateway ID',snapshot.gateway.gatewayId],
@@ -68,16 +77,16 @@ export function GatewayDiscoveryReview({draft,sites,onSiteChange,locale,showSite
         </SelectTrigger>
         <SelectContent>
           <SelectGroup>
-            {sites.filter(site=>site.active).map(site=><SelectItem key={site.id} value={site.id}>{site.name} ({site.code??site.externalSiteId??site.id}){site.assignedGatewayId?(th?' · มีเกตเวย์แล้ว':' · already paired'):''}</SelectItem>)}
+            {sortGatewayPairingSites(sites.filter(site=>site.active)).map(site=><SelectItem key={site.id} value={site.id}>{site.name} ({site.code??site.externalSiteId??site.id}){site.assignedGatewayId?(th?' · มีเกตเวย์แล้ว':' · already paired'):''}</SelectItem>)}
           </SelectGroup>
         </SelectContent>
       </Select>
-      <FieldDescription>{selected?(th?`ระบบจะผูกกับ ${selected.name}`:`The gateway will be assigned to ${selected.name}.`):(th?'ไซต์ที่เครื่องรายงานเป็นเพียงคำแนะนำ':'The gateway-reported site is only a suggestion.')}</FieldDescription>
     </Field>}
 
-    {showSiteSelector&&mismatch&&<Alert>
+    {showSiteSelector&&mismatch&&<Alert className="border-info/30 bg-info/10">
+      <Info className="text-info"/>
       <AlertTitle>{th?'ไซต์ที่เลือกต่างจากไซต์ที่เครื่องรายงาน':'Selected site differs from the reported site'}</AlertTitle>
-      <AlertDescription>{th?'ดำเนินการต่อได้ โดยไซต์ที่ผู้ดูแลเลือกรอบนี้จะเป็นค่าหลักของระบบ':'You can continue. The admin-selected site is authoritative for this assignment.'}</AlertDescription>
+      <AlertDescription className="text-foreground/80">{th?'ดำเนินการต่อได้ โดยไซต์ที่ผู้ดูแลเลือกรอบนี้จะเป็นค่าหลักของระบบ':'You can continue. The admin-selected site is authoritative for this assignment.'}</AlertDescription>
     </Alert>}
   </div>;
 }

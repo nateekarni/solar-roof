@@ -344,7 +344,7 @@ export function SiteManageModal({
 
   const formBody = (
     <form noValidate onSubmit={(e) => e.preventDefault()} className="flex min-h-0 flex-1 flex-col gap-5">
-      <div data-slot="dialog-body" className="min-h-0 flex-1 overflow-y-auto pr-1 space-y-5">
+      <div data-slot="dialog-body" className="min-h-0 flex-1 overflow-y-auto p-1 space-y-5">
         <fieldset disabled={busy} className="min-w-0">
           <Tabs
             className="w-full"

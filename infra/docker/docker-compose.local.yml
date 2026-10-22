@@ -42,7 +42,7 @@ services:
     ports: ["${STORAGE_PORT:-9000}:9000", "${STORAGE_CONSOLE_PORT:-9001}:9001"]
     volumes: [minio-data:/data]
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9000/minio/health/live >/dev/null"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9000/minio/health/live"]
       interval: 10s
       timeout: 5s
       retries: 12

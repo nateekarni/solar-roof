@@ -1,4 +1,5 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { isDeepStrictEqual } from 'node:util';
 import type { GatewayRegisterPayload, GatewayReportedDevice,TelemetryDiscoveryEnvelope, DiscoveredGatewayDetail as ContractDetail } from '@solar/api-contracts';
 import { DatabaseService } from '../../database/database.service.js';
 import { parseGatewayControlPayload, parseGatewayControlTopic } from './gateway-control-payload.js';
@@ -105,7 +106,7 @@ export class GatewayRegistrationService {
       }
       const devices=this.mergeReportedDevices(row.devices,reported);
       const changed=row.externalGatewayId!==evidence.gatewayId||row.reportedSiteId!==evidence.siteId
-        ||JSON.stringify(row.devices)!==JSON.stringify(devices);
+        ||!isDeepStrictEqual(row.devices,devices);
       if(!changed){
         await client.query(`UPDATE discovered_gateways SET raw_payload=$2::jsonb,client_id=$3,source_address=$4,last_seen_at=clock_timestamp()
           WHERE id=$1 AND status='unassigned'`,[row.id,JSON.stringify(evidence.raw),identity,sourceAddress]);

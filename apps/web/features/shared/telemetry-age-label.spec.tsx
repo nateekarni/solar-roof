@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import * as React from "react";
 import { renderToString } from "react-dom/server";
 import { TelemetryAgeLabel } from "./telemetry-age-label";
@@ -21,3 +22,8 @@ for (const compact of [false, true]) {
     }
   });
 }
+
+test('table age does not repeat freshness with a stale-data badge',()=>{
+  const source=readFileSync(new URL('./telemetry-age-label.tsx',import.meta.url),'utf8');
+  assert.doesNotMatch(source,/Stale data|ข้อมูลเก่า/);
+});

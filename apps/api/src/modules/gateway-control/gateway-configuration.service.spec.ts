@@ -190,11 +190,13 @@ test('confirms manual configuration atomically with trusted identity, local prof
   assert.deepEqual(immutableBinding.values,[response.gatewayId,1]);
   assert.equal(response.syncState.activeConfigVersion, 0);
   assert.equal(response.syncState.activeConfigHash, null);
+  assert.equal(response.authenticationMode,'credential');
+  assert.ok(response.credential);
   const credential = write(f, /INSERT INTO gateway_mqtt_credentials/);
   assert.equal(credential.values[2], gatewaySerial);
   assert.ok(await argon2.verify(String(credential.values[3]), response.credential.password));
   assert.ok(!JSON.stringify(f.calls).includes(response.credential.password));
-  assert.match(write(f, /UPDATE discovered_gateways/).sql, /'configuring'/);
+  assert.equal(write(f,/UPDATE discovered_gateways/).values[3],'configuring');
   assert.equal(f.calls.at(-1)?.sql, 'COMMIT');
   assert.equal(f.calls.filter(c => c.sql === 'BEGIN').length, 1);
 });
@@ -207,7 +209,30 @@ test('confirms telemetry discovery without serials using the claimed gateway ID 
   assert.equal(gateway.values[5],null);
   const credential=write(f,/INSERT INTO gateway_mqtt_credentials/);
   assert.equal(credential.values[2],'GW-001');
+  assert.ok(response.credential);
   assert.equal(response.credential.username,'GW-001');
+});
+
+test('demo anonymous confirmation activates immediately without issuing or returning a gateway credential',async()=>{
+  const previous=process.env.GATEWAY_AUTH_MODE;
+  process.env.GATEWAY_AUTH_MODE='demo-anonymous';
+  try{
+    const f=fixture();
+    const response=await f.service.confirm(discoveryId,confirm(),actor) as Awaited<ReturnType<GatewayConfigurationService['confirm']>> & {authenticationMode?:string};
+    assert.equal(response.authenticationMode,'demo-anonymous');
+    assert.equal(response.credential,null);
+    assert.equal(response.syncState.lifecycleState,'active');
+    assert.equal(response.syncState.configState,'applied');
+    assert.equal(response.syncState.activeConfigVersion,1);
+    assert.equal(response.syncState.activeConfigHash,response.configHash);
+    assert.ok(!f.committed.some(row=>/gateway_mqtt_credentials/.test(row.sql)));
+    const activation=write(f,/UPDATE gateways SET applied_config_version=/);
+    assert.match(activation.sql,/lifecycle_state='active'/);
+    assert.equal(write(f,/UPDATE discovered_gateways/).values[3],'assigned');
+  }finally{
+    if(previous===undefined)delete process.env.GATEWAY_AUTH_MODE;
+    else process.env.GATEWAY_AUTH_MODE=previous;
+  }
 });
 
 test('explicit admin adoption snapshots and activates reviewed legacy configuration without inventing mappings',async()=>{
@@ -215,7 +240,7 @@ test('explicit admin adoption snapshots and activates reviewed legacy configurat
   model:'Verified Model',serial_number:'SERIAL-1',slave_id:3,profile_config:null,registers:[],billing:false,billing_bound:false};
  const f=fixture({desired:4,active:4,controlManaged:false,existingRows:[existing]});
  const result=await f.service.adoptExisting(gatewayId,{expectedDesiredConfigVersion:4,devices:[device()]},actor);
- assert.equal(result.configVersion,5);assert.equal(result.credential.username,gatewaySerial);
+ assert.equal(result.configVersion,5);assert.ok(result.credential);assert.equal(result.credential.username,gatewaySerial);
  const revision=JSON.parse(String(write(f,/INSERT INTO gateway_configuration_revisions/).values[3]));
  assert.deepEqual(revision.devices[0].mappings,device().mappings);
  const activation=write(f,/UPDATE gateways SET applied_config_version=/);
@@ -392,7 +417,6 @@ test('rejects out-of-storage disabled decoder values before any onboarding write
 for (const [name, change] of [
   ['mappings', (d: GatewayDeviceConfig) => { d.mappings = []; }],
   ['serial', (d: GatewayDeviceConfig) => { delete d.serialNumber; }],
-  ['connection', (d: GatewayDeviceConfig) => { delete d.connection; }],
   ['byte order', (d: GatewayDeviceConfig) => { delete d.mappings[0]!.byteOrder; }],
 ] as const) {
   test(`rejects incomplete enabled device ${name}`, async () => {
@@ -402,6 +426,16 @@ for (const [name, change] of [
     assert.deepEqual(f.committed, []);
   });
 }
+
+test('accepts an enabled telemetry-only device without physical polling details',async()=>{
+  const f=fixture();
+  const telemetryOnly=device();
+  delete telemetryOnly.connection;
+  await f.service.confirm(discoveryId,confirm([telemetryOnly]),actor);
+  const snapshot=JSON.parse(String(write(f,/INSERT INTO gateway_configuration_revisions/).values[3]));
+  assert.equal(snapshot.devices[0].protocol,'modbus-tcp');
+  assert.equal(snapshot.devices[0].connection,undefined);
+});
 
 test('copies an explicitly chosen immutable preset into a device-owned local revision', async () => {
   const source = { id: presetId, config: { id: 'verified-meter', version: '1.2.0', schemaVersion: '1.1',

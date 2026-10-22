@@ -18,8 +18,8 @@ import {
   canDismissGatewayPairing,
   visibleGatewayPairingCredential,
 } from './pair-discovered-gateway-dialog';
-import {GatewayDiscoveryReview} from './gateway-discovery-review';
-import {GatewayDeviceConfiguration} from './gateway-device-configuration';
+import {GatewayDiscoveryReview,sortGatewayPairingSites} from './gateway-discovery-review';
+import {GatewayDeviceConfiguration,gatewayDeviceTypeLabel} from './gateway-device-configuration';
 import {applyGatewayDeviceEditorChange,clearGatewayPresetError,gatewayDeviceMatchState,parseGatewayConnectionDraft} from './gateway-device-configuration';
 import {GatewaySyncStatus} from './gateway-sync-status';
 import {GatewayTelemetryRequiredNotice,gatewayTelemetryTopic} from './gateway-telemetry-required';
@@ -58,15 +58,19 @@ test('telemetry prerequisite gives the exact MQTT identity and a stable API erro
   assert.equal(isGatewayTelemetryRequired({code:'OTHER'}),false);
 });
 
-test('pairing exposes four ordered named steps and blocks skipping incomplete work',()=>{
-  assert.deepEqual(GATEWAY_PAIRING_STEPS.map(step=>step.id),['review','site','devices','confirm']);
-  assert.deepEqual(GATEWAY_PAIRING_STEPS.map(step=>step.en),['Review gateway','Select site','Configure devices','Confirm & sync']);
+test('pairing exposes three ordered named steps with review and site selection combined',()=>{
+  assert.deepEqual(GATEWAY_PAIRING_STEPS.map(step=>step.id),['review','devices','confirm']);
+  assert.deepEqual(GATEWAY_PAIRING_STEPS.map(step=>step.en),['Review & select site','Configure devices','Confirm & sync']);
+  const source=readFileSync(new URL('./pair-discovered-gateway-dialog.tsx',import.meta.url),'utf8');
+  assert.doesNotMatch(source,/<span>\{index\+1\}<\/span>/,'step tabs must not render ordinal numbers');
+  assert.doesNotMatch(source,/aria-label=\{`\$\{index\+1\}/,'step accessible names must not start with ordinal numbers');
+  assert.doesNotMatch(source,/TabsContent value="site"/,'site selection must not be a separate wizard screen');
   const draft=gatewayOnboardingDraftFromDetail(detail,sites);
   assert.equal(gatewayPairingStepIssue('review',draft,'en'),null);
   draft.selectedSiteId='';
-  assert.match(gatewayPairingStepIssue('site',draft,'en')??'',/select a site/i);
+  assert.match(gatewayPairingStepIssue('review',draft,'en')??'',/select a site/i);
   draft.selectedSiteId=siteAlpha;
-  assert.match(gatewayPairingStepIssue('devices',draft,'en')??'',/INV-01.*complete/i);
+  assert.match(gatewayPairingStepIssue('devices',draft,'en')??'',/serial.*INV-01/i);
   draft.devices[1]!.enabled=false;
   assert.equal(gatewayPairingStepIssue('devices',draft,'en'),null);
 });
@@ -83,7 +87,19 @@ test('review keeps reported facts immutable, preselects a matching site and warn
   assert.match(html,/Revision 7/);
   assert.match(html,/Selected site differs from the reported site/i);
   assert.match(html,/admin-selected site is authoritative/i);
+  assert.match(html,/border-info\/30/);
+  assert.match(html,/bg-info\/10/);
+  assert.doesNotMatch(html,/gateway will be assigned to/i);
   assert.match(html,/aria-label="Select actual site"/);
+});
+
+test('site choices put sites without a gateway first and then sort by name',()=>{
+  const sorted=sortGatewayPairingSites([
+    {...sites[0]!,name:'Zulu',assignedGatewayId:'gateway-a'},
+    {...sites[1]!,name:'Beta',assignedGatewayId:null},
+    {id:'33333333-3333-4333-8333-333333333333',code:'SITE-GAMMA',externalSiteId:'SITE-GAMMA',name:'Alpha',active:true,assignedGatewayId:null},
+  ]);
+  assert.deepEqual(sorted.map(site=>site.name),['Alpha','Beta','Zulu']);
 });
 
 test('cached discovery waits for the site catalogue before creating its preselected draft',()=>{
@@ -103,17 +119,18 @@ test('device step supports explicit manual or preset configuration and disabled 
   );
   assert.match(html,/METER-01/);
   assert.match(html,/INV-01/);
-  assert.match(html,/Manual configuration/);
+  assert.match(html,/Disabled/);
   assert.match(html,/Gateway mapping/);
   assert.match(html,/Enable device/);
-  assert.match(html,/disabled device can be completed later/i);
+  assert.match(html,/aria-label="Enable device INV-01"/);
+  assert.match(html,/aria-checked="false"/);
 });
 
 test('device match state distinguishes missing mappings, invalid configuration, suggestions, manual and preset choices',()=>{
   const draft=gatewayOnboardingDraftFromDetail(detail,sites);
   assert.equal(gatewayDeviceMatchState(draft,draft.devices[1]!,'en'),'no_mapping');
   draft.devices[0]!.connection={};
-  assert.equal(gatewayDeviceMatchState(draft,draft.devices[0]!,'en'),'invalid_configuration');
+  assert.equal(gatewayDeviceMatchState(draft,draft.devices[0]!,'en'),'gateway');
   draft.devices[0]!.connection={host:'10.0.0.8',port:502,slaveId:1};
   draft.devices[0]!.suggestedPreset={id:'preset-match',kind:'register',rank:80};
   assert.equal(gatewayDeviceMatchState(draft,draft.devices[0]!,'en'),'matched_by_model');
@@ -123,18 +140,62 @@ test('device match state distinguishes missing mappings, invalid configuration, 
   assert.equal(gatewayDeviceMatchState(draft,draft.devices[0]!,'en'),'matched_preset');
 });
 
-test('device configuration exposes the validation reason before confirmation',()=>{
+test('device configuration uses compact device disclosure and inline validation instead of page-level alerts',()=>{
   const draft=gatewayOnboardingDraftFromDetail(detail,sites);
-  const html=renderToStaticMarkup(<LocaleProvider initialLocale="en"><GatewayDeviceConfiguration draft={draft} presets={[]} onChange={()=>{}} locale="en"/></LocaleProvider>);
-  assert.match(html,/Device configuration needs attention/);
-  assert.match(html,/INV-01.*complete details and mappings/);
+  const html=renderToStaticMarkup(<LocaleProvider initialLocale="en"><GatewayDeviceConfiguration draft={draft} presets={[]} onChange={()=>{}} locale="en" showErrors/></LocaleProvider>);
+  assert.doesNotMatch(html,/Device configuration needs attention/);
+  assert.doesNotMatch(html,/Preset suggestion available/);
+  assert.doesNotMatch(html,/Modbus register decoder/);
+  assert.doesNotMatch(html,/Connection \(JSON\)/);
+  assert.doesNotMatch(html,/Register settings/);
+  assert.doesNotMatch(html,/>Enabled</);
+  assert.doesNotMatch(html,/data-slot="gateway-connection-fields"/);
+  assert.doesNotMatch(html,/Host \/ IP|Slave ID|>Protocol</);
+  assert.match(html,/data-slot="gateway-device-header"[^>]*h3\]:flex-1/);
+  assert.match(html,/data-slot="gateway-device-status"[^>]*ml-auto/);
+  assert.match(html,/data-slot="gateway-device-switch"[^>]*right-12/);
+  assert.match(html,/data-slot="accordion-trigger"[^>]*accordion-trigger-icon[^>]*absolute/);
+  assert.match(html,/data-slot="card-header"[^>]*!p-0/,'device header must opt out of inherited card padding');
+  assert.doesNotMatch(html,/data-slot="card-header"[^>]*class="[^"]* border-b(?: |")/,'collapsed device header must not add external bottom padding');
+  assert.match(html,/border-t !pb-0/,'expanded content owns its separator without wrapper padding');
+  assert.match(html,/data-slot="card-content"[^>]*!p-5/,'expanded content must use balanced internal padding');
+  assert.match(html,/aria-expanded=/);
+  assert.match(html,/aria-invalid="true"/);
+  assert.match(html,/Serial number/);
+  assert.match(html,/Enter the serial number for device INV-01/);
   assert.match(html,/No mapping/);
 });
 
-test('confirmation summarizes the authoritative site and every enabled or disabled device mapping',()=>{
+test('device validation disclosure advances only for a new Next-button attempt',()=>{
+  const source=readFileSync(new URL('./pair-discovered-gateway-dialog.tsx',import.meta.url),'utf8');
+  const deviceSource=readFileSync(new URL('./gateway-device-configuration.tsx',import.meta.url),'utf8');
+  assert.match(source,/validationAttempt/,'the parent must own an explicit validation-attempt token');
+  assert.match(deviceSource,/validationAttempt/,'device disclosure must react to an explicit validation attempt');
+  assert.doesNotMatch(deviceSource,/\[issue\?\.deviceKey,showErrors\]/,'editing a field must not disclose the next live issue automatically');
+});
+
+test('device type has a clear operator label while preserving the canonical value',()=>{
+  assert.equal(gatewayDeviceTypeLabel('solar-logger','th'),'เครื่องบันทึกข้อมูลโซลาร์ (solar-logger)');
+  assert.equal(gatewayDeviceTypeLabel('energy-meter','en'),'Energy meter (energy-meter)');
+  assert.equal(gatewayDeviceTypeLabel('custom-sensor','en'),'custom-sensor');
+});
+
+test('confirmation uses one collapsible card per device without an outer review card',()=>{
   const draft=gatewayOnboardingDraftFromDetail(detail,sites);
   draft.devices[1]!.enabled=false;
   const html=renderToStaticMarkup(<GatewayPairingSummary draft={draft} sites={sites} locale="en"/>);
+  assert.doesNotMatch(html,/Review before confirmation/);
+  assert.doesNotMatch(html,/permanent credential/);
+  assert.equal((html.match(/data-slot="gateway-confirmation-device"/g)??[]).length,2);
+  assert.equal((html.match(/data-slot="accordion-trigger"/g)??[]).length,2);
+  assert.doesNotMatch(html,/<pre/,'confirmation must not expose raw JSON');
+  assert.match(html,/data-slot="gateway-confirmation-connection-summary"/);
+  assert.match(html,/data-slot="gateway-confirmation-mapping-table"/);
+  assert.doesNotMatch(html,/data-slot="gateway-confirmation-mapping-card"/);
+  const withoutConnections=structuredClone(draft);
+  withoutConnections.devices=withoutConnections.devices.map(device=>({...device,connection:{}}));
+  const withoutConnectionHtml=renderToStaticMarkup(<GatewayPairingSummary draft={withoutConnections} sites={sites} locale="en"/>);
+  assert.doesNotMatch(withoutConnectionHtml,/>Connection<|>การเชื่อมต่อ</,'empty connection data must not be rendered');
   assert.match(html,/Alpha roof/);
   assert.match(html,/METER-01/);
   assert.match(html,/1 field/);
@@ -171,7 +232,7 @@ test('metadata-only edits preserve preset lineage while profile edits clear it',
   assert.equal(mappingEdited.presetVersion,undefined);
 });
 
-test('local Modbus draft editor exposes and updates the complete decoder without unsupported controls',()=>{
+test('local Modbus draft model updates the complete decoder without coercing transient values',()=>{
   const draft=gatewayOnboardingDraftFromDetail(detail,sites);
   draft.devices[1]!.enabled=false;
   const legacyPreset={id:'44444444-4444-4444-8444-444444444444',brand:'Schneider',model:'PM2230',registers:[{registerAddress:'3204',registerCount:2,dataType:'uint32',byteOrder:'big_endian',wordOrder:'big_word_first',scale:1}]};
@@ -179,10 +240,7 @@ test('local Modbus draft editor exposes and updates the complete decoder without
   assert.equal(selection.ok,true);
   if(!selection.ok)return;
   draft.devices[0]=selection.device;
-  const html=renderToStaticMarkup(<LocaleProvider initialLocale="en"><GatewayDeviceConfiguration draft={draft} presets={[]} legacyPresets={[legacyPreset]} onChange={()=>{}} locale="en"/></LocaleProvider>);
-  for(const label of ['Register count','Data type','Byte order','Word order','Scale','Offset'])assert.match(html,new RegExp(label));
-  assert.match(html,/Schneider PM2230/);
-  assert.doesNotMatch(html,/Data cadence|Telemetry topic|Device name/);
+  assert.equal(draft.devices[0]!.config.fields[0]!.registerAddress,'3204');
   const decoder=createRegisterDecoderDraft(draft.devices[0]!.config.fields[0]!);
   decoder.scale='1e-3';decoder.offset='-';decoder.registerCount='4';
   assert.equal(decoder.offset,'-','transient numeric text must not be coerced while typing');
@@ -300,6 +358,15 @@ test('sync view renders one-time credential, copy actions, closing warning and t
   assert.match(pollingError,/Could not refresh sync status/i);
   assert.match(pollingError,/poll failed/);
   assert.match(pollingError,/Retry/);
+});
+
+test('demo anonymous sync view finishes without credential provisioning or rotation controls',()=>{
+  const syncState:GatewaySyncState={gatewayId:'33333333-3333-4333-8333-333333333333',lifecycleState:'active',configState:'applied',connectionState:'unknown',desiredConfigVersion:1,desiredConfigHash:'abc',activeConfigVersion:1,activeConfigHash:'abc'};
+  const html=renderToStaticMarkup(React.createElement(GatewaySyncStatus,{
+    locale:'en',credential:null,syncState,authenticationMode:'demo-anonymous',rotating:false,onRotate:()=>{},
+  } as React.ComponentProps<typeof GatewaySyncStatus>&{authenticationMode:string}));
+  assert.match(html,/Connected without gateway provisioning/i);
+  assert.doesNotMatch(html,/One-time MQTT credential|Copy password|Rotate credential/i);
 });
 
 test('confirmed sync and its one-time credential stay visible if the discovery detail is invalidated',()=>{

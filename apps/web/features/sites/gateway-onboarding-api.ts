@@ -43,7 +43,12 @@ export function useDiscoveredGateways(active=true){
 }
 
 export function registeredGatewaysQueryOptions(){
-  return {queryKey:gatewayOnboardingKeys.registered(),queryFn:()=>apiClient.get<GatewayRow[]>('/v1/gateways')} as const;
+  return {
+    queryKey:gatewayOnboardingKeys.registered(),
+    queryFn:()=>apiClient.get<GatewayRow[]>('/v1/gateways'),
+    refetchInterval:5_000,
+    refetchIntervalInBackground:false,
+  } as const;
 }
 
 export function useRegisteredGateways(){

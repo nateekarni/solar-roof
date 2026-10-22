@@ -35,10 +35,18 @@ export function gatewayPrimaryStatus(gateway:GatewayOperationalSource):GatewayPr
   return gateway.status==='online'?'online':'offline';
 }
 
+export function gatewayStatusClassName(status:GatewayPrimaryStatus):string {
+  return {
+    online:'border-emerald-300 bg-emerald-100 text-emerald-800 dark:border-emerald-700 dark:bg-emerald-950/70 dark:text-emerald-300',
+    offline:'border-red-300 bg-red-100 text-red-800 dark:border-red-700 dark:bg-red-950/70 dark:text-red-300',
+    unconnected:'border-amber-300 bg-amber-100 text-amber-900 dark:border-amber-700 dark:bg-amber-950/70 dark:text-amber-300',
+    connecting:'border-blue-300 bg-blue-100 text-blue-800 dark:border-blue-700 dark:bg-blue-950/70 dark:text-blue-300',
+  }[status];
+}
+
 export function GatewayOperationalStatus({gateway,locale='en'}:{gateway:GatewayOperationalSource;locale?:string;now?:number;compact?:boolean}){
   const th=locale==='th';
   const status=gatewayPrimaryStatus(gateway);
   const label={unconnected:th?'ยังไม่เชื่อมต่อไซต์':'Not connected',connecting:th?'กำลังเชื่อมต่อ':'Connecting',online:th?'ออนไลน์':'Online',offline:th?'ออฟไลน์':'Offline'}[status];
-  const variant=status==='online'?'default':status==='offline'?'outline':'secondary';
-  return <Badge variant={variant} aria-label={`${th?'สถานะเกตเวย์':'Gateway status'}: ${label}`}>{label}</Badge>;
+  return <Badge variant="outline" className={gatewayStatusClassName(status)} aria-label={`${th?'สถานะเกตเวย์':'Gateway status'}: ${label}`}>{label}</Badge>;
 }

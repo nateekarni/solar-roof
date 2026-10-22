@@ -6,19 +6,22 @@ import {GatewayTelemetryRequiredNotice} from './gateway-telemetry-required';
 import {useQueryClient} from '@tanstack/react-query';
 import {AlertTriangle,Radio} from 'lucide-react';
 import {Alert,AlertAction,AlertDescription,AlertTitle} from '../../components/ui/alert';
+import {Accordion,AccordionContent,AccordionItem,AccordionTrigger} from '../../components/ui/accordion';
 import {Badge} from '../../components/ui/badge';
 import {Button} from '../../components/ui/button';
 import {Card,CardContent,CardDescription,CardHeader,CardTitle} from '../../components/ui/card';
-import {Dialog,DialogContent,DialogDescription,DialogFooter,DialogHeader,DialogTitle} from '../../components/ui/dialog';
+import {Dialog,DialogBody,DialogContent,DialogDescription,DialogFooter,DialogHeader,DialogTitle} from '../../components/ui/dialog';
 import {Skeleton} from '../../components/ui/skeleton';
 import {Spinner} from '../../components/ui/spinner';
 import {Tabs,TabsContent,TabsList,TabsTrigger} from '../../components/ui/tabs';
+import {Table,TableBody,TableCell,TableHead,TableHeader,TableRow} from '../../components/ui/table';
 import {apiClient} from '../../lib/api-client';
+import {focusErrorElement} from '../../lib/form-feedback';
 import {useLocale} from '../../providers/locale-provider';
 import {GatewayDeviceConfiguration} from './gateway-device-configuration';
 import {GatewayDiscoveryReview,type GatewayPairingSiteOption} from './gateway-discovery-review';
 import {
-  gatewayConfirmationRequest,gatewayOnboardingDraftFromDetail,isStaleDiscoveryConflict,
+  applySuggestedGatewayPresets,gatewayConfirmationRequest,gatewayOnboardingDraftFromDetail,gatewayOnboardingIssue,isStaleDiscoveryConflict,
   validateGatewayOnboardingDraft,type GatewayDiscoveryDetail,type GatewayOnboardingDraft,
 } from './gateway-onboarding-draft';
 import {confirmGatewayWithoutCaching,correctInitialGatewayConfig,isGatewayTelemetryRequired,useDiscoveredGateway,useGatewaySyncState} from './gateway-onboarding-api';
@@ -27,29 +30,27 @@ import type {PayloadRevision} from './payload-contracts';
 import type {LegacyPreset} from './preset-picker';
 
 export const GATEWAY_PAIRING_STEPS=[
-  {id:'review',th:'ตรวจสอบเกตเวย์',en:'Review gateway'},
-  {id:'site',th:'เลือกไซต์งาน',en:'Select site'},
+  {id:'review',th:'ตรวจสอบและเลือกไซต์',en:'Review & select site'},
   {id:'devices',th:'ตั้งค่าอุปกรณ์',en:'Configure devices'},
   {id:'confirm',th:'ยืนยันและซิงก์',en:'Confirm & sync'},
 ] as const;
 export type GatewayPairingStep=(typeof GATEWAY_PAIRING_STEPS)[number]['id'];
 
 export function gatewayPairingStepIssue(step:GatewayPairingStep,draft:GatewayOnboardingDraft,locale:string):string|null {
-  if(step==='review')return null;
   const th=locale==='th';
   if(!draft.selectedSiteId)return th?'กรุณาเลือกไซต์งาน':'Select a site.';
-  if(step==='site')return null;
+  if(step==='review')return null;
   return validateGatewayOnboardingDraft(draft,locale);
 }
 
-export function reloadGatewayPairingDraft(detail:GatewayDiscoveryDetail,sites:readonly GatewayPairingSiteOption[]){
-  return gatewayOnboardingDraftFromDetail(detail,sites);
+export function reloadGatewayPairingDraft(detail:GatewayDiscoveryDetail,sites:readonly GatewayPairingSiteOption[],presets:readonly PayloadRevision[]=[],legacyPresets:readonly LegacyPreset[]=[]){
+  return applySuggestedGatewayPresets(gatewayOnboardingDraftFromDetail(detail,sites),presets,legacyPresets);
 }
 
-export function reconcileGatewayPairingDraft(current:GatewayOnboardingDraft|null,detail:GatewayDiscoveryDetail,sites:readonly GatewayPairingSiteOption[],catalogReady:boolean):{draft:GatewayOnboardingDraft|null;stale:boolean}{
+export function reconcileGatewayPairingDraft(current:GatewayOnboardingDraft|null,detail:GatewayDiscoveryDetail,sites:readonly GatewayPairingSiteOption[],catalogReady:boolean,presets:readonly PayloadRevision[]=[],legacyPresets:readonly LegacyPreset[]=[]):{draft:GatewayOnboardingDraft|null;stale:boolean}{
   if(!catalogReady)return {draft:current,stale:false};
-  if(!current||current.discoveryId!==detail.id)return {draft:reloadGatewayPairingDraft(detail,sites),stale:false};
-  return {draft:current,stale:current.discoveryRevision!==detail.discoveryRevision};
+  if(!current||current.discoveryId!==detail.id)return {draft:reloadGatewayPairingDraft(detail,sites,presets,legacyPresets),stale:false};
+  return {draft:applySuggestedGatewayPresets(current,presets,legacyPresets),stale:current.discoveryRevision!==detail.discoveryRevision};
 }
 
 export function gatewayPairingSurface(confirmed:boolean,loading:boolean,detailError:boolean):'sync'|'loading'|'error'|'draft' {
@@ -62,12 +63,23 @@ export function gatewayPairingSurface(confirmed:boolean,loading:boolean,detailEr
 export function GatewayPairingSummary({draft,sites,locale}:{draft:GatewayOnboardingDraft;sites:readonly GatewayPairingSiteOption[];locale:string}){
   const th=locale==='th';
   const site=sites.find(option=>option.id===draft.selectedSiteId);
+  const defaultDeviceKey=draft.devices.find(device=>device.enabled)?.key??draft.devices[0]?.key;
   const mapping=(source:GatewayOnboardingDraft['devices'][number]['mappingSource'])=>source==='preset'?(th?'Preset':'Preset'):source==='gateway'?(th?'Mapping จากเกตเวย์':'Gateway mapping'):(th?'กำหนดเอง':'Manual configuration');
-  return <Card size="sm">
-    <CardHeader className="border-b py-4"><CardTitle>{th?'ตรวจสอบก่อนยืนยัน':'Review before confirmation'}</CardTitle><CardDescription>{th?'ระบบจะสร้างบัญชีถาวรและส่ง Config ที่อนุมัติให้เกตเวย์':'The system will issue a permanent credential and deliver this approved configuration.'}</CardDescription></CardHeader>
-    <CardContent className="flex flex-col gap-4 py-4">
-      <div className="flex flex-wrap gap-2"><Badge variant="outline">{draft.reported.gateway.gatewayId}</Badge><Badge variant="outline">{site?.name??(th?'ยังไม่เลือกไซต์':'No site selected')}</Badge><Badge variant="secondary">{th?`${draft.devices.filter(device=>device.enabled).length} อุปกรณ์ที่เปิดใช้`:`${draft.devices.filter(device=>device.enabled).length} enabled devices`}</Badge></div>
-      <div className="flex flex-col gap-3">{draft.devices.map(device=><Card key={device.key} size="sm"><CardHeader className="border-b py-3"><CardTitle className="flex flex-wrap items-center justify-between gap-2"><span>{device.externalDeviceId}</span><Badge variant={device.enabled?'secondary':'outline'}>{device.enabled?(th?'เปิดใช้งาน':'Enabled'):(th?'ปิดไว้':'Disabled')}</Badge></CardTitle><CardDescription>{mapping(device.mappingSource)} · {th?`${device.config.fields.length} ฟิลด์`:`${device.config.fields.length} ${device.config.fields.length===1?'field':'fields'}`}</CardDescription></CardHeader><CardContent className="flex flex-col gap-3 py-3">
+  return <div data-slot="gateway-confirmation-summary" className="flex flex-col gap-4">
+    <div className="flex flex-wrap gap-2"><Badge variant="outline">{draft.reported.gateway.gatewayId}</Badge><Badge variant="outline">{site?.name??(th?'ยังไม่เลือกไซต์':'No site selected')}</Badge><Badge variant="secondary">{th?`${draft.devices.filter(device=>device.enabled).length} อุปกรณ์ที่เปิดใช้`:`${draft.devices.filter(device=>device.enabled).length} enabled devices`}</Badge></div>
+    <Accordion type="single" collapsible {...(defaultDeviceKey?{defaultValue:defaultDeviceKey}:{})} className="gap-3">
+      {draft.devices.map(device=>{const connectionEntries=Object.entries(device.connection??{}).filter(([,value])=>value!==undefined&&value!==null&&value!=='');const hasDecoder=device.config.fields.some(field=>field.registerAddress!==undefined);return <Card key={device.key} data-slot="gateway-confirmation-device" size="sm">
+        <AccordionItem value={device.key} className="border-0">
+          <CardHeader className="!p-0">
+            <AccordionTrigger className="items-center px-4 py-3 hover:no-underline">
+              <div className="flex min-w-0 flex-1 flex-col gap-1 pr-3">
+                <CardTitle className="flex flex-wrap items-center gap-2"><span>{device.externalDeviceId}</span><Badge variant={device.enabled?'secondary':'outline'}>{device.enabled?(th?'เปิดใช้งาน':'Enabled'):(th?'ปิดไว้':'Disabled')}</Badge></CardTitle>
+                <CardDescription>{mapping(device.mappingSource)} · {th?`${device.config.fields.length} ฟิลด์`:`${device.config.fields.length} ${device.config.fields.length===1?'field':'fields'}`}</CardDescription>
+              </div>
+            </AccordionTrigger>
+          </CardHeader>
+          <AccordionContent className="border-t !pb-0">
+            <CardContent className="flex flex-col gap-3 !p-4">
         <dl className="grid gap-2 text-sm sm:grid-cols-2">
           <div><dt className="text-muted-foreground">{th?'ผู้ผลิต':'Manufacturer'}</dt><dd>{device.manufacturer||'—'}</dd></div>
           <div><dt className="text-muted-foreground">{th?'รุ่น':'Model'}</dt><dd>{device.model||'—'}</dd></div>
@@ -80,14 +92,17 @@ export function GatewayPairingSummary({draft,sites,locale}:{draft:GatewayOnboard
           <div><dt className="text-muted-foreground">{th?'โปรไฟล์':'Profile'}</dt><dd>{device.profileId??device.config.sourceProfile?.id??'—'}{(device.profileVersion??device.config.sourceProfile?.version)?` · ${device.profileVersion??device.config.sourceProfile?.version}`:''}</dd></div>
           {device.suggestedPreset&&<div><dt className="text-muted-foreground">{th?'คำแนะนำ (ยังไม่เลือก)':'Suggestion (not selected)'}</dt><dd>{device.suggestedPreset.kind} · {device.suggestedPreset.id}</dd></div>}
         </dl>
-        <div><p className="text-sm text-muted-foreground">{th?'การเชื่อมต่อ':'Connection'}</p><pre className="mt-1 overflow-x-auto rounded-md border bg-muted/40 p-2 text-xs">{JSON.stringify(device.connection,null,2)}</pre></div>
-        <div className="flex flex-col gap-2"><p className="text-sm text-muted-foreground">{th?'Mapping และตัวถอดรหัส':'Mappings and decoder'}</p>{device.config.fields.map((field,index)=>{const decoder=field as typeof field&{registerCount?:number;dataType?:string;byteOrder?:string;wordOrder?:string;scale?:number;offset?:number};return <Card key={`${field.tag}-${index}`} size="sm"><CardHeader className="py-3"><CardTitle>{field.displayName}</CardTitle><CardDescription>{field.tag}</CardDescription></CardHeader><CardContent className="grid gap-2 py-3 text-sm sm:grid-cols-2 lg:grid-cols-3"><span>{th?'แท็กต้นทาง':'Source tag'} {field.sourceTag??field.tag}</span><span>{th?'จำเป็น':'Required'} {field.required===undefined?'—':String(field.required)}</span><span>{th?'กลุ่ม':'Poll group'} {field.pollGroup}</span><span>{th?'หน่วยต้นทาง':'Source unit'} {field.sourceUnit||'—'}</span><span>{th?'หน่วยปลายทาง':'Target unit'} {field.targetUnit||'—'}</span><span>{th?'การแปลง':'Conversion'} {field.conversion}</span><span>{th?'บทบาท':'Role'} {field.role??'—'}</span><span>{th?'ที่อยู่':'Address'} {field.registerAddress??'—'}</span><span>{th?'จำนวน':'Count'} {decoder.registerCount??'—'}</span><span>{th?'ชนิด':'Type'} {decoder.dataType??'—'}</span><span>{th?'ลำดับไบต์':'Byte order'} {decoder.byteOrder??'—'}</span><span>{th?'ลำดับเวิร์ด':'Word order'} {decoder.wordOrder??'—'}</span><span>Scale {decoder.scale??'—'}</span><span>Offset {decoder.offset??'—'}</span></CardContent></Card>})}</div>
-      </CardContent></Card>)}</div>
-    </CardContent>
-  </Card>;
+        {connectionEntries.length>0&&<div data-slot="gateway-confirmation-connection-summary"><p className="mb-2 text-sm text-muted-foreground">{th?'การเชื่อมต่อ':'Connection'}</p><dl className="grid gap-2 rounded-lg border bg-muted/20 p-3 text-sm sm:grid-cols-3">{connectionEntries.map(([key,value])=><div key={key}><dt className="text-xs text-muted-foreground">{key}</dt><dd className="break-all">{typeof value==='object'?JSON.stringify(value):String(value)}</dd></div>)}</dl></div>}
+        <div className="flex flex-col gap-2"><p className="text-sm text-muted-foreground">{th?'Mapping ที่อนุมัติ':'Approved mappings'}</p><div className="overflow-x-auto rounded-lg border"><Table data-slot="gateway-confirmation-mapping-table"><TableHeader><TableRow><TableHead>{th?'ฟิลด์':'Field'}</TableHead><TableHead>{th?'กลุ่ม':'Group'}</TableHead><TableHead>{th?'หน่วยและการแปลง':'Units & conversion'}</TableHead><TableHead>{th?'บทบาท':'Role'}</TableHead>{hasDecoder&&<TableHead>{th?'รีจิสเตอร์':'Register'}</TableHead>}</TableRow></TableHeader><TableBody>{device.config.fields.map((field,index)=>{const decoder=field as typeof field&{registerCount?:number;dataType?:string;byteOrder?:string;wordOrder?:string;scale?:number;offset?:number};return <TableRow key={`${field.tag}-${index}`}><TableCell><span className="font-medium">{field.displayName}</span><span className="block text-xs text-muted-foreground">{field.sourceTag??field.tag}</span></TableCell><TableCell>{field.pollGroup}</TableCell><TableCell>{field.sourceUnit||'—'} → {field.targetUnit||'—'}<span className="block text-xs text-muted-foreground">{field.conversion}</span></TableCell><TableCell>{field.role&&field.role!=='none'?field.role:'—'}</TableCell>{hasDecoder&&<TableCell>{field.registerAddress?<><span>{field.registerAddress} · {decoder.dataType??'—'} × {decoder.registerCount??'—'}</span><span className="block text-xs text-muted-foreground">{decoder.byteOrder??'—'} · {decoder.wordOrder??'—'} · Scale {decoder.scale??'—'} · Offset {decoder.offset??'—'}</span></>:'—'}</TableCell>}</TableRow>})}</TableBody></Table></div></div>
+            </CardContent>
+          </AccordionContent>
+        </AccordionItem>
+      </Card>})}
+    </Accordion>
+  </div>;
 }
 
-interface ConfirmedPairing {gatewayId:string;syncState:ConfirmGatewayResponse['syncState']}
+interface ConfirmedPairing {gatewayId:string;authenticationMode:ConfirmGatewayResponse['authenticationMode'];syncState:ConfirmGatewayResponse['syncState']}
 interface ScopedGatewayCredential {gatewayId:string;value:OneTimeGatewayCredential}
 export function visibleGatewayPairingCredential(credential:ScopedGatewayCredential|null,gatewayId:string):OneTimeGatewayCredential|null {
   return credential?.gatewayId===gatewayId?credential.value:null;
@@ -134,6 +149,8 @@ function PairingBody({discovered,open,onOpenChange,onSuccess,inline=false}:{disc
   const [step,setStep]=React.useState<GatewayPairingStep>('review');
   const [maxStep,setMaxStep]=React.useState(0);
   const [error,setError]=React.useState('');
+  const [showDeviceErrors,setShowDeviceErrors]=React.useState(false);
+  const [validationAttempt,setValidationAttempt]=React.useState(0);
   const [stale,setStale]=React.useState(false);
   const [confirmed,setConfirmed]=React.useState<ConfirmedPairing|null>(null);
   const [credential,setCredential]=React.useState<ScopedGatewayCredential|null>(null);
@@ -164,19 +181,19 @@ function PairingBody({discovered,open,onOpenChange,onSuccess,inline=false}:{disc
   },[open,discovered.id,th]);
 
   React.useEffect(()=>{
-    if(!open){setDraft(null);setCredential(null);setConfirmed(null);setStale(false);setConfirming(false);setRotating(false);setReloading(false);return;}
-    setStep('review');setMaxStep(0);setCredential(null);setConfirmed(null);setStale(false);setReloading(false);
+    if(!open){setDraft(null);setCredential(null);setConfirmed(null);setStale(false);setConfirming(false);setRotating(false);setReloading(false);setShowDeviceErrors(false);setValidationAttempt(0);return;}
+    setStep('review');setMaxStep(0);setCredential(null);setConfirmed(null);setStale(false);setReloading(false);setShowDeviceErrors(false);setValidationAttempt(0);
   },[open,discovered.id]);
 
   React.useEffect(()=>{
     const detail=detailQuery.data;
     if(!open||!detail||detail.id!==discovered.id)return;
     setDraft(current=>{
-      const reconciled=reconcileGatewayPairingDraft(current,detail,sites,catalogReady);
+      const reconciled=reconcileGatewayPairingDraft(current,detail,sites,catalogReady,presets,legacyPresets);
       if(reconciled.stale)setStale(true);
       return reconciled.draft;
     });
-  },[open,discovered.id,detailQuery.data,catalogReady,sites]);
+  },[open,discovered.id,detailQuery.data,catalogReady,sites,presets,legacyPresets]);
 
   const currentIndex=GATEWAY_PAIRING_STEPS.findIndex(item=>item.id===step);
   const stepIssue=draft?gatewayPairingStepIssue(step,draft,locale):null;
@@ -189,9 +206,22 @@ function PairingBody({discovered,open,onOpenChange,onSuccess,inline=false}:{disc
   const busy=confirming||rotating;
   function changeOpen(nextOpen:boolean){if(!nextOpen&&!canDismissGatewayPairing(confirming,rotating))return;if(!nextOpen){operationGuard.close();reloadGuard.close();setCredential(null);setConfirmed(null);setConfirming(false);setRotating(false);}onOpenChange(nextOpen);}
   function next(){
-    if(!draft||stepIssue){setError(stepIssue??'');return;}
+    if(!draft)return;
+    if(stepIssue){
+      setError('');
+      if(step==='devices'){
+        setShowDeviceErrors(true);
+        setValidationAttempt(attempt=>attempt+1);
+        const issue=gatewayOnboardingIssue(draft,locale);
+        const targetId=issue?.fieldId??(issue?.deviceKey?`gateway-device-card-${issue.deviceKey}`:undefined);
+        if(targetId)requestAnimationFrame(()=>requestAnimationFrame(()=>{const target=document.getElementById(targetId);if(target)focusErrorElement(target);}));
+      }else if(step==='review'){
+        requestAnimationFrame(()=>{const target=document.querySelector<HTMLElement>('[aria-invalid="true"]');if(target)focusErrorElement(target);});
+      }
+      return;
+    }
     const nextIndex=Math.min(currentIndex+1,GATEWAY_PAIRING_STEPS.length-1);
-    setMaxStep(value=>Math.max(value,nextIndex));setStep(GATEWAY_PAIRING_STEPS[nextIndex]!.id);setError('');
+    setMaxStep(value=>Math.max(value,nextIndex));setStep(GATEWAY_PAIRING_STEPS[nextIndex]!.id);setError('');setShowDeviceErrors(false);
   }
   async function reload(){
     setError('');
@@ -199,7 +229,7 @@ function PairingBody({discovered,open,onOpenChange,onSuccess,inline=false}:{disc
     setReloading(true);
     try{
       const result=await detailQuery.refetch({cancelRefetch:true});
-      if(reloadGuard.canApply(operation,result)&&result.data){setDraft(reloadGatewayPairingDraft(result.data,sites));setStale(false);setStep('review');setMaxStep(0);}
+      if(reloadGuard.canApply(operation,result)&&result.data){setDraft(reloadGatewayPairingDraft(result.data,sites,presets,legacyPresets));setStale(false);setStep('review');setMaxStep(0);setShowDeviceErrors(false);}
     }finally{if(reloadGuard.isCurrent(operation))setReloading(false);}
   }
   async function confirm(){
@@ -211,7 +241,8 @@ function PairingBody({discovered,open,onOpenChange,onSuccess,inline=false}:{disc
       const request=gatewayConfirmationRequest(draft,detailQuery.data?.discoveryRevision??draft.discoveryRevision);
       const result=await confirmGatewayWithoutCaching(queryClient,draft.discoveryId,request,operation.signal);
       if(!operationGuard.isCurrent(operation))return;
-      setCredential({gatewayId:discovered.id,value:result.credential});setConfirmed({gatewayId:result.gatewayId,syncState:result.syncState});onSuccess();
+      setCredential(result.credential?{gatewayId:discovered.id,value:result.credential}:null);
+      setConfirmed({gatewayId:result.gatewayId,authenticationMode:result.authenticationMode,syncState:result.syncState});onSuccess();
     }catch(cause){
       if(!operationGuard.isCurrent(operation))return;
       if(isStaleDiscoveryConflict(cause)){setStale(true);setError('');}
@@ -230,27 +261,26 @@ function PairingBody({discovered,open,onOpenChange,onSuccess,inline=false}:{disc
   const loading=(detailQuery.isPending&&!detailQuery.data)||catalogLoading||!catalogReady;
   const surface=gatewayPairingSurface(Boolean(confirmed),loading,detailQuery.isError);
   const content=<>
-    <DialogHeader><DialogTitle><Radio/>{th?'เชื่อมต่อเกตเวย์กับไซต์งาน':'Pair gateway to site'}</DialogTitle><DialogDescription>{confirmed?(th?'ตั้งค่าข้อมูลเชื่อมต่อบนเครื่องและติดตามการซิงก์':'Configure the credential on the gateway and monitor synchronization.'):(th?'ตรวจสอบข้อมูล เลือกไซต์ และอนุมัติการตั้งค่าก่อนเริ่มรับข้อมูล':'Review reported facts, select a site, and approve configuration before data collection.')}</DialogDescription></DialogHeader>
-    <div data-slot="dialog-body" className="min-h-0 flex-1 overflow-y-auto pr-1">
-      {surface==='sync'&&syncState?<GatewaySyncStatus locale={locale} credential={visibleGatewayPairingCredential(credential,discovered.id)} syncState={syncState} syncError={syncQuery.isError?syncQuery.error:null} onRetry={()=>syncQuery.refetch()} retrying={syncQuery.isFetching} onRotate={rotate} rotating={rotating} onCorrect={request=>correctInitialGatewayConfig(queryClient,confirmed!.gatewayId,request)}/>
+    <DialogHeader><DialogTitle><Radio/>{th?'เชื่อมต่อเกตเวย์กับไซต์งาน':'Pair gateway to site'}</DialogTitle><DialogDescription>{confirmed?(confirmed.authenticationMode==='demo-anonymous'?(th?'เชื่อมต่อเรียบร้อยและเริ่มรับข้อมูลได้โดยไม่ต้องตั้งค่าบัญชีบน Gateway':'Connected and ready to receive data without configuring a gateway account.'):(th?'ตั้งค่าข้อมูลเชื่อมต่อบนเครื่องและติดตามการซิงก์':'Configure the credential on the gateway and monitor synchronization.')):(th?'ตรวจสอบข้อมูล เลือกไซต์ และอนุมัติการตั้งค่าก่อนเริ่มรับข้อมูล':'Review reported facts, select a site, and approve configuration before data collection.')}</DialogDescription></DialogHeader>
+    <DialogBody>
+      {surface==='sync'&&syncState?<GatewaySyncStatus locale={locale} credential={visibleGatewayPairingCredential(credential,discovered.id)} authenticationMode={confirmed!.authenticationMode} syncState={syncState} syncError={syncQuery.isError?syncQuery.error:null} onRetry={()=>syncQuery.refetch()} retrying={syncQuery.isFetching} onRotate={rotate} rotating={rotating} onCorrect={request=>correctInitialGatewayConfig(queryClient,confirmed!.gatewayId,request)}/>
       :surface==='loading'?<div className="flex flex-col gap-3" aria-label={th?'กำลังโหลดขั้นตอนเชื่อมต่อ':'Loading pairing workflow'}><Skeleton className="h-10 w-full"/><Skeleton className="h-48 w-full"/></div>
       :surface==='error'&&isGatewayTelemetryRequired(detailQuery.error)?<div className="space-y-3"><GatewayTelemetryRequiredNotice gateway={discovered} locale={locale}/><Button type="button" size="sm" variant="outline" onClick={()=>void detailQuery.refetch()}>{th?'ตรวจสอบอีกครั้ง':'Check again'}</Button></div>
       :surface==='error'?<Alert variant="destructive"><AlertTitle>{th?'โหลดข้อมูลเกตเวย์ไม่สำเร็จ':'Could not load gateway details'}</AlertTitle><AlertDescription>{detailQuery.error instanceof Error?detailQuery.error.message:(th?'โปรดลองอีกครั้ง':'Try again.')}</AlertDescription><AlertAction><Button type="button" size="sm" variant="outline" onClick={()=>void detailQuery.refetch()}>{th?'ลองอีกครั้ง':'Retry'}</Button></AlertAction></Alert>
       :draft?<div className="flex flex-col gap-4">
         {identityConflictIssue&&<Alert variant="destructive"><AlertTriangle/><AlertTitle>{th?'รหัส Gateway ซ้ำกับเครื่องที่เชื่อมต่อแล้ว':'Gateway ID conflicts with a connected device'}</AlertTitle><AlertDescription>{identityConflictIssue}</AlertDescription></Alert>}
         <Tabs value={step} onValueChange={value=>{const index=GATEWAY_PAIRING_STEPS.findIndex(item=>item.id===value);if(index>=0&&index<=maxStep)setStep(value as GatewayPairingStep);}}>
-          <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-4">{GATEWAY_PAIRING_STEPS.map((item,index)=><TabsTrigger key={item.id} value={item.id} disabled={index>maxStep} aria-label={`${index+1}. ${th?item.th:item.en}`}><span>{index+1}</span><span className="hidden sm:inline">{th?item.th:item.en}</span></TabsTrigger>)}</TabsList>
-          <TabsContent value="review" className="pt-4"><GatewayDiscoveryReview draft={draft} sites={sites} onSiteChange={siteId=>setDraft({...draft,selectedSiteId:siteId})} locale={locale} showSiteSelector={false}/></TabsContent>
-          <TabsContent value="site" className="pt-4"><GatewayDiscoveryReview draft={draft} sites={sites} onSiteChange={siteId=>setDraft({...draft,selectedSiteId:siteId})} locale={locale}/></TabsContent>
-          <TabsContent value="devices" className="pt-4"><GatewayDeviceConfiguration draft={draft} presets={presets} legacyPresets={legacyPresets} onChange={setDraft} locale={locale}/></TabsContent>
+          <TabsList className="grid h-auto w-full grid-cols-3 gap-1">{GATEWAY_PAIRING_STEPS.map((item,index)=><TabsTrigger key={item.id} value={item.id} disabled={index>maxStep} aria-label={th?item.th:item.en}><span className="whitespace-normal text-center">{th?item.th:item.en}</span></TabsTrigger>)}</TabsList>
+          <TabsContent value="review" className="pt-4"><GatewayDiscoveryReview draft={draft} sites={sites} onSiteChange={siteId=>setDraft({...draft,selectedSiteId:siteId})} locale={locale}/></TabsContent>
+          <TabsContent value="devices" className="pt-4"><GatewayDeviceConfiguration draft={draft} presets={presets} legacyPresets={legacyPresets} onChange={setDraft} locale={locale} showErrors={showDeviceErrors} validationAttempt={validationAttempt}/></TabsContent>
           <TabsContent value="confirm" className="pt-4"><div className="flex flex-col gap-3"><GatewayPairingSummary draft={draft} sites={sites} locale={locale}/>{confirmationIssue&&<Alert variant="destructive"><AlertTriangle/><AlertTitle>{th?'ยังยืนยันไม่ได้':'Cannot confirm yet'}</AlertTitle><AlertDescription>{confirmationIssue}</AlertDescription></Alert>}</div></TabsContent>
         </Tabs>
         {stale&&<Alert variant="destructive"><AlertTriangle/><AlertTitle>{th?'ข้อมูลจากเกตเวย์เปลี่ยนแล้ว':'Gateway snapshot changed'}</AlertTitle><AlertDescription>{th?'ปิดการยืนยันไว้เพื่อไม่ให้เขียนทับข้อมูลใหม่ โหลด Snapshot ล่าสุดทั้งหมดก่อนดำเนินการต่อ':'Confirmation is disabled to protect the newer report. Reload the complete latest snapshot before continuing.'}</AlertDescription><AlertAction><Button type="button" size="sm" variant="outline" disabled={reloading} onClick={()=>void reload()}>{reloading&&<Spinner data-icon="inline-start"/>}{th?'โหลดข้อมูลล่าสุด':'Reload latest snapshot'}</Button></AlertAction></Alert>}
       </div>:<Alert><AlertTitle>{th?'ยังไม่มี Snapshot':'Snapshot unavailable'}</AlertTitle><AlertDescription>{th?'รอ telemetry ล่าสุดจากเกตเวย์':'Waiting for the latest gateway telemetry.'}</AlertDescription></Alert>}
       {error&&<Alert variant="destructive" className="mt-4"><AlertTitle>{th?'ดำเนินการไม่สำเร็จ':'Action failed'}</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>}
-      {busy&&<Alert className="mt-4"><Spinner/><AlertTitle>{th?'กำลังออกข้อมูลเชื่อมต่อ':'Issuing credential'}</AlertTitle><AlertDescription>{th?'โปรดรอจนเสร็จ หน้าต่างนี้จะปิดไม่ได้ระหว่างดำเนินการ':'Please wait. This dialog cannot be dismissed while the credential request is in flight.'}</AlertDescription></Alert>}
-    </div>
-    <DialogFooter><Button type="button" variant="outline" disabled={busy} onClick={()=>changeOpen(false)}>{confirmed?(th?'ปิด':'Close'):(th?'ยกเลิก':'Cancel')}</Button>{!confirmed&&draft&&<div className="flex gap-2">{currentIndex>0&&<Button type="button" variant="outline" disabled={busy} onClick={()=>setStep(GATEWAY_PAIRING_STEPS[currentIndex-1]!.id)}>{th?'ย้อนกลับ':'Back'}</Button>}{step!=='confirm'?<Button type="button" disabled={Boolean(stepIssue)||busy} onClick={next}>{th?'ถัดไป':'Next'}</Button>:<Button type="button" disabled={Boolean(confirmationIssue)||stale||confirming} onClick={()=>void confirm()}>{confirming&&<Spinner data-icon="inline-start"/>}{th?'ยืนยันและเริ่มซิงก์':'Confirm and start sync'}</Button>}</div>}</DialogFooter>
+      {busy&&<Alert className="mt-4"><Spinner/><AlertTitle>{th?'กำลังเชื่อมต่อเกตเวย์':'Connecting gateway'}</AlertTitle><AlertDescription>{th?'โปรดรอจนเสร็จ หน้าต่างนี้จะปิดไม่ได้ระหว่างดำเนินการ':'Please wait. This dialog cannot be dismissed while the request is in flight.'}</AlertDescription></Alert>}
+    </DialogBody>
+    <DialogFooter><Button type="button" variant="outline" disabled={busy} onClick={()=>changeOpen(false)}>{confirmed?(th?'ปิด':'Close'):(th?'ยกเลิก':'Cancel')}</Button>{!confirmed&&draft&&<div className="flex gap-2">{currentIndex>0&&<Button type="button" variant="outline" disabled={busy} onClick={()=>setStep(GATEWAY_PAIRING_STEPS[currentIndex-1]!.id)}>{th?'ย้อนกลับ':'Back'}</Button>}{step!=='confirm'?<Button type="button" disabled={busy} aria-disabled={Boolean(stepIssue)||undefined} className={stepIssue?'opacity-50':undefined} onClick={next}>{th?'ถัดไป':'Next'}</Button>:<Button type="button" disabled={Boolean(confirmationIssue)||stale||confirming} onClick={()=>void confirm()}>{confirming&&<Spinner data-icon="inline-start"/>}{th?'ยืนยันและเริ่มซิงก์':'Confirm and start sync'}</Button>}</div>}</DialogFooter>
   </>;
 
   if(inline)return <div>{content}</div>;

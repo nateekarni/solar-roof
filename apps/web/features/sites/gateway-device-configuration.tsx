@@ -1,24 +1,23 @@
 'use client';
 
 import * as React from 'react';
-import type {GatewayRegisterMapping} from '@solar/api-contracts';
-import {Alert,AlertDescription,AlertTitle} from '../../components/ui/alert';
+import {Accordion,AccordionContent,AccordionItem,AccordionTrigger} from '../../components/ui/accordion';
 import {Badge} from '../../components/ui/badge';
 import {Card,CardContent,CardDescription,CardHeader,CardTitle} from '../../components/ui/card';
 import {Field,FieldDescription,FieldError,FieldGroup,FieldLabel} from '../../components/ui/field';
 import {Input} from '../../components/ui/input';
+import {Select,SelectContent,SelectItem,SelectTrigger,SelectValue} from '../../components/ui/select';
 import {Switch} from '../../components/ui/switch';
-import {Textarea} from '../../components/ui/textarea';
 import {DeviceProfileEditor} from './device-profile-editor';
 import type {PayloadRevision} from './payload-contracts';
 import {PresetPicker,type LegacyPreset} from './preset-picker';
 import type {DeviceDraft} from './site-form-values';
 import {
-  selectGatewayDevicePreset,selectGatewayRegisterPreset,validateGatewayOnboardingDraft,
+  gatewayOnboardingIssue,selectGatewayDevicePreset,selectGatewayRegisterPreset,validateGatewayOnboardingDraft,
+  type GatewayOnboardingIssue,
   type GatewayOnboardingDeviceDraft,
   type GatewayOnboardingDraft,
 } from './gateway-onboarding-draft';
-import {RegisterDecoderFields,applyRegisterDecoderCommit,commitRegisterDecoderDraft,createRegisterDecoderDraft,type RegisterDecoderDraft} from './register-decoder-editor';
 
 export type GatewayDeviceMatchState='disabled'|'matched_preset'|'matched_by_model'|'manual'|'gateway'|'no_mapping'|'invalid_configuration';
 
@@ -45,8 +44,6 @@ export function clearGatewayPresetError(errors:Readonly<Record<string,string>>,d
   const next={...errors};delete next[deviceKey];return next;
 }
 
-type EditableGatewayMapping=GatewayRegisterMapping&GatewayOnboardingDeviceDraft['config']['fields'][number];
-
 export function parseGatewayConnectionDraft(value:string,locale:string):{connection:GatewayOnboardingDeviceDraft['connection'];error:string}{
   const th=locale==='th';
   try{
@@ -54,12 +51,6 @@ export function parseGatewayConnectionDraft(value:string,locale:string):{connect
     if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))throw new Error(th?'Connection ต้องเป็น JSON object':'Connection must be a JSON object.');
     return {connection:parsed as GatewayOnboardingDeviceDraft['connection'],error:''};
   }catch(cause){return {connection:{},error:cause instanceof Error?cause.message:(th?'Connection JSON ไม่ถูกต้อง':'Invalid connection JSON.')};}
-}
-
-function mappingLabel(source:GatewayOnboardingDeviceDraft['mappingSource'],th:boolean){
-  if(source==='preset')return th?'ตรงกับ Preset':'Matched preset';
-  if(source==='gateway')return th?'Mapping จากเกตเวย์':'Gateway mapping';
-  return th?'กำหนดเอง':'Manual configuration';
 }
 
 function matchLabel(state:GatewayDeviceMatchState,th:boolean){
@@ -70,36 +61,21 @@ function matchLabel(state:GatewayDeviceMatchState,th:boolean){
   return labels[state][th?0:1];
 }
 
-function ConnectionEditor({device,onChange,locale}:{device:GatewayOnboardingDeviceDraft;onChange:(device:GatewayOnboardingDeviceDraft)=>void;locale:string}){
+const DEVICE_TYPES=['solar-logger','energy-meter','environmental-sensor'] as const;
+
+export function gatewayDeviceTypeLabel(value:string,locale:string):string {
   const th=locale==='th';
-  const [raw,setRaw]=React.useState(()=>JSON.stringify(device.connection,null,2));
-  const [error,setError]=React.useState('');
-  const locallyPublished=React.useRef(device.connection);
-  React.useEffect(()=>{
-    if(device.connection!==locallyPublished.current){locallyPublished.current=device.connection;setRaw(JSON.stringify(device.connection,null,2));setError('');}
-  },[device.key,device.connection]);
-  function updateConnection(value:string){
-    setRaw(value);
-    const parsed=parseGatewayConnectionDraft(value,locale);
-    setError(parsed.error);
-    locallyPublished.current=parsed.connection;
-    onChange({...device,connection:parsed.connection,dirty:true});
-  }
-  return <FieldGroup className="grid gap-3 sm:grid-cols-2">
-    <Field>
-      <FieldLabel htmlFor={`gateway-device-protocol-${device.key}`}>{th?'โปรโตคอล':'Protocol'}</FieldLabel>
-      <Input id={`gateway-device-protocol-${device.key}`} value={device.protocol} onChange={event=>onChange({...device,protocol:event.target.value,dirty:true})}/>
-    </Field>
-    <Field data-invalid={Boolean(error)||undefined}>
-      <FieldLabel htmlFor={`gateway-device-connection-${device.key}`}>{th?'การเชื่อมต่อ (JSON)':'Connection (JSON)'}</FieldLabel>
-      <Textarea id={`gateway-device-connection-${device.key}`} className="min-h-24 font-mono text-xs" value={raw} aria-invalid={Boolean(error)||undefined} onChange={event=>updateConnection(event.target.value)}/>
-      <FieldDescription>{th?'ใส่ค่าจริงจากอุปกรณ์ ระบบจะไม่สร้างค่าให้เอง':'Use the device values; the system does not fabricate connection settings.'}</FieldDescription>
-      {error&&<FieldError>{error}</FieldError>}
-    </Field>
-  </FieldGroup>;
+  const labels:Record<string,[string,string]>={
+    'solar-logger':['เครื่องบันทึกข้อมูลโซลาร์','Solar logger'],
+    'energy-meter':['มิเตอร์พลังงาน','Energy meter'],
+    'environmental-sensor':['เซนเซอร์สภาพแวดล้อม','Environmental sensor'],
+    'environmental_sensor':['เซนเซอร์สภาพแวดล้อม','Environmental sensor'],
+  };
+  const label=labels[value]?.[th?0:1];
+  return label?`${label} (${value})`:value;
 }
 
-function DeviceMetadataEditor({device,onChange,locale}:{device:GatewayOnboardingDeviceDraft;onChange:(device:GatewayOnboardingDeviceDraft)=>void;locale:string}){
+function DeviceMetadataEditor({device,onChange,locale,issue,showErrors}:{device:GatewayOnboardingDeviceDraft;onChange:(device:GatewayOnboardingDeviceDraft)=>void;locale:string;issue:GatewayOnboardingIssue|null;showErrors:boolean}){
   const th=locale==='th';
   const fields=[
     {key:'manufacturer',label:th?'ผู้ผลิต':'Manufacturer',value:device.manufacturer??''},
@@ -108,65 +84,39 @@ function DeviceMetadataEditor({device,onChange,locale}:{device:GatewayOnboarding
     {key:'serialNumber',label:th?'หมายเลขซีเรียล':'Serial number',value:device.serialNumber},
   ] as const;
   return <FieldGroup className="grid gap-3 sm:grid-cols-2">
-    {fields.map(field=><Field key={field.key}><FieldLabel htmlFor={`gateway-device-${field.key}-${device.key}`}>{field.label}</FieldLabel><Input id={`gateway-device-${field.key}-${device.key}`} value={field.value} onChange={event=>onChange({...device,[field.key]:event.target.value,dirty:true})}/></Field>)}
-    <Field><FieldLabel htmlFor={`gateway-device-type-${device.key}`}>{th?'ประเภทอุปกรณ์':'Device type'}</FieldLabel><Input id={`gateway-device-type-${device.key}`} value={device.config.deviceType} onChange={event=>onChange(applyGatewayDeviceEditorChange(device,{...device,config:{...device.config,deviceType:event.target.value},dirty:true,profileDirty:true}))}/></Field>
+    {fields.map(field=>{const id=`gateway-device-${field.key}-${device.key}`,invalid=showErrors&&issue?.fieldId===id;return <Field key={field.key} data-invalid={invalid||undefined}><FieldLabel htmlFor={id}>{field.label}</FieldLabel><Input id={id} aria-invalid={invalid||undefined} value={field.value} onChange={event=>onChange({...device,[field.key]:event.target.value,dirty:true})}/>{invalid&&<FieldError>{issue.message}</FieldError>}</Field>})}
+    {(()=>{const id=`gateway-device-type-${device.key}`,invalid=showErrors&&issue?.fieldId===id,current=device.config.deviceType;return <Field className="sm:col-span-2" data-invalid={invalid||undefined}>
+      <FieldLabel htmlFor={id}>{th?'ประเภทอุปกรณ์':'Device type'}</FieldLabel>
+      <Select value={current} onValueChange={deviceType=>onChange(applyGatewayDeviceEditorChange(device,{...device,config:{...device.config,deviceType},dirty:true,profileDirty:true}))}>
+        <SelectTrigger id={id} aria-invalid={invalid||undefined}><SelectValue placeholder={th?'เลือกประเภทอุปกรณ์':'Select device type'}/></SelectTrigger>
+        <SelectContent>
+          {DEVICE_TYPES.map(value=><SelectItem key={value} value={value}>{gatewayDeviceTypeLabel(value,locale)}</SelectItem>)}
+          {current&&!DEVICE_TYPES.includes(current as typeof DEVICE_TYPES[number])&&<SelectItem value={current}>{gatewayDeviceTypeLabel(current,locale)}</SelectItem>}
+        </SelectContent>
+      </Select>
+      <FieldDescription>{th?'ระบบใช้ประเภทนี้เพื่อตีความข้อมูล เลือกแดชบอร์ด และคำนวณรายการที่เกี่ยวข้อง':'Used to interpret telemetry, choose dashboard behavior, and calculate related records.'}</FieldDescription>
+      {invalid&&<FieldError>{issue.message}</FieldError>}
+    </Field>})()}
   </FieldGroup>;
 }
 
-function MappingDecoderEditor({device,index,mapping,onChange,locale}:{device:GatewayOnboardingDeviceDraft;index:number;mapping:EditableGatewayMapping;onChange:(device:GatewayOnboardingDeviceDraft)=>void;locale:string}){
-  const [draft,setDraft]=React.useState<RegisterDecoderDraft>(()=>createRegisterDecoderDraft(mapping));
-  const [error,setError]=React.useState('');
-  React.useEffect(()=>{setDraft(createRegisterDecoderDraft(mapping));setError('');},[device.key,mapping]);
-  const issueKey=`${mapping.tag}:${index}`;
-  function withIssues(source:GatewayOnboardingDeviceDraft,issues:Record<string,string>):GatewayOnboardingDeviceDraft{
-    const {decoderDraftIssues:ignored,...clean}=source;void ignored;
-    return Object.keys(issues).length?{...clean,decoderDraftIssues:issues}:clean;
-  }
-  function publishIssue(issue:string){
-    const issues={...(device.decoderDraftIssues??{})};
-    if(issue)issues[issueKey]=issue;else delete issues[issueKey];
-    onChange(withIssues(device,issues));
-  }
-  function change(next:RegisterDecoderDraft){
-    setDraft(next);
-    const result=commitRegisterDecoderDraft(next);
-    const issue=result.ok?'':result.issue;
-    setError(issue);publishIssue(issue);
-  }
-  function commit(next:RegisterDecoderDraft){
-    const result=commitRegisterDecoderDraft(next);
-    if(!result.ok){setError(result.issue);publishIssue(result.issue);return;}
-    setError('');
-    const {unit:ignoredUnit,pollingIntervalSeconds:ignoredPolling,...decoder}=result.value;
-    void ignoredUnit;void ignoredPolling;
-    const fields=device.config.fields.map((current,currentIndex)=>currentIndex===index?applyRegisterDecoderCommit(current,decoder):current);
-    const nextDevice=applyGatewayDeviceEditorChange(device,{...device,config:{...device.config,fields}});
-    const issues={...(nextDevice.decoderDraftIssues??{})};delete issues[issueKey];
-    onChange(withIssues(nextDevice,issues));
-  }
-  return <RegisterDecoderFields idPrefix={`gateway-register-${device.key}-${index}`} draft={draft} onChange={change} onCommit={commit} locale={locale} error={error}/>;
-}
-
-function ModbusRegisterEditor({device,onChange,locale}:{device:GatewayOnboardingDeviceDraft;onChange:(device:GatewayOnboardingDeviceDraft)=>void;locale:string}){
-  const th=locale==='th';
-  if(!/^modbus/i.test(device.protocol))return null;
-  return <Card size="sm"><CardHeader className="border-b py-4"><CardTitle>{th?'ตัวถอดรหัส Modbus':'Modbus register decoder'}</CardTitle><CardDescription>{th?'ระบุค่าจริงของรีจิสเตอร์ ระบบจะไม่ใส่ค่าเริ่มต้นแทน':'Enter the actual decoder values; no physical defaults are invented.'}</CardDescription></CardHeader><CardContent className="flex flex-col gap-4 py-4">
-    {device.config.fields.map((source,index)=>{const mapping=source as EditableGatewayMapping;return <Card key={`${mapping.tag}-${index}`} size="sm"><CardHeader className="py-3"><CardTitle>{mapping.displayName}</CardTitle><CardDescription>{mapping.tag}</CardDescription></CardHeader><CardContent className="py-3">
-      <MappingDecoderEditor device={device} index={index} mapping={mapping} onChange={onChange} locale={locale}/>
-    </CardContent></Card>})}
-  </CardContent></Card>;
-}
-
-export function GatewayDeviceConfiguration({draft,presets,legacyPresets=[],onChange,locale}:{
+export function GatewayDeviceConfiguration({draft,presets,legacyPresets=[],onChange,locale,showErrors=false,validationAttempt=0}:{
   draft:GatewayOnboardingDraft;
   presets:PayloadRevision[];
   legacyPresets?:LegacyPreset[];
   onChange:(draft:GatewayOnboardingDraft)=>void;
   locale:string;
+  showErrors?:boolean;
+  validationAttempt?:number;
 }){
   const th=locale==='th';
   const [presetErrors,setPresetErrors]=React.useState<Record<string,string>>({});
-  const validationIssue=validateGatewayOnboardingDraft(draft,locale);
+  const issue=gatewayOnboardingIssue(draft,locale);
+  const [openDevice,setOpenDevice]=React.useState(()=>showErrors&&issue?.deviceKey?issue.deviceKey:(draft.devices[0]?.key??''));
+  const validationDeviceKey=issue?.deviceKey;
+  React.useEffect(()=>{
+    if(validationAttempt>0&&validationDeviceKey)setOpenDevice(validationDeviceKey);
+  },[validationAttempt]);
   const clearPresetError=(deviceKey:string)=>setPresetErrors(current=>clearGatewayPresetError(current,deviceKey));
   function update(index:number,device:GatewayOnboardingDeviceDraft){
     onChange({...draft,devices:draft.devices.map((current,currentIndex)=>currentIndex===index?device:current)});
@@ -176,38 +126,36 @@ export function GatewayDeviceConfiguration({draft,presets,legacyPresets=[],onCha
     const {decoderDraftIssues:ignored,...clean}=device;void ignored;
     return Object.keys(issues).length?{...clean,decoderDraftIssues:issues}:clean;
   }
-  return <div className="flex flex-col gap-4">
-    {validationIssue&&<Alert variant="destructive"><AlertTitle>{th?'ต้องตรวจสอบการตั้งค่าอุปกรณ์':'Device configuration needs attention'}</AlertTitle><AlertDescription>{validationIssue}</AlertDescription></Alert>}
-    {draft.devices.map((device,index)=>{const state=gatewayDeviceMatchState(draft,device,locale);return <Card key={device.key} size="sm">
-      <CardHeader className="border-b py-4">
-        <CardTitle className="flex flex-wrap items-center justify-between gap-2">
-          <span>{device.reported.deviceId} · {device.reported.model??(th?'ไม่ระบุรุ่น':'Model not reported')}</span>
-          <span className="flex flex-wrap gap-1"><Badge variant={state==='invalid_configuration'?'destructive':device.enabled?'secondary':'outline'}>{matchLabel(state,th)}</Badge>{state==='disabled'&&<Badge variant="outline">{mappingLabel(device.mappingSource,th)}</Badge>}</span>
-        </CardTitle>
-        <CardDescription>{device.reported.manufacturer??'—'} · {device.reported.firmwareVersion??(th?'ไม่ระบุเฟิร์มแวร์':'Firmware not reported')}</CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4 py-4">
-        <Field orientation="horizontal" data-disabled={!device.enabled||undefined}>
-          <FieldLabel htmlFor={`gateway-device-enabled-${device.key}`}>
-            <Field>
-              <div className="flex items-center justify-between gap-3">
-                <span>{th?'เปิดใช้งานอุปกรณ์':'Enable device'}</span>
-                <Switch id={`gateway-device-enabled-${device.key}`} checked={device.enabled} onCheckedChange={enabled=>update(index,{...device,enabled})}/>
-              </div>
-              <FieldDescription>{th?'อุปกรณ์ที่เปิดใช้งานต้องมีข้อมูลและ Mapping ครบ':'Enabled devices require complete details and mappings.'}</FieldDescription>
-            </Field>
-          </FieldLabel>
-        </Field>
-
-        {!device.enabled?<Alert>
-          <AlertTitle>{th?'ยังไม่รวมอุปกรณ์นี้ในการตั้งค่า':'Device excluded from this configuration'}</AlertTitle>
-          <AlertDescription>{th?'อุปกรณ์ที่ปิดไว้สามารถกลับมากรอกข้อมูลให้ครบภายหลังได้':'A disabled device can be completed later.'}</AlertDescription>
-        </Alert>:<>
-          {device.suggestedPreset&&<Alert>
-            <AlertTitle>{th?'พบ Preset ที่อาจตรงกัน':'Preset suggestion available'}</AlertTitle>
-            <AlertDescription>{th?`ชนิด ${device.suggestedPreset.kind} ต้องเลือกยืนยันเองก่อน ระบบจะไม่คัดลอก Mapping อัตโนมัติ`:`Suggested ${device.suggestedPreset.kind} preset. Select it explicitly; mappings are never copied automatically.`}</AlertDescription>
-          </Alert>}
-          {presetErrors[device.key]&&<Alert variant="destructive"><AlertTitle>{th?'ใช้ Preset นี้ไม่ได้':'Preset cannot be applied'}</AlertTitle><AlertDescription>{presetErrors[device.key]}</AlertDescription></Alert>}
+  return <Accordion type="single" collapsible value={openDevice} onValueChange={setOpenDevice} className="flex flex-col gap-3">
+    {draft.devices.map((device,index)=>{const state=gatewayDeviceMatchState(draft,device,locale);const deviceIssue=showErrors&&issue?.deviceKey===device.key?issue:null;return <Card key={device.key} id={`gateway-device-card-${device.key}`} size="sm" data-invalid={Boolean(deviceIssue)||undefined}>
+      <AccordionItem value={device.key} className="border-0">
+        <CardHeader className="!p-0">
+          <div data-slot="gateway-device-header" className="relative flex min-h-16 items-center [&>h3]:min-w-0 [&>h3]:flex-1">
+            <AccordionTrigger className="min-w-0 flex-1 items-center gap-3 rounded-none px-5 py-4 pr-5 text-left hover:no-underline [&_[data-slot=accordion-trigger-icon]]:absolute [&_[data-slot=accordion-trigger-icon]]:right-5">
+              <span className="min-w-0 flex-1">
+                <CardTitle className="truncate">{device.reported.deviceId} · {device.reported.model??(th?'ไม่ระบุรุ่น':'Model not reported')}</CardTitle>
+                <CardDescription className="mt-0.5 truncate">{device.reported.manufacturer??'—'} · {device.reported.firmwareVersion??(th?'ไม่ระบุเฟิร์มแวร์':'Firmware not reported')}</CardDescription>
+              </span>
+              <Badge data-slot="gateway-device-status" className="ml-auto mr-20" variant={state==='invalid_configuration'?'destructive':device.enabled?'secondary':'outline'}>{matchLabel(state,th)}</Badge>
+            </AccordionTrigger>
+            <div data-slot="gateway-device-switch" className="absolute right-12 z-10 flex shrink-0 items-center" onClick={event=>event.stopPropagation()} onKeyDown={event=>event.stopPropagation()}>
+              <Switch
+                id={`gateway-device-enabled-${device.key}`}
+                aria-label={th?`เปิดใช้งานอุปกรณ์ ${device.reported.deviceId}`:`Enable device ${device.reported.deviceId}`}
+                checked={device.enabled}
+                onCheckedChange={enabled=>{
+                  update(index,{...device,enabled});
+                  if(!enabled&&openDevice===device.key)setOpenDevice('');
+                  if(enabled)setOpenDevice(device.key);
+                }}
+              />
+            </div>
+          </div>
+        </CardHeader>
+        <AccordionContent className="border-t !pb-0">
+          <CardContent className="flex flex-col gap-5 !p-5">
+          {!device.enabled?<FieldDescription>{th?'ยังไม่รวมอุปกรณ์นี้ในการตั้งค่า สามารถกลับมาเปิดและกรอกข้อมูลให้ครบภายหลังได้':'This device is excluded. A disabled device can be completed later.'}</FieldDescription>:<>
+          <div id={`gateway-device-preset-${device.key}`} tabIndex={-1}>
           <PresetPicker
             revisions={presets}
             value={device.presetId??''}
@@ -237,8 +185,10 @@ export function GatewayDeviceConfiguration({draft,presets,legacyPresets=[],onCha
               }
             }}
           />
-          <ConnectionEditor device={device} onChange={next=>update(index,next)} locale={locale}/>
-          <DeviceMetadataEditor device={device} onChange={next=>update(index,next)} locale={locale}/>
+          {presetErrors[device.key]&&<FieldError className="mt-2">{presetErrors[device.key]}</FieldError>}
+          </div>
+          <DeviceMetadataEditor device={device} onChange={next=>update(index,next)} locale={locale} issue={deviceIssue} showErrors={showErrors}/>
+          <div id={`gateway-device-mapping-${device.key}`} tabIndex={-1} aria-invalid={showErrors&&deviceIssue?.section==='mapping'||undefined}>
           <DeviceProfileEditor
             value={device}
             onChange={next=>update(index,applyGatewayDeviceEditorChange(device,next))}
@@ -247,12 +197,15 @@ export function GatewayDeviceConfiguration({draft,presets,legacyPresets=[],onCha
             identityLocked
             showMetadata={false}
             showPreset={false}
-            showErrors
+            showErrors={showErrors&&deviceIssue?.section==='mapping'}
             showAdvanced={false}
           />
-          <ModbusRegisterEditor device={device} onChange={next=>update(index,next)} locale={locale}/>
+          {showErrors&&deviceIssue?.section==='mapping'&&deviceIssue.mappingIndex===undefined&&<FieldError className="mt-2">{deviceIssue.message}</FieldError>}
+          </div>
         </>}
-      </CardContent>
+          </CardContent>
+        </AccordionContent>
+      </AccordionItem>
     </Card>})}
-  </div>;
+  </Accordion>;
 }

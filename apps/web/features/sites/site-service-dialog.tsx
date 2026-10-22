@@ -6,6 +6,7 @@ import { useLocale } from '../../providers/locale-provider';
 import { notify } from '../../components/feedback/notifications';
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogHeader,
   DialogTitle,
@@ -304,6 +305,8 @@ export function SiteServiceDialog({
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
+    const submitter=(e.nativeEvent as SubmitEvent).submitter as HTMLElement|null;
+    if(activeTab!=='billing'||submitter?.dataset.siteServiceSubmit!=='true')return;
     if (!isSiteValid()) {
       setShowSiteErrors(true);
       setActiveTab('site');
@@ -370,7 +373,7 @@ export function SiteServiceDialog({
 
   const formBody = (
     <form noValidate onSubmit={submit} className="flex min-h-0 flex-1 flex-col gap-5">
-      <div data-slot="dialog-body" className="min-h-0 flex-1 overflow-y-auto pr-1 space-y-5">
+      <DialogBody className="space-y-5">
         {error && (
           <p role="alert" className="text-sm font-medium text-destructive">
             {error}
@@ -622,7 +625,7 @@ export function SiteServiceDialog({
             </fieldset>
           </TabsContent>
         </Tabs>
-      </div>
+      </DialogBody>
 
       <DialogFooter className="flex flex-row justify-between sm:justify-between items-center gap-2">
         <div>
@@ -659,8 +662,10 @@ export function SiteServiceDialog({
         <div className="flex gap-2">
           {activeTab === 'site' ? (
             <Button
+              key="site-next"
               type="button"
-              onClick={() => {
+              onClick={(event) => {
+                event.preventDefault();
                 if (!isSiteValid()) {
                   setShowSiteErrors(true);
                   return;
@@ -675,8 +680,10 @@ export function SiteServiceDialog({
             </Button>
           ) : activeTab === 'customer' ? (
             <Button
+              key="customer-next"
               type="button"
-              onClick={() => {
+              onClick={(event) => {
+                event.preventDefault();
                 if (!isCustomerValid()) {
                   setShowCustomerErrors(true);
                   return;
@@ -690,7 +697,7 @@ export function SiteServiceDialog({
               {th ? 'ถัดไป' : 'Next'}
             </Button>
           ) : (
-            <Button type="submit" disabled={busy}>
+            <Button key="billing-submit" type="submit" data-site-service-submit="true" disabled={busy}>
               {busy ? (th ? 'กำลังบันทึก…' : 'Saving…') : th ? 'สร้างไซต์งาน' : 'Create site'}
             </Button>
           )}

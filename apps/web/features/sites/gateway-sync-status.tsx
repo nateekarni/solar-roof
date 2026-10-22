@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import type {CorrectInitialGatewayConfigRequest,GatewaySyncState} from '@solar/api-contracts';
+import type {CorrectInitialGatewayConfigRequest,GatewayAuthenticationMode,GatewaySyncState} from '@solar/api-contracts';
 import {Copy,KeyRound,RefreshCw} from 'lucide-react';
 import {Alert,AlertAction,AlertDescription,AlertTitle} from '../../components/ui/alert';
 import {
@@ -29,10 +29,11 @@ function syncMessage(state:GatewaySyncState,th:boolean){
   return {title:th?'กำลังส่งการตั้งค่า':'Delivering configuration',description:th?'เกตเวย์เชื่อมต่อแล้ว ระบบกำลังรอสถานะรับการตั้งค่า':'The gateway is connected; waiting for its configuration receipt status.',terminal:false};
 }
 
-export function GatewaySyncStatus({locale,credential,syncState,syncError=null,onRetry,retrying=false,onRotate,rotating,onCorrect}:{
+export function GatewaySyncStatus({locale,credential,syncState,authenticationMode='credential',syncError=null,onRetry,retrying=false,onRotate,rotating,onCorrect}:{
   locale:string;
   credential:OneTimeGatewayCredential|null;
   syncState:GatewaySyncState;
+  authenticationMode?:GatewayAuthenticationMode;
   syncError?:unknown;
   onRetry?:()=>void|Promise<unknown>;
   retrying?:boolean;
@@ -41,9 +42,15 @@ export function GatewaySyncStatus({locale,credential,syncState,syncError=null,on
   onCorrect?:(request:CorrectInitialGatewayConfigRequest)=>Promise<unknown>;
 }){
   const th=locale==='th';
+  const demoAnonymous=authenticationMode==='demo-anonymous';
   const message=syncMessage(syncState,th);
   const syncErrorMessage=syncError instanceof Error?syncError.message:syncError?(th?'ไม่สามารถยืนยันสถานะล่าสุดได้':'The latest state could not be verified.'):null;
   return <div className="flex flex-col gap-4">
+    {demoAnonymous&&<Alert>
+      <KeyRound/>
+      <AlertTitle>{th?'เชื่อมต่อแล้วโดยไม่ต้องตั้งค่าบัญชีบน Gateway':'Connected without gateway provisioning'}</AlertTitle>
+      <AlertDescription>{th?'ระบบอนุญาต Client ID นี้เฉพาะ Site, Gateway และ Device ที่จับคู่ไว้ โหมดนี้ใช้สำหรับสาธิตเท่านั้น':'This client ID is restricted to the paired site, gateway, and devices. This mode is for demonstrations only.'}</AlertDescription>
+    </Alert>}
     {credential&&<Card size="sm">
       <CardHeader className="border-b py-4">
         <CardTitle>{th?'ข้อมูลเชื่อมต่อ MQTT แสดงครั้งเดียว':'One-time MQTT credential'}</CardTitle>
@@ -79,12 +86,12 @@ export function GatewaySyncStatus({locale,credential,syncState,syncError=null,on
     </Card>
 
     {onCorrect&&<GatewayInitialConfigCorrection gatewayId={syncState.gatewayId} syncState={syncState} onCorrect={onCorrect} locale={locale}/>}
-    <AlertDialog>
+    {!demoAnonymous&&<AlertDialog>
       <AlertDialogTrigger asChild><Button type="button" variant="outline" disabled={rotating}><RefreshCw data-icon="inline-start"/>{th?'หมุนรหัสเชื่อมต่อ':'Rotate credential'}</Button></AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader><AlertDialogTitle>{th?'ยืนยันการหมุนรหัสเชื่อมต่อ':'Confirm credential rotation'}</AlertDialogTitle><AlertDialogDescription>{th?'รหัสเดิมจะใช้ไม่ได้ทันที ต้องนำรหัสใหม่ไปตั้งค่าที่เกตเวย์':'The previous password will stop working immediately. Configure the new password on the gateway.'}</AlertDialogDescription></AlertDialogHeader>
         <AlertDialogFooter><AlertDialogCancel disabled={rotating}>{th?'ยกเลิก':'Cancel'}</AlertDialogCancel><AlertDialogAction disabled={rotating} onClick={()=>void onRotate()}>{rotating&&<Spinner data-icon="inline-start"/>}{th?'ออกข้อมูลเชื่อมต่อใหม่':'Issue new credential'}</AlertDialogAction></AlertDialogFooter>
       </AlertDialogContent>
-    </AlertDialog>
+    </AlertDialog>}
   </div>;
 }

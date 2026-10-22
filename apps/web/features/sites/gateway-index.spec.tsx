@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';import test from 'node:test';import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';
 import {GatewayIndex,gatewayIndexPartitions,type GatewayRow} from './gateway-index';
-import {gatewayPrimaryStatus} from './gateway-operational-status';
+import {gatewayPrimaryStatus,gatewayStatusClassName} from './gateway-operational-status';
 import {GatewayDiscoveryError} from './gateway-workspace';
 test('gateway index exposes registered gateway and lifecycle without customer billing identity',()=>{
 const html=renderToStaticMarkup(<GatewayIndex rows={[{id:'gw',siteId:'site',siteName:'Roof A',siteCode:'S1',name:'Gateway A',externalGatewayId:'G1',status:'offline',lifecycleState:'active',configState:'applied',desiredVersion:3,publishedVersion:2,acknowledgedVersion:1,appliedVersion:1}]} locale="en" onSelect={()=>{}}/>);
@@ -62,6 +62,15 @@ test('primary status follows the operator lifecycle in a fixed order',()=>{
  assert.equal(gatewayPrimaryStatus({lifecycleState:'active',status:'invalid'}),'offline');
 });
 
+test('primary statuses use distinct semantic colours',()=>{
+ const classes=(['online','offline','unconnected','connecting'] as const).map(status=>gatewayStatusClassName(status));
+ assert.equal(new Set(classes).size,4);
+ assert.match(classes[0]!,/emerald/);
+ assert.match(classes[1]!,/red/);
+ assert.match(classes[2]!,/amber/);
+ assert.match(classes[3]!,/blue/);
+});
+
 test('discovery failures render a retryable system alert instead of looking like an empty result',()=>{
 let retried=false;
 const html=renderToStaticMarkup(<GatewayDiscoveryError locale="en" error={new Error('broker unavailable')} onRetry={()=>{retried=true;}}/>);
@@ -86,6 +95,7 @@ test('every persisted gateway is connected to a site while only discoveries are 
   ];
   const discovered=[
     {id:'duplicate',externalGatewayId:'GW-P',reportedSiteId:null,reportedDeviceId:null,status:'unassigned' as const,onboardingState:'ready' as const,assignedSiteId:null,assignedGatewayId:'pending',firstSeenAt:'2026-10-19T01:00:00Z',lastSeenAt:'2026-10-19T01:01:00Z',rawPayload:{}},
+    {id:'unassigned-duplicate',externalGatewayId:'GW-P',reportedSiteId:null,reportedDeviceId:null,status:'unassigned' as const,onboardingState:'ready' as const,assignedSiteId:null,assignedGatewayId:null,firstSeenAt:'2026-10-19T01:00:00Z',lastSeenAt:'2026-10-19T01:02:00Z',rawPayload:{}},
     {id:'serial-collision',externalGatewayId:'GW-P',gatewaySerial:'GW-SN-OTHER',reportedSiteId:null,reportedDeviceId:null,status:'unassigned' as const,onboardingState:'ready' as const,identityConflict:true,assignedSiteId:null,assignedGatewayId:null,firstSeenAt:'2026-10-19T01:00:00Z',lastSeenAt:'2026-10-19T01:01:00Z',rawPayload:{}},
     {id:'new',externalGatewayId:'GW-N',reportedSiteId:null,reportedDeviceId:null,status:'unassigned' as const,onboardingState:'ready' as const,assignedSiteId:null,assignedGatewayId:null,firstSeenAt:'2026-10-19T01:00:00Z',lastSeenAt:'2026-10-19T01:01:00Z',rawPayload:{}},
   ];
@@ -121,6 +131,17 @@ test('external gateway reconciliation is exact and case-sensitive',()=>{
   const discovered=[{id:'discovered',externalGatewayId:'GW-01',reportedSiteId:null,reportedDeviceId:null,status:'unassigned' as const,onboardingState:'ready' as const,assignedSiteId:null,assignedGatewayId:null,firstSeenAt:'2026-10-19T01:00:00Z',lastSeenAt:'2026-10-19T01:01:00Z',rawPayload:{}}];
   const partitions=gatewayIndexPartitions(rows,discovered,false);
   assert.deepEqual(partitions.allItems.map(item=>item.id),['persisted','discovered']);
+});
+
+test('repeated non-conflicting discoveries keep only the newest exact gateway identity',()=>{
+  const base={reportedSiteId:'SITE-1',reportedDeviceId:null,status:'unassigned' as const,onboardingState:'ready' as const,assignedSiteId:null,assignedGatewayId:null,firstSeenAt:'2026-10-19T01:00:00Z',rawPayload:{}};
+  const discovered=[
+    {...base,id:'older',externalGatewayId:'GW-DUP',lastSeenAt:'2026-10-19T01:01:00Z'},
+    {...base,id:'newer',externalGatewayId:'GW-DUP',lastSeenAt:'2026-10-19T01:03:00Z'},
+    {...base,id:'conflict',externalGatewayId:'GW-DUP',gatewaySerial:'OTHER',identityConflict:true,lastSeenAt:'2026-10-19T01:02:00Z'},
+  ];
+  const partitions=gatewayIndexPartitions([],discovered,false);
+  assert.deepEqual(partitions.unconnectedItems.map(item=>item.id),['newer','conflict']);
 });
 
 test('discovery readiness routes operators to pairing or telemetry guidance',()=>{

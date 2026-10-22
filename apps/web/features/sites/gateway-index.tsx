@@ -81,7 +81,20 @@ const persistedDisplayItem=(row:GatewayRow):DisplayGatewayItem=>({
 export function gatewayIndexPartitions(rows:readonly GatewayRow[],discoveredRows:readonly DiscoveredGatewayRow[],th:boolean){
   const persisted=rows.map(persistedDisplayItem);
   const persistedIds=new Set(rows.map(row=>row.id));
-  const discovered=discoveredRows.filter(row=>!(row.assignedGatewayId&&persistedIds.has(row.assignedGatewayId))).map((d):DisplayGatewayItem=>({
+  const persistedExternalIds=new Set(rows.map(row=>row.externalGatewayId));
+  const eligibleDiscoveries=discoveredRows.filter(row=>
+    !(row.assignedGatewayId&&persistedIds.has(row.assignedGatewayId))&&
+    (row.identityConflict||!persistedExternalIds.has(row.externalGatewayId)),
+  );
+  const newestDiscoveries=new Map<string,DiscoveredGatewayRow>();
+  for(const row of eligibleDiscoveries){
+    if(row.identityConflict)continue;
+    const current=newestDiscoveries.get(row.externalGatewayId);
+    if(!current||row.lastSeenAt>current.lastSeenAt)newestDiscoveries.set(row.externalGatewayId,row);
+  }
+  const discovered=eligibleDiscoveries.filter(row=>
+    row.identityConflict||newestDiscoveries.get(row.externalGatewayId)===row,
+  ).map((d):DisplayGatewayItem=>({
       id:d.id,name:d.model?`${d.model} (${d.externalGatewayId})`:`Gateway ${d.externalGatewayId}`,externalGatewayId:d.externalGatewayId,
       siteName:d.reportedSiteId?`${th?'ไซต์ที่ระบุ':'Reported'}: ${d.reportedSiteId}`:th?'ยังไม่เชื่อมต่อไซต์':'Unassigned site',
       siteCode:d.reportedSiteId||'—',status:'unconnected',deviceCount:d.reportedDeviceId?1:0,currentProductionKw:null,

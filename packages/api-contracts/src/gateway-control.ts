@@ -5,6 +5,7 @@ export type GatewayConfigApplyStatus = 'received' | 'applied' | 'failed';
 export type GatewayLifecycleState = 'discovered' | 'configuring' | 'active' | 'disabled';
 export type GatewayConfigState = 'draft' | 'pending_sync' | 'applied' | 'failed' | 'drifted';
 export type GatewayConnectionState = 'online' | 'offline' | 'unknown';
+export type GatewayAuthenticationMode = 'credential' | 'demo-anonymous';
 export type GatewayJsonValue = string | number | boolean | null | GatewayJsonValue[] | { [key: string]: GatewayJsonValue };
 
 /** Profile vocabulary plus optional physical decoder details; no physical defaults. */
@@ -166,7 +167,8 @@ export interface ConfirmGatewayResponse {
   gatewayId: string;
   configVersion: number;
   configHash: string;
-  credential: { username: string; password: string };
+  authenticationMode: GatewayAuthenticationMode;
+  credential: { username: string; password: string } | null;
   syncState: GatewaySyncState;
 }
 export interface GatewayConfigProposal {

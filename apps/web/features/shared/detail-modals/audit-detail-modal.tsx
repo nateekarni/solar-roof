@@ -86,7 +86,7 @@ export function AuditDetailModal({
         </DialogHeader>
 
         {/* Scrollable Body */}
-        <div className="flex-1 overflow-y-auto py-4 space-y-4 pr-1 text-xs">
+        <div className="flex-1 overflow-y-auto p-1 py-4 space-y-4 text-xs">
           {/* Key Facts 2-Column Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 border-t pt-4">
             <div className="space-y-1">

@@ -8,6 +8,7 @@ import type { AdoptExistingGatewayRequest,ApproveGatewayProposalRequest, Confirm
 import { applyGatewayRegisterPresetMappings, gatewayConnectionIssue, gatewayRegisterMappingIssue } from '@solar/api-contracts';
 import { DatabaseService } from '../../database/database.service.js';
 import { GatewayCredentialService } from './gateway-credential.service.js';
+import {gatewayAuthenticationMode} from './gateway-authentication-mode.js';
 import { gatewayConfigHash, parseGatewayControlPayload } from './gateway-control-payload.js';
 import { validatePayloadProfile, type PayloadProfile } from '../telemetry/payload-profile.js';
 import { reserveGatewayIdentity } from '../assets/gateway-lifecycle.js';
@@ -89,7 +90,9 @@ export const BIND_APPLIED_DEVICES_SQL=`INSERT INTO gateway_configuration_device_
       ORDER BY configured_group.name)
     AND jsonb_array_length(coalesce(p.config->'fields','[]'::jsonb))=jsonb_array_length(coalesce(configured.device->'mappings','[]'::jsonb))
     AND (SELECT count(*) FROM register_mapping_versions rm
-      WHERE rm.device_id=d.id AND rm.effective_to IS NULL)=jsonb_array_length(coalesce(configured.device->'mappings','[]'::jsonb))
+      WHERE rm.device_id=d.id AND rm.effective_to IS NULL)=(
+        SELECT count(*) FROM jsonb_array_elements(coalesce(configured.device->'mappings','[]'::jsonb)) physical(mapping)
+        WHERE physical.mapping ? 'registerAddress')
     AND NOT EXISTS (
       SELECT 1 FROM jsonb_array_elements(coalesce(configured.device->'mappings','[]'::jsonb)) cm(mapping)
       WHERE (SELECT count(*) FROM jsonb_array_elements(coalesce(p.config->'fields','[]'::jsonb)) pf(field)
@@ -101,7 +104,7 @@ export const BIND_APPLIED_DEVICES_SQL=`INSERT INTO gateway_configuration_device_
           AND pf.field->>'conversion'=cm.mapping->>'conversion'
           AND coalesce(pf.field->>'role','none')=coalesce(cm.mapping->>'role','none')
           AND coalesce(pf.field->>'required','false')=coalesce(cm.mapping->>'required','false')
-      )<>1 OR (SELECT count(*) FROM register_mapping_versions rm
+      )<>1 OR (cm.mapping ? 'registerAddress' AND (SELECT count(*) FROM register_mapping_versions rm
         WHERE rm.device_id=d.id AND rm.effective_to IS NULL
           AND rm.semantic_field=cm.mapping->>'tag'
           AND rm.register_address=cm.mapping->>'registerAddress'
@@ -114,7 +117,7 @@ export const BIND_APPLIED_DEVICES_SQL=`INSERT INTO gateway_configuration_device_
           AND rm.quality_rule->>'pollGroup'=cm.mapping->>'pollGroup'
           AND coalesce(rm.quality_rule->'offset','0'::jsonb)=coalesce(cm.mapping->'offset','0'::jsonb)
           AND rm.signed=((cm.mapping->>'dataType') IN ('int16','int32'))
-      )<>1
+      )<>1)
     )
   ON CONFLICT (gateway_id,config_version,external_device_id) DO NOTHING`;
 
@@ -297,7 +300,7 @@ export class GatewayConfigurationService {
       const credential=await this.credentials.issue(client,id,actor);
       await this.audit(client,actor,'gateway.control_plane.adopted',id,{configVersion:version,configHash:config.configHash,
         billingContinuity:[...continuity.values()]});
-      return {gatewayId:id,configVersion:version,configHash:config.configHash,credential,
+      return {gatewayId:id,configVersion:version,configHash:config.configHash,authenticationMode:'credential' as const,credential,
         syncState:{gatewayId:id,lifecycleState:'active' as const,configState:'applied' as const,connectionState:'unknown' as const,
           desiredConfigVersion:version,desiredConfigHash:config.configHash,activeConfigVersion:version,activeConfigHash:config.configHash}};
     }));
@@ -634,14 +637,24 @@ export class GatewayConfigurationService {
         body.devices.map(d => prepared.find(p => p.device.deviceId === d.deviceId)?.device ?? d));
       await this.saveRevision(client, gatewayId, config, actor);
       await this.bindAppliedDevices(client,gatewayId,config.configVersion);
-      const credential = await this.credentials.issue(client, gatewayId, actor);
-      await client.query(`UPDATE discovered_gateways SET status='configuring',assigned_site_id=$2,assigned_gateway_id=$3,assigned_at=now() WHERE id=$1`, [id, site.id, gatewayId]);
+      const authenticationMode=gatewayAuthenticationMode();
+      const credential=authenticationMode==='credential'?await this.credentials.issue(client,gatewayId,actor):null;
+      if(authenticationMode==='demo-anonymous'){
+        await client.query(`UPDATE gateway_configuration_revisions SET applied_at=coalesce(applied_at,now()) WHERE gateway_id=$1 AND version=$2`,[gatewayId,config.configVersion]);
+        await client.query(`UPDATE gateways SET applied_config_version=$2,active_config_hash=$3,lifecycle_state='active',config_state='applied',last_status_at=now() WHERE id=$1`,
+          [gatewayId,config.configVersion,config.configHash]);
+      }
+      await client.query(`UPDATE discovered_gateways SET status=$4,assigned_site_id=$2,assigned_gateway_id=$3,assigned_at=now() WHERE id=$1`,
+        [id,site.id,gatewayId,authenticationMode==='credential'?'configuring':'assigned']);
       await this.audit(client, actor, 'gateway.onboarding.confirmed', gatewayId,
         { discoveryId: id, discoveryRevision: body.discoveryRevision, siteId: site.id, reportedSiteId: discovery.reported_site_id,
-          configVersion: 1, configHash: config.configHash });
-      return { gatewayId, configVersion: 1, configHash: config.configHash, credential,
-        syncState: { gatewayId, lifecycleState: 'configuring', configState: 'pending_sync', connectionState: 'unknown',
-          desiredConfigVersion: 1, desiredConfigHash: config.configHash, activeConfigVersion: 0, activeConfigHash: null } };
+          configVersion: 1, configHash: config.configHash,authenticationMode });
+      const automatic=authenticationMode==='demo-anonymous';
+      return { gatewayId, configVersion: 1, configHash: config.configHash,authenticationMode,credential,
+        syncState: { gatewayId, lifecycleState: automatic?'active' as const:'configuring' as const,
+          configState:automatic?'applied' as const:'pending_sync' as const,connectionState:'unknown' as const,
+          desiredConfigVersion:1,desiredConfigHash:config.configHash,activeConfigVersion:automatic?1:0,
+          activeConfigHash:automatic?config.configHash:null } };
     }));
     await this.desiredCommitted(result.gatewayId,result.configVersion);
     return result;
@@ -684,17 +697,21 @@ export class GatewayConfigurationService {
           device.profileVersion = profile.sourceProfile?.version ?? profile.version;
         }
       }
-      if (!device.deviceType || !device.model?.trim() || !device.serialNumber?.trim() || !device.protocol?.trim()
-        || !device.connection || Object.keys(device.connection).length === 0 || device.pollGroups.length === 0 || device.mappings.length === 0) {
-        throw new BadRequestException('Enabled devices require type, model, serial, protocol, connection, groups and mappings');
+      if (!device.deviceType || !device.model?.trim() || !device.serialNumber?.trim()
+        || device.pollGroups.length === 0 || device.mappings.length === 0) {
+        throw new BadRequestException('Enabled devices require type, model, serial, groups and mappings');
       }
-      const connectionIssue=gatewayConnectionIssue(device.protocol,device.connection);
-      if(connectionIssue==='unsupported_protocol')throw new BadRequestException('Supported device protocols are modbus-tcp and modbus-rtu');
-      if(connectionIssue)throw new BadRequestException('Invalid device connection');
-      if(device.protocol==='modbus-tcp')device.connection=badInput(()=>tcpConnection.parse(device.connection));
-      else device.connection=badInput(()=>serialConnection.parse(device.connection));
+      const hasConnection=Boolean(device.connection&&Object.keys(device.connection).length>0);
+      if(hasConnection){
+        if(!device.protocol?.trim())throw new BadRequestException('Physical connection requires a protocol');
+        const connectionIssue=gatewayConnectionIssue(device.protocol,device.connection);
+        if(connectionIssue==='unsupported_protocol')throw new BadRequestException('Supported device protocols are modbus-tcp and modbus-rtu');
+        if(connectionIssue)throw new BadRequestException('Invalid device connection');
+        if(device.protocol==='modbus-tcp')device.connection=badInput(()=>tcpConnection.parse(device.connection));
+        else device.connection=badInput(()=>serialConnection.parse(device.connection));
+      }
       for (const mapping of device.mappings) {
-        if (/^modbus/i.test(device.protocol) && !mapping.registerAddress) throw new BadRequestException('Modbus mapping requires a register address');
+        if (hasConnection && /^modbus/i.test(device.protocol??'') && !mapping.registerAddress) throw new BadRequestException('Modbus mapping requires a register address');
         validateRegisterStorage(mapping);
       }
       const id = randomUUID(), profileId = randomUUID();

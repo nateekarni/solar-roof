@@ -101,7 +101,7 @@ export function CustomerDetailModal({
         </DialogHeader>
 
         {/* Scrollable Content */}
-        <div className="flex-1 overflow-y-auto pr-1 space-y-4 text-sm my-2">
+        <div className="flex-1 overflow-y-auto p-1 space-y-4 text-sm my-2">
           {/* Key Metrics Overview */}
           <div className="grid grid-cols-3 gap-2.5">
             <div className="text-center space-y-1 border-t pt-4">

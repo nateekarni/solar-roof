@@ -10,6 +10,7 @@ import {
   validateGatewayOnboardingDraft,
   isStaleDiscoveryConflict,
 } from './gateway-onboarding-draft';
+import * as gatewayOnboarding from './gateway-onboarding-draft';
 
 const siteId = '11111111-1111-4111-8111-111111111111';
 const snapshot:GatewayRegisterPayload={
@@ -81,16 +82,54 @@ test('reported site is only a matched preselection and confirmation keeps the di
   assert.equal(request.discoveryRevision,7);
 });
 
-test('preset suggestion stays optional and must be explicitly selected',()=>{
+test('preset suggestion is applied automatically once without overwriting later admin edits',()=>{
   const draft=gatewayOnboardingDraftFromDetail(detail,[]);
   assert.deepEqual(draft.devices[0]!.suggestedPreset,{id:preset.id,kind:'profile',rank:190});
-  assert.equal(draft.devices[0]!.mappingSource,'gateway');
-  const selected=selectGatewayDevicePreset(draft.devices[0]!,preset,true);
+  const applySuggested=(gatewayOnboarding as unknown as {applySuggestedGatewayPresets?:Function}).applySuggestedGatewayPresets;
+  assert.equal(typeof applySuggested,'function','gateway onboarding must expose deterministic preset auto-selection');
+  if(typeof applySuggested!=='function')return;
+  const selectedDraft=applySuggested(draft,[preset],[]);
+  const selected=selectedDraft.devices[0]!;
   assert.equal(selected.mappingSource,'preset');
   assert.equal(selected.presetId,preset.id);
   assert.equal(selected.config.displayName,'PM2230 preset');
   assert.equal(selected.profileId,'vendor-pm2230');
   assert.equal(selected.profileVersion,'v3');
+  selected.model='Admin corrected model';
+  selected.dirty=true;
+  const reapplied=applySuggested(selectedDraft,[{...preset,config:{...preset.config,displayName:'Changed preset'}}],[]);
+  assert.equal(reapplied.devices[0]!.model,'Admin corrected model');
+  assert.equal(reapplied.devices[0]!.config.displayName,'PM2230 preset');
+});
+
+test('equal top-ranked suggestions are never selected arbitrarily',()=>{
+  const ambiguous={...detail,presetSuggestions:[{deviceId:'METER-01',suggestions:[
+    {id:preset.id,kind:'profile' as const,rank:190},
+    {id:'33333333-3333-4333-8333-333333333333',kind:'profile' as const,rank:190},
+  ]},{deviceId:'INV-01',suggestions:[]}]};
+  const draft=gatewayOnboardingDraftFromDetail(ambiguous,[]);
+  const applySuggested=(gatewayOnboarding as unknown as {applySuggestedGatewayPresets?:Function}).applySuggestedGatewayPresets;
+  assert.equal(typeof applySuggested,'function');
+  if(typeof applySuggested!=='function')return;
+  const selected=applySuggested(draft,[preset],[]);
+  assert.equal(selected.devices[0]!.presetId,undefined);
+  assert.equal(selected.devices[0]!.presetSuggestionAmbiguous,true);
+});
+
+test('structured onboarding issue identifies the first invalid device and field',()=>{
+  const draft=gatewayOnboardingDraftFromDetail(detail,[{id:siteId,code:'SITE-ALPHA'}]);
+  draft.devices[0]!.serialNumber='';
+  const issueFor=(gatewayOnboarding as unknown as {gatewayOnboardingIssue?:Function}).gatewayOnboardingIssue;
+  assert.equal(typeof issueFor,'function','structured validation must expose a focus target');
+  if(typeof issueFor!=='function')return;
+  assert.deepEqual(issueFor(draft,'en'),{
+    code:'device_serial_required',section:'metadata',deviceKey:'METER-01',fieldId:'gateway-device-serialNumber-METER-01',
+    message:'Enter the serial number for device METER-01.',
+  });
+  draft.devices[0]!.serialNumber='SN-01';
+  draft.devices[0]!.connection={};
+  draft.devices[1]!.enabled=false;
+  assert.equal(issueFor(draft,'en'),null);
 });
 
 test('register-preset suggestions preserve their kind and can be selected without replacing semantic mappings',()=>{
@@ -265,7 +304,14 @@ test('confirmation rejects a stale discovery revision before submitting edits',(
   assert.equal(gatewayConfirmationRequest(draft,7).discoveryRevision,7);
 });
 
-test('client validation enforces the backend Modbus TCP connection schema',()=>{
+test('client validation allows telemetry-only devices without physical polling details',()=>{
+  const draft=gatewayOnboardingDraftFromDetail(detail,[{id:siteId,code:'SITE-ALPHA'}]);
+  draft.devices[1]!.enabled=false;
+  draft.devices[0]!.connection={};
+  assert.equal(validateGatewayOnboardingDraft(draft,'en'),null);
+});
+
+test('client validation enforces an explicitly supplied Modbus TCP connection schema',()=>{
   const invalidConnections=[
     {host:'',port:502,slaveId:1},
     {host:'999.999.999.999',port:502,slaveId:1},
@@ -278,7 +324,7 @@ test('client validation enforces the backend Modbus TCP connection schema',()=>{
     const draft=gatewayOnboardingDraftFromDetail(detail,[{id:siteId,code:'SITE-ALPHA'}]);
     draft.devices[1]!.enabled=false;
     draft.devices[0]!.connection=connection;
-    assert.match(validateGatewayOnboardingDraft(draft,'en')??'',/METER-01.*connection/i,JSON.stringify(connection));
+    assert.match(validateGatewayOnboardingDraft(draft,'en')??'',/connection.*METER-01/i,JSON.stringify(connection));
   }
 });
 
@@ -300,7 +346,7 @@ test('client validation enforces the backend Modbus RTU connection schema',()=>{
     logger.config.pollGroups=['energy'];
     logger.config.fields=structuredClone(snapshot.devices[0]!.mappings!);
     logger.connection=connection;
-    assert.match(validateGatewayOnboardingDraft(draft,'en')??'',/INV-01.*connection/i,JSON.stringify(connection));
+    assert.match(validateGatewayOnboardingDraft(draft,'en')??'',/connection.*INV-01/i,JSON.stringify(connection));
   }
 });
 

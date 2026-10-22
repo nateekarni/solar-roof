@@ -111,7 +111,7 @@ export function ReportDetailModal({
         </DialogHeader>
 
         {/* Scrollable Content */}
-        <div className="flex-1 overflow-y-auto pr-1 space-y-4 text-sm my-2">
+        <div className="flex-1 overflow-y-auto p-1 space-y-4 text-sm my-2">
           {report.jobId ? <JobStatus jobId={report.jobId}/> : <p>{t('jobs.legacy')}</p>}
           {downloadError && <p role="alert">{downloadError}</p>}
           {/* Report Description */}

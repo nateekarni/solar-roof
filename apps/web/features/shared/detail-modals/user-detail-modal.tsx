@@ -136,7 +136,7 @@ export function UserDetailModal({
         </DialogHeader>
 
         {/* Scrollable Content */}
-        <div className="flex-1 overflow-y-auto pr-1 space-y-4 text-sm my-2">
+        <div className="flex-1 overflow-y-auto p-1 space-y-4 text-sm my-2">
           {/* Role & Permissions Card */}
           <div className="space-y-2 border-t pt-4">
             <div className="flex items-center justify-between">

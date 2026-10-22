@@ -108,7 +108,7 @@ function DialogContent({
         onInputCapture={() => setSubmitError('')}
         onSubmitCapture={() => setSubmitError('')}
         className={cn(
-          "fixed z-50 grid gap-5 [&_div:not([data-slot=field])>label+input]:mt-2 [&_div:not([data-slot=field])>label+textarea]:mt-2 [&_div:not([data-slot=field])>label+[data-slot=select-trigger]]:mt-2 w-full bg-popover text-sm text-popover-foreground shadow-xl ring-1 ring-foreground/10 outline-none duration-200 overflow-y-auto [&:has([data-slot=dialog-body])]:overflow-hidden",
+          "fixed z-50 grid gap-5 [&_div:not([data-slot=field])>label+input]:mt-2 [&_div:not([data-slot=field])>label+textarea]:mt-2 [&_div:not([data-slot=field])>label+[data-slot=select-trigger]]:mt-2 w-full bg-popover text-sm text-popover-foreground shadow-xl ring-1 ring-foreground/10 outline-none duration-200 overflow-y-auto [&:has([data-slot=dialog-body])]:flex [&:has([data-slot=dialog-body])]:flex-col [&:has([data-slot=dialog-body])]:overflow-hidden [&>[data-slot=dialog-body]]:p-1",
           // Mobile: Bottom Sheet full width, max 92vh, slide up from bottom
           "max-sm:inset-x-0 max-sm:bottom-0 max-sm:top-auto max-sm:max-w-full max-sm:rounded-b-none max-sm:rounded-t-2xl max-sm:p-4.5 max-sm:max-h-[92svh]",
           "data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
@@ -139,6 +139,16 @@ function DialogContent({
         )}
       </DialogPrimitive.Content>
     </DialogPortal>
+  )
+}
+
+function DialogBody({ className, ...props }: React.ComponentProps<"div">) {
+  return (
+    <div
+      data-slot="dialog-body"
+      className={cn("min-h-0 flex-1 overflow-y-auto overscroll-contain p-1", className)}
+      {...props}
+    />
   )
 }
 
@@ -218,6 +228,7 @@ function DialogDescription({
 
 export {
   Dialog,
+  DialogBody,
   DialogClose,
   DialogContent,
   DialogDescription,

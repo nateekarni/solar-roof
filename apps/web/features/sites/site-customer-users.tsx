@@ -174,7 +174,7 @@ function CustomerUserInviteDialog({
           </DialogHeader>
 
           <form noValidate onSubmit={(e) => e.preventDefault()} className="flex min-h-0 flex-1 flex-col gap-4">
-            <div data-slot="dialog-body" className="min-h-0 flex-1 overflow-y-auto pr-1 space-y-4">
+            <div data-slot="dialog-body" className="min-h-0 flex-1 overflow-y-auto p-1 space-y-4">
               <fieldset disabled={busy} className="space-y-4">
                 {/* Real-time Avatar Preview */}
                 <div className="flex items-center gap-4 rounded-xl border bg-muted/20 p-4">
@@ -385,7 +385,7 @@ function CustomerUserEditDialog({
           </DialogHeader>
 
           <form noValidate onSubmit={(e) => e.preventDefault()} className="flex min-h-0 flex-1 flex-col gap-4">
-            <div data-slot="dialog-body" className="min-h-0 flex-1 overflow-y-auto pr-1 space-y-4">
+            <div data-slot="dialog-body" className="min-h-0 flex-1 overflow-y-auto p-1 space-y-4">
               <fieldset disabled={busy} className="space-y-4">
                 {/* Real-time Avatar Preview */}
                 <div className="flex items-center gap-4 rounded-xl border bg-muted/20 p-4">

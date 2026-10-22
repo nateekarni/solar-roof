@@ -48,6 +48,8 @@ export interface GatewayOnboardingDeviceDraft extends DeviceDraft {
   enabled:boolean;
   mappingSource:'preset'|'manual'|'gateway';
   suggestedPreset?:GatewayPresetSuggestion;
+  presetSuggestions?:GatewayPresetSuggestion[];
+  presetSuggestionAmbiguous?:boolean;
   presetId?:string;
   presetVersion?:string;
   manufacturer?:string;
@@ -57,6 +59,15 @@ export interface GatewayOnboardingDeviceDraft extends DeviceDraft {
   protocol:string;
   connection:{[key:string]:GatewayJsonValue};
   decoderDraftIssues?:Record<string,string>;
+}
+
+export interface GatewayOnboardingIssue {
+  code:string;
+  section:'site'|'devices'|'preset'|'metadata'|'connection'|'mapping';
+  message:string;
+  deviceKey?:string;
+  fieldId?:string;
+  mappingIndex?:number;
 }
 
 export interface GatewayOnboardingDraft {
@@ -88,12 +99,14 @@ function deepFreeze<T>(value:T):T {
   return value;
 }
 
-function reportedDeviceDraft(device:GatewayReportedDevice,suggestedPreset?:GatewayPresetSuggestion):GatewayOnboardingDeviceDraft {
+function reportedDeviceDraft(device:GatewayReportedDevice,presetSuggestions:GatewayPresetSuggestion[]=[]):GatewayOnboardingDeviceDraft {
   const mappings=clone(device.mappings??[]);
   const base=newDeviceDraft(device.deviceType??'');
   const profileId=device.profileId?.trim();
   const profileVersion=device.profileVersion?.trim();
   const sourceProfile=profileId&&profileVersion?{id:profileId,version:profileVersion}:undefined;
+  const suggestedPreset=presetSuggestions[0];
+  const presetSuggestionAmbiguous=Boolean(suggestedPreset&&presetSuggestions[1]?.rank===suggestedPreset.rank);
   const draft:GatewayOnboardingDeviceDraft={
     ...base,
     key:device.deviceId,
@@ -119,6 +132,8 @@ function reportedDeviceDraft(device:GatewayReportedDevice,suggestedPreset?:Gatew
     dirty:false,
     reported:deepFreeze(clone(device)),
     ...(suggestedPreset?{suggestedPreset:clone(suggestedPreset)}:{}),
+    ...(presetSuggestions.length?{presetSuggestions:clone(presetSuggestions)}:{}),
+    ...(presetSuggestionAmbiguous?{presetSuggestionAmbiguous:true}:{}),
     ...(device.manufacturer!==undefined?{manufacturer:device.manufacturer}:{}),
     ...(device.firmwareVersion!==undefined?{firmwareVersion:device.firmwareVersion}:{}),
     ...(device.profileId!==undefined?{profileId:device.profileId}:{}),
@@ -132,7 +147,7 @@ export function gatewayOnboardingDraftFromDetail(detail:GatewayDiscoveryDetail,s
   const reportedSiteId=reported.reportedSiteId?.trim()||null;
   const normalized=reportedSiteId?.toLocaleLowerCase();
   const matched=normalized?sites.find(site=>[site.code,site.externalSiteId,site.id].some(value=>value?.toLocaleLowerCase()===normalized)):undefined;
-  const suggestions=new Map((detail.presetSuggestions??[]).map(row=>[row.deviceId,row.suggestions[0]]));
+  const suggestions=new Map((detail.presetSuggestions??[]).map(row=>[row.deviceId,row.suggestions]));
   return {
     discoveryId:detail.id,
     discoveryRevision:detail.discoveryRevision,
@@ -185,6 +200,32 @@ export function selectGatewayRegisterPreset(device:GatewayOnboardingDeviceDraft,
   }};
 }
 
+/** Apply a unique server-ranked suggestion once. Dirty or already-selected devices are never overwritten. */
+export function applySuggestedGatewayPresets(
+  draft:GatewayOnboardingDraft,
+  presets:readonly PayloadRevision[],
+  registerPresets:readonly GatewayRegisterPreset[],
+):GatewayOnboardingDraft {
+  let changed=false;
+  const devices=draft.devices.map(device=>{
+    const suggestion=device.suggestedPreset;
+    if(!suggestion||device.presetSuggestionAmbiguous||device.presetId||device.dirty)return device;
+    if(suggestion.kind==='profile'){
+      const preset=presets.find(candidate=>candidate.id===suggestion.id);
+      if(!preset)return device;
+      const selected=selectGatewayDevicePreset(device,preset,true);
+      if(selected===device)return device;
+      changed=true;return selected;
+    }
+    const preset=registerPresets.find(candidate=>candidate.id===suggestion.id);
+    if(!preset)return device;
+    const selected=selectGatewayRegisterPreset(device,preset);
+    if(!selected.ok)return device;
+    changed=true;return selected.device;
+  });
+  return changed?{...draft,devices}:draft;
+}
+
 function asMapping(field:GatewayOnboardingDeviceDraft['config']['fields'][number]):GatewayRegisterMapping {
   return clone(field) as GatewayRegisterMapping;
 }
@@ -210,38 +251,63 @@ function deviceConfig(device:GatewayOnboardingDeviceDraft):GatewayDeviceConfig {
   return device.enabled?{...common,enabled:true}:{...common,enabled:false};
 }
 
-function deviceProblem(device:GatewayOnboardingDeviceDraft,locale:string):string|null {
+function deviceIssue(device:GatewayOnboardingDeviceDraft,locale:string):GatewayOnboardingIssue|null {
   const th=locale==='th';
+  const key=device.externalDeviceId||device.key;
+  const issue=(code:string,section:GatewayOnboardingIssue['section'],message:string,fieldId?:string,mappingIndex?:number):GatewayOnboardingIssue=>({
+    code,section,message,deviceKey:device.key,...(fieldId?{fieldId}:{}),...(mappingIndex===undefined?{}:{mappingIndex}),
+  });
+  const connectionFieldId=()=>{
+    const connection=device.connection as Record<string,unknown>;
+    const keys=device.protocol==='modbus-rtu'?['serialPort','baudRate','dataBits','parity','stopBits','slaveId']:['host','port','slaveId'];
+    const missing=keys.find(candidate=>connection[candidate]===undefined||connection[candidate]===null||connection[candidate]==='');
+    return `gateway-device-connection-${missing??keys[0]}-${device.key}`;
+  };
   const collectionIssue=gatewayRegisterMappingCollectionIssue(device.config.fields);
-  if(collectionIssue)return th?`อุปกรณ์ ${device.externalDeviceId||device.key} มี mapping ที่ซ้ำหรือไม่ถูกต้อง`:`Device ${device.externalDeviceId||device.key} has duplicate or invalid mappings.`;
+  if(collectionIssue)return issue('mapping_collection_invalid','mapping',th?`อุปกรณ์ ${key} มี mapping ที่ซ้ำหรือไม่ถูกต้อง`:`Device ${key} has duplicate or invalid mappings.`,`gateway-device-mapping-${device.key}`);
   if(!device.enabled){
-    const invalid=device.config.fields.some(mapping=>gatewayRegisterMappingValueIssue(mapping));
-    return invalid?(th?`อุปกรณ์ ${device.externalDeviceId||device.key} มี mapping ที่ไม่ถูกต้อง`:`Device ${device.externalDeviceId||device.key} has an invalid mapping.`):null;
+    const invalidIndex=device.config.fields.findIndex(mapping=>gatewayRegisterMappingValueIssue(mapping));
+    return invalidIndex>=0?issue('mapping_invalid','mapping',th?`อุปกรณ์ ${key} มี mapping ที่ไม่ถูกต้อง`:`Device ${key} has an invalid mapping.`,`gateway-register-${device.key}-${invalidIndex}-address`,invalidIndex):null;
   }
-  const required=!device.externalDeviceId.trim()||!device.model.trim()||!device.serialNumber.trim()||!device.config.deviceType.trim()
-    ||!device.protocol.trim()||Object.keys(device.connection).length===0||device.config.pollGroups.length===0||device.config.fields.length===0;
-  if(required)return th?`อุปกรณ์ ${device.externalDeviceId||device.key} ต้องมีข้อมูลและ mapping ครบถ้วน`:`Device ${device.externalDeviceId||device.key} requires complete details and mappings.`;
-  if(device.mappingSource==='preset'&&!device.presetId)return th?`อุปกรณ์ ${device.externalDeviceId} ต้องเลือก Preset`:`Device ${device.externalDeviceId} requires an explicit preset.`;
-  if(device.decoderDraftIssues&&Object.keys(device.decoderDraftIssues).length)return th?`อุปกรณ์ ${device.externalDeviceId} มีค่าตัวถอดรหัสที่ยังไม่ถูกต้อง`:`Device ${device.externalDeviceId} has an invalid decoder draft.`;
-  if(gatewayConnectionIssue(device.protocol,device.connection))return th?`อุปกรณ์ ${device.externalDeviceId} มีข้อมูลการเชื่อมต่อไม่ถูกต้อง`:`Device ${device.externalDeviceId} has an invalid connection.`;
+  if(!device.externalDeviceId.trim())return issue('device_id_required','metadata',th?'กรุณาระบุ Device ID':`Device ${key} requires a device ID.`,`gateway-device-id-${device.key}`);
+  if(!device.model.trim())return issue('device_model_required','metadata',th?`กรอกรุ่นของอุปกรณ์ ${key}`:`Enter the model for device ${key}.`,`gateway-device-model-${device.key}`);
+  if(!device.serialNumber.trim())return issue('device_serial_required','metadata',th?`กรอกหมายเลขซีเรียลของอุปกรณ์ ${key}`:`Enter the serial number for device ${key}.`,`gateway-device-serialNumber-${device.key}`);
+  if(!device.config.deviceType.trim())return issue('device_type_required','metadata',th?`เลือกประเภทอุปกรณ์ ${key}`:`Select a device type for ${key}.`,`gateway-device-type-${device.key}`);
+  const hasConnection=Object.keys(device.connection).length>0;
+  if(hasConnection&&!device.protocol.trim())return issue('device_protocol_required','connection',th?`เลือกโปรโตคอลสำหรับข้อมูลการเชื่อมต่อของอุปกรณ์ ${key}`:`Select a protocol for the connection details of device ${key}.`,`gateway-device-protocol-${device.key}`);
+  if(device.config.fields.length===0)return issue('mapping_required','mapping',th?`อุปกรณ์ ${key} ต้องมี Mapping อย่างน้อยหนึ่งรายการ`:`Device ${key} requires at least one mapping.`,`gateway-device-mapping-${device.key}`);
+  if(device.config.pollGroups.length===0)return issue('poll_group_required','mapping',th?`อุปกรณ์ ${key} ต้องมีกลุ่มการอ่าน`:`Device ${key} requires a poll group.`,`gateway-device-mapping-${device.key}`);
+  if(device.mappingSource==='preset'&&!device.presetId)return issue('preset_required','preset',th?`อุปกรณ์ ${key} ต้องเลือก Preset`:`Device ${key} requires an explicit preset.`,`gateway-device-preset-${device.key}`);
+  if(device.decoderDraftIssues&&Object.keys(device.decoderDraftIssues).length){
+    const entry=Object.keys(device.decoderDraftIssues)[0]!;
+    const mappingIndex=entry==='preset-selection'?undefined:Number(entry.slice(entry.lastIndexOf(':')+1));
+    return issue('decoder_draft_invalid',entry==='preset-selection'?'preset':'mapping',th?`อุปกรณ์ ${key} มีค่าตัวถอดรหัสที่ยังไม่ถูกต้อง`:`Device ${key} has an invalid decoder draft.`,entry==='preset-selection'?`gateway-device-preset-${device.key}`:`gateway-register-${device.key}-${mappingIndex}-address`,Number.isInteger(mappingIndex)?mappingIndex:undefined);
+  }
+  const connectionProblem=hasConnection?gatewayConnectionIssue(device.protocol,device.connection):null;
+  if(connectionProblem)return issue(connectionProblem,'connection',th?`ตรวจสอบข้อมูลการเชื่อมต่อของอุปกรณ์ ${key}`:`Check the connection details for device ${key}.`,connectionFieldId());
   const mappings=device.config.fields as GatewayRegisterMapping[];
-  if(mappings.some(mapping=>gatewayRegisterMappingValueIssue(mapping))||
-    /^modbus/i.test(device.protocol)&&mappings.some(mapping=>!mapping.registerAddress||gatewayRegisterMappingIssue(mapping))){
-    return th?`อุปกรณ์ ${device.externalDeviceId} มี mapping ของ Modbus ไม่ครบถ้วน`:`Device ${device.externalDeviceId} has an incomplete Modbus mapping.`;
+  const usesPhysicalModbus=hasConnection&&/^modbus/i.test(device.protocol);
+  const invalidMapping=mappings.findIndex(mapping=>gatewayRegisterMappingValueIssue(mapping)||(usesPhysicalModbus&&(!mapping.registerAddress||gatewayRegisterMappingIssue(mapping))));
+  if(invalidMapping>=0){
+    return issue('modbus_mapping_incomplete','mapping',th?`อุปกรณ์ ${key} มี mapping ของ Modbus ไม่ครบถ้วน`:`Device ${key} has an incomplete Modbus mapping.`,`gateway-register-${device.key}-${invalidMapping}-address`,invalidMapping);
   }
   const profileProblem=validateDeviceProfile(device.config,false,locale);
-  if(profileProblem)return `${device.externalDeviceId}: ${profileProblem}`;
+  if(profileProblem)return issue('profile_invalid','mapping',`${key}: ${profileProblem}`,`gateway-device-mapping-${device.key}`);
+  return null;
+}
+
+export function gatewayOnboardingIssue(draft:GatewayOnboardingDraft,locale:string):GatewayOnboardingIssue|null {
+  const th=locale==='th';
+  if(!draft.selectedSiteId)return {code:'site_required',section:'site',fieldId:'gateway-pairing-site',message:th?'กรุณาเลือกไซต์งาน':'Select a site.'};
+  const enabled=draft.devices.filter(device=>device.enabled);
+  if(!enabled.length)return {code:'enabled_device_required',section:'devices',message:th?'ต้องเปิดใช้งานอุปกรณ์อย่างน้อยหนึ่งรายการ':'Enable at least one device.'};
+  if(new Set(enabled.map(device=>device.externalDeviceId.trim())).size!==enabled.length)return {code:'duplicate_device_id',section:'metadata',message:th?'Device ID ต้องไม่ซ้ำกัน':'Device IDs must be unique.'};
+  for(const device of draft.devices){const problem=deviceIssue(device,locale);if(problem)return problem;}
   return null;
 }
 
 export function validateGatewayOnboardingDraft(draft:GatewayOnboardingDraft,locale:string):string|null {
-  const th=locale==='th';
-  if(!draft.selectedSiteId)return th?'กรุณาเลือกไซต์งาน':'Select a site.';
-  const enabled=draft.devices.filter(device=>device.enabled);
-  if(!enabled.length)return th?'ต้องเปิดใช้งานอุปกรณ์อย่างน้อยหนึ่งรายการ':'Enable at least one device.';
-  if(new Set(enabled.map(device=>device.externalDeviceId.trim())).size!==enabled.length)return th?'Device ID ต้องไม่ซ้ำกัน':'Device IDs must be unique.';
-  for(const device of draft.devices){const problem=deviceProblem(device,locale);if(problem)return problem;}
-  return null;
+  return gatewayOnboardingIssue(draft,locale)?.message??null;
 }
 
 export function gatewayConfirmationRequest(draft:GatewayOnboardingDraft,currentDiscoveryRevision=draft.discoveryRevision):ConfirmGatewayRequest {

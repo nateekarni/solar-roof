@@ -11,10 +11,11 @@ const headers = { 'x-internal-secret': 'webhook-secret' };
 const deny = { result: 'deny' }, allow = { result: 'allow' };
 const password = 'a-real-gateway-password';
 const originalEnv = { INTERNAL_MQTT_SECRET: process.env.INTERNAL_MQTT_SECRET,
-  MQTT_CREDENTIAL_SECRET: process.env.MQTT_CREDENTIAL_SECRET, MQTT_PASSWORD: process.env.MQTT_PASSWORD };
+  MQTT_CREDENTIAL_SECRET: process.env.MQTT_CREDENTIAL_SECRET, MQTT_PASSWORD: process.env.MQTT_PASSWORD,
+  GATEWAY_AUTH_MODE:process.env.GATEWAY_AUTH_MODE };
 let hash: string;
 before(async () => { hash = await argon2.hash(password, { type: argon2.argon2id }); });
-beforeEach(() => { process.env.INTERNAL_MQTT_SECRET = 'webhook-secret'; process.env.MQTT_PASSWORD = 'backend-password'; delete process.env.MQTT_CREDENTIAL_SECRET; });
+beforeEach(() => { process.env.INTERNAL_MQTT_SECRET = 'webhook-secret'; process.env.MQTT_PASSWORD = 'backend-password'; delete process.env.MQTT_CREDENTIAL_SECRET; delete process.env.GATEWAY_AUTH_MODE; });
 after(() => { for (const [key, value] of Object.entries(originalEnv)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } });
 
 function fixture(verification?: GatewayCredentialVerification) {
@@ -130,6 +131,24 @@ test('known gateway cannot downgrade to anonymous even when retired or credentia
     f.gateway.retired_at = retired_at; f.gateway.revoked_at = '2026-10-19T00:00:00Z';
     assert.deepEqual(await f.controller.authenticate({ clientid: 'GW-001' }, headers), deny);
     assert.deepEqual(await f.controller.authorize({ clientid: 'GW-001', action: 'publish', topic: 'solar/v1/gateways/GW-001/register' }, headers), deny);
+  }
+});
+
+test('demo anonymous mode admits an approved credential-free gateway only to its exact control and data topics',async()=>{
+  process.env.GATEWAY_AUTH_MODE='demo-anonymous';
+  const f=fixture();
+  Object.assign(f.gateway,{credential_id:null,username:null,revoked_at:null,lifecycle_state:'active'});
+  const anonymous={clientid:'GW-001'};
+  assert.deepEqual(await f.controller.authenticate(anonymous,headers),{result:'allow',is_superuser:false});
+  assert.deepEqual(await f.controller.authorize({...anonymous,action:'subscribe',topic:'solar/v1/gateways/GW-001/config'},headers),allow);
+  assert.deepEqual(await f.controller.authorize({...anonymous,action:'publish',topic:'solar/v1/gateways/GW-001/status'},headers),allow);
+  assert.deepEqual(await f.controller.authorize({...anonymous,action:'publish',topic:'solar/v1/gateways/GW-001/configStatus'},headers),allow);
+  assert.deepEqual(await f.controller.authorize({...anonymous,action:'publish',topic:telemetryAcl.topic},headers),allow);
+  assert.deepEqual(await f.controller.authorize({...anonymous,action:'subscribe',topic:ackAcl.topic},headers),allow);
+  for(const topic of ['solar/v1/gateways/OTHER/config','solar/v1/gateways/OTHER/status',
+    'solar/v1/sites/OTHER/gateways/GW-001/devices/METER-01/telemetry',
+    'solar/v1/sites/SITE-01/gateways/GW-001/devices/OTHER/telemetry','#']){
+    assert.deepEqual(await f.controller.authorize({...anonymous,action:topic.endsWith('/config')?'subscribe':'publish',topic},headers),deny,topic);
   }
 });
 
