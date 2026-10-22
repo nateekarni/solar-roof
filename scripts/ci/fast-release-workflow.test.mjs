@@ -41,3 +41,17 @@ test('staging deployment is manual, immutable, and non-cancellable', () => {
   assert.match(workflow, /coolify-deploy\.mjs/);
   assert.doesNotMatch(workflow, /pull_request:|\npush:/);
 });
+
+test('operator docs describe the three-image Fast Release and manual Production promotion', () => {
+  const ci = read('.github/CI.md');
+  const runbook = read('docs/runbooks/coolify-web-first-deployment-th.md');
+  const combined = `${ci}\n${runbook}`;
+
+  for (const term of ['Fast Release', 'Deep Verification', 'API_IMAGE', 'WORKER_IMAGE', 'WEB_IMAGE']) {
+    assert.match(combined, new RegExp(term));
+  }
+  assert.match(ci, /Production[^\n]*(manual|ด้วยตนเอง)|manual[^\n]*Production/i);
+  assert.match(ci, /infrastructure[^\n]*Deep Verification|Deep Verification[^\n]*infrastructure/i);
+  assert.match(runbook, /Fast Release[^\n]*API_IMAGE[^\n]*WORKER_IMAGE[^\n]*WEB_IMAGE/i);
+  assert.match(runbook, /POSTGRES_IMAGE[^\n]*(คงเดิม|ไม่เปลี่ยน|unchanged)/i);
+});

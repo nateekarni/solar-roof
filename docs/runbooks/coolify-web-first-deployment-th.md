@@ -1,11 +1,11 @@
 # Deploy เฉพาะเว็บไซต์ solar.fowir.com บน Coolify
 
-ปรับปรุง 6 ตุลาคม 2026 — pilot 2 vCPU / RAM 4 GiB, migration ถึง 028, **ไม่มี bootstrap และไม่มี user ถูกเพิ่มอัตโนมัติ**
+ปรับปรุง 22 ตุลาคม 2026 — pilot 2 vCPU / RAM 4 GiB, migration ถึง 028, **ไม่มี bootstrap และไม่มี user ถูกเพิ่มอัตโนมัติ**
 
 ## 1. เตรียม release และ private repository
 
-1. Push main → GitHub Actions → CI and staging รอ verify สำเร็จ คัดลอก API_IMAGE, WEB_IMAGE, WORKER_IMAGE, POSTGRES_IMAGE จาก Summary ของ commit เดียวกัน เป็น ghcr.io/...@sha256:... จริง ไม่ใช้ placeholder/latest
-2. ตั้ง STAGING_DEPLOY_ENABLED=false ใน GitHub Variables ระหว่างติดตั้งครั้งแรก และปิด Auto Deploy ใน Coolify
+1. Push `main` → GitHub Actions → `Fast Release` รอสำเร็จ แล้วคัดลอก `API_IMAGE`, `WORKER_IMAGE`, `WEB_IMAGE` จาก Summary ของ commit เดียวกัน ค่าแต่ละตัวต้องเป็น `ghcr.io/...@sha256:...` จริง ไม่ใช้ placeholder/`latest`
+2. Production เป็น manual deployment: ปิด Auto Deploy ใน Coolify แล้วอัปเดต digest ทั้งสามพร้อมกันก่อนกด Deploy; `POSTGRES_IMAGE`, `MQTT_IMAGE`, `CERTBOT_IMAGE` คงเดิมสำหรับ application-only release
 3. ถ้า repo private ติดตั้ง GitHub App ให้เข้าถึงเฉพาะ repo นี้ตาม [คู่มือ](coolify-private-github-th.md) หาก GHCR packages private ต้อง docker login แยกด้วย read:packages บน server user ที่ Coolify ใช้
 4. ตรวจ public IP เครื่อง, RAM/disk ที่ว่าง และ Coolify Proxy ทำงาน ใช้ resource limits ตาม [ตาราง pilot](coolify-solar-fowir-deployment-detailed-th.md)
 
@@ -33,7 +33,8 @@
 
 | ค่า | ตั้งเป็น |
 |---|---|
-| API_IMAGE / WEB_IMAGE / WORKER_IMAGE / POSTGRES_IMAGE | digest จริงจาก CI run เดียวกัน |
+| API_IMAGE / WORKER_IMAGE / WEB_IMAGE | digest จริงจาก Fast Release run เดียวกัน |
+| POSTGRES_IMAGE | คงเดิมสำหรับ application-only release; เปลี่ยนเฉพาะเมื่อ Deep Verification ของ infrastructure ผ่าน |
 | POSTGRES_DB / POSTGRES_USER | solar_platform / solar สำหรับติดตั้งใหม่ |
 | POSTGRES_PASSWORD | secret สุ่มใหม่สำหรับ DB ใหม่เท่านั้น |
 | DATABASE_URL | postgresql://solar:รหัสที่_percent_encodeแล้ว@postgres:5432/solar_platform |

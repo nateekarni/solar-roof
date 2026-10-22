@@ -61,7 +61,7 @@ The workflow contains three gates:
 2. **Application candidate build, smoke, and publication**
    - start only after Fast verification succeeds;
    - build `solar-api`, `solar-worker`, and `solar-web` in parallel with Buildx GHA caches scoped per image;
-   - pull the immutable PostgreSQL backup test digest recorded in a protected repository variable and tag it locally as the fixture expected by `web-first-smoke.sh`;
+   - build the PostgreSQL backup image locally in parallel as the fixture expected by `web-first-smoke.sh`; Fast Release never publishes this fixture;
    - run the actual `docker-compose.web.yml` through `web-first-smoke.sh` against candidate application images;
    - verify migrations complete, storage initializes, API and Web become healthy, manual account creation is idempotent, login works, MQTT-disabled readiness is correct, and an unavailable broker does not break core Web/API readiness.
 3. **Publication section of the candidate job**
