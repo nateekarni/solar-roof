@@ -14,8 +14,6 @@
 **/*.key
 **/*.p12
 **/*.pfx
-infra/docker/mosquitto/auth
-infra/docker/mosquitto/certs
 *.log
 
 **/test/artifacts

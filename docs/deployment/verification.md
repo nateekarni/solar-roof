@@ -7,8 +7,8 @@ This records local evidence. No remote deployment, DNS change, public certificat
 ## Implemented
 
 - Three pinned Node/pnpm application Dockerfiles, nonroot runtime, secret/build-artifact exclusions.
-- Staging Compose with persistent PostgreSQL/TimescaleDB, Redis, authenticated Mosquitto, S3 storage, migrations, bucket initialization and dependency readiness. Only MQTT TLS is host-published; web is routed by Coolify.
-- Managed Cloudflare DNS-01 certificate image with atomic named-volume export and renewal; embedded broker configuration and environment-derived per-Gateway credentials.
+- Staging Compose with persistent PostgreSQL/TimescaleDB, Redis, S3 storage, migrations, bucket initialization and dependency readiness. The application connects to a separately deployed EMQX resource.
+- EMQX exposes MQTTS `8883` with host-mounted certificate files; its Dashboard is routed through the Coolify HTTPS proxy.
 - Non-destructive administrator bootstrap and database backup script.
 - PR checks and main build/test/publish pipeline; deployment consumes the same tested image IDs by digest. Initial deploy-enable gate, target validation, main-SHA validation and deployment serialization.
 - Isolated integration/browser tests, all five roles, school isolation, MQTT persistence/replay and restart durability.
@@ -60,16 +60,9 @@ Local detailed evidence: [runner output](../../test/artifacts/full-run.log), [se
 
 Domain update after the local verification above: web staging now targets `solar.fowir.com` and MQTT `mqtt-solar.fowir.com`. The recorded tests used localhost and did not validate either public hostname. Public DNS/TLS and Coolify routing remain unverified.
 
-## Coolify UI-only update (30 September 2026)
+## Current broker architecture
 
-- Five-image CI includes managed MQTT and Cloudflare certificate service. Staging has no host-file bind mounts, Docker socket or host Certbot dependency.
-- One-shot bootstrap runs automatically after migrations/storage initialization; repeated deployment preserves the existing administrator.
-- Unit verification: MQTT 5 tests including real leaf/intermediate chain and stale served certificate rejection; certificate service 6 tests with synthetic certificates/mocked ACME; deploy helper10 tests.
-- Managed staging Compose smoke passed using disposable named volumes and a synthetic certificate producer: initial boot, repeat bootstrap, verified TLS hostname, API readiness, worker and web readiness. No real ACME request was made.
-- Local lint/test passed all8 workspace tasks. Web includes5 regression tests, including deterministic initial telemetry age markup across clock/freshness boundaries. This fixes an intermittent React hydration418 found in the previous GitHub run.
-- Actual Cloudflare token, public certificate issuance, Coolify routing, company firewall and end-to-end hardware telemetry are still unverified. DNS provider Cloudflare confirmed by user.
-
-Deployment instructions now use GitHub/Cloudflare/Coolify UI. A company backup policy and off-server restore drill remain a prerequisite for continuous real-data collection; named volumes alone are not backups.
+The earlier managed broker/certificate images have been retired. Production uses the Git-backed EMQX Compose resource and host-mounted certificate files documented in the [EMQX deployment runbook](../runbooks/coolify-mqtt-deployment-th.md). Application CI no longer builds or publishes broker/certificate images. A company backup policy, certificate-renewal procedure, and off-server restore drill remain prerequisites for continuous real-data collection.
 
 Final local full runner after rebuilding the hydration fix: PASS exit0 (`test/artifacts/managed-final-e2e.log`), all five roles, zero browser page errors, real PostgreSQL test without skip, dependency outage recovery and replay durability. Tested web image: `sha256:ff0caa4b91a474b1f07cc510c5fbe0be1e9a877b31a361bd56759cd9f9a2d161`. Independent whole-change review found no remaining P1/P2 blockers. The GitHub run must still succeed before using published image digests.
 

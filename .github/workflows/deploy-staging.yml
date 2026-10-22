@@ -19,14 +19,6 @@ on:
         description: Immutable Web GHCR digest
         required: true
         type: string
-      mqtt_image:
-        description: Immutable MQTT GHCR digest from Deep Verification
-        required: true
-        type: string
-      certbot_image:
-        description: Immutable Certbot GHCR digest from Deep Verification
-        required: true
-        type: string
 
 permissions:
   contents: read
@@ -68,8 +60,6 @@ jobs:
           API_IMAGE: ${{ inputs.api_image }}
           WORKER_IMAGE: ${{ inputs.worker_image }}
           WEB_IMAGE: ${{ inputs.web_image }}
-          MQTT_IMAGE: ${{ inputs.mqtt_image }}
-          CERTBOT_IMAGE: ${{ inputs.certbot_image }}
           STAGING_WEB_URL: ${{ vars.STAGING_WEB_URL }}
         run: |
           set -euo pipefail

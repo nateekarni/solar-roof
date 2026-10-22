@@ -17,7 +17,7 @@ export MQTT_URL=mqtt://127.0.0.1:1 MQTT_USERNAME=disabled MQTT_PASSWORD=disabled
 export INTERNAL_MQTT_SECRET=disabled-callback-placeholder
 export EMQX_MANAGEMENT_URL=https://emqx.example.invalid EMQX_MANAGEMENT_API_KEY=disabled-management-key
 export EMQX_MANAGEMENT_API_SECRET=disabled-management-secret EMQX_MANAGEMENT_DEFAULT_BROKER_ID=00000000-0000-4000-8000-000000000001
-unset BOOTSTRAP_ADMIN_EMAIL BOOTSTRAP_ADMIN_PASSWORD MQTT_GATEWAY_CREDENTIALS CLOUDFLARE_API_TOKEN ACME_EMAIL MQTT_IMAGE CERTBOT_IMAGE
+unset BOOTSTRAP_ADMIN_EMAIL BOOTSTRAP_ADMIN_PASSWORD MQTT_GATEWAY_CREDENTIALS CLOUDFLARE_API_TOKEN ACME_EMAIL
 compose=(docker compose -p "$project" -f infra/docker/docker-compose.web.yml)
 created=false
 cleanup() {
@@ -69,7 +69,7 @@ for(const [email,password,role] of [["owner-ci@example.invalid","Owner-test-only
 }
 '
 "${compose[@]}" exec -T web node -e "Promise.all(['/login','/health'].map(async p=>{const r=await fetch('http://127.0.0.1:3000'+p);if(!r.ok)throw Error(p+' unavailable')}))"
-if "${compose[@]}" config --services | grep -Eq '^(mqtt|certbot)$'; then echo 'Unexpected MQTT infrastructure' >&2; exit 1; fi
+if "${compose[@]}" config --services | grep -Eq '^mqtt$'; then echo 'Unexpected MQTT infrastructure' >&2; exit 1; fi
 export MQTT_ENABLED=true MQTT_DEFAULT_BROKER_ENABLED=true MQTT_URL=mqtt://127.0.0.1:1 MQTT_USERNAME=test MQTT_PASSWORD=test
 "${compose[@]}" up -d --no-deps --force-recreate --wait --wait-timeout 120 api
 "${compose[@]}" exec -T api node --input-type=module -e '

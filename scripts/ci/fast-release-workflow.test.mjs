@@ -18,14 +18,15 @@ test('Fast Release is cancellable, isolated from deployment, and publishes only 
   assert.doesNotMatch(workflow, /for app in api worker web mqtt certbot/);
 });
 
-test('Deep Verification retains infrastructure gates and cannot deploy', () => {
+test('Deep Verification retains infrastructure gates, publishes four current images, and cannot deploy', () => {
   const workflow = read('.github/workflows/ci-staging.yml');
 
   assert.match(workflow, /^name:\s*Deep Verification$/m);
   assert.match(workflow, /cancel-in-progress:\s*false/);
   assert.match(workflow, /schedule:/);
   assert.match(workflow, /recovery-drill\.sh/);
-  assert.match(workflow, /managed-staging-smoke\.sh/);
+  assert.match(workflow, /web-first-smoke\.sh/);
+  assert.match(workflow, /for app in api worker web postgres-backup/);
   assert.doesNotMatch(workflow, /Deploy Tested Digests to Staging|COOLIFY_API_TOKEN/);
 });
 
@@ -35,9 +36,10 @@ test('staging deployment is manual, immutable, and non-cancellable', () => {
   assert.match(workflow, /^name:\s*Deploy Staging$/m);
   assert.match(workflow, /workflow_dispatch:/);
   assert.match(workflow, /cancel-in-progress:\s*false/);
-  for (const input of ['commit_sha', 'api_image', 'worker_image', 'web_image', 'mqtt_image', 'certbot_image']) {
+  for (const input of ['commit_sha', 'api_image', 'worker_image', 'web_image']) {
     assert.match(workflow, new RegExp(`\\n\\s{6}${input}:`));
   }
+  assert.doesNotMatch(workflow, /mqtt_image:|certbot_image:/);
   assert.match(workflow, /coolify-deploy\.mjs/);
   assert.doesNotMatch(workflow, /pull_request:|\npush:/);
 });

@@ -5,7 +5,7 @@
 ## 1. เตรียม release และ private repository
 
 1. Push `main` → GitHub Actions → `Fast Release` รอสำเร็จ แล้วคัดลอก `API_IMAGE`, `WORKER_IMAGE`, `WEB_IMAGE` จาก Summary ของ commit เดียวกัน ค่าแต่ละตัวต้องเป็น `ghcr.io/...@sha256:...` จริง ไม่ใช้ placeholder/`latest`
-2. Production เป็น manual deployment: ปิด Auto Deploy ใน Coolify แล้วอัปเดต digest ทั้งสามพร้อมกันก่อนกด Deploy; `POSTGRES_IMAGE`, `MQTT_IMAGE`, `CERTBOT_IMAGE` คงเดิมสำหรับ application-only release
+2. Production เป็น manual deployment: ปิด Auto Deploy ใน Coolify แล้วอัปเดต digest ทั้งสามพร้อมกันก่อนกด Deploy; `POSTGRES_IMAGE` คงเดิมสำหรับ application-only release ส่วน EMQX เป็น resource แยกและไม่ใช้ application image variables
 3. ถ้า repo private ติดตั้ง GitHub App ให้เข้าถึงเฉพาะ repo นี้ตาม [คู่มือ](coolify-private-github-th.md) หาก GHCR packages private ต้อง docker login แยกด้วย read:packages บน server user ที่ Coolify ใช้
 4. ตรวจ public IP เครื่อง, RAM/disk ที่ว่าง และ Coolify Proxy ทำงาน ใช้ resource limits ตาม [ตาราง pilot](coolify-solar-fowir-deployment-detailed-th.md)
 

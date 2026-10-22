@@ -21,10 +21,7 @@ test('protected infrastructure path families require deep verification', () => {
     '.github/workflows/fast-release.yml',
     'scripts/ci/integration.sh',
     'infra/ci/web-first-smoke.sh',
-    'infra/docker/Dockerfile.mqtt',
-    'infra/docker/Dockerfile.certbot',
     'infra/docker/postgres-backup/Dockerfile',
-    'infra/docker/mosquitto/mosquitto.conf',
     'infra/docker/docker-compose.web.yml',
   ];
 
@@ -56,14 +53,14 @@ test('CLI reads newline-delimited paths and writes the GitHub output contract', 
     const result = spawnSync(process.execPath, ['scripts/ci/classify-release.mjs'], {
       cwd: new URL('../..', import.meta.url),
       encoding: 'utf8',
-      input: 'apps/api/src/main.ts\ninfra/docker/Dockerfile.mqtt\n',
+      input: 'apps/api/src/main.ts\ninfra/docker/postgres-backup/Dockerfile\n',
       env: {...process.env, GITHUB_OUTPUT: output},
     });
 
     assert.equal(result.status, 0, result.stderr);
     assert.deepEqual(JSON.parse(result.stdout), {
       infrastructure: true,
-      paths: ['infra/docker/Dockerfile.mqtt'],
+      paths: ['infra/docker/postgres-backup/Dockerfile'],
     });
     assert.equal(await readFile(output, 'utf8'), 'infrastructure=true\n');
   } finally {

@@ -7,21 +7,14 @@ const PROTECTED_PREFIXES = [
   'scripts/ci/',
   'infra/ci/',
   'infra/docker/postgres-backup/',
-  'infra/docker/mosquitto/',
 ];
-
-const PROTECTED_FILES = new Set([
-  'infra/docker/Dockerfile.mqtt',
-  'infra/docker/Dockerfile.certbot',
-]);
 
 function normalizePath(path) {
   return path.trim().replaceAll('\\', '/').replace(/^\.\//, '');
 }
 
 function isProtected(path) {
-  return PROTECTED_FILES.has(path)
-    || PROTECTED_PREFIXES.some((prefix) => path.startsWith(prefix))
+  return PROTECTED_PREFIXES.some((prefix) => path.startsWith(prefix))
     || /^infra\/docker\/docker-compose(?:\.[^/]+)?\.ya?ml$/.test(path);
 }
 

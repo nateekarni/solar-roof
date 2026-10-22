@@ -1,9 +1,12 @@
 name: solar-financial-flow-review
 services:
   mqtt:
-    image: eclipse-mosquitto:2.0.21
+    image: emqx/emqx:5.8.5
     ports: ['127.0.0.1:18849:1883']
-    volumes: ['./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro']
+    healthcheck:
+      test: ['CMD-SHELL', 'emqx ctl status >/dev/null']
+      interval: 5s
+      retries: 30
   postgres:
     image: timescale/timescaledb:2.18.2-pg16
     environment:

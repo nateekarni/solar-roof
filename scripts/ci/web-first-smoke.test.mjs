@@ -21,5 +21,5 @@ test('web-first smoke satisfies the fail-closed MQTT and EMQX Compose contract w
 
 test('web-first smoke keeps the disabled broker unreachable and never adds broker services',()=>{
  assert.match(smoke,/MQTT_URL=mqtt:\/\/127\.0\.0\.1:1/);
- assert.match(smoke,/config --services \| grep -Eq '\^\(mqtt\|certbot\)\$'/);
+ assert.match(smoke,/config --services \| grep -Eq '\^mqtt\$'/);
 });

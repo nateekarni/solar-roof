@@ -143,7 +143,7 @@ test('actual API MQTT rejects huge/deep input, commits once before ACK, survives
       await publish(retry); await until(async () => acknowledgments.some(ack => ack.ingestionId === 'signal-timeout'));
     } finally { await lock.query('ROLLBACK'); lock.release(); }
     await mkdir('../../test/artifacts', { recursive: true });
-    await writeFile('../../test/artifacts/q2-ingestion-proof.json', JSON.stringify({ broker: 'EMQX B1 fixture', hugeAndDeepAck: 0, ingressIdentityLockedConnections: 8, readPoolCeiling: 12, ingressPoolCeiling: 8, burstApplicationAcks: acknowledgments.filter(ack => ack.ingestionId.startsWith('burst-')).length, durableDuplicate: true, databaseRecovery: true, brokerRestart: true, actualSignalDrain: true, actualSignalTimeoutRetry: true, actualSignalQueuedDeadline: true, signalBlockedMessages: 40, limits: 'Firmware/B2 capacity remains unverified; managed Mosquitto broker limit is separately checked.' }, null, 2));
+    await writeFile('../../test/artifacts/q2-ingestion-proof.json', JSON.stringify({ broker: 'EMQX B1 fixture', hugeAndDeepAck: 0, ingressIdentityLockedConnections: 8, readPoolCeiling: 12, ingressPoolCeiling: 8, burstApplicationAcks: acknowledgments.filter(ack => ack.ingestionId.startsWith('burst-')).length, durableDuplicate: true, databaseRecovery: true, brokerRestart: true, actualSignalDrain: true, actualSignalTimeoutRetry: true, actualSignalQueuedDeadline: true, signalBlockedMessages: 40, limits: 'Firmware/B2 and production EMQX capacity remain unverified.' }, null, 2));
   } finally {
     client.end(true);
     compose('start', 'postgres');

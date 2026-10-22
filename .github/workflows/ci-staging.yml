@@ -5,10 +5,7 @@ on:
       - '.github/workflows/**'
       - 'scripts/ci/**'
       - 'infra/ci/**'
-      - 'infra/docker/Dockerfile.mqtt'
-      - 'infra/docker/Dockerfile.certbot'
       - 'infra/docker/postgres-backup/**'
-      - 'infra/docker/mosquitto/**'
       - 'infra/docker/docker-compose*.yml'
   push:
     branches: [main]
@@ -16,10 +13,7 @@ on:
       - '.github/workflows/**'
       - 'scripts/ci/**'
       - 'infra/ci/**'
-      - 'infra/docker/Dockerfile.mqtt'
-      - 'infra/docker/Dockerfile.certbot'
       - 'infra/docker/postgres-backup/**'
-      - 'infra/docker/mosquitto/**'
       - 'infra/docker/docker-compose*.yml'
   schedule:
     - cron: '23 18 * * *'
@@ -35,7 +29,7 @@ jobs:
     name: Platform Regression, Smokes & Acceptance
     runs-on: ubuntu-24.04
     # A full run includes browser acceptance, platform regression, and publishing
-    # six tested images. Keep headroom above the current ~26-minute runtime so
+    # four tested images. Keep headroom above the current runtime so
     # GitHub can finish post-job cleanup and expose digests to deployment.
     timeout-minutes: 40
     permissions:
@@ -45,8 +39,6 @@ jobs:
       api: ${{ steps.publish.outputs.api }}
       worker: ${{ steps.publish.outputs.worker }}
       web: ${{ steps.publish.outputs.web }}
-      mqtt: ${{ steps.publish.outputs.mqtt }}
-      certbot: ${{ steps.publish.outputs.certbot }}
       postgres-backup: ${{ steps.publish.outputs.postgres-backup }}
     steps:
       - uses: actions/checkout@v4
@@ -70,7 +62,7 @@ jobs:
         timeout-minutes: 10
         run: |
           node scripts/ci/phase-timing.mjs application-image-build bash -euo pipefail <<'BUILD'
-          for app in api worker web mqtt certbot; do
+          for app in api worker web; do
             docker buildx build \
               --cache-from=type=gha,scope=$app \
               --cache-to=type=gha,mode=max,scope=$app \
@@ -90,14 +82,6 @@ jobs:
           BUILD
       - name: Validate artifact backup scheduler in the Linux runtime
         run: docker run --rm --entrypoint bash solar-api:ci -n /app/scripts/ci/recovery-artifacts-scheduler.sh
-      - name: Test managed MQTT and certificate lifecycle without external credentials
-        run: |
-          docker run --rm --entrypoint python3 solar-mqtt:ci -m unittest discover -s /opt/solar-mqtt/tests
-          docker run --rm --entrypoint python3 solar-certbot:ci -m unittest discover -s /opt/solar-certbot/tests
-      - name: Verify managed MQTT TLS, credentials, ACLs and certificate reload
-        run: bash infra/docker/mosquitto/managed-smoke.sh
-      - name: Verify staging Compose with synthetic certificates
-        run: bash infra/ci/managed-staging-smoke.sh
       - name: Verify web-first deployment without MQTT
         run: bash infra/ci/web-first-smoke.sh
       - name: Prepare version-matched browser server
@@ -110,8 +94,6 @@ jobs:
       - name: Verify personal signature and staff position browser regressions
         timeout-minutes: 2
         run: pnpm --filter @solar/web exec node --test test/platform/own-signature.browser.test.mjs test/platform/staff-position.browser.test.mjs
-      - name: Verify MQTT credentials and ACLs
-        run: bash infra/docker/mosquitto/smoke.sh
       - name: Real integration and browser E2E in disposable stack
         if: ${{ !cancelled() && !failure() && steps.build.outcome == 'success' && steps.browser.outcome == 'success' }}
         timeout-minutes: 8
@@ -132,7 +114,6 @@ jobs:
             test/artifacts/compose.log
             test/artifacts/solar-ci-*.log
             test/artifacts/platform-baseline.json
-            test/artifacts/managed-staging.log
             test/artifacts/solar-web-first-*.log
             test/artifacts/browser-server.log
             test/artifacts/production-finance.json
@@ -151,7 +132,7 @@ jobs:
         run: |
           node scripts/ci/phase-timing.mjs ghcr-publication bash -euo pipefail <<'PUBLISH'
           printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-          for app in api worker web mqtt certbot postgres-backup; do
+          for app in api worker web postgres-backup; do
             ref="ghcr.io/nateekarni/solar-roof/$app:$GITHUB_SHA"
             docker tag "solar-$app:ci" "$ref"
             docker push "$ref"

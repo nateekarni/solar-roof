@@ -7,7 +7,7 @@
 | งาน | คู่มือ | Compose Location | Image จาก CI |
 |---|---|---|---|
 | เว็บไซต์ solar.fowir.com | [Deploy เว็บ](coolify-web-first-deployment-th.md) | /infra/docker/docker-compose.web.yml | API, WEB, WORKER, POSTGRES |
-| Broker ของเรา mqtt-solar.fowir.com | [Deploy MQTT แยก](coolify-mqtt-deployment-th.md) | /infra/docker/docker-compose.mqtt.yml | MQTT, CERTBOT |
+| Broker ของเรา mqtt-solar.fowir.com | [Deploy EMQX แยก](coolify-mqtt-deployment-th.md) | /infra/docker/docker-compose.emqx.yml | Build จาก Git |
 | เพิ่มบัญชี Admin / Owner / Customer User | [คำสั่งเพิ่ม user](coolify-manual-users-th.md) | รันใน Terminal ของ service api | ไม่ต้อง redeploy เพื่อเพิ่ม user |
 | Private Git repository / GHCR | [GitHub App และ registry](coolify-private-github-th.md) | ตั้งก่อน Deploy | Git กับ registry ใช้สิทธิ์คนละชุด |
 | Preset และตัวอย่าง payload | [Unified Presets](unified-presets-th.md) | จัดการผ่าน Admin หลังสร้างบัญชี | Pilot SPM91 มากับ migration 028 |
@@ -26,7 +26,7 @@
 วันที่ 6 ตุลาคม 2026 DNS A ของ solar.fowir.com และ mqtt-solar.fowir.com ตอบ 188.166.250.177 ทั้งคู่ ค่านี้เป็นผลตรวจ ณ เวลาจัดเอกสาร ให้ยืนยันว่า IP ตรงกับเครื่องใน Coolify อีกครั้ง การมี DNS ไม่ได้ยืนยันว่า application, port, TLS หรือ MQTT login ใช้ได้แล้ว
 
 Web Compose: API WEB_URL=https://solar.fowir.com, web ส่ง /v1 ผ่าน API_INTERNAL_URL=http://api:3001 บน origin เดียวกัน ไม่มี API domain แยก
-MQTT Compose: MQTT_TLS_DOMAIN=mqtt-solar.fowir.com สำหรับ broker และ certbot; Gateway ใช้ mqtt-solar.fowir.com:8883 TLS
+EMQX Compose: Gateway ใช้ mqtt-solar.fowir.com:8883 TLS โดย EMQX อ่าน certificate จาก `/data/mqtt-certs` บน host; Dashboard ใช้ Coolify HTTPS proxy บน `443`
 
 ## Resource pilot เดิม
 
@@ -39,11 +39,10 @@ MQTT Compose: MQTT_TLS_DOMAIN=mqtt-solar.fowir.com สำหรับ broker แ
 | storage | 0.25 | 256m | 64m |
 | redis | 0.25 | 128m | 32m |
 | mqtt (resource แยก) | 0.25 | 128m | 32m |
-| certbot (resource แยก) | 0.25 | 128m | 32m |
 | migrate (one-shot) | 0.50 | 256m | — |
 | storage-init / release-evidence (แต่ละ one-shot) | 0.25 | 128m | — |
 
-Compose ใส่ default เหล่านี้ไว้แล้ว ไม่ต้องกำหนดซ้ำใน UI; override ด้วย *_CPU_LIMIT / *_MEMORY_LIMIT ตามไฟล์ example ได้ Long-running web RAM ceilings รวม 2304 MiB; รวม MQTT เป็น 2560 MiB เผื่อ OS/Coolify/proxy และช่วง one-shot เริ่มระบบ ตัวเลขเป็นเพดานตั้งต้น ต้องดู peak จริง ถ้ามีแอปอื่นแชร์เครื่องให้ตรวจพื้นที่ RAM/disk ที่เหลือ หลีกเลี่ยง build บนเครื่อง pilot ใช้ GitHub Actions build
+Compose ใส่ default ของ Web resource ไว้แล้ว ไม่ต้องกำหนดซ้ำใน UI; override ด้วย *_CPU_LIMIT / *_MEMORY_LIMIT ตามไฟล์ example ได้ ตัวเลขเป็นเพดานตั้งต้น ต้องดู peak จริง ถ้ามีแอปอื่นแชร์เครื่องให้ตรวจพื้นที่ RAM/disk ที่เหลือ หลีกเลี่ยง build application images บนเครื่อง pilot และใช้ GitHub Actions build
 
 ## ของเดิมที่ยังมีอยู่
 

@@ -105,7 +105,7 @@ test('web and staging API deployments use one required EMQX connection contract'
     assert.match(compose,/EMQX_MANAGEMENT_DEFAULT_BROKER_ID: \$\{EMQX_MANAGEMENT_DEFAULT_BROKER_ID:\?default broker UUID required\}/);
   }
   const staging = readRepositoryFile('infra/docker/docker-compose.staging.yml');
-  assert.doesNotMatch(staging, /MQTT_IMAGE|mqtt-runtime\.py|mqtt:\/\/mqtt:1883/);
+  assert.doesNotMatch(staging, /mqtt-runtime\.py|mqtt:\/\/mqtt:1883/);
 });
 
 test('all documented v1.1 control fixtures pass the production schemas', () => {

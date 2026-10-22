@@ -21,10 +21,6 @@ coverage/
 *.keystore
 /secrets/
 /.secrets/
-infra/docker/mosquitto/auth/
-infra/docker/mosquitto/certs/
-infra/docker/mosquitto/passwords
-
 # Runtime logs, backups, and local database files
 *.log
 *.dump

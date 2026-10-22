@@ -226,26 +226,18 @@ CPU limit เป็นเพดาน ไม่ใช่การจอง core 
 
 แนะนำให้คง `PILOT_USERS_ENABLED=false` และใช้คำสั่งสร้าง user แบบ audited ใน API terminal จาก `coolify-manual-users-th.md` หลังสร้างเสร็จให้ลบ password variables ออกจาก Coolify
 
-## 2. Standalone managed MQTT resource
+## 2. Standalone EMQX resource
 
-Resource นี้ใช้ `infra/docker/docker-compose.mqtt.yml` แยกจาก web application
+Resource นี้ใช้ `infra/docker/docker-compose.emqx.yml` แยกจาก web application และ build จาก Git โดยตรง จึงไม่ใช้ broker/certificate image variables ดูขั้นตอนทั้งหมดใน [คู่มือ Deploy EMQX](coolify-mqtt-deployment-th.md)
 
 | Variable | สถานะ | หน้าที่ |
 | --- | --- | --- |
-| `MQTT_IMAGE` | CI / ต้องกำหนด | Immutable image ของ broker จาก CI run เดียวกับ release |
-| `CERTBOT_IMAGE` | CI / ต้องกำหนด | Immutable image ของ certificate service |
-| `MQTT_PASSWORD` | Secret / ต้องกำหนด | รหัสบัญชี backend `solar-backend` อย่างน้อย 16 ตัวอักษร ต้องตรงกับ Web resource |
-| `MQTT_GATEWAY_CREDENTIALS` | Secret / ต้องกำหนด | JSON map จาก Gateway ID ไปยังรหัสเฉพาะ เช่น `{"GW-001":"..."}` ห้ามใช้ backend password กับ Gateway |
-| `CLOUDFLARE_API_TOKEN` | Secret / ต้องกำหนด | Token ที่มี DNS Edit เฉพาะ zone ที่ใช้ทำ DNS-01 certificate |
-| `ACME_EMAIL` | ต้องกำหนด | อีเมลผู้รับผิดชอบ certificate |
-| `MQTT_CPU_LIMIT` | `0.25` | CPU ceiling ของ broker |
-| `MQTT_MEMORY_LIMIT` | `128m` | Memory ceiling ของ broker |
-| `MQTT_MEMORY_RESERVATION` | `32m` | Memory reservation ของ broker |
-| `CERTBOT_CPU_LIMIT` | `0.25` | CPU ceiling ของ certificate service |
-| `CERTBOT_MEMORY_LIMIT` | `128m` | Memory ceiling ของ certificate service |
-| `CERTBOT_MEMORY_RESERVATION` | `32m` | Memory reservation ของ certificate service |
+| `EMQX_NODE_COOKIE` | Secret / ต้องกำหนด | secret ภายใน EMQX node/cluster |
+| `EMQX_DASHBOARD_USER` | ต้องกำหนด | ชื่อผู้ดูแล Dashboard ที่ไม่ใช่ค่า default |
+| `EMQX_DASHBOARD_PASSWORD` | Secret / ต้องกำหนด | รหัส Dashboard; ไม่ใช้แทน Management API key |
+| `INTERNAL_MQTT_SECRET` | Secret / ต้องกำหนด | ค่าเดียวกับ Web/API resource สำหรับ auth/ACL callback |
 
-`MQTT_TLS_DOMAIN` ถูกกำหนดใน Compose เป็น `mqtt-solar.fowir.com` หากจะเปลี่ยนโดเมนต้องแก้ Compose/runbook และตรวจ certificate/ACL ทั้งชุด ไม่เพิ่มเป็น variable เฉพาะกิจ
+MQTTS `8883` อ่าน certificate จาก `/data/mqtt-certs/fullchain.pem` และ `/data/mqtt-certs/privkey.pem` บน host ส่วน Dashboard ใช้ Coolify HTTPS proxy บน `443` การต่ออายุ certificate ของ `8883` ต้องจัดการที่ host ตามคู่มือ EMQX
 
 ## 3. Disaster-recovery artifact resource
 
