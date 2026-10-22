@@ -134,7 +134,7 @@ test('known gateway cannot downgrade to anonymous even when retired or credentia
   }
 });
 
-test('demo anonymous mode admits an approved credential-free gateway only to its exact control and data topics',async()=>{
+test('demo anonymous mode lets an approved credential-free gateway subscribe to every topic but publish only to its assigned topics',async()=>{
   process.env.GATEWAY_AUTH_MODE='demo-anonymous';
   const f=fixture();
   Object.assign(f.gateway,{credential_id:null,username:null,revoked_at:null,lifecycle_state:'active'});
@@ -145,11 +145,27 @@ test('demo anonymous mode admits an approved credential-free gateway only to its
   assert.deepEqual(await f.controller.authorize({...anonymous,action:'publish',topic:'solar/v1/gateways/GW-001/configStatus'},headers),allow);
   assert.deepEqual(await f.controller.authorize({...anonymous,action:'publish',topic:telemetryAcl.topic},headers),allow);
   assert.deepEqual(await f.controller.authorize({...anonymous,action:'subscribe',topic:ackAcl.topic},headers),allow);
-  for(const topic of ['solar/v1/gateways/OTHER/config','solar/v1/gateways/OTHER/status',
+  for(const topic of ['#','solar/v1/gateways/OTHER/config','solar/v1/sites/OTHER/gateways/GW-001/dataAcept','arbitrary/topic']){
+    assert.deepEqual(await f.controller.authorize({...anonymous,action:'subscribe',topic},headers),allow,topic);
+  }
+  for(const topic of ['solar/v1/gateways/OTHER/status',
     'solar/v1/sites/OTHER/gateways/GW-001/devices/METER-01/telemetry',
     'solar/v1/sites/SITE-01/gateways/GW-001/devices/OTHER/telemetry','#']){
-    assert.deepEqual(await f.controller.authorize({...anonymous,action:topic.endsWith('/config')?'subscribe':'publish',topic},headers),deny,topic);
+    assert.deepEqual(await f.controller.authorize({...anonymous,action:'publish',topic},headers),deny,topic);
   }
+});
+
+test('demo anonymous mode ignores stored gateway credentials while preserving publish isolation',async()=>{
+  process.env.GATEWAY_AUTH_MODE='demo-anonymous';
+  const f=fixture();
+  const anonymous={clientid:'GW-001'};
+
+  assert.deepEqual(await f.controller.authenticate(anonymous,headers),{result:'allow',is_superuser:false});
+  assert.deepEqual(await f.controller.authorize({...anonymous,action:'publish',topic:telemetryAcl.topic},headers),allow);
+  assert.deepEqual(await f.controller.authorize({...anonymous,action:'subscribe',topic:ackAcl.topic},headers),allow);
+  assert.deepEqual(await f.controller.authorize({...anonymous,action:'subscribe',topic:'#'},headers),allow);
+  assert.deepEqual(await f.controller.authorize({...anonymous,action:'publish',topic:'solar/v1/sites/SITE-01/gateways/GW-001/devices/OTHER/telemetry'},headers),deny);
+  assert.deepEqual(await f.controller.authorize({...anonymous,action:'subscribe',topic:'solar/v1/sites/OTHER/gateways/GW-001/dataAcept'},headers),allow);
 });
 
 test('anonymous ACL permits only exact telemetry publish for discovery', async () => {

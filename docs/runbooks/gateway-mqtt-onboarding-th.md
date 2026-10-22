@@ -2,7 +2,7 @@
 
 คู่มือนี้เป็นแหล่งอ้างอิงหลักสำหรับการค้นหา จับคู่ และทดสอบ Gateway ผ่าน MQTT ระบบ **ไม่ใช้ `/register`** อีกแล้ว ข้อความแรกของ Gateway คือ telemetry ปกติบน Topic เดียวกับที่ใช้หลังเชื่อมต่อ รองรับทั้ง schema `1.1` ที่ไม่มี Serial และ schema `1.2` ที่มี Serial
 
-> โหมดสาธิตปัจจุบันใช้ `GATEWAY_AUTH_MODE=demo-anonymous`: Gateway ใช้ Client ID เดิมและเว้น Username/Password ว่างทั้งก่อนและหลังจับคู่ เมื่อ Admin เลือก Site และยืนยัน ระบบจะเปิดรับเฉพาะ route ของ Gateway/Device ที่อนุมัติทันที ไม่ต้องคัดลอก credential หรือรอ Gateway apply config โหมดนี้เหมาะกับเครือข่ายสาธิตที่ควบคุมได้เท่านั้น เพราะ Client ID ไม่ใช่ความลับและปลอมแปลงได้ ก่อน production ให้เปลี่ยนกลับเป็น `credential`
+> โหมดสาธิตปัจจุบันใช้ `GATEWAY_AUTH_MODE=demo-anonymous`: Gateway ใช้ Client ID เดิมและเว้น Username/Password ว่างทั้งก่อนและหลังจับคู่ เมื่อ Admin เลือก Site และยืนยัน ระบบจะเปิดให้ publish เฉพาะ route ของ Gateway/Device ที่อนุมัติ แต่ subscribe ได้ทุก Topic และทุก wildcard รวมถึง `#` ทันที ไม่ต้องคัดลอก credential หรือรอ Gateway apply config สิทธิ์ subscribe แบบกว้างนี้ใช้เพื่อการสาธิตชั่วคราวเท่านั้น เพราะ Gateway ที่จับคู่แล้วสามารถอ่านข้อความของ Gateway อื่นได้ และ Client ID ไม่ใช่ความลับ ก่อน production ต้องเปลี่ยนกลับเป็น `credential`
 
 ตัวอย่างในเอกสารใช้:
 
@@ -168,7 +168,8 @@ solar/v1/sites/SITE-001/gateways/GW-001/devices/SMARTLOGGER-001/telemetry
 - ข้อความใหม่ต้องใช้ `messageId` ใหม่และเพิ่ม `sequence`/`lotNumber`
 - ถ้าอ่านอุปกรณ์ไม่ได้แต่ Gateway ยังส่งสถานะได้ ให้ส่ง `data.values={}` และ `data.units={}` พร้อม `quality.status="unavailable"` และ `quality.communication="offline"`; ระบบจะเก็บ raw status โดยไม่สร้าง measurement sample และส่ง `dataAcept` หลัง commit
 - Empty payload ใช้ได้เฉพาะสถานะ `unavailable`/`offline` และสอง object ต้องว่างทั้งคู่; empty `good`/`online` หรือจำนวน key ไม่ตรงกันจะถูกปฏิเสธ
-- Anonymous client publish ได้เฉพาะ telemetry Topic แบบเต็ม ห้าม wildcard, subscribe, control หรือ `/register`
+- Anonymous client ที่ยังไม่จับคู่ publish ได้เฉพาะ telemetry Topic แบบเต็ม ห้าม wildcard, subscribe, control หรือ `/register`
+- Gateway ที่จับคู่แล้วใน `demo-anonymous` subscribe ได้ทุก Topic/wildcard แต่ publish ได้เฉพาะ Topic ที่ระบบอนุมัติให้ Gateway/Device นั้น
 - First contact เป็นหลักฐานรออนุมัติ ระบบยังไม่บันทึกเป็น production sample, ไม่คำนวณ billing และไม่ส่ง `dataAcept`
 
 ผลที่ต้องเห็นในหน้า Admin → จัดการเกตเวย์:
@@ -291,7 +292,7 @@ Gateway สามารถทำรายการต่อไปนี้ได
 **มี PUBACK แต่ไม่มี `dataAcept`**
 
 - First contact จะไม่ ACK โดยตั้งใจ
-- หลังยืนยันไม่ต้อง reconnect; ตรวจว่า Topic ใช้ Site/Gateway/Device ตรงกับ route ที่ Admin อนุมัติ และ subscribe exact `dataAcept` Topic
+- หลังยืนยันไม่ต้อง reconnect; ตรวจว่า Topic ใช้ Site/Gateway/Device ตรงกับ route ที่ Admin อนุมัติ ใน `demo-anonymous` สามารถ subscribe exact `dataAcept` Topic หรือ wildcard เช่น `#` ได้
 
 **Gateway เคยเชื่อมต่อแล้วแต่ anonymous connect ไม่ได้**
 
@@ -301,4 +302,4 @@ Gateway สามารถทำรายการต่อไปนี้ได
 
 ## 8. กลับไปใช้โหมดปลอดภัยสำหรับ production
 
-ตั้ง `GATEWAY_AUTH_MODE=credential` แล้วรีสตาร์ต API โหมดนี้จะกลับไปสร้าง Username/Password แยกตาม Gateway, รอ `configStatus: applied` ก่อน active และรองรับการหมุน credential ตามเดิม ห้ามใช้ `demo-anonymous` บน broker สาธารณะหรือ production เพราะผู้ที่ทราบ Client ID อาจปลอมเป็น Gateway ได้
+ตั้ง `GATEWAY_AUTH_MODE=credential` แล้วรีสตาร์ต API โหมดนี้จะกลับไปสร้าง Username/Password แยกตาม Gateway, รอ `configStatus: applied` ก่อน active และรองรับการหมุน credential ตามเดิม ห้ามใช้ `demo-anonymous` บน broker สาธารณะหรือ production เพราะผู้ที่ทราบ Client ID อาจปลอมเป็น Gateway และ Gateway ที่จับคู่แล้วสามารถ subscribe ข้อมูลทุก Topic ได้

@@ -62,7 +62,7 @@ export class MqttAuthController {
     if (!validIdentity(dto.clientid) || dto.clientid === 'solar-backend') return { result: 'deny' };
     try {
       if (username === '' && password === '') {
-        if(gatewayAuthenticationMode()==='demo-anonymous'&&await this.uncredentialedIdentity(dto.clientid)){
+        if(gatewayAuthenticationMode()==='demo-anonymous'&&await this.gatewayIdentity(dto.clientid)){
           return {result:'allow',is_superuser:false};
         }
         return await this.isAnonymous(dto.clientid) ? { result: 'allow', is_superuser: false } : { result: 'deny' };
@@ -91,8 +91,8 @@ export class MqttAuthController {
       if ((dto.username ?? '') === '') {
         if(dto.password)return {result:'deny'};
         if(gatewayAuthenticationMode()==='demo-anonymous'){
-          const gateway=await this.uncredentialedIdentity(dto.clientid);
-          if(gateway)return this.authorizeGateway(dto,gateway);
+          const gateway=await this.gatewayIdentity(dto.clientid);
+          if(gateway)return dto.action==='subscribe'?{result:'allow'}:this.authorizeGateway(dto,gateway);
         }
         return dto.action==='publish'&&telemetryTopic(dto.topic)&&await this.isAnonymous(dto.clientid)?{result:'allow'}:{result:'deny'};
       }
@@ -140,11 +140,6 @@ export class MqttAuthController {
     const mqttIdentity=row?.gateway_serial??row?.external_gateway_id;
     if(!row||row.username!==mqttIdentity||!row.credential_id||row.revoked_at!==null)return null;
     return row;
-  }
-
-  private async uncredentialedIdentity(clientId:string):Promise<GatewayIdentity|null>{
-    const row=await this.gatewayIdentity(clientId);
-    return row&&!row.credential_id&&row.username===null?row:null;
   }
 
   private async gatewayIdentity(username:string):Promise<GatewayIdentity|null>{
