@@ -1,5 +1,6 @@
-# Standalone EMQX 5.8.3 broker. Only MQTTS is published on the host.
-# TCP 1883 and the HTTPS dashboard remain reachable only on the Compose/private network.
+# Standalone EMQX 5.8.3 broker. Only MQTTS is published directly on the host.
+# TCP 1883 and dashboard HTTP 18083 stay on the private network; Coolify terminates
+# dashboard TLS on port 443 and forwards to the internal HTTP listener.
 services:
   mqtt:
     build:
@@ -16,12 +17,9 @@ services:
       - 'EMQX_NODE__COOKIE="${EMQX_NODE_COOKIE:?required}"'
       - 'EMQX_DASHBOARD__DEFAULT_USERNAME="${EMQX_DASHBOARD_USER:?required}"'
       - 'EMQX_DASHBOARD__DEFAULT_PASSWORD="${EMQX_DASHBOARD_PASSWORD:?required}"'
-      - EMQX_DASHBOARD__LISTENERS__HTTPS__ENABLE=true
-      - EMQX_DASHBOARD__LISTENERS__HTTPS__BIND=0.0.0.0:18083
-      - EMQX_DASHBOARD__LISTENERS__HTTPS__SSL_OPTIONS__CERTFILE=/opt/emqx/certs/server/fullchain.pem
-      - EMQX_DASHBOARD__LISTENERS__HTTPS__SSL_OPTIONS__KEYFILE=/opt/emqx/certs/server/privkey.pem
-      - EMQX_DASHBOARD__LISTENERS__HTTPS__SSL_OPTIONS__CACERTFILE=/opt/emqx/certs/server/fullchain.pem
-      - EMQX_DASHBOARD__LISTENERS__HTTP__BIND=0
+      - EMQX_DASHBOARD__LISTENERS__HTTP__BIND=0.0.0.0:18083
+      - EMQX_DASHBOARD__LISTENERS__HTTPS__ENABLE=false
+      - EMQX_DASHBOARD__LISTENERS__HTTPS__BIND=0
       - EMQX_AUTHORIZATION__NO_MATCH=deny
       - EMQX_AUTHORIZATION__DENY_ACTION=ignore
       # EMQX 5.8.3 HOCON path: do not retain a positive ACL decision after

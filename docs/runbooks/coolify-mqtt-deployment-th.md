@@ -1,6 +1,6 @@
 # Deploy EMQX สำหรับ Solar Platform บน Coolify
 
-คู่มือนี้ใช้ EMQX `5.8.3` จาก `infra/docker/docker-compose.emqx.yml` เป็น Broker ของ control plane และ telemetry รุ่น 1.1 โดยแยก resource ออกจากเว็บ การ deploy นี้เปิดสู่ภายนอกเฉพาะ MQTTS `8883`; TCP `1883` และ Dashboard HTTPS `18083` อยู่ใน private Compose network เท่านั้น
+คู่มือนี้ใช้ EMQX `5.8.3` จาก `infra/docker/docker-compose.emqx.yml` เป็น Broker ของ control plane และ telemetry รุ่น 1.1 โดยแยก resource ออกจากเว็บ การ deploy นี้เปิด MQTTS `8883` โดยตรง ส่วน Dashboard รับ HTTP ที่ `18083` เฉพาะ private Compose network และให้ Coolify proxy จบ TLS บน `443`; TCP `1883` ยังคงเป็น private เท่านั้น
 
 ## 1. สิ่งที่ต้องเตรียม
 
@@ -17,8 +17,9 @@
 1. Coolify → Project/Environment เดียวกับเว็บ → New Resource → Git repository → branch/revision ที่ผ่าน CI
 2. เลือก Docker Compose และตั้ง Compose Location เป็น `/infra/docker/docker-compose.emqx.yml`
 3. คัดลอกชื่อค่าจาก `infra/docker/.env.emqx.example` ไป Coolify แล้วแทน placeholder ทุกตัว
-4. สร้าง secret เป็น hexadecimal เพื่อไม่ให้ HOCON ตีความ `#`, `:` หรือ `=` เช่น `openssl rand -hex 32`; เก็บผลใน secret manager ไม่ใส่ Git, ticket หรือ log
-5. `INTERNAL_MQTT_SECRET` ต้องเป็นค่าเดียวกับ API ส่วน `EMQX_NODE_COOKIE`, Dashboard password และ `MQTT_PASSWORD` ต้องเป็นคนละค่า
+4. ที่ Domains เพิ่ม `https://mqtt-solar.fowir.com:18083` ให้ service `mqtt`; `18083` คือ target ภายใน และผู้ใช้เปิดจริงที่ `https://mqtt-solar.fowir.com` โดยไม่ใส่ port
+5. สร้าง secret เป็น hexadecimal เพื่อไม่ให้ HOCON ตีความ `#`, `:` หรือ `=` เช่น `openssl rand -hex 32`; เก็บผลใน secret manager ไม่ใส่ Git, ticket หรือ log
+6. `INTERNAL_MQTT_SECRET` ต้องเป็นค่าเดียวกับ API ส่วน `EMQX_NODE_COOKIE`, Dashboard password และ `MQTT_PASSWORD` ต้องเป็นคนละค่า
 
 Compose ใช้ bind mount แบบ path คงที่ `/data/mqtt-certs` และ `/etc/ssl/certs/ca-certificates.crt` โดยตั้งใจ เพราะ Coolify ปฏิเสธ `${...}` ใน volume source เพื่อป้องกัน command injection ต้องสร้างไฟล์บน host ตามข้อ 1 ก่อน deploy และไม่ต้องเพิ่ม `MQTT_CERTS_DIR` หรือ `MQTT_WEBHOOK_CA_FILE` ใน Environment Variables ของ resource
 
@@ -94,7 +95,7 @@ curl -fsS http://127.0.0.1:3001/ready/mqtt
 
 - TLS ต้องตรวจ chain และ hostname ผ่าน
 - `/ready/mqtt` ต้องตอบ HTTP `200` และ JSON `{"status":"ready","configuredBrokers":1,"readyBrokers":1}` เมื่อมี Broker เดียว
-- EMQX Dashboard ต้องเข้าผ่าน private network/SSH tunnel เท่านั้น และต้องไม่มี default credential
+- EMQX Dashboard ต้องเข้าผ่าน Coolify HTTPS proxy ที่ `https://mqtt-solar.fowir.com` เท่านั้น ห้าม publish host port `18083` และต้องไม่มี default credential; จำกัดผู้เข้าถึงด้วย allowlist หรือ access gateway เมื่อเปิดใช้งานนอกทีม
 - API backend ต้องเป็น client อย่างน้อย 1 รายและมี subscription QoS 1 สี่เส้น: `configUpdate`, `configStatus`, `status` และ `$solar/internal/telemetry/+/solar/v1/sites/+/gateways/+/devices/+/telemetry`; EMQX ต้องมี rule `telemetry_ingress` ที่ republish canonical telemetry พร้อม `${clientid}` ไปเส้น private นี้ ส่วน API ไม่ subscribe เส้น `config` และไม่ใช้ `/register`
 
 จำนวน clients/subscriptions ใน Dashboard เป็นค่าปัจจุบันและอาจมี session อื่น ให้เทียบ delta กับ baseline ก่อนเปิด MQTTBox แทนการยึดเลขรวมคงที่

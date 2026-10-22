@@ -48,6 +48,38 @@ test('Coolify project-root rendering bakes EMQX config into the image without a 
   );
 });
 
+test('Coolify terminates dashboard TLS and forwards privately to EMQX over HTTP', () => {
+  const result = spawnSync(
+    'docker',
+    [
+      'compose',
+      '--project-directory',
+      '.',
+      '--env-file',
+      'infra/docker/.env.emqx.example',
+      '-f',
+      'infra/docker/docker-compose.emqx.yml',
+      'config',
+      '--format',
+      'json',
+    ],
+    {cwd: repositoryRoot, encoding: 'utf8'},
+  );
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const compose = JSON.parse(result.stdout);
+  const mqtt = compose.services.mqtt;
+
+  assert.equal(
+    mqtt.environment.EMQX_DASHBOARD__LISTENERS__HTTP__BIND,
+    '0.0.0.0:18083',
+  );
+  assert.equal(mqtt.environment.EMQX_DASHBOARD__LISTENERS__HTTPS__ENABLE, 'false');
+  assert.equal(mqtt.environment.EMQX_DASHBOARD__LISTENERS__HTTPS__BIND, '0');
+  assert.deepEqual(mqtt.ports.map(port => port.target), [8883]);
+  assert.ok(mqtt.expose.includes('18083'));
+});
+
 test('custom EMQX config passes the pinned broker schema validation', () => {
   const configPath = join(repositoryRoot, 'infra/docker/emqx/emqx.conf');
   const result = spawnSync(
