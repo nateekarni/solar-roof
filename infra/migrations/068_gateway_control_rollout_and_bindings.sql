@@ -88,9 +88,7 @@ WHERE g.control_managed_at IS NOT NULL AND g.applied_config_version>0
     ORDER BY configured_group.name)
   AND jsonb_array_length(coalesce(p.config->'fields','[]'::jsonb))=jsonb_array_length(coalesce(configured.device->'mappings','[]'::jsonb))
   AND (SELECT count(*) FROM register_mapping_versions rm
-    WHERE rm.device_id=d.id AND rm.effective_to IS NULL)=(
-      SELECT count(*) FROM jsonb_array_elements(coalesce(configured.device->'mappings','[]'::jsonb)) physical(mapping)
-      WHERE physical.mapping ? 'registerAddress')
+    WHERE rm.device_id=d.id AND rm.effective_to IS NULL)=jsonb_array_length(coalesce(configured.device->'mappings','[]'::jsonb))
   AND NOT EXISTS (
     SELECT 1 FROM jsonb_array_elements(coalesce(configured.device->'mappings','[]'::jsonb)) cm(mapping)
     WHERE (SELECT count(*) FROM jsonb_array_elements(coalesce(p.config->'fields','[]'::jsonb)) pf(field)
@@ -102,7 +100,7 @@ WHERE g.control_managed_at IS NOT NULL AND g.applied_config_version>0
         AND pf.field->>'conversion'=cm.mapping->>'conversion'
         AND coalesce(pf.field->>'role','none')=coalesce(cm.mapping->>'role','none')
         AND coalesce(pf.field->>'required','false')=coalesce(cm.mapping->>'required','false')
-    )<>1 OR (cm.mapping ? 'registerAddress' AND (SELECT count(*) FROM register_mapping_versions rm
+    )<>1 OR (SELECT count(*) FROM register_mapping_versions rm
       WHERE rm.device_id=d.id AND rm.effective_to IS NULL
         AND rm.semantic_field=cm.mapping->>'tag'
         AND rm.register_address=cm.mapping->>'registerAddress'
@@ -115,6 +113,6 @@ WHERE g.control_managed_at IS NOT NULL AND g.applied_config_version>0
         AND rm.quality_rule->>'pollGroup'=cm.mapping->>'pollGroup'
         AND coalesce(rm.quality_rule->'offset','0'::jsonb)=coalesce(cm.mapping->'offset','0'::jsonb)
         AND rm.signed=((cm.mapping->>'dataType') IN ('int16','int32'))
-    )<>1)
+    )<>1
   )
 ON CONFLICT (gateway_id,config_version,external_device_id) DO NOTHING;

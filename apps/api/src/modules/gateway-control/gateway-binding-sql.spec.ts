@@ -146,3 +146,29 @@ test('migration 068 backfill has the same ownership boundary and is rerun-idempo
     }
   }finally{await db.close();}
 });
+
+test('migration 072 backfills logical telemetry mappings without changing applied migration 068',async()=>{
+  const db=new PGlite();
+  try{
+    await seed(db,true);
+    const logicalConfig=structuredClone(config);
+    for(const device of logicalConfig.devices)for(const field of device.mappings){
+      for(const key of ['registerAddress','registerCount','dataType','byteOrder','wordOrder','scale','offset'] as const){
+        delete (field as Record<string,unknown>)[key];
+      }
+    }
+    const logicalProfile=structuredClone(profile);
+    for(const field of logicalProfile.fields)delete (field as Record<string,unknown>).registerAddress;
+    await db.query('UPDATE gateway_configuration_revisions SET config=$2::jsonb WHERE gateway_id=$1',[gatewayId,JSON.stringify(logicalConfig)]);
+    await db.query('UPDATE payload_profile_revisions SET config=$1::jsonb',[JSON.stringify(logicalProfile)]);
+    await db.exec('TRUNCATE register_mapping_versions');
+    const migration068=await readFile(new URL('../../../../../infra/migrations/068_gateway_control_rollout_and_bindings.sql',import.meta.url),'utf8');
+    const migration072=await readFile(new URL('../../../../../infra/migrations/072_gateway_logical_telemetry_bindings.sql',import.meta.url),'utf8');
+    await db.exec(migration068);
+    assert.deepEqual(await bound(db),[]);
+    await db.exec(migration072);
+    assert.deepEqual(await bound(db),['OWNED-SAME','SHARED']);
+    await db.exec(migration072);
+    assert.deepEqual(await bound(db),['OWNED-SAME','SHARED']);
+  }finally{await db.close();}
+});
