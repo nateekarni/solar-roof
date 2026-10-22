@@ -1,7 +1,9 @@
 import { after, before, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as argon2 from 'argon2';
-import type { DatabaseService } from '../../database/database.service.js';
+import { Module } from '@nestjs/common';
+import { NestFactory } from '@nestjs/core';
+import { DatabaseService } from '../../database/database.service.js';
 import { GatewayCredentialService, GatewayCredentialVerification } from '../gateway-control/gateway-credential.service.js';
 import { MqttAuthController } from './mqtt-auth.controller.js';
 
@@ -53,6 +55,35 @@ const registered = { username: 'GW-001', clientid: 'GW-001' };
 const controlAcl = { ...registered, action: 'publish' as const, topic: 'solar/v1/gateways/GW-001/status' };
 const telemetryAcl = { ...registered, action: 'publish' as const, topic: 'solar/v1/sites/SITE-01/gateways/GW-001/devices/METER-01/telemetry' };
 const ackAcl = { ...registered, action: 'subscribe' as const, topic: 'solar/v1/sites/SITE-01/gateways/GW-001/dataAcept' };
+
+test('EMQX HTTP callbacks return 200 so the broker evaluates their result bodies', async () => {
+  @Module({
+    controllers: [MqttAuthController],
+    providers: [
+      { provide: DatabaseService, useValue: { query: async () => ({ rows: [] }) } },
+      { provide: GatewayCredentialService, useValue: {} },
+    ],
+  })
+  class TestModule {}
+  const app = await NestFactory.create(TestModule, { logger: false });
+  try {
+    await app.listen(0, '127.0.0.1');
+    const url = await app.getUrl();
+    const options = {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...headers },
+      body: JSON.stringify({ clientid: 'GW-001' }),
+    };
+    const auth = await fetch(`${url}/v1/internal/mqtt/auth`, options);
+    const acl = await fetch(`${url}/v1/internal/mqtt/acl`, options);
+    assert.equal(auth.status, 200);
+    assert.equal(acl.status, 200);
+    assert.deepEqual(await auth.json(), { result: 'allow', is_superuser: false });
+    assert.deepEqual(await acl.json(), deny);
+  } finally {
+    await app.close();
+  }
+});
 
 test('configured callback secret is mandatory on auth and ACL including backend bypasses', async () => {
   const f = fixture();

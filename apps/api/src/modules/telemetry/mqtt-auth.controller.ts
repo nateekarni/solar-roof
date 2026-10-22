@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Headers, Inject } from '@nestjs/common';
+import { Controller, Post, Body, Headers, HttpCode, Inject } from '@nestjs/common';
 import { timingSafeEqual } from 'node:crypto';
 import { Public } from '../identity/public.decorator.js';
 import { DatabaseService } from '../../database/database.service.js';
@@ -50,6 +50,7 @@ export class MqttAuthController {
 
   @Public()
   @Post('auth')
+  @HttpCode(200)
   async authenticate(@Body() dto: EmqxAuthDto, @Headers() headers?: Record<string, string>): Promise<EmqxAuthResponse> {
     if (!callbackAllowed(headers) || !bodyValid(dto)) return { result: 'deny' };
     const username = dto.username ?? '', password = dto.password ?? '';
@@ -74,6 +75,7 @@ export class MqttAuthController {
 
   @Public()
   @Post('acl')
+  @HttpCode(200)
   async authorize(@Body() dto: EmqxAclDto, @Headers() headers?: Record<string, string>): Promise<EmqxAclResponse> {
     if (!callbackAllowed(headers) || !bodyValid(dto)
       || !['publish', 'subscribe'].includes(dto.action ?? '') || typeof dto.topic !== 'string' || !dto.topic) return { result: 'deny' };
