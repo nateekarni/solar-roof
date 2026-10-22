@@ -6,10 +6,19 @@ WORKDIR /app
 RUN npm install --global pnpm@11.24.0
 
 FROM base AS build
-# All workspace packages are required for frozen-lockfile resolution and TS paths.
+# Install from manifests before copying source so application-only changes reuse dependencies.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/api/package.json ./apps/api/package.json
+COPY apps/web/package.json ./apps/web/package.json
+COPY apps/worker/package.json ./apps/worker/package.json
+COPY packages/api-contracts/package.json ./packages/api-contracts/package.json
+COPY packages/connectors/package.json ./packages/connectors/package.json
+COPY packages/domain/package.json ./packages/domain/package.json
+COPY packages/i18n/package.json ./packages/i18n/package.json
+COPY packages/ui/package.json ./packages/ui/package.json
+RUN pnpm install --frozen-lockfile
 # .dockerignore excludes local env files, credentials, build output and dependencies.
 COPY . .
-RUN pnpm install --frozen-lockfile
 RUN pnpm --filter @solar/web... --recursive build
 
 FROM base AS runtime
