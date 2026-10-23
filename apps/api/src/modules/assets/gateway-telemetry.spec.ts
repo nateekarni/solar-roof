@@ -78,6 +78,13 @@ test('gatewayTelemetry returns gateway details and formatted telemetry samples',
           ],
         };
       }
+      if (sql.includes('FROM payload_messages m')) {
+        return {rows:[{
+          id:'payload-uuid',deviceId:'device-uuid',messageId:'message-1',lotNumber:'3',sequence:'8',
+          polledAt:new Date('2026-10-18T08:00:00.000Z'),sentAt:new Date('2026-10-18T08:00:00.500Z'),receivedAt:new Date('2026-10-18T08:00:01.000Z'),
+          payload:{messageId:'message-1',data:{values:{'power.active.total':5500}}},sampleCount:'1',quality:'good',communication:'online',pollGroup:'realtime',
+        }]};
+      }
       return { rows: [] };
     },
   };
@@ -95,11 +102,28 @@ test('gatewayTelemetry returns gateway details and formatted telemetry samples',
   assert.equal(result.samples[0]?.sourceTime, '2026-10-18T08:00:00.000Z');
   assert.equal(result.samples[0]?.receivedAt, '2026-10-18T08:00:01.000Z');
   assert.equal((result.samples[0] as {tag?:string})?.tag, 'power.active.total');
+  assert.equal(result.payloads.length,1);
+  assert.equal(result.payloads[0]?.messageId,'message-1');
+  assert.equal(result.payloads[0]?.sampleCount,1);
+  assert.deepEqual(result.payloads[0]?.payload,{messageId:'message-1',data:{values:{'power.active.total':5500}}});
 
   // Verify the second query uses the gateway UUID and lateral joins
-  assert.equal(queries.length, 2);
+  assert.equal(queries.length, 3);
   assert.ok(queries[1]?.sql.includes('CROSS JOIN LATERAL'));
   assert.deepEqual(queries[1]?.values, [gatewayId]);
+  assert.ok(queries[2]?.sql.includes('FROM payload_messages m'));
+  assert.deepEqual(queries[2]?.values,[gatewayId]);
+});
+
+test('gateway list reads the cumulative value from the active billing source instead of solar production',async()=>{
+  let query='';
+  const db={query:async(sql:string)=>{query=sql;return {rows:[{id:'gateway',billingEnergyKwh:'29140'}]};}};
+  const rows=await new AssetsService(db as any).listGateways(null);
+  assert.equal(rows[0]?.billingEnergyKwh,'29140');
+  assert.match(query,/telemetry_raw/);
+  assert.match(query,/billing_source_binding_id/);
+  assert.match(query,/total_energy_kwh/);
+  assert.match(query,/AS "billingEnergyKwh"/);
 });
 
 test('gateway collection queries stay inside the migrated gateway schema',async()=>{

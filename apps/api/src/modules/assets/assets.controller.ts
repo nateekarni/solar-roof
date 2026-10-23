@@ -52,12 +52,18 @@ export class AssetsController {
     return (await this.db.query(`SELECT g.id,g.site_id AS "siteId",s.name AS "siteName",s.external_site_id AS "siteCode",g.name,g.external_gateway_id AS "externalGatewayId",g.endpoint AS "subscriptionTopic",g.last_seen_at AS "lastSeenAt",g.polling_interval_seconds AS "pollingIntervalSeconds",
       CASE WHEN g.last_seen_at BETWEEN now()-make_interval(secs=>greatest(120,g.polling_interval_seconds*2)) AND now() THEN 'online' ELSE 'offline' END AS status,
       g.desired_config_version AS "desiredVersion",g.published_config_version AS "publishedVersion",g.acknowledged_config_version AS "acknowledgedVersion",g.applied_config_version AS "appliedVersion",g.lifecycle_state AS "lifecycleState",g.config_state AS "configState",g.status AS "connectionState",
-      (SELECT count(*)::int FROM devices WHERE gateway_id=g.id) AS "deviceCount",latest.measured AS "lastMeasuredAt",latest.received AS "lastReceivedAt",pv.kw AS "currentProductionKw"
+      (SELECT count(*)::int FROM devices WHERE gateway_id=g.id) AS "deviceCount",latest.measured AS "lastMeasuredAt",latest.received AS "lastReceivedAt",pv.kw AS "currentProductionKw",billing.energy_kwh AS "billingEnergyKwh"
       FROM gateways g JOIN sites s ON s.id=g.site_id LEFT JOIN LATERAL (
         SELECT max(sample.measured) AS measured,max(sample.received) AS received FROM devices d
         LEFT JOIN LATERAL (SELECT coalesce(ps.measured_at,ps.polled_at) AS measured,ps.received_at AS received FROM payload_samples ps WHERE ps.device_id=d.id ORDER BY coalesce(ps.measured_at,ps.polled_at) DESC,ps.received_at DESC,ps.id DESC LIMIT 1) sample ON true
         WHERE d.gateway_id=g.id
       ) latest ON true
+      LEFT JOIN LATERAL (SELECT CASE WHEN count(*)=1 THEN max(reading.value_kwh) ELSE NULL END AS energy_kwh
+        FROM billing_meters meter JOIN billing_source_bindings binding ON binding.id=meter.billing_source_binding_id
+        JOIN LATERAL (SELECT tr.total_energy_kwh AS value_kwh FROM telemetry_raw tr WHERE tr.site_id=g.site_id AND tr.device_id=binding.device_id
+          AND tr.payload_profile_revision_id=binding.profile_revision_id AND tr.billing_source_binding_id=binding.id AND tr.quality='complete' AND tr.total_energy_kwh IS NOT NULL AND tr.total_energy_kwh>=0
+          ORDER BY tr.source_time DESC,tr.received_time DESC,tr.id DESC LIMIT 1) reading ON true
+        WHERE meter.site_id=g.site_id AND meter.active=true) billing ON true
       LEFT JOIN LATERAL (SELECT CASE WHEN count(*)=1 AND bool_and(ps.quality='good' AND ps.communication='online' AND ps.unit IN('W','kW') AND ps.value>=0 AND ps.value<'Infinity'::float8
         AND coalesce(ps.measured_at,ps.polled_at) BETWEEN now()-make_interval(secs=>greatest(120,d.expected_interval_seconds*2)) AND now() AND ps.received_at BETWEEN now()-make_interval(secs=>greatest(120,d.expected_interval_seconds*2)) AND now()) THEN max(CASE WHEN ps.unit='W' THEN ps.value/1000 ELSE ps.value END) ELSE NULL END AS kw
         FROM devices d JOIN payload_profile_revisions p ON p.id=d.payload_profile_revision_id LEFT JOIN LATERAL (SELECT * FROM payload_samples WHERE device_id=d.id AND profile_revision_id=d.payload_profile_revision_id AND tag='solar.active_power' ORDER BY coalesce(measured_at,polled_at) DESC,received_at DESC,id DESC LIMIT 1) ps ON true
@@ -166,6 +172,24 @@ export class AssetsController {
       WHERE d.gateway_id = $1
       ORDER BY d.id, ps.tag`, [gateway.id]);
 
+    const payloads=await this.db.query<{
+      id:string;deviceId:string;messageId:string;lotNumber:number|string;sequence:number|string;polledAt:string|Date|null;sentAt:string|Date|null;receivedAt:string|Date|null;
+      payload:unknown;sampleCount:number|string;quality:string;communication:string;pollGroup:string;
+    }>(`WITH ranked AS (
+      SELECT m.*,row_number() OVER(PARTITION BY m.device_id ORDER BY m.accepted_at DESC,m.id DESC) AS message_rank
+      FROM payload_messages m JOIN devices d ON d.id=m.device_id WHERE d.gateway_id=$1
+    )
+    SELECT m.id,m.device_id AS "deviceId",m.message_id AS "messageId",m.lot_number AS "lotNumber",m.sequence,
+      m.polled_at AS "polledAt",m.sent_at AS "sentAt",m.accepted_at AS "receivedAt",coalesce(m.source_payload,m.raw_payload) AS payload,
+      coalesce(stats.sample_count,0)::int AS "sampleCount",coalesce(stats.quality,'unknown') AS quality,
+      coalesce(stats.communication,'unknown') AS communication,coalesce(stats.poll_group,'') AS "pollGroup"
+    FROM ranked m LEFT JOIN LATERAL (
+      SELECT count(ps.id)::int AS sample_count,CASE WHEN count(DISTINCT ps.quality)=1 THEN min(ps.quality) ELSE 'mixed' END AS quality,
+        CASE WHEN count(DISTINCT ps.communication)=1 THEN min(ps.communication) ELSE 'mixed' END AS communication,
+        string_agg(DISTINCT ps.poll_group,', ' ORDER BY ps.poll_group) AS poll_group
+      FROM payload_samples ps WHERE ps.message_id=m.id
+    ) stats ON true WHERE m.message_rank<=20 ORDER BY m.device_id,m.accepted_at DESC,m.id DESC`,[gateway.id]);
+
     return {
       gateway,
       samples: samples.rows.map(row => ({
@@ -176,6 +200,8 @@ export class AssetsController {
         sourceTime: row.sourceTime ? new Date(row.sourceTime).toISOString() : null,
         receivedAt: row.receivedAt ? new Date(row.receivedAt).toISOString() : null,
       })),
+      payloads:payloads.rows.map(row=>({...row,lotNumber:Number(row.lotNumber),sequence:Number(row.sequence),sampleCount:Number(row.sampleCount),
+        polledAt:row.polledAt?new Date(row.polledAt).toISOString():null,sentAt:row.sentAt?new Date(row.sentAt).toISOString():null,receivedAt:row.receivedAt?new Date(row.receivedAt).toISOString():null})),
     };
   }
 

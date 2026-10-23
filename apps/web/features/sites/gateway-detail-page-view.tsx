@@ -2,10 +2,11 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { ChevronRight, ArrowLeft, RefreshCw, Settings, Clock, CheckCircle2, AlertTriangle, XCircle, Info, Copy, Check } from 'lucide-react';
+import { ChevronRight, ArrowLeft, RefreshCw, Settings, Clock, CheckCircle2, AlertTriangle, XCircle, Info, Copy, Check, Braces } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../../components/ui/card';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../../components/ui/dialog';
 import { formatAppDateTime } from '../../lib/date-format';
 import { formatFlexibleDecimal } from '../../lib/number-format';
 import { TelemetryAgeLabel } from '../shared/telemetry-age-label';
@@ -18,10 +19,9 @@ import {GatewayCredentialRecovery} from './gateway-credential-recovery';
 import { GatewayEditDialog } from './gateway-edit-dialog';
 import {GatewayConfigProposals} from './gateway-config-proposals';
 import {GatewayOperationalStatus} from './gateway-operational-status';
-import {GatewayInitialConfigCorrection} from './gateway-initial-config-correction';
+import {canCorrectInitialConfig,GatewayInitialConfigCorrection} from './gateway-initial-config-correction';
 import type {CorrectInitialGatewayConfigRequest,GatewaySyncState} from '@solar/api-contracts';
 export {GatewayOperationalStatus} from './gateway-operational-status';
-import { getTelemetryTagLabel } from './telemetry-tag-labels';
 import type { GatewayRow } from './gateway-index';
 import type { PayloadConfig } from './payload-contracts';
 import type { MetricSources } from './dashboard-source-model';
@@ -42,6 +42,59 @@ export type DeviceTelemetrySample = {
   communication: string;
   pollGroup: string;
 };
+
+export type DeviceTelemetryPayload = {
+  id: string;
+  deviceId: string;
+  messageId: string;
+  lotNumber: number;
+  sequence: number;
+  polledAt: string | null;
+  sentAt: string | null;
+  receivedAt: string | null;
+  payload: unknown;
+  sampleCount: number;
+  quality: string;
+  communication: string;
+  pollGroup: string;
+};
+
+function TelemetryQualityBadge({quality,locale}:{quality:string;locale:'th'|'en'}) {
+  const q=(quality||'').toLowerCase(),isGood=['good','complete','ok'].includes(q),isWarning=['fair','partial','mixed'].includes(q),th=locale==='th';
+  return <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${isGood?'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400':isWarning?'bg-amber-500/10 text-amber-700 dark:text-amber-400':'bg-red-500/10 text-red-700 dark:text-red-400'}`}>
+    {isGood?<CheckCircle2 className="size-3"/>:isWarning?<AlertTriangle className="size-3"/>:<XCircle className="size-3"/>}
+    <span>{isGood?(th?'สมบูรณ์':'Good'):isWarning?(th?'บางส่วน':'Fair'):(th?'ไม่สมบูรณ์':'Bad')}</span>
+  </span>;
+}
+
+export function GatewayTelemetryPayloadTable({payloads,locale,onSelect}:{payloads:DeviceTelemetryPayload[];locale:'th'|'en';onSelect:(payload:DeviceTelemetryPayload)=>void}) {
+  const th=locale==='th';
+  return <div className="overflow-x-auto"><table className="w-full text-xs text-left">
+    <thead className="bg-muted/30 text-muted-foreground border-b border-border/60 uppercase text-[11px] font-medium tracking-wider"><tr>
+      <th className="py-3 px-6">{th?'เวลาที่รับ':'Received'}</th><th className="py-3 px-6">Message ID</th><th className="py-3 px-6">{th?'ชุดข้อมูล':'Payload'}</th><th className="py-3 px-6">{th?'สถานะข้อมูล':'Quality'}</th><th className="py-3 px-6 text-right">{th?'รายละเอียด':'Details'}</th>
+    </tr></thead>
+    <tbody className="divide-y divide-border/60">{payloads.map(payload=><tr key={payload.id} className="cursor-pointer hover:bg-muted/20 transition-colors" onClick={()=>onSelect(payload)}>
+      <td className="py-3 px-6 text-muted-foreground">{payload.receivedAt?<div className="space-y-0.5"><div className="text-foreground">{formatAppDateTime(payload.receivedAt,locale)}</div><div className="text-[11px]"><TelemetryAgeLabel value={payload.receivedAt} locale={locale}/></div></div>:'—'}</td>
+      <td className="py-3 px-6"><div className="font-mono text-foreground break-all">{payload.messageId}</div><div className="text-[11px] text-muted-foreground">Lot {payload.lotNumber} · Seq {payload.sequence}</div></td>
+      <td className="py-3 px-6"><div className="font-medium text-foreground">{payload.pollGroup||'—'}</div><div className="text-[11px] text-muted-foreground">{payload.sampleCount} {th?'ค่า':'values'}</div></td>
+      <td className="py-3 px-6"><TelemetryQualityBadge quality={payload.quality} locale={locale}/></td>
+      <td className="py-3 px-6 text-right"><Button type="button" variant="ghost" size="sm" className="gap-1.5" onClick={event=>{event.stopPropagation();onSelect(payload);}} aria-label={th?`ดูรายละเอียดข้อมูล ${payload.messageId}`:`View payload ${payload.messageId}`}><Braces className="size-3.5"/>{th?'ดู JSON':'View JSON'}</Button></td>
+    </tr>)}</tbody>
+  </table></div>;
+}
+
+export function GatewayTelemetryPayloadJson({payload,deviceName,locale,showHeading=true}:{payload:DeviceTelemetryPayload;deviceName:string;locale:'th'|'en';showHeading?:boolean}) {
+  const th=locale==='th';
+  return <>{showHeading?<header><h2 className="font-heading text-base font-semibold">{th?'รายละเอียด JSON ที่เกตเวย์ส่ง':'Gateway payload JSON'}</h2><p className="text-sm text-muted-foreground">{deviceName} · {payload.messageId}</p></header>:null}
+    <pre className="min-h-0 flex-1 overflow-auto rounded-lg border border-border bg-muted/40 p-4 text-xs leading-relaxed text-foreground"><code>{JSON.stringify(payload.payload,null,2)}</code></pre></>;
+}
+
+export function GatewayTelemetryPayloadDialog({payload,deviceName,locale,open,onOpenChange}:{payload:DeviceTelemetryPayload|null;deviceName:string;locale:'th'|'en';open:boolean;onOpenChange:(open:boolean)=>void}) {
+  const th=locale==='th';
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="sm:max-w-3xl max-h-[85vh] overflow-hidden flex flex-col">
+    {payload?<><DialogHeader><DialogTitle>{th?'รายละเอียด JSON ที่เกตเวย์ส่ง':'Gateway payload JSON'}</DialogTitle><DialogDescription>{deviceName} · {payload.messageId}</DialogDescription></DialogHeader><GatewayTelemetryPayloadJson payload={payload} deviceName={deviceName} locale={locale} showHeading={false}/></>:null}
+  </DialogContent></Dialog>;
+}
 
 export type GatewayConfig = PayloadConfig & {
   metricSources?: MetricSources;
@@ -115,7 +168,8 @@ export function GatewayDetailPageView({ gatewayId }: { gatewayId: string }) {
 
   const [gateway, setGateway] = React.useState<GatewayRow | null>(null);
   const [config, setConfig] = React.useState<GatewayConfig | null>(null);
-  const [samples, setSamples] = React.useState<DeviceTelemetrySample[]>([]);
+  const [payloads,setPayloads]=React.useState<DeviceTelemetryPayload[]>([]);
+  const [selectedPayload,setSelectedPayload]=React.useState<{deviceName:string;payload:DeviceTelemetryPayload}|null>(null);
   const [pairs, setPairs] = React.useState<Pair[]>([]);
   const [syncState,setSyncState]=React.useState<GatewaySyncState|null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -131,14 +185,14 @@ export function GatewayDetailPageView({ gatewayId }: { gatewayId: string }) {
 
     try {
       const [telemetryRes, configRes, pairsRes,syncRes] = await Promise.all([
-        apiClient.get<{ gateway: GatewayRow; samples: DeviceTelemetrySample[] }>(`/v1/gateways/${gatewayId}/telemetry`),
+        apiClient.get<{ gateway: GatewayRow; samples: DeviceTelemetrySample[]; payloads:DeviceTelemetryPayload[] }>(`/v1/gateways/${gatewayId}/telemetry`),
         apiClient.get<GatewayConfig>(`/v1/gateways/${gatewayId}/configuration`).catch(() => null),
         apiClient.get<Pair[]>(`/v1/gateways/${gatewayId}/comparisons`).catch(() => []),
         canRecoverCredential?apiClient.get<GatewaySyncState>(`/v1/gateways/${gatewayId}/sync-state`).catch(()=>null):Promise.resolve(null),
       ]);
 
       setGateway(telemetryRes.gateway);
-      setSamples(telemetryRes.samples || []);
+      setPayloads(telemetryRes.payloads||[]);
       if (configRes) setConfig(configRes);
       if (pairsRes) setPairs(pairsRes);
       setSyncState(syncRes);
@@ -169,42 +223,7 @@ export function GatewayDetailPageView({ gatewayId }: { gatewayId: string }) {
     pending: ['รอข้อมูล', 'Pending'],
   };
 
-  const qualityBadge = (quality: string) => {
-    const q = (quality || '').toLowerCase();
-    const isGood = ['good', 'complete', 'ok'].includes(q);
-    const isWarning = ['fair', 'partial'].includes(q);
-    return (
-      <span
-        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${
-          isGood
-            ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
-            : isWarning
-            ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400'
-            : 'bg-red-500/10 text-red-700 dark:text-red-400'
-        }`}
-      >
-        {isGood ? (
-          <CheckCircle2 className="size-3 text-emerald-600 dark:text-emerald-400" />
-        ) : isWarning ? (
-          <AlertTriangle className="size-3 text-amber-600 dark:text-amber-400" />
-        ) : (
-          <XCircle className="size-3 text-red-600 dark:text-red-400" />
-        )}
-        <span>{isGood ? (th ? 'สมบูรณ์' : 'Good') : isWarning ? (th ? 'บางส่วน' : 'Fair') : (th ? 'ไม่สมบูรณ์' : 'Bad')}</span>
-      </span>
-    );
-  };
-
-  // Group samples by deviceId
-  const samplesByDevice = React.useMemo(() => {
-    const map = new Map<string, DeviceTelemetrySample[]>();
-    for (const sample of samples) {
-      const list = map.get(sample.deviceId) || [];
-      list.push(sample);
-      map.set(sample.deviceId, list);
-    }
-    return map;
-  }, [samples]);
+  const payloadsByDevice=React.useMemo(()=>{const map=new Map<string,DeviceTelemetryPayload[]>();for(const payload of payloads){const list=map.get(payload.deviceId)||[];list.push(payload);map.set(payload.deviceId,list);}return map;},[payloads]);
 
   if (loading) {
     return (
@@ -396,16 +415,13 @@ export function GatewayDetailPageView({ gatewayId }: { gatewayId: string }) {
           </CardContent>
         </Card>
 
-        {canRecoverCredential&&<Card>
-          <CardHeader><CardTitle>{th?'ข้อเสนอการตั้งค่าจากเกตเวย์':'Gateway configuration proposals'}</CardTitle><CardDescription>{th?'ตรวจสอบการเปลี่ยนแปลงทั้งหมดก่อนอนุมัติเป็นคอนฟิกเวอร์ชันถัดไป':'Review every proposed device and register change before creating the next desired revision.'}</CardDescription></CardHeader>
-          <CardContent className="space-y-4">{syncState&&<GatewayInitialConfigCorrection gatewayId={gateway.id} syncState={syncState} locale={locale} onCorrect={correctInitial}/>}<GatewayConfigProposals gatewayId={gateway.id} canManage={canRecoverCredential}/></CardContent>
-        </Card>}
+        {canRecoverCredential&&<GatewayConfigProposals gatewayId={gateway.id} canManage={canRecoverCredential} initialCorrection={syncState&&canCorrectInitialConfig(syncState)?<GatewayInitialConfigCorrection gatewayId={gateway.id} syncState={syncState} locale={locale} onCorrect={correctInitial}/>:null}/>}
 
         {/* Connected Devices & Live Telemetry Cards */}
         {config?.devices && config.devices.length > 0 ? (
           <div className="space-y-5">
             {config.devices.map((device) => {
-              const deviceSamples = samplesByDevice.get(device.id) || [];
+              const devicePayloads=payloadsByDevice.get(device.id)||[];
 
               return (
                 <Card key={device.id}>
@@ -438,52 +454,8 @@ export function GatewayDetailPageView({ gatewayId }: { gatewayId: string }) {
                   </CardHeader>
 
                   <CardContent className="p-0">
-                    {deviceSamples.length > 0 ? (
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-xs text-left">
-                          <thead className="bg-muted/30 text-muted-foreground border-b border-border/60 uppercase text-[11px] font-medium tracking-wider">
-                            <tr>
-                              <th className="py-3 px-6">{th ? 'พารามิเตอร์' : 'Parameter'}</th>
-                              <th className="py-3 px-6">{th ? 'ค่าที่อ่านได้' : 'Current Value'}</th>
-                              <th className="py-3 px-6">{th ? 'เวลาที่อ่านได้' : 'Last Polled'}</th>
-                              <th className="py-3 px-6">{th ? 'สถานะข้อมูล' : 'Quality'}</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-border/60">
-                            {deviceSamples.map((sample) => (
-                              <tr key={`${sample.deviceId}-${sample.tag}`} className="hover:bg-muted/20 transition-colors">
-                                <td className="py-3 px-6">
-                                  <div className="font-medium text-foreground">
-                                    {getTelemetryTagLabel(sample.tag, locale)}
-                                  </div>
-                                  <div className="font-mono text-[11px] text-muted-foreground">{sample.tag}</div>
-                                </td>
-                                <td className="py-3 px-6 font-semibold text-foreground">
-                                  <span className="text-sm">
-                                    {formatFlexibleDecimal(sample.value, { locale })}
-                                  </span>
-                                  {sample.unit && <span className="ml-1 text-xs text-muted-foreground">{sample.unit}</span>}
-                                </td>
-                                <td className="py-3 px-6 text-muted-foreground">
-                                  {sample.sourceTime ? (
-                                    <div className="space-y-0.5">
-                                      <div className="text-foreground">{formatAppDateTime(sample.sourceTime, th ? 'th' : 'en')}</div>
-                                      <div className="text-[11px]">
-                                        <TelemetryAgeLabel value={sample.sourceTime} locale={locale} />
-                                      </div>
-                                    </div>
-                                  ) : (
-                                    '—'
-                                  )}
-                                </td>
-                                <td className="py-3 px-6">
-                                  {qualityBadge(sample.quality)}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
+                    {devicePayloads.length > 0 ? (
+                      <GatewayTelemetryPayloadTable payloads={devicePayloads} locale={locale} onSelect={payload=>setSelectedPayload({deviceName:device.name,payload})}/>
                     ) : (
                       <div className="py-8 px-6 text-center text-sm text-muted-foreground flex flex-col items-center justify-center gap-1.5">
                         <Info className="size-5 text-muted-foreground/60" />
@@ -565,6 +537,8 @@ export function GatewayDetailPageView({ gatewayId }: { gatewayId: string }) {
             </CardContent>
           </Card>
         )}
+
+        <GatewayTelemetryPayloadDialog payload={selectedPayload?.payload??null} deviceName={selectedPayload?.deviceName??''} locale={locale} open={Boolean(selectedPayload)} onOpenChange={open=>{if(!open)setSelectedPayload(null);}}/>
 
         {/* Edit Gateway Dialog */}
         {gateway && (

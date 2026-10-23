@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import * as gatewayDetail from './gateway-detail-page-view';
 import { GatewayDetailPageView,GatewayOperationalStatus } from './gateway-detail-page-view';
 import { getTelemetryTagLabel, TELEMETRY_TAG_LABELS } from './telemetry-tag-labels';
 import { LocaleProvider } from '../../providers/locale-provider';
@@ -54,4 +55,25 @@ test('operational view renders one primary status and leaves configuration diagn
   assert.equal((html.match(/data-slot="badge"/g)??[]).length,1);
   assert.match(html,/>Offline</);
   assert.doesNotMatch(html,/Assignment|Active|Configuration|Drifted|Connection|Telemetry|Stale|Last received/);
+});
+
+test('device telemetry renders one row per gateway payload and keeps field details in a JSON dialog',()=>{
+  const components=gatewayDetail as unknown as {
+    GatewayTelemetryPayloadTable?:React.ComponentType<{payloads:any[];locale:'th'|'en';onSelect:(payload:any)=>void}>;
+    GatewayTelemetryPayloadDialog?:React.ComponentType<{payload:any;deviceName:string;locale:'th'|'en';open:boolean;onOpenChange:(open:boolean)=>void}>;
+    GatewayTelemetryPayloadJson?:React.ComponentType<{payload:any;deviceName:string;locale:'th'|'en'}>;
+  };
+  assert.ok(components.GatewayTelemetryPayloadTable,'GatewayTelemetryPayloadTable must be exported');
+  assert.ok(components.GatewayTelemetryPayloadDialog,'GatewayTelemetryPayloadDialog must be exported');
+  assert.ok(components.GatewayTelemetryPayloadJson,'GatewayTelemetryPayloadJson must be exported');
+  const payload={id:'payload-1',deviceId:'device-1',messageId:'message-1',lotNumber:3,sequence:8,polledAt:'2026-10-19T00:00:00.000Z',sentAt:'2026-10-19T00:00:01.000Z',receivedAt:'2026-10-19T00:00:02.000Z',quality:'good',communication:'online',pollGroup:'realtime',sampleCount:2,payload:{messageId:'message-1',data:{values:{'power.active.total':1200,'energy.active.import.total':29140}}}};
+  const table=renderToStaticMarkup(<LocaleProvider initialLocale="th"><components.GatewayTelemetryPayloadTable payloads={[payload]} locale="th" onSelect={()=>{}}/></LocaleProvider>);
+  assert.equal((table.match(/<tr/g)??[]).length,2);
+  assert.match(table,/message-1/);
+  assert.match(table,/2 ค่า/);
+  assert.doesNotMatch(table,/power\.active\.total/);
+  const json=renderToStaticMarkup(<LocaleProvider initialLocale="th"><components.GatewayTelemetryPayloadJson payload={payload} deviceName="September meter" locale="th"/></LocaleProvider>);
+  assert.match(json,/รายละเอียด JSON ที่เกตเวย์ส่ง/);
+  assert.match(json,/power\.active\.total/);
+  assert.match(json,/energy\.active\.import\.total/);
 });

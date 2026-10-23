@@ -4,11 +4,19 @@ import {gatewayPrimaryStatus,gatewayStatusClassName} from './gateway-operational
 import {GatewayDiscoveryError} from './gateway-workspace';
 test('gateway index exposes registered gateway and lifecycle without customer billing identity',()=>{
 const html=renderToStaticMarkup(<GatewayIndex rows={[{id:'gw',siteId:'site',siteName:'Roof A',siteCode:'S1',name:'Gateway A',externalGatewayId:'G1',status:'offline',lifecycleState:'active',configState:'applied',desiredVersion:3,publishedVersion:2,acknowledgedVersion:1,appliedVersion:1}]} locale="en" onSelect={()=>{}}/>);
-for(const label of ['Gateway A','Roof A','G1','Devices','Production power','Last received','Gateway actions: Gateway A'])assert.ok(html.includes(label),label);
+for(const label of ['Gateway A','Roof A','G1','Devices','Billing meter reading','Last received','Gateway actions: Gateway A'])assert.ok(html.includes(label),label);
+assert.doesNotMatch(html,/Production power/);
 assert.doesNotMatch(html,/Pending application|Not published/);
 assert.doesNotMatch(html,/Customer|Tax|Invoice|>Configuration</);
 assert.doesNotMatch(html,/All sites|aria-label="Site"/);
 assert.doesNotMatch(html,/No data/);
+});
+
+test('gateway index shows the cumulative billing meter reading in kWh',()=>{
+  const html=renderToStaticMarkup(<GatewayIndex rows={[{id:'gw',siteId:'site',siteName:'Roof A',siteCode:'S1',name:'Gateway A',externalGatewayId:'G1',status:'online',billingEnergyKwh:29140,lifecycleState:'active',configState:'applied',desiredVersion:1,publishedVersion:1,acknowledgedVersion:1,appliedVersion:1}]} locale="th" onSelect={()=>{}}/>);
+  assert.match(html,/ค่ามิเตอร์สะสม/);
+  assert.match(html,/29,140 kWh/);
+  assert.doesNotMatch(html,/กำลังผลิต/);
 });
 
 test('gateway index exposes 3 tabs (All, Connected, Not connected) with counts and discovered pairing action',()=>{

@@ -34,6 +34,7 @@ export interface GatewayRow {
   lastReceivedAt?: string | null;
   lastMeasuredAt?: string | null;
   currentProductionKw?: number | null;
+  billingEnergyKwh?: number | null;
   lastSeenAt?: string | null;
   pollingIntervalSeconds?: number;
   subscriptionTopic?: string;
@@ -57,6 +58,7 @@ export interface DisplayGatewayItem {
   status: string;
   deviceCount: number;
   currentProductionKw: number | null;
+  billingEnergyKwh: number | null;
   lastReceivedAt: string | null;
   isDiscovered: boolean;
   isConnected: boolean;
@@ -74,7 +76,7 @@ export function gatewayIndexLifecycle(item:DisplayGatewayItem):GatewayIndexLifec
 
 const persistedDisplayItem=(row:GatewayRow):DisplayGatewayItem=>({
   id:row.id,name:row.name,externalGatewayId:row.externalGatewayId,siteName:row.siteName,siteCode:row.siteCode,status:row.status,
-  deviceCount:row.deviceCount??0,currentProductionKw:row.currentProductionKw??null,lastReceivedAt:row.lastReceivedAt??null,
+  deviceCount:row.deviceCount??0,currentProductionKw:row.currentProductionKw??null,billingEnergyKwh:row.billingEnergyKwh??null,lastReceivedAt:row.lastReceivedAt??null,
   isDiscovered:false,isConnected:true,originalRow:row,
 });
 
@@ -97,7 +99,7 @@ export function gatewayIndexPartitions(rows:readonly GatewayRow[],discoveredRows
   ).map((d):DisplayGatewayItem=>({
       id:d.id,name:d.model?`${d.model} (${d.externalGatewayId})`:`Gateway ${d.externalGatewayId}`,externalGatewayId:d.externalGatewayId,
       siteName:d.reportedSiteId?`${th?'ไซต์ที่ระบุ':'Reported'}: ${d.reportedSiteId}`:th?'ยังไม่เชื่อมต่อไซต์':'Unassigned site',
-      siteCode:d.reportedSiteId||'—',status:'unconnected',deviceCount:d.reportedDeviceId?1:0,currentProductionKw:null,
+      siteCode:d.reportedSiteId||'—',status:'unconnected',deviceCount:d.reportedDeviceId?1:0,currentProductionKw:null,billingEnergyKwh:null,
       lastReceivedAt:d.lastSeenAt,isDiscovered:true,isConnected:false,discoveredRow:d,
     }));
   const connectedItems=persisted;
@@ -164,12 +166,12 @@ export function GatewayIndex({
     </span>
   );
 
-  const power = (item: DisplayGatewayItem) =>
-    item.currentProductionKw == null
+  const billingReading = (item: DisplayGatewayItem) =>
+    item.billingEnergyKwh == null
       ? '—'
-      : `${Number(item.currentProductionKw).toLocaleString(th ? 'th-TH' : 'en-US', {
+      : `${Number(item.billingEnergyKwh).toLocaleString(th ? 'th-TH' : 'en-US', {
           maximumFractionDigits: 2,
-        })} kW`;
+        })} kWh`;
 
   const actions = (item: DisplayGatewayItem) => {
     if (item.isDiscovered && item.discoveredRow) {
@@ -258,12 +260,12 @@ export function GatewayIndex({
       cell: ({ row }) => row.original.deviceCount ?? 0,
     },
     {
-      accessorKey: 'currentProductionKw',
+      accessorKey: 'billingEnergyKwh',
       size: 110,
       minSize: 100,
       maxSize: 120,
-      header: th ? 'กำลังผลิต' : 'Production power',
-      cell: ({ row }) => power(row.original),
+      header: th ? 'ค่ามิเตอร์สะสม' : 'Billing meter reading',
+      cell: ({ row }) => billingReading(row.original),
     },
     {
       accessorKey: 'lastReceivedAt',
@@ -427,8 +429,8 @@ export function GatewayIndex({
             <dl className="grid grid-cols-2 gap-2 text-sm">
               <dt>{th ? 'อุปกรณ์' : 'Devices'}</dt>
               <dd>{item.deviceCount ?? 0}</dd>
-              <dt>{th ? 'กำลังผลิต' : 'Production power'}</dt>
-              <dd>{power(item)}</dd>
+              <dt>{th ? 'ค่ามิเตอร์สะสม' : 'Billing meter reading'}</dt>
+              <dd>{billingReading(item)}</dd>
               <dt>{th ? 'รับข้อมูลล่าสุด' : 'Last received'}</dt>
               <dd>{received(item)}</dd>
             </dl>

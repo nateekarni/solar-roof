@@ -9,7 +9,6 @@ import {Badge} from '../../components/ui/badge';
 import {Button} from '../../components/ui/button';
 import {Card,CardContent,CardDescription,CardFooter,CardHeader,CardTitle} from '../../components/ui/card';
 import {DataTable} from '../../components/ui/data-table';
-import {Empty,EmptyDescription,EmptyTitle} from '../../components/ui/empty';
 import {Field,FieldError,FieldGroup,FieldLabel} from '../../components/ui/field';
 import {Skeleton} from '../../components/ui/skeleton';
 import {Spinner} from '../../components/ui/spinner';
@@ -109,9 +108,10 @@ export function gatewayProposalErrorMessage(kind:'load'|'approve'|'reject',error
 
 const statusVariant=(status:GatewayConfigProposal['status'])=>status==='rejected'||status==='stale'?'destructive':status==='approved'?'default':'secondary';
 
-export function GatewayConfigProposalsView({proposals,canManage,busyId,onApprove,onReject}:{proposals:GatewayConfigProposal[];canManage:boolean;busyId?:string|null;onApprove:(proposal:GatewayConfigProposal)=>void|Promise<void>;onReject:(proposal:GatewayConfigProposal,reason:string)=>void|Promise<void>}){
+export function GatewayConfigProposalsView({proposals,canManage,busyId,onApprove,onReject,initialCorrection,statusContent}:{proposals:GatewayConfigProposal[];canManage:boolean;busyId?:string|null;onApprove:(proposal:GatewayConfigProposal)=>void|Promise<void>;onReject:(proposal:GatewayConfigProposal,reason:string)=>void|Promise<void>;initialCorrection?:React.ReactNode;statusContent?:React.ReactNode}){
   const th=useLocale()==='th';
   const [rejecting,setRejecting]=React.useState<GatewayConfigProposal|null>(null),[reason,setReason]=React.useState(''),[reasonError,setReasonError]=React.useState('');
+  if(!proposals.length&&!initialCorrection&&!statusContent)return null;
   const columns:ColumnDef<GatewayProposalDiffRow>[]=[
     {accessorKey:'deviceId',header:th?'อุปกรณ์':'Device'},{accessorKey:'deviceModel',header:th?'รุ่น':'Model'},
     {accessorKey:'beforeDeviceConfiguration',header:th?'อุปกรณ์ก่อนเปลี่ยน':'Device before'},{accessorKey:'afterDeviceConfiguration',header:th?'อุปกรณ์หลังเปลี่ยน':'Device after'},
@@ -121,8 +121,10 @@ export function GatewayConfigProposalsView({proposals,canManage,busyId,onApprove
     {accessorKey:'beforeDecoder',header:th?'ตัวถอดรหัสก่อนเปลี่ยน':'Decoder before'},{accessorKey:'afterDecoder',header:th?'ตัวถอดรหัสหลังเปลี่ยน':'Decoder after'},
   ];
   const labels=th?{pending:'รอตรวจสอบ',stale:'ล้าสมัย',approved:'อนุมัติแล้ว',rejected:'ปฏิเสธแล้ว'} as const:{pending:'Pending review',stale:'Stale',approved:'Approved',rejected:'Rejected'} as const;
-  return <div className="flex flex-col gap-4">
-    {!proposals.length?<Empty><EmptyTitle>{th?'ยังไม่มีข้อเสนอการตั้งค่า':'No configuration proposals'}</EmptyTitle><EmptyDescription>{th?'การอัปเดตการตั้งค่าจากเกตเวย์จะแสดงที่นี่':'Gateway configuration updates will appear here for review.'}</EmptyDescription></Empty>:proposals.map(proposal=>{
+  return <Card>
+    <CardHeader className="px-6 py-5 border-b border-border/60"><CardTitle>{th?'ข้อเสนอการตั้งค่าจากเกตเวย์':'Gateway configuration proposals'}</CardTitle><CardDescription>{th?'ตรวจสอบการเปลี่ยนแปลงทั้งหมดก่อนอนุมัติเป็นคอนฟิกเวอร์ชันถัดไป':'Review every proposed device and register change before creating the next desired revision.'}</CardDescription></CardHeader>
+    <CardContent className="space-y-4 px-6 py-5">{initialCorrection}{statusContent}<div className="flex flex-col gap-4">
+    {proposals.map(proposal=>{
       const approvable=gatewayProposalCanApprove(proposal),busy=busyId===proposal.id;
       return <Card key={proposal.id}>
         <CardHeader><div className="flex flex-wrap items-center justify-between gap-2"><CardTitle>{proposal.proposalId}</CardTitle><Badge variant={statusVariant(proposal.status)}>{labels[proposal.status]}</Badge></div><CardDescription>{th?'เวอร์ชันฐาน':'Base version'} {proposal.baseConfigVersion} · {th?'เวอร์ชันที่ใช้งาน':'Active version'} {proposal.activeConfigVersion??'—'} · {proposal.snapshot.devices.length} {th?'อุปกรณ์':'devices'}</CardDescription></CardHeader>
@@ -130,15 +132,16 @@ export function GatewayConfigProposalsView({proposals,canManage,busyId,onApprove
         {canManage&&(proposal.status==='pending'||proposal.status==='stale')?<CardFooter className="flex flex-wrap justify-end gap-2"><Button disabled={!approvable||busy} onClick={()=>void onApprove(proposal)}>{busy&&<Spinner data-icon="inline-start"/>}{th?'อนุมัติ':'Approve'}</Button><AlertDialog open={rejecting?.id===proposal.id} onOpenChange={open=>{if(open){setRejecting(proposal);setReason('');setReasonError('');}else setRejecting(null);}}><AlertDialogTrigger asChild><Button variant="destructive" disabled={busy}>{th?'ปฏิเสธ':'Reject'}</Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{th?'ปฏิเสธข้อเสนอการตั้งค่า':'Reject configuration proposal'}</AlertDialogTitle><AlertDialogDescription>{th?'ระบุเหตุผลที่ไม่ควรนำการตั้งค่านี้ไปใช้':'Record why this complete gateway configuration must not become the desired revision.'}</AlertDialogDescription></AlertDialogHeader><FieldGroup><Field data-invalid={Boolean(reasonError)}><FieldLabel htmlFor={`proposal-reason-${proposal.id}`}>{th?'เหตุผล':'Reason'}</FieldLabel><Textarea id={`proposal-reason-${proposal.id}`} value={reason} aria-invalid={Boolean(reasonError)} onChange={event=>{setReason(event.target.value);setReasonError('');}}/><FieldError>{reasonError}</FieldError></Field></FieldGroup><AlertDialogFooter><AlertDialogCancel>{th?'ยกเลิก':'Cancel'}</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={event=>{try{const value=validateGatewayProposalRejection(reason,th?'th':'en');void onReject(proposal,value);setRejecting(null);}catch(error){event.preventDefault();setReasonError(error instanceof Error?error.message:(th?'กรุณาระบุเหตุผล':'Reason is required'));}}}>{th?'ยืนยันปฏิเสธ':'Reject proposal'}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></CardFooter>:null}
       </Card>;
     })}
-  </div>;
+    </div></CardContent>
+  </Card>;
 }
 
-export function GatewayConfigProposals({gatewayId,canManage}:{gatewayId:string;canManage:boolean}){
+export function GatewayConfigProposals({gatewayId,canManage,initialCorrection}:{gatewayId:string;canManage:boolean;initialCorrection?:React.ReactNode}){
   const locale=useLocale(),th=locale==='th',query=useGatewayConfigProposals(gatewayId,true),queryClient=useQueryClient();
   const [busyId,setBusyId]=React.useState<string|null>(null),[error,setError]=React.useState('');
   const approve=async(proposal:GatewayConfigProposal)=>{setBusyId(proposal.id);setError('');try{await approveGatewayProposal(queryClient,gatewayId,proposal.id,gatewayProposalApprovalRequest(proposal));}catch(cause){setError(gatewayProposalErrorMessage('approve',cause,locale));}finally{setBusyId(null);}};
   const reject=async(proposal:GatewayConfigProposal,reason:string)=>{setBusyId(proposal.id);setError('');try{await rejectGatewayProposal(queryClient,gatewayId,proposal.id,reason);}catch(cause){setError(gatewayProposalErrorMessage('reject',cause,locale));}finally{setBusyId(null);}};
-  if(query.isPending)return <div className="flex flex-col gap-2" role="status"><Skeleton className="h-24 w-full"/><Skeleton className="h-24 w-full"/></div>;
-  if(query.isError)return <Alert variant="destructive"><AlertTitle>{th?'โหลดข้อเสนอการตั้งค่าไม่สำเร็จ':'Could not load configuration proposals'}</AlertTitle><AlertDescription>{gatewayProposalErrorMessage('load',query.error,locale)}</AlertDescription></Alert>;
-  return <div className="flex flex-col gap-3">{error&&<Alert variant="destructive"><AlertTitle>{th?'ดำเนินการกับข้อเสนอไม่สำเร็จ':'Proposal action failed'}</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>}<GatewayConfigProposalsView proposals={query.data??[]} canManage={canManage} busyId={busyId} onApprove={approve} onReject={reject}/></div>;
+  if(query.isPending)return initialCorrection?<GatewayConfigProposalsView proposals={[]} canManage={canManage} onApprove={approve} onReject={reject} initialCorrection={initialCorrection} statusContent={<div className="flex flex-col gap-2" role="status"><Skeleton className="h-24 w-full"/><Skeleton className="h-24 w-full"/></div>}/>:null;
+  if(query.isError)return initialCorrection?<GatewayConfigProposalsView proposals={[]} canManage={canManage} onApprove={approve} onReject={reject} initialCorrection={initialCorrection} statusContent={<Alert variant="destructive"><AlertTitle>{th?'โหลดข้อเสนอการตั้งค่าไม่สำเร็จ':'Could not load configuration proposals'}</AlertTitle><AlertDescription>{gatewayProposalErrorMessage('load',query.error,locale)}</AlertDescription></Alert>}/>:null;
+  return <GatewayConfigProposalsView proposals={query.data??[]} canManage={canManage} busyId={busyId} onApprove={approve} onReject={reject} initialCorrection={initialCorrection} statusContent={error?<Alert variant="destructive"><AlertTitle>{th?'ดำเนินการกับข้อเสนอไม่สำเร็จ':'Proposal action failed'}</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>:null}/>;
 }

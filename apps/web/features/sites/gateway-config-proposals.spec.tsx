@@ -35,6 +35,17 @@ test('proposal review follows the current Thai locale',()=>{
   for(const label of ['รอตรวจสอบ','เวอร์ชันฐาน 4','เวอร์ชันที่ใช้งาน 4','อนุมัติ','ปฏิเสธ'])assert.match(html,new RegExp(label));
 });
 
+test('proposal review hides the whole section when the gateway has not sent an update',()=>{
+  const html=renderToStaticMarkup(<LocaleProvider initialLocale="th"><GatewayConfigProposalsView proposals={[]} canManage onApprove={()=>{}} onReject={()=>{}}/></LocaleProvider>);
+  assert.equal(html,'');
+});
+
+test('proposal review card uses comfortable vertical padding when an update exists',()=>{
+  const html=renderToStaticMarkup(<LocaleProvider initialLocale="th"><GatewayConfigProposalsView proposals={[proposalSnapshot('pending')]} canManage onApprove={()=>{}} onReject={()=>{}}/></LocaleProvider>);
+  assert.match(html,/ข้อเสนอการตั้งค่าจากเกตเวย์/);
+  assert.match(html,/py-5/);
+});
+
 test('proposal diff identifies device and register changes against the active immutable snapshot',()=>{
   const rows=gatewayProposalDiffRows(proposalSnapshot('pending'));
   assert.deepEqual(rows.map(row=>[row.deviceId,row.tag,row.change]),[
