@@ -24,6 +24,29 @@ test('exact cumulative counter reset requires typed conflict and review',()=>{
  assert.throws(()=>reviewedActualEnergyDifference('10000.0006','10000.0004'),error=>error instanceof ConflictException&&error.getStatus()===409&&/Meter reset requires review/.test(error.message));
  assert.equal(reviewedActualEnergyDifference('10000.0004','10000.0006'),'0.000');
 });
+test('consecutive billing periods share one meter boundary and never bill prior consumption twice',async()=>{
+ const values:Record<string,string>={'2026-09-01':'100.000','2026-10-01':'150.000','2026-11-01':'230.000'},cycles:any[]=[];
+ const reading=(day:string)=>({id:`reading-${day}`,value:values[day],source_time:`${day}T00:00:00.000Z`,quality:'complete',unit:'kWh',mapping_version_id:'mapping-1',payload_profile_revision_id:null,billing_source_binding_id:null,boundary_consistent:true});
+ const db={transaction:async(run:any)=>run({query:async(sql:string,params:any[]=[])=>{
+  if(sql.includes("FROM billing_cycles WHERE billing_kind='energy'"))return {rows:cycles.filter(cycle=>cycle.period_start<=params[2]&&cycle.period_end>=params[1]).map(cycle=>({...cycle,starts:cycle.period_start,ends:cycle.period_end}))};
+  if(sql.startsWith('SELECT * FROM sites'))return {rows:[{id:'site',timezone:'UTC'}]};
+  if(sql.includes('FROM site_billing_settings'))return {rows:[{site_id:'site',version:1,starts:'2026-09-01',tax_confirmed:true,tax_rate:'0.0000',prices_include_tax:false}]};
+  if(sql.includes('WITH effective AS')){const endBoundary=new Date(Date.parse(String(params[2]))+86400000).toISOString().slice(0,10);return {rows:[{starts:params[1],ends:endBoundary,currency:'THB',rate_type:'fixed_kwh',rate:'1.0000'}]};}
+  if(sql.startsWith('SELECT * FROM billing_meters'))return {rows:[{id:'meter',device_id:'device',semantic_field:'total_energy'}]};
+  if(sql.includes('WITH candidates AS MATERIALIZED'))return {rows:[reading(String(params[2]))]};
+  if(sql.includes('SELECT id,normalized_value AS value'))return {rows:Object.keys(values).filter(day=>`${day}T00:00:00.000Z`>=params[3]&&`${day}T00:00:00.000Z`<=params[4]).map(reading)};
+  if(sql.startsWith('INSERT INTO billing_cycles')){const cycle={id:params[0],site_id:params[1],period_start:params[3],period_end:params[4],opening_energy:params[6],closing_energy:params[7],consumed_kwh:params[8]};cycles.push(cycle);return {rows:[cycle]};}
+  return {rows:[]};
+ }})};
+ const service=new FinancialApplicationService(db as any,{assertEnabled:async()=>({scope:'TEST',approvalId:'approval'})} as any);
+ const september=(await service.calculate('site','2026-09-01','2026-09-30','owner')).cycles[0];
+ const october=(await service.calculate('site','2026-10-01','2026-10-31','owner')).cycles[0];
+ assert.deepEqual({opening:september.opening_energy,closing:september.closing_energy,used:september.consumed_kwh},{opening:100,closing:150,used:'50.000'});
+ assert.deepEqual({opening:october.opening_energy,closing:october.closing_energy,used:october.consumed_kwh},{opening:150,closing:230,used:'80.000'});
+ assert.equal(Number(september.consumed_kwh)+Number(october.consumed_kwh),230-100);
+ await assert.rejects(()=>service.calculate('site','2026-09-15','2026-10-15','owner'),/Billing period overlaps an existing cycle/);
+ assert.equal(cycles.length,2);
+});
 import {FinancialApplicationService} from './financial-application.service.js';
 import {TEST_FINANCIAL_POLICY_HASH} from './local-financial-policy.js';
 import type {DatabaseService} from '../../database/database.service.js';

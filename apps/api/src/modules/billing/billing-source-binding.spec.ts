@@ -13,6 +13,23 @@ test('duplicate or missing cumulative fields fail closed',()=>{
  const noRole=structuredClone(DEFAULT_PAYLOAD_PROFILES[0]!);noRole.fields.forEach(f=>{f.role='none';});assert.throws(()=>validateBillingSource(input,noRole));
 });
 
+test('sites without a main meter expose only devices with one valid cumulative billing field',async()=>{
+ const invalid=structuredClone(DEFAULT_PAYLOAD_PROFILES[0]!);invalid.fields.forEach(field=>{field.role='none';});
+ const db={query:async(sql:string)=>({rows:
+  sql.includes('FROM billing_meters')?[]:
+  sql.includes('FROM devices d')?[
+   {id:'eligible',name:'SPM91',external_device_id:'SPM91-01',payload_profile_revision_id:'rev-energy',config:DEFAULT_PAYLOAD_PROFILES[0]},
+   {id:'realtime-only',name:'Realtime meter',external_device_id:'RT-01',payload_profile_revision_id:'rev-realtime',config:invalid}
+  ]:[]
+ })};
+ const result=await new BillingSourceBindingService(db as unknown as DatabaseService).get('s');
+ assert.equal(result.status,'no-main-meter');
+ assert.deepEqual(result.candidates,[{
+  id:'eligible',name:'SPM91',externalDeviceId:'SPM91-01',profileRevisionId:'rev-energy',
+  eligibleFields:[{...DEFAULT_PAYLOAD_PROFILES[0]!.fields.find(field=>field.role==='billing-import')!,sourceTag:'energy.active.import.total',canonicalTag:'energy.active.import.total'}]
+ }]);
+});
+
 import { BillingSourceBindingService } from './billing-source-binding.service.js';
 import type { DatabaseService } from '../../database/database.service.js';
 function fixture(overrides:Record<string,unknown>={}){
@@ -37,6 +54,59 @@ test('binding refuses other devices and stale profile before writes',async()=>{
 test('source replacement requires confirmed impact and preserves immutable history',async()=>{
  const f=fixture({billing_source_binding_id:'old'});await assert.rejects(f.service.bind('s',input,'actor'),/Confirm billing impact/);assert.equal(f.writes.length,0);
  const source=await f.service.bind('s',{...input,billingImpactConfirmed:true},'actor');assert.equal(source?.measurementPurpose,'solar-delivered');assert.notEqual(source?.id,'old');assert.ok(f.writes.some(sql=>sql.includes('INSERT INTO audit_events')));assert.ok(!f.writes.some(sql=>sql.includes('UPDATE billing_source_bindings')));
+});
+
+test('binding an eligible discovered device creates the main meter and source atomically',async()=>{
+ const writes:Array<{sql:string;params:any[]}>=[];
+ const db={transaction:async(run:any)=>run({query:async(sql:string,params:any[])=>{
+  if(sql.startsWith('SELECT id FROM sites'))return {rows:[{id:'s'}]};
+  if(sql.startsWith('SELECT id FROM devices'))return {rows:[{id:'d'}]};
+  if(sql.startsWith('SELECT id FROM billing_meters'))return {rows:[]};
+  if(sql.includes('FROM devices d'))return {rows:[{id:'d',name:'SPM91',external_device_id:'SPM91-01',payload_profile_revision_id:'r',config:DEFAULT_PAYLOAD_PROFILES[0]}]};
+  if(sql.includes('FROM billing_meters'))return {rows:[]};
+  writes.push({sql,params});
+  if(sql.includes('INSERT INTO billing_meters'))return {rows:[{id:params[0]}]};
+  if(sql.includes('INSERT INTO billing_source_bindings'))return {rows:[{id:params[0],meter_id:params[1],site_id:'s',device_id:'d',profile_revision_id:'r',source_tag:'energy.active.import.total',canonical_tag:'energy.active.import.total',source_unit:'Wh',target_unit:'kWh',conversion:'wh-to-kwh',measurement_purpose:'solar-delivered'}]};
+  return {rows:[]};
+ }})};
+ const result=await new BillingSourceBindingService(db as unknown as DatabaseService).bind('s',input,'actor');
+ const meterWrite=writes.find(write=>write.sql.includes('INSERT INTO billing_meters'));
+ assert.ok(meterWrite);
+ assert.deepEqual(meterWrite.params.slice(1),['s','d','total_energy']);
+ const bindingWrite=writes.find(write=>write.sql.includes('INSERT INTO billing_source_bindings'));
+ assert.ok(bindingWrite);
+ assert.equal(bindingWrite.params[1],meterWrite.params[0]);
+ assert.equal(result?.deviceId,'d');
+ assert.ok(writes.some(write=>write.sql.includes('INSERT INTO audit_events')));
+});
+
+test('reactivating an inactive meter preserves its binding history and replacement safeguards',async()=>{
+ const run=async(next:any)=>{
+  const writes:Array<{sql:string;params:any[]}>=[];
+  const previous={id:'old',meter_id:'inactive-meter',site_id:'s',device_id:'d',profile_revision_id:'r',source_tag:'energy.active.import.total',canonical_tag:'energy.active.import.total',source_unit:'Wh',target_unit:'kWh',conversion:'wh-to-kwh',measurement_purpose:'grid-import'};
+  const db={transaction:async(work:any)=>work({query:async(sql:string,params:any[])=>{
+   if(sql.startsWith('SELECT id FROM sites'))return {rows:[{id:'s'}]};
+   if(sql.startsWith('SELECT id FROM devices'))return {rows:[{id:'d'}]};
+   if(sql.startsWith('SELECT id FROM billing_meters')||sql.includes('FROM billing_meters b'))return {rows:[]};
+   if(sql.includes('FROM devices d'))return {rows:[{id:'d',payload_profile_revision_id:'r',config:DEFAULT_PAYLOAD_PROFILES[0]}]};
+   if(sql.startsWith('SELECT id,billing_source_binding_id FROM billing_meters'))return {rows:[{id:'inactive-meter',billing_source_binding_id:'old'}]};
+   if(sql.startsWith('SELECT * FROM billing_source_bindings'))return {rows:[previous]};
+   writes.push({sql,params});
+   if(sql.includes('INSERT INTO billing_meters'))return {rows:[{id:'inactive-meter',billing_source_binding_id:'old'}]};
+   if(sql.includes('INSERT INTO billing_source_bindings'))return {rows:[{...previous,id:params[0],measurement_purpose:params[10]}]};
+   return {rows:[]};
+  }})};
+  return {writes,result:await new BillingSourceBindingService(db as unknown as DatabaseService).bind('s',next,'actor')};
+ };
+ const same=await run({...input,measurementPurpose:'grid-import'});
+ assert.equal(same.result?.id,'old');
+ assert.ok(!same.writes.some(write=>write.sql.includes('INSERT INTO billing_source_bindings')));
+ assert.ok(same.writes.some(write=>write.sql.includes("'billing_source.reactivate'")&&write.params[3].includes('"meterActive":false')&&write.params[4].includes('"meterActive":true')));
+ await assert.rejects(()=>run(input),/Confirm billing impact/);
+ const changed=await run({...input,billingImpactConfirmed:true});
+ assert.notEqual(changed.result?.id,'old');
+ assert.ok(changed.writes.some(write=>write.sql.includes('INSERT INTO billing_source_bindings')));
+ assert.ok(changed.writes.some(write=>write.sql.includes('INSERT INTO audit_events')&&write.params[3].includes('"meterActive":false')));
 });
 
 test('latest invalid source does not display an older counter as currently verified',async()=>{

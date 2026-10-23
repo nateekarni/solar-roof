@@ -9,7 +9,7 @@ import {Checkbox} from "../../components/ui/checkbox";
 import {Field,FieldGroup,FieldLabel,FieldDescription} from "../../components/ui/field";
 import {Select,SelectTrigger,SelectValue,SelectContent,SelectGroup,SelectItem} from "../../components/ui/select";
 import {Textarea} from "../../components/ui/textarea";
-import {buildBillingSourceInput,type BillingSourceDraft,type BillingSourceState,type MeasurementPurpose} from "./billing-source-model";
+import {billingSourceSelection,buildBillingSourceInput,type BillingSourceDraft,type BillingSourceState,type MeasurementPurpose} from "./billing-source-model";
 
 const purposeLabels:Record<MeasurementPurpose,[string,string]>={
  "solar-delivered":["พลังงานโซลาร์ที่ส่งมอบให้ลูกค้า","Solar energy delivered to customer"],
@@ -24,7 +24,7 @@ const statuses:Record<BillingSourceState["status"],[string,string,string,string]
  "invalid-data":["ข้อมูลต้นทางไม่ถูกต้อง","Invalid source data","ตรวจสอบหน่วย คุณภาพ และค่าต้นทาง ส่งข้อมูลจริงที่ถูกต้องก่อนคำนวณบิล","Check source units, quality and counter values. Send valid actual readings before calculating bills."],
  "waiting-for-reading":["รอข้อมูลจริง","Waiting for actual reading","ตั้งค่าแหล่งข้อมูลแล้ว ส่งข้อมูลสะสมจริงจากมิเตอร์ที่ผูกไว้ก่อนคำนวณบิล","Source configured. Send an actual cumulative reading from the bound meter before calculating bills."],
  "ambiguous-meter":["พบมิเตอร์หลักมากกว่าหนึ่งตัว","Ambiguous main meter","แก้ไขการกำหนดมิเตอร์หลักให้เหลือหนึ่งตัวก่อนผูกแหล่งข้อมูล","Resolve the main meter configuration to exactly one meter before binding."],
- "no-main-meter":["ไม่มีมิเตอร์หลัก","No main meter","บันทึกมิเตอร์หลักพร้อมฟิลด์พลังงานสะสมที่ถูกต้องก่อนผูกแหล่งข้อมูล","Configure the main meter with a valid cumulative energy field before binding."]
+ "no-main-meter":["ยังไม่ได้เลือกมิเตอร์หลัก","No main meter selected","เลือกอุปกรณ์ที่มีฟิลด์พลังงานสะสม แล้วระบุวัตถุประสงค์ตามการติดตั้งจริง","Choose an eligible cumulative-energy device, then identify its physical installation purpose."]
 };
 export interface BillingSourcePanelProps {
  state:BillingSourceState;draft:BillingSourceDraft;onChange:(value:BillingSourceDraft)=>void;
@@ -32,13 +32,13 @@ export interface BillingSourcePanelProps {
 }
 export function BillingSourcePanel({state,draft,onChange,onSave,onReload,locale,profilePending=false,busy=false,error,notice,sourcePath}:BillingSourcePanelProps){
  const th=locale==="th",label=(thai:string,english:string)=>th?thai:english;
- const id=React.useId(),field=state.eligibleFields.find(f=>f.sourceTag===draft.sourceTag)??(state.eligibleFields.length===1?state.eligibleFields[0]:undefined);
+ const id=React.useId(),selected=billingSourceSelection(state,draft),fields=selected?.eligibleFields??[],field=fields.find(f=>f.sourceTag===draft.sourceTag)??(fields.length===1?fields[0]:undefined);
  const bound=state.binding,reading=state.latestVerifiedReading,status=statuses[state.status];
  let canSave=false;try{buildBillingSourceInput(state,draft,profilePending);canSave=true;}catch{}
  const change=(patch:Partial<BillingSourceDraft>)=>onChange({...draft,...patch,confirmed:false});
  const details:Array<[string,React.ReactNode]>=[
- [label("มิเตอร์หลัก","Main meter"),state.device?.name??"—"],[label("รหัสอุปกรณ์","Device ID"),state.device?.externalDeviceId??"—"],
- [label("Profile ปัจจุบัน","Current profile"),state.device?.profileRevisionId??"—"],
+ [label("มิเตอร์หลัก","Main meter"),selected?.device.name??"—"],[label("รหัสอุปกรณ์","Device ID"),selected?.device.externalDeviceId??"—"],
+ [label("Profile ปัจจุบัน","Current profile"),selected?.device.profileRevisionId??"—"],
  [label("ฟิลด์ต้นทาง","Source tag"),field?.sourceTag??bound?.sourceTag??"—"],
  [label("ชื่อค่ามาตรฐาน","Canonical tag"),field?.canonicalTag??bound?.canonicalTag??"—"],
  [label("ตำแหน่งค่าต้นทาง","Source path"),field?sourcePath??`data.values[${JSON.stringify(field.sourceTag)}]`:"—"],
@@ -65,8 +65,12 @@ export function BillingSourcePanel({state,draft,onChange,onSave,onReload,locale,
     <p className="text-muted-foreground">{label("ข้อมูลจริงที่ขาดหรือไม่ถูกต้องจะหยุดการคำนวณบิล แต่ยังบันทึกการตั้งค่าไซต์และอุปกรณ์ได้","Missing or invalid actual readings block billing calculation. Site and device configuration can still be saved.")}</p>
    </section>
    <FieldDescription>{label("แหล่งข้อมูลที่บันทึกมีผลกับข้อมูลที่รับใหม่เท่านั้น ข้อมูลและเอกสารที่บันทึกแล้วคงเดิม","A saved source applies to newly ingested readings only. Existing readings and documents stay unchanged.")}</FieldDescription><FieldGroup>
+    {!state.device&&<Field data-disabled={busy||profilePending}><FieldLabel htmlFor={id+"-device"}>{label("เลือกมิเตอร์หลัก","Select main meter")}</FieldLabel>
+     <Select value={draft.deviceId} onValueChange={deviceId=>change({deviceId,sourceTag:""})} disabled={busy||profilePending||state.candidates.length===0}><SelectTrigger aria-required id={id+"-device"} className="w-full"><SelectValue placeholder={label("เลือกอุปกรณ์ที่รองรับ","Choose an eligible device")}/></SelectTrigger><SelectContent><SelectGroup>{state.candidates.map(device=><SelectItem key={device.id} value={device.id}>{device.name} · {device.externalDeviceId}</SelectItem>)}</SelectGroup></SelectContent></Select>
+     <FieldDescription>{state.candidates.length?label(`พบอุปกรณ์ที่รองรับ ${state.candidates.length} รายการ`,`Found ${state.candidates.length} eligible device${state.candidates.length===1?"":"s"}.`):label("ไม่พบอุปกรณ์ที่มีฟิลด์ billing-import ที่ถูกต้อง","No device has exactly one valid billing-import field.")}</FieldDescription>
+    </Field>}
     <Field data-disabled={busy||profilePending}><FieldLabel htmlFor={id+"-source"}>{label("เลือกฟิลด์พลังงานสะสม","Select cumulative field")}</FieldLabel>
-     <Select value={draft.sourceTag} onValueChange={sourceTag=>change({sourceTag})} disabled={busy||profilePending||state.eligibleFields.length!==1}><SelectTrigger aria-required id={id+"-source"} className="w-full"><SelectValue placeholder={label("เลือกฟิลด์จากมิเตอร์หลัก","Choose a main meter field")}/></SelectTrigger><SelectContent><SelectGroup>{state.eligibleFields.map(f=><SelectItem key={f.sourceTag??f.tag} value={f.sourceTag??f.tag}>{f.displayName} · {f.sourceTag??f.tag} · {f.sourceUnit} → {f.targetUnit}</SelectItem>)}</SelectGroup></SelectContent></Select>
+     <Select value={draft.sourceTag} onValueChange={sourceTag=>change({sourceTag})} disabled={busy||profilePending||fields.length!==1}><SelectTrigger aria-required id={id+"-source"} className="w-full"><SelectValue placeholder={label("เลือกฟิลด์จากมิเตอร์หลัก","Choose a main meter field")}/></SelectTrigger><SelectContent><SelectGroup>{fields.map(f=><SelectItem key={f.sourceTag??f.tag} value={f.sourceTag??f.tag}>{f.displayName} · {f.sourceTag??f.tag} · {f.sourceUnit} → {f.targetUnit}</SelectItem>)}</SelectGroup></SelectContent></Select>
      <FieldDescription>{label("การกำหนดหน้าที่ฟิลด์ใน Profile ยังไม่ใช่การผูกแหล่งข้อมูลบิล","A cumulative field role in a profile does not create a billing binding.")}</FieldDescription>
     </Field>
     <Field data-disabled={busy||profilePending}><FieldLabel htmlFor={id+"-purpose"}>{label("วัตถุประสงค์ทางกายภาพของมิเตอร์","Physical measurement purpose")}</FieldLabel>

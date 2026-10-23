@@ -33,3 +33,12 @@ test("unbound panel previews the only configured cumulative candidate while stil
  assert.match(html,/Choose a main meter field/);
  assert.match(html,/<button[^>]*disabled=""[^>]*>Save billing source/);
 });
+
+test("site without a main meter asks the admin to choose an eligible discovered device",()=>{
+ const candidate={id:"discovered-meter",name:"SPM91",externalDeviceId:"SPM91-01",profileRevisionId:"rev-energy",eligibleFields:sourceState.eligibleFields};
+ const state:BillingSourceState={...sourceState,device:null,candidates:[candidate],eligibleFields:[],status:"no-main-meter"};
+ const html=renderToStaticMarkup(<BillingSourcePanel state={state} draft={billingSourceDraft(state)} onChange={()=>{}} onSave={()=>{}} onReload={()=>{}} locale="en"/>);
+ assert.match(html,/Select main meter/);
+ assert.match(html,/Choose an eligible device/);
+ assert.match(html,/<button[^>]*disabled=""[^>]*>Save billing source/);
+});

@@ -1003,6 +1003,14 @@ function SiteEditDialogInternal({
                   focusBilling={billingSetupPending}
                   billingSetupPending={billingSetupPending}
                 />
+                {siteId && <div className="mt-5"><SiteBillingSource
+                  siteId={siteId}
+                  locale={locale}
+                  receiveConfig={payloadConfig.receiveRevision.config}
+                  focusOnLoad={billingSetupPending}
+                  setupPending={billingSetupPending}
+                  onBindingSaved={refreshPayload}
+                /></div>}
               </TabsContent>
             )}
           </Tabs>

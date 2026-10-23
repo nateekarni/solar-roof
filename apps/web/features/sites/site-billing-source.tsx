@@ -7,7 +7,7 @@ import {Skeleton} from "../../components/ui/skeleton";
 import {apiClient} from "../../lib/api-client";
 import {useAuth} from "../../stores/auth-store";
 import {BillingSourcePanel} from "./billing-source-panel";
-import {billingSourcePath,billingSourceDraft,type BillingSourceState,type BillingSourceDraft} from "./billing-source-model";
+import {billingSourcePath,billingSourceDraft,billingSourceSelection,type BillingSourceState,type BillingSourceDraft} from "./billing-source-model";
 import {submitBillingSource} from "./billing-source-api";
 import type {PayloadReceiveConfig} from "./payload-contracts";
 
@@ -21,7 +21,7 @@ export function SiteBillingSource(props:SiteBillingSourceProps){
 }
 function AdminBillingSource({siteId,locale,expectedProfileRevisionId,refreshKey,profilePending=false,receiveConfig,focusOnLoad=false,setupPending=false,onBindingSaved}:SiteBillingSourceProps){
  const [state,setState]=React.useState<BillingSourceState|null>(null);
- const [draft,setDraft]=React.useState<BillingSourceDraft>({sourceTag:"",measurementPurpose:"",purposeDescription:"",confirmed:false});
+ const [draft,setDraft]=React.useState<BillingSourceDraft>({deviceId:"",sourceTag:"",measurementPurpose:"",purposeDescription:"",confirmed:false});
  const [busy,setBusy]=React.useState(false),[fetching,setFetching]=React.useState(true);
  const [error,setError]=React.useState(""),[notice,setNotice]=React.useState("");
  const generation=React.useRef(0),loadedFor=React.useRef(""),focused=React.useRef(false);
@@ -64,7 +64,8 @@ function AdminBillingSource({siteId,locale,expectedProfileRevisionId,refreshKey,
   }finally{setBusy(false);}
  };
  const pendingNotice=setupPending&&!state?.binding?text("สร้างไซต์และบันทึกอุปกรณ์แล้ว โปรดเลือกแหล่งข้อมูลและวัตถุประสงค์เพื่อเตรียมการคำนวณบิล หากปิดหน้าต่างสามารถกลับมาแก้ไขไซต์นี้ได้","Site created and devices saved. Choose the billing source and physical purpose to finish setup. You can close this dialog and continue by editing this site."):"";
- const pathField=state?.eligibleFields.find(field=>field.sourceTag===draft.sourceTag)??(state?.eligibleFields.length===1?state.eligibleFields[0]:undefined);
+ const selected=state?billingSourceSelection(state,draft):null;
+ const pathField=selected?.eligibleFields.find(field=>field.sourceTag===draft.sourceTag)??(selected?.eligibleFields.length===1?selected.eligibleFields[0]:undefined);
  const pathTag=pathField?.sourceTag;
  const sourcePath=pathTag?billingSourcePath(receiveConfig,pathTag):undefined;
  if(fetching)return <section aria-label={text("กำลังโหลดแหล่งข้อมูลบิล","Loading billing source")}><Skeleton className="h-28 w-full"/><p className="mt-2 text-sm text-muted-foreground">{text("กำลังโหลดแหล่งข้อมูลบิล…","Loading billing source…")}</p></section>;
