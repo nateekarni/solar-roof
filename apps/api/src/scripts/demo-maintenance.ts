@@ -27,7 +27,7 @@ export async function resetBilling(client:Client,target:string){
  CREATE TEMP TABLE demo_financial_outbox ON COMMIT DROP AS SELECT id FROM financial_delivery_outbox WHERE document_id IN (SELECT id FROM demo_docs);
  CREATE TEMP TABLE demo_operational_outbox ON COMMIT DROP AS SELECT id FROM operational_delivery_outbox WHERE billing_cycle_id IN (SELECT id FROM demo_cycles);
  CREATE TEMP TABLE demo_payment_outbox ON COMMIT DROP AS SELECT id,notification_id FROM payment_decision_outbox WHERE payment_id IN (SELECT id FROM demo_payments);
- CREATE TEMP TABLE demo_feed ON COMMIT DROP AS SELECT id FROM notification_feed_events WHERE id LIKE 'document:%' OR id LIKE 'payment:%';
+ CREATE TEMP TABLE demo_feed ON COMMIT DROP AS SELECT id FROM notification_feed_events WHERE site_id IN (SELECT id FROM demo_billing_site) AND (id LIKE 'document:%' OR id LIKE 'payment:%');
  ALTER TABLE documents DISABLE TRIGGER documents_immutable;
  ALTER TABLE document_artifacts DISABLE TRIGGER document_artifact_immutable;
  DELETE FROM operational_delivery_attempts WHERE (source='operational_delivery_outbox' AND outbox_id IN (SELECT id FROM demo_operational_outbox)) OR (source='payment_decision_outbox' AND outbox_id IN (SELECT id FROM demo_payment_outbox));
@@ -47,7 +47,6 @@ export async function resetBilling(client:Client,target:string){
  DELETE FROM notification_feed_events WHERE id IN (SELECT id FROM demo_feed);
  DELETE FROM financial_staff_notices WHERE site_id IN (SELECT id FROM demo_billing_site);
  DELETE FROM financial_month_jobs WHERE site_id IN (SELECT id FROM demo_billing_site);
- DELETE FROM notification_deliveries WHERE title LIKE '%Billing awaiting issuance approval:%' OR title LIKE '%Monthly billing blocked:%';
  DELETE FROM billing_cycles WHERE id IN (SELECT id FROM demo_cycles);`);
  const result=(await client.query(`SELECT (SELECT count(*)::int FROM documents WHERE site_id=$1 AND document_type IN ('invoice','receipt','billing_statement')) AS "billingDocuments",(SELECT count(*)::int FROM billing_cycles WHERE site_id=$1) AS "billingCycles",(SELECT count(*)::int FROM payments p JOIN billing_cycles b ON b.id=p.billing_cycle_id WHERE b.site_id=$1) AS payments,(SELECT count(*)::int FROM documents WHERE site_id=$1 AND document_type='contract') AS "retainedContractDocuments"`,[site.id])).rows[0];
  return {siteId:site.id,externalSiteId:site.external_site_id,...result};
