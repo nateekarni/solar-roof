@@ -132,7 +132,7 @@ test('GatewayFormDialog renders full-width tabs, frameless billing meter, and om
 
 test('GatewayEditDialog renders full-width tabs, footer save button, and omits subscribe box', () => {
   const html = renderToStaticMarkup(
-    <SessionUserProvider user={user}>
+    <SessionUserProvider user={adminUser}>
       <LocaleProvider initialLocale="th">
         <GatewayEditDialog
           inline
@@ -150,6 +150,7 @@ test('GatewayEditDialog renders full-width tabs, footer save button, and omits s
   assert.ok(html.includes('ตั้งค่าเกตเวย์'));
   assert.ok(html.includes('เกตเวย์และการเชื่อมต่อ'));
   assert.ok(html.includes('อุปกรณ์และการรับข้อมูล'));
+  assert.ok(html.includes('มิเตอร์ออกบิล'));
   assert.ok(html.includes('ประวัติและการสลับเปลี่ยน'));
   assert.ok(html.includes('เพิ่มอุปกรณ์'));
   assert.ok(html.includes('ปิด'));

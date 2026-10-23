@@ -38,7 +38,6 @@ import {
 import { PayloadReceiveSettings } from "./payload-receive-settings";
 import type { PayloadConfig, PayloadReceiveConfig, PayloadRevision } from "./payload-contracts";
 import { createSitePayloadLoader } from "./site-payload-loader";
-import { SiteBillingSource } from "./site-billing-source";
 import { PayloadConnectionCard } from "./payload-connection-card";
 import { ChoiceSelect } from "../../components/ui/choice-select";
 import { AddButton } from "../../components/ui/add-button";
@@ -1003,14 +1002,6 @@ function SiteEditDialogInternal({
                   focusBilling={billingSetupPending}
                   billingSetupPending={billingSetupPending}
                 />
-                {siteId && <div className="mt-5"><SiteBillingSource
-                  siteId={siteId}
-                  locale={locale}
-                  receiveConfig={payloadConfig.receiveRevision.config}
-                  focusOnLoad={billingSetupPending}
-                  setupPending={billingSetupPending}
-                  onBindingSaved={refreshPayload}
-                /></div>}
               </TabsContent>
             )}
           </Tabs>

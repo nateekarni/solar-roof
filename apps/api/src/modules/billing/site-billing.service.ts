@@ -66,6 +66,6 @@ export class SiteBillingService {
   return {success:true,status:result.status};
  }
  async manualPreview(b:{siteId:string;lines:ManualLine[]},a:ScopePrincipal){const config=await this.settings(b.siteId,a);if(!config?.taxConfirmed)throw new ConflictException('Confirmed accounting tax configuration required');try{return manualTotals(b.lines,config.taxRate,config.pricesIncludeTax);}catch(error){throw new BadRequestException((error as Error).message);}}
- async manual(b:{siteId:string;lines:ManualLine[];note?:string;dueDate?:string;idempotencyKey?:string},a:ScopePrincipal){await this.scope(this.db,b.siteId,a);return this.financial.manualInvoice(b,a.id);}
+ async manual(b:{siteId:string;lines:ManualLine[];note?:string;dueDate?:string;idempotencyKey?:string},a:ScopePrincipal){await this.scope(this.db,b.siteId,a);return this.financial.manualInvoice({siteId:b.siteId,lines:b.lines.map(line=>({description:line.description,quantity:line.quantity,unitPrice:line.unitPrice})),...(b.note!==undefined?{note:b.note}:{}),...(b.dueDate!==undefined?{dueDate:b.dueDate}:{}),...(b.idempotencyKey!==undefined?{idempotencyKey:b.idempotencyKey}:{})},a.id);}
  private async audit(c:PoolClient,a:ScopePrincipal,action:string,id:string,before:unknown,after:unknown,reason:string){await c.query(`INSERT INTO audit_events(id,actor_id,action,entity_type,entity_id,before_json,after_json,reason,correlation_id) VALUES($1,$2,$3,'site_billing',$4,$5,$6,$7,$8)`,[randomUUID(),a.id,action,id,JSON.stringify(before??null),JSON.stringify(after),reason,randomUUID()]);}
 }

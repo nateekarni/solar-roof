@@ -8,6 +8,7 @@ import {Field,FieldError,FieldGroup,FieldLabel} from '../../components/ui/field'
 import {Tabs,TabsList,TabsTrigger,TabsContent} from '../../components/ui/tabs';
 import {BrokerSelect} from './broker-select';
 import {PayloadConnectionCard} from './payload-connection-card';
+import {GatewayBillingSourceSection} from './gateway-billing-source-section';
 import {GatewayInstallationHistory} from './gateway-installation-history';
 import {DeviceProfileEditor, composeAutoDeviceTopic} from './device-profile-editor';
 import {
@@ -20,10 +21,11 @@ import {
 import {apiClient} from '../../lib/api-client';
 import {focusErrorElement} from '../../lib/form-feedback';
 import {useLocale} from '../../providers/locale-provider';
+import {useSessionUser} from '../../providers/session-user-provider';
 import type {GatewayRow} from './gateway-index';
 import type {PayloadConfig,PayloadRevision} from './payload-contracts';
 import type {MetricSources} from './dashboard-source-model';
-import {Radio,Cpu,History,Settings,Plus,Trash2} from 'lucide-react';
+import {Radio,Cpu,History,Settings,Plus,Trash2,ReceiptText} from 'lucide-react';
 
 type GatewayConfig = PayloadConfig & {
   metricSources?: MetricSources;
@@ -83,6 +85,8 @@ export function GatewayEditDialog({
 }) {
   const locale = useLocale();
   const th = locale === 'th';
+  const user = useSessionUser();
+  const canManageBillingSource = user.role === 'admin';
 
   const [availableSites, setAvailableSites] = React.useState<SiteOption[]>(sites ?? []);
   const [tab, setTab] = React.useState('general');
@@ -316,6 +320,12 @@ export function GatewayEditDialog({
           <Cpu className="size-3.5" />
           <span>{th ? 'อุปกรณ์และการรับข้อมูล' : 'Devices & Data Reception'}</span>
         </TabsTrigger>
+        {canManageBillingSource && (
+          <TabsTrigger value="billing" className={SEPARATED_TAB_TRIGGER_CLASS}>
+            <ReceiptText className="size-3.5" />
+            <span>{th ? 'มิเตอร์ออกบิล' : 'Billing Meter'}</span>
+          </TabsTrigger>
+        )}
         <TabsTrigger value="history" className={SEPARATED_TAB_TRIGGER_CLASS}>
           <History className="size-3.5" />
           <span>{th ? 'ประวัติและการสลับเปลี่ยน' : 'History & Replacement'}</span>
@@ -515,7 +525,26 @@ export function GatewayEditDialog({
           )}
         </TabsContent>
 
-        {/* TAB 3: Installation History & Replacement */}
+        {/* TAB 3: Billing meter source */}
+        {canManageBillingSource && (
+          <TabsContent value="billing" forceMount className="data-[state=inactive]:hidden space-y-5 m-0">
+            {config && siteId ? (
+              <GatewayBillingSourceSection
+                siteId={siteId}
+                locale={locale}
+                receiveConfig={config.receiveRevision.config}
+                onBindingSaved={() => {
+                  setRevision((n) => n + 1);
+                  onSaved();
+                }}
+              />
+            ) : (
+              <p className="py-4 text-xs text-muted-foreground">{th ? 'กำลังโหลดข้อมูลมิเตอร์ออกบิล…' : 'Loading billing meter…'}</p>
+            )}
+          </TabsContent>
+        )}
+
+        {/* TAB 4: Installation History & Replacement */}
         <TabsContent value="history" forceMount className="data-[state=inactive]:hidden space-y-6 m-0">
           {config ? (
             <GatewayInstallationHistory

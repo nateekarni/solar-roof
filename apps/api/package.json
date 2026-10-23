@@ -17,6 +17,8 @@
     "test:ingestion": "tsx src/scripts/test-gateway-ingestion.ts",
     "test:payload-gateway": "tsx src/scripts/verify-payload-gateway.ts",
     "verify:gateway-onboarding": "tsx src/scripts/verify-gateway-onboarding.ts",
+    "demo:energy-bill": "tsx src/scripts/demo-energy-manual-bill.ts",
+    "demo:provision-customer": "tsx src/scripts/provision-demo-customer-user.ts",
     "db:create:user": "tsx src/scripts/create-user.ts"
   },
   "dependencies": {

@@ -5,7 +5,7 @@ import {Alert,AlertDescription,AlertTitle} from "../../components/ui/alert";
 import {Button} from "../../components/ui/button";
 import {Skeleton} from "../../components/ui/skeleton";
 import {apiClient} from "../../lib/api-client";
-import {useAuth} from "../../stores/auth-store";
+import {useSessionUser} from "../../providers/session-user-provider";
 import {BillingSourcePanel} from "./billing-source-panel";
 import {billingSourcePath,billingSourceDraft,billingSourceSelection,type BillingSourceState,type BillingSourceDraft} from "./billing-source-model";
 import {submitBillingSource} from "./billing-source-api";
@@ -16,8 +16,8 @@ interface SiteBillingSourceProps {
  profilePending?:boolean;receiveConfig?:PayloadReceiveConfig;focusOnLoad?:boolean;setupPending?:boolean;onBindingSaved?:()=>void;
 }
 export function SiteBillingSource(props:SiteBillingSourceProps){
- const {user}=useAuth();
- return user?.role==="admin"?<AdminBillingSource {...props}/>:null;
+ const user=useSessionUser();
+ return user.role==="admin"?<AdminBillingSource {...props}/>:null;
 }
 function AdminBillingSource({siteId,locale,expectedProfileRevisionId,refreshKey,profilePending=false,receiveConfig,focusOnLoad=false,setupPending=false,onBindingSaved}:SiteBillingSourceProps){
  const [state,setState]=React.useState<BillingSourceState|null>(null);

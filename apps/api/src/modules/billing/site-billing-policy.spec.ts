@@ -8,4 +8,5 @@ test('configured inclusive and exclusive tax use satang rounding',()=>{
  assert.throws(()=>configuredTotals('100',undefined,false));
 });
 test('manual lines calculate their own totals without energy tariff',()=>{assert.equal(manualTotals([{description:'Service',quantity:'2.5',unitPrice:'10.01'}],'0',false).total,'25.03');});
+test('manual lines discard untrusted extra metadata',()=>{const result=manualTotals([{description:'Service',quantity:'1',unitPrice:'10',demoEnergy:{closingKwh:'forged'}} as any],'0',false);assert.equal('demoEnergy' in result.lines[0]!,false);});
 test('partial approved and pending evidence both block rate edits',()=>{for(const status of ['paid','pending_verification'])assert.throws(()=>assertRateEditable('approved',[{status}]));assert.throws(()=>assertRateEditable('paid',[]));assert.doesNotThrow(()=>assertRateEditable('approved',[{status:'rejected'}]));});
