@@ -19,6 +19,7 @@
     "verify:gateway-onboarding": "tsx src/scripts/verify-gateway-onboarding.ts",
     "demo:energy-bill": "tsx src/scripts/demo-energy-manual-bill.ts",
     "demo:provision-customer": "tsx src/scripts/provision-demo-customer-user.ts",
+    "demo:maintenance": "tsx src/scripts/run-demo-maintenance.ts",
     "db:create:user": "tsx src/scripts/create-user.ts"
   },
   "dependencies": {
