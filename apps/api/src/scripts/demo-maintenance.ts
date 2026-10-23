@@ -4,11 +4,9 @@ const schema=z.object({
  DATABASE_URL:z.string().url().refine(value=>['postgres:','postgresql:'].includes(new URL(value).protocol)),
  DEMO_MAINTENANCE_ENABLED:z.literal('true'),
  DEMO_ACTION:z.enum(['reset-billing','delete-gateway','delete-site']),
- DEMO_TARGET:z.string().trim().max(160).optional(),DEMO_CONFIRM:z.string(),
+ DEMO_TARGET:z.string().trim().min(1).max(160),DEMO_CONFIRM:z.string(),
 }).superRefine((value,ctx)=>{
- const needsTarget=value.DEMO_ACTION!=='reset-billing';
- if(needsTarget&&!value.DEMO_TARGET)ctx.addIssue({code:'custom',path:['DEMO_TARGET'],message:'Target required'});
- const expected=value.DEMO_ACTION==='reset-billing'?'RESET-BILLING-DEMO':`${value.DEMO_ACTION.toUpperCase()}:${value.DEMO_TARGET}`;
+ const expected=`${value.DEMO_ACTION.toUpperCase()}:${value.DEMO_TARGET}`;
  if(value.DEMO_CONFIRM!==expected)ctx.addIssue({code:'custom',path:['DEMO_CONFIRM'],message:'Confirmation mismatch'});
 });
 
@@ -19,9 +17,12 @@ export function parseDemoMaintenance(input:Record<string,string|undefined>){
 
 type Client={query(sql:string,values?:unknown[]):Promise<{rows:any[]}>};
 
-export async function resetBilling(client:Client){
- await client.query(`CREATE TEMP TABLE demo_cycles ON COMMIT DROP AS SELECT id FROM billing_cycles;
- CREATE TEMP TABLE demo_docs ON COMMIT DROP AS SELECT id FROM documents WHERE document_type IN ('invoice','receipt','billing_statement');
+export async function resetBilling(client:Client,target:string){
+ const sites=(await client.query(`SELECT id,external_site_id,name FROM sites WHERE id::text=$1 OR external_site_id=$1 FOR UPDATE`,[target])).rows;
+ if(sites.length!==1)throw Error(`Expected exactly one site matching ${target}`);const site=sites[0];
+ await client.query(`CREATE TEMP TABLE demo_billing_site ON COMMIT DROP AS SELECT id FROM sites WHERE id=$1`,[site.id]);
+ await client.query(`CREATE TEMP TABLE demo_cycles ON COMMIT DROP AS SELECT id FROM billing_cycles WHERE site_id IN (SELECT id FROM demo_billing_site);
+ CREATE TEMP TABLE demo_docs ON COMMIT DROP AS SELECT id FROM documents WHERE site_id IN (SELECT id FROM demo_billing_site) AND document_type IN ('invoice','receipt','billing_statement');
  CREATE TEMP TABLE demo_payments ON COMMIT DROP AS SELECT id FROM payments WHERE billing_cycle_id IN (SELECT id FROM demo_cycles);
  CREATE TEMP TABLE demo_financial_outbox ON COMMIT DROP AS SELECT id FROM financial_delivery_outbox WHERE document_id IN (SELECT id FROM demo_docs);
  CREATE TEMP TABLE demo_operational_outbox ON COMMIT DROP AS SELECT id FROM operational_delivery_outbox WHERE billing_cycle_id IN (SELECT id FROM demo_cycles);
@@ -44,12 +45,12 @@ export async function resetBilling(client:Client){
  DELETE FROM notification_feed_reads WHERE notification_id IN (SELECT id FROM demo_feed);
  DELETE FROM operational_event_recipients WHERE notification_id IN (SELECT id FROM demo_feed);
  DELETE FROM notification_feed_events WHERE id IN (SELECT id FROM demo_feed);
- DELETE FROM financial_staff_notices;
- DELETE FROM financial_month_jobs;
+ DELETE FROM financial_staff_notices WHERE site_id IN (SELECT id FROM demo_billing_site);
+ DELETE FROM financial_month_jobs WHERE site_id IN (SELECT id FROM demo_billing_site);
  DELETE FROM notification_deliveries WHERE title LIKE '%Billing awaiting issuance approval:%' OR title LIKE '%Monthly billing blocked:%';
- DELETE FROM billing_cycles WHERE id IN (SELECT id FROM demo_cycles);
- DELETE FROM document_number_series WHERE prefix LIKE 'INV%' OR prefix LIKE 'RCP%';`);
- return (await client.query(`SELECT (SELECT count(*)::int FROM documents WHERE document_type IN ('invoice','receipt','billing_statement')) AS "billingDocuments",(SELECT count(*)::int FROM billing_cycles) AS "billingCycles",(SELECT count(*)::int FROM payments) AS payments,(SELECT count(*)::int FROM documents WHERE document_type='contract') AS "retainedContractDocuments"`)).rows[0];
+ DELETE FROM billing_cycles WHERE id IN (SELECT id FROM demo_cycles);`);
+ const result=(await client.query(`SELECT (SELECT count(*)::int FROM documents WHERE site_id=$1 AND document_type IN ('invoice','receipt','billing_statement')) AS "billingDocuments",(SELECT count(*)::int FROM billing_cycles WHERE site_id=$1) AS "billingCycles",(SELECT count(*)::int FROM payments p JOIN billing_cycles b ON b.id=p.billing_cycle_id WHERE b.site_id=$1) AS payments,(SELECT count(*)::int FROM documents WHERE site_id=$1 AND document_type='contract') AS "retainedContractDocuments"`,[site.id])).rows[0];
+ return {siteId:site.id,externalSiteId:site.external_site_id,...result};
 }
 
 export async function deleteGateway(client:Client,target:string){
@@ -110,7 +111,7 @@ export async function deleteGateway(client:Client,target:string){
 export async function deleteSite(client:Client,target:string){
  const sites=(await client.query(`SELECT id,external_site_id,name FROM sites WHERE id::text=$1 OR external_site_id=$1 FOR UPDATE`,[target])).rows;
  if(sites.length!==1)throw Error(`Expected exactly one site matching ${target}`);const site=sites[0];
- const blockers=(await client.query(`SELECT (SELECT count(*) FROM gateways WHERE site_id=$1) AS gateways,(SELECT count(*) FROM devices WHERE site_id=$1) AS devices,(SELECT count(*) FROM contracts WHERE site_id=$1) AS contracts,(SELECT count(*) FROM billing_cycles WHERE site_id=$1) AS cycles,(SELECT count(*) FROM documents WHERE site_id=$1) AS documents`,[site.id])).rows[0];
+ const blockers=(await client.query(`SELECT (SELECT count(*) FROM gateways WHERE site_id=$1) AS gateways,(SELECT count(*) FROM devices WHERE site_id=$1) AS devices,(SELECT count(*) FROM contracts WHERE site_id=$1) AS contracts,(SELECT count(*) FROM billing_cycles WHERE site_id=$1) AS cycles,(SELECT count(*) FROM documents WHERE site_id=$1) AS documents,(SELECT count(*) FROM telemetry_archives WHERE site_id=$1) AS archives,(SELECT count(*) FROM telemetry_retention_holds WHERE site_id=$1) AS retention_holds`,[site.id])).rows[0];
  if(Object.values(blockers).some(value=>Number(value)>0))throw Error(`Site still has dependent records: ${JSON.stringify(blockers)}. Delete its gateway and financial history first; contracts/documents are intentionally protected.`);
  await client.query(`CREATE TEMP TABLE demo_site ON COMMIT DROP AS SELECT id FROM sites WHERE id=$1`,[site.id]);
  await client.query(`CREATE TEMP TABLE demo_global_counts ON COMMIT DROP AS SELECT (SELECT count(*) FROM customers) AS customers,(SELECT count(*) FROM users) AS users,(SELECT count(*) FROM meter_presets) AS meter_presets,(SELECT count(*) FROM payload_profile_revisions WHERE owner_device_id IS NULL) AS shared_profiles`);
@@ -140,8 +141,6 @@ export async function deleteSite(client:Client,target:string){
  DELETE FROM billing_meters WHERE site_id IN (SELECT id FROM demo_site);
  DELETE FROM payload_samples WHERE site_id IN (SELECT id FROM demo_site);
  DELETE FROM payload_rejections WHERE site_id IN (SELECT id FROM demo_site);
- DELETE FROM telemetry_archives WHERE site_id IN (SELECT id FROM demo_site);
- DELETE FROM telemetry_retention_holds WHERE site_id IN (SELECT id FROM demo_site);
  DELETE FROM telemetry_archive_dirty WHERE site_id IN (SELECT id FROM demo_site);
  DELETE FROM telemetry_archive_scan WHERE site_id IN (SELECT id FROM demo_site);
  DELETE FROM sites WHERE id IN (SELECT id FROM demo_site);`);
