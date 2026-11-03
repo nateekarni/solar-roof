@@ -17,4 +17,9 @@ export class CustomerPortalController {
   home(@Req() req: {user: DashboardPrincipal}, @Query('range') range = '7d') {
     return this.portal.home(req.user, parseCustomerPortalRange(range));
   }
+
+  @Get('production-history')
+  productionHistory(@Req() req:{user:DashboardPrincipal},@Query('date') date:string|undefined){
+    return this.portal.productionHistory(req.user,date);
+  }
 }

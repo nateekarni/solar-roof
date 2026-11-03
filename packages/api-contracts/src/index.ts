@@ -1,7 +1,7 @@
 export { normalizePaymentMetadata } from './payments.js';
 export { buildPromptPayPayload, normalizePromptPayId } from './promptpay.js';
 export type { NormalizedPromptPayId } from './promptpay.js';
-export type { CustomerPortalRange, CustomerBillingStatus, CustomerPortalBill, CustomerPortalHomeResponse, CustomerPaymentInstructions } from './customer-portal.js';
+export type { CustomerPortalRange, CustomerBillingStatus, CustomerPortalBill, CustomerPortalHomeResponse, CustomerPaymentInstructions, CustomerProductionHistory } from './customer-portal.js';
 export type {
   GatewayControlKind, GatewayConfigApplyStatus, GatewayLifecycleState, GatewayConfigState,
   GatewayConnectionState,GatewayAuthenticationMode, GatewayJsonValue, GatewayRegisterMapping, GatewayReportedDevice,TelemetryDiscoveryDevice,TelemetryDiscoveryEnvelope,
@@ -15,7 +15,7 @@ export {applyGatewayRegisterPresetMappings,gatewayConnectionIssue,gatewayRegiste
 export type {GatewayConnectionIssue,GatewayRegisterMappingCollectionIssue,GatewayRegisterMappingIssue,GatewayRegisterPresetApplyResult} from './gateway-control.js';
 export type {FinancialInsights,DashboardSiteContext,MaintenanceInsights} from './dashboard-insights.js';
 export type { CashPaymentResult, CashPaymentSubmission, PaymentMetadata, PaymentMethod, PaymentSubmission, PaymentTransferRow, TransferChannel } from './payments.js';
-export type { OperationQuery, OperationPage, OperationRow, OperationFacets, BillingStatusView, BillingRow, CashPaymentEntry, BillingReplacementProposal, IssuancePreview, IssuancePreviewResponse, OperationAction, PersistedDocumentRow } from './operations.js';
+export type { OperationQuery, OperationPage, OperationRow, OperationFacets, BillingStatusView, BillingRow, CashPaymentEntry, BillingReplacementProposal, IssuancePreview, IssuancePreviewResponse, OperationAction, PersistedDocumentRow, DocumentAttachmentSlot } from './operations.js';
 export type { PendingIssuanceStatus, IssuanceLabel, IssuanceApprovalRequest, IssuanceApprovalResult, IssuanceApprovalBatch } from './operations.js';
 export { operationFilters } from './operation-filters.js';
 export type { OperationFilter } from './operation-filters.js';

@@ -37,6 +37,19 @@ export const fixture: CustomerPortalHomeResponse = {
   recentFinancialRecords: [],
   capabilities: { canPay: true, canViewDocuments: true },
 };
+const productionFixture = {
+  date: "2026-10-23",
+  timezone: "Asia/Bangkok" as const,
+  source: "telemetry" as const,
+  status: "partial" as const,
+  site: { id: "s", name: "Campus" },
+  dayTotalKwh: 18.25,
+  watermark: "2026-10-23T08:00:00.000Z",
+  intervals: [
+    { timestamp: "2026-10-23T01:00:00.000Z", valueKwh: 3.5, status: "actual" as const },
+    { timestamp: "2026-10-23T02:00:00.000Z", valueKwh: null, status: "unavailable" as const },
+  ],
+};
 fixture.recentFinancialRecords = ["latest", "second", "third"].map((id) => ({
   ...fixture.focusedBill!,
   id,
@@ -76,7 +89,7 @@ test("initial server markup follows the provider locale even when route locale p
     );
   }
 });
-test("home and record render identical unavailable legacy subtotal/tax without replacing persisted total", () => {
+test("compact home omits unavailable legacy subtotal/tax while record keeps the persisted detail", () => {
   for (const [locale, unavailable] of [
     ["en", "Unavailable"],
     ["th", "ไม่พร้อมใช้งาน"],
@@ -107,21 +120,17 @@ test("home and record render identical unavailable legacy subtotal/tax without r
         capabilities={null}
       />,
     );
-    for (const html of [home, detail]) {
-      assert.equal(
-        (html.match(new RegExp(`<dd[^>]*>${unavailable}\\s*</dd>`, "g")) ?? [])
-          .length,
-        2,
-      );
-      assert.match(html, /963\.14/);
-      assert.doesNotMatch(
-        html,
-        new RegExp(`${unavailable}(?:<!-- -->)?\\s*(?:THB|บาท)`),
-      );
-    }
+    assert.doesNotMatch(home, /Subtotal|Tax|ยอดก่อนภาษี|ภาษี/);
+    assert.match(home, /963\.14/);
+    assert.equal(
+      (detail.match(new RegExp(`<dd[^>]*>${unavailable}\\s*</dd>`, "g")) ?? []).length,
+      2,
+    );
+    assert.match(detail, /963\.14/);
+    assert.doesNotMatch(detail, new RegExp(`${unavailable}(?:<!-- -->)?\\s*(?:THB|บาท)`));
   }
 });
-test("bill precedes energy and the three server records with persisted breakdown and payment link", () => {
+test("compact bill precedes monitoring and keeps the full record reachable", () => {
   const html = renderToStaticMarkup(
     <CustomerHomePage
       initial={{ status: "ready", data: fixture }}
@@ -133,13 +142,9 @@ test("bill precedes energy and the three server records with persisted breakdown
     html.indexOf("Energy production") <
       html.indexOf("Recent financial records"),
   );
-  assert.match(html, /Subtotal.*Tax.*Total/s);
+  assert.equal((html.match(/data-bill-summary-row=/g) ?? []).length, 4);
   for (const value of [
-    "Subtotal",
-    "Tax",
     "Billed amount",
-    "900.13",
-    "63.01",
     "963.14",
     "863.14",
     "Due date",
@@ -148,12 +153,15 @@ test("bill precedes energy and the three server records with persisted breakdown
     "View all documents",
   ])
     assert.ok(html.includes(value), value);
+  assert.match(html, /Subtotal/);
+  assert.match(html, /Tax/);
+  assert.match(html, /Rate 3/);
   assert.match(html, /href="\/records\/billing\/bill-a/);
   assert.equal((html.match(/data-financial-record=/g) ?? []).length, 3);
-  assert.match(html, /aria-pressed="true"/);
+  assert.match(html, /data-state="active"/);
 });
 
-test("bill and recent-record actions keep their priority at the bottom of each card", () => {
+test("bill and compact record actions keep the payment action last", () => {
   const html = renderToStaticMarkup(
     <CustomerHomePage
       initial={{ status: "ready", data: fixture }}
@@ -162,17 +170,17 @@ test("bill and recent-record actions keep their priority at the bottom of each c
   ).replaceAll("<!-- -->", "");
   assert.match(
     html,
-    /data-current-bill-actions="true"[^>]*class="[^"]*mt-auto/,
+    /data-current-bill-actions="true"/,
   );
   assert.equal((html.match(/data-record-actions="true"/g) ?? []).length, 3);
   assert.match(
     html,
-    /data-record-actions="true"[^>]*class="[^"]*justify-between/,
+    /data-record-actions="true"[^>]*class="[^"]*justify-end/,
   );
   assert.match(html, />View details<.*>Pay</s);
   assert.doesNotMatch(html, /Submit payment evidence/);
 });
-test("recent records lead with invoice and status without a decorative file icon", () => {
+test("recent records use compact document rows with a visible file icon", () => {
   const html = renderToStaticMarkup(
     <CustomerHomePage
       initial={{ status: "ready", data: fixture }}
@@ -183,9 +191,10 @@ test("recent records lead with invoice and status without a decorative file icon
     html,
     /data-record-header="true"[^>]*>.*<h3[^>]*>latest<\/h3>.*October 2026.*Partially paid/s,
   );
-  assert.doesNotMatch(html, /lucide-file-text/);
+  assert.match(html, /data-financial-record-list="compact"/);
+  assert.match(html, /lucide-file-text/);
 });
-test("paid up to date, no site and unavailable overview remain distinct", () => {
+test("no open bill, no site and unavailable overview remain distinct", () => {
   const render = (data: CustomerPortalHomeResponse) =>
     renderToStaticMarkup(
       <CustomerHomePage initial={{ status: "ready", data }} locale="en" />,
@@ -200,7 +209,8 @@ test("paid up to date, no site and unavailable overview remain distinct", () => 
       canPay: false,
     })),
   };
-  assert.match(render(paid), /You are paid up to date/);
+  assert.doesNotMatch(render(paid), /Current bill|You are paid up to date|No open bill/);
+  assert.match(render(paid), /Power flow is unavailable/);
   assert.doesNotMatch(render(paid), />Pay</);
   assert.match(
     render({ ...fixture, site: null, focusedBill: null }),
@@ -257,4 +267,33 @@ test("server payment capability and bill eligibility both gate the payment actio
     />,
   );
   assert.doesNotMatch(html, />Pay</);
+});
+
+test("dashboard keeps the date in its heading and orders bill, flow, production, trend and documents", () => {
+  const html = renderToStaticMarkup(
+    <CustomerHomePage
+      initial={{
+        status: "ready",
+        data: { ...fixture, energySeries: [{ date: "2026-10-23", value: 4.25 }] },
+      }}
+      production={productionFixture}
+      locale="en"
+    />,
+  );
+  assert.ok(html.indexOf("Dashboard") < html.indexOf("Amount due"));
+  assert.ok(html.indexOf("Amount due") < html.indexOf("Power flow right now"));
+  assert.ok(html.indexOf("Power flow right now") < html.indexOf("Production overview"));
+  assert.ok(html.indexOf("Production overview") < html.indexOf("Energy production"));
+  assert.ok(html.indexOf("Energy production") < html.indexOf("Recent financial records"));
+  assert.match(html, /aria-label="Select production date"/);
+  assert.match(html, /Power flow is unavailable/);
+  assert.doesNotMatch(html, /data-flow-particles=/);
+  assert.match(html, /data-slot="tabs"/);
+  assert.equal((html.match(/data-slot="tabs-trigger"/g) ?? []).length, 2);
+  assert.match(html, /View hourly readings/);
+  assert.equal((html.match(/data-slot="dialog-trigger"/g) ?? []).length, 2);
+  assert.doesNotMatch(html, /<(?:details|summary)\b/);
+  assert.match(html, /data-customer-dashboard-board="true"/);
+  for (const area of ["header", "bill", "flow", "production", "trend", "records"])
+    assert.match(html, new RegExp(`data-dashboard-area="${area}"`));
 });

@@ -20,7 +20,8 @@ import { siteHistoryFilter } from "./site-history.js";
 import { randomUUID } from "node:crypto";
 import { validateCadence } from './gateway-reconciliation.js';
 import { hasPermission, siteScope, type AuthorizationPrincipal } from '../../common/auth/authorization.js';
-import { snapshotGatewayConfiguration, recordGatewayPublished, reserveGatewayIdentity, guardLegacyGatewayConfiguration, lockGatewayForMutation } from './gateway-lifecycle.js';
+import { snapshotGatewayConfiguration, recordGatewayPublished, reserveGatewayIdentity, guardLegacyGatewayConfiguration, lockGatewayForMutation, retireGateway, retireSite } from './gateway-lifecycle.js';
+import {Roles} from '../../common/roles.decorator.js';
 import { MeasurementComparisons } from './measurement-comparisons.js';
 import { z } from 'zod';
 import { identityDraft, operationalCode, identityConflict, retryGeneratedIdentity, type IdentityDraftInput } from "./identity-allocation.js";
@@ -269,6 +270,14 @@ export class AssetsController {
 
   @Get('gateways/:id/history')
   async gatewayHistory(@Param('id') id:string){return (await this.db.query(`SELECT h.id,h.gateway_id AS "gatewayId",g.name,g.external_gateway_id AS "externalGatewayId",h.site_id AS "siteId",h.installed_at AS "installedAt",h.removed_at AS "removedAt",h.replaced_by_gateway_id AS "replacedByGatewayId" FROM gateway_installation_history h JOIN gateways g ON g.id=h.gateway_id WHERE h.site_id=(SELECT site_id FROM gateways WHERE id::text=$1) ORDER BY installed_at DESC,h.id`,[id])).rows;}
+
+  @Delete('gateways/:id')
+  @Roles('admin')
+  async removeGateway(@Param('id') id:string,@Req() req:{user?:{id:string}}){
+    const result=await this.db.transaction(client=>retireGateway(client,id,req.user?.id));
+    await this.mqttService.refreshSubscriptions().catch(()=>{});
+    return result;
+  }
 
   @Get('gateways/:id/topics')
   async gatewayTopics(@Param('id') id:string){
@@ -1116,103 +1125,9 @@ export class AssetsController {
   @Delete("sites/:id")
   async deleteSite(
     @Param("id") id: string,
-    @Query("mode") mode?: string
+    @Req() req:{user?:{id:string}}
   ) {
-    const client = await this.db.pool.connect();
-    try {
-      await client.query("BEGIN");
-
-      const siteCheck = await client.query("SELECT id, name FROM sites WHERE id = $1 FOR UPDATE", [id]);
-      if (siteCheck.rows.length === 0) {
-        throw new NotFoundException("ไม่พบไซต์งานที่ต้องการลบ");
-      }
-      const siteName = siteCheck.rows[0].name;
-
-      // Check linked contracts and billing cycles
-      const contractRes = await client.query("SELECT count(*)::int AS count FROM contracts WHERE site_id = $1", [id]);
-      const contractCount = contractRes.rows[0]?.count ?? 0;
-
-      const billingRes = await client.query("SELECT count(*)::int AS count FROM billing_cycles WHERE site_id = $1", [id]);
-      const billingCount = billingRes.rows[0]?.count ?? 0;
-
-      const hasLinked = contractCount > 0 || billingCount > 0;
-
-      if (hasLinked) {
-        if (mode === "archive") {
-          await client.query("UPDATE sites SET status = 'archived', updated_at = now() WHERE id = $1", [id]);
-          await client.query("UPDATE gateways SET status = 'offline' WHERE site_id = $1", [id]);
-          await client.query("UPDATE devices SET status = 'offline' WHERE site_id = $1", [id]);
-          await client.query("COMMIT");
-          return {
-            success: true,
-            archived: true,
-            message: `เนื่องจากไซต์ "${siteName}" มีสัญญา (${contractCount} ฉบับ) หรือรอบบิล (${billingCount} รอบ) จึงได้ระงับการใช้งาน (Archive) เรียบร้อยแล้ว`,
-          };
-        } else {
-          throw new BadRequestException(
-            `ไม่สามารถลบไซต์ "${siteName}" ได้เนื่องจากมีข้อมูลสัญญา (${contractCount} ฉบับ) หรือรอบบิล (${billingCount} รอบ) ผูกอยู่ หากต้องการปิดการทำงานให้เลือกระงับการใช้งาน (Archive) แทน`
-          );
-        }
-      }
-
-      // Safe hard delete unlinked site & cascaded records
-      await client.query(
-        "DELETE FROM operational_delivery_attempts WHERE outbox_id IN (SELECT id FROM operational_delivery_outbox WHERE site_id = $1) OR outbox_id IN (SELECT id FROM payment_decision_outbox WHERE site_id = $1)",
-        [id]
-      );
-      await client.query("DELETE FROM operational_delivery_outbox WHERE site_id = $1", [id]);
-      await client.query("DELETE FROM payment_decision_outbox WHERE site_id = $1", [id]);
-      await client.query("DELETE FROM operational_alert_rules WHERE site_id = $1", [id]);
-      await client.query(
-        "DELETE FROM operational_event_recipients WHERE notification_id IN (SELECT id FROM notification_feed WHERE site_id = $1)",
-        [id]
-      );
-      await client.query("DELETE FROM notification_feed WHERE site_id = $1", [id]);
-      await client.query("DELETE FROM notification_feed_events WHERE site_id = $1", [id]);
-      await client.query("DELETE FROM financial_staff_notices WHERE site_id = $1", [id]);
-      await client.query("DELETE FROM financial_month_jobs WHERE site_id = $1", [id]);
-      await client.query("DELETE FROM site_account_assignments WHERE site_id = $1", [id]);
-      await client.query("DELETE FROM rate_versions WHERE site_id = $1", [id]);
-      await client.query("DELETE FROM site_billing_settings WHERE site_id = $1", [id]);
-      await client.query(
-        "UPDATE discovered_gateways SET assigned_site_id = NULL, assigned_gateway_id = NULL, status = 'unassigned' WHERE assigned_site_id = $1",
-        [id]
-      );
-      await client.query("DELETE FROM gateway_installation_history WHERE site_id = $1", [id]);
-      await client.query("DELETE FROM telemetry_raw WHERE site_id = $1", [id]);
-      await client.query("DELETE FROM telemetry_aggregate WHERE site_id = $1", [id]);
-      await client.query("DELETE FROM alerts WHERE site_id = $1", [id]);
-      await client.query("DELETE FROM billing_meters WHERE site_id = $1", [id]);
-      await client.query("DELETE FROM billing_source_bindings WHERE site_id = $1", [id]);
-      await client.query(
-        "DELETE FROM register_mapping_versions WHERE device_id IN (SELECT id FROM devices WHERE site_id = $1)",
-        [id]
-      );
-      await client.query("DELETE FROM payload_samples WHERE site_id = $1", [id]);
-      await client.query("DELETE FROM payload_rejections WHERE site_id = $1", [id]);
-      await client.query("DELETE FROM devices WHERE site_id = $1", [id]);
-      await client.query(
-        "DELETE FROM gateway_payload_receive_revisions WHERE gateway_id IN (SELECT id FROM gateways WHERE site_id = $1)",
-        [id]
-      );
-      await client.query("DELETE FROM gateways WHERE site_id = $1", [id]);
-      // Raw deletion can enqueue archive dirty days through its trigger. Clear them last.
-      await client.query("DELETE FROM telemetry_archive_dirty WHERE site_id = $1", [id]);
-      await client.query("DELETE FROM telemetry_archive_scan WHERE site_id = $1", [id]);
-      await client.query("DELETE FROM sites WHERE id = $1", [id]);
-
-      await client.query("COMMIT");
-      return {
-        success: true,
-        deleted: true,
-        message: `ลบไซต์งาน "${siteName}" และอุปกรณ์ที่เกี่ยวข้องเรียบร้อยแล้ว`,
-      };
-    } catch (err) {
-      await client.query("ROLLBACK");
-      throw err;
-    } finally {
-      client.release();
-    }
+    return this.db.transaction(client=>retireSite(client,id,req.user?.id));
   }
 
   @Get("sites/:id/devices")

@@ -8,6 +8,18 @@ export type DocumentIdentity = {
   signatureDataUri?: string;
 };
 
+export type SignedDocumentIdentity = DocumentIdentity & {signatureDataUri: string};
+
+export function requireDocumentSignature(identity: DocumentIdentity): SignedDocumentIdentity {
+  if (!identity.signatureDataUri) {
+    throw new ConflictException({
+      code: 'DOCUMENT_APPROVER_SIGNATURE_REQUIRED',
+      message: `กรุณาเพิ่มลายเซ็นส่วนตัวของ ${identity.displayName} ในบัญชีของฉันก่อนอนุมัติออกเอกสาร`,
+    });
+  }
+  return {...identity, signatureDataUri: identity.signatureDataUri};
+}
+
 export class DocumentIdentityService {
   async resolve(client: Pick<PoolClient, 'query'>, userId: string): Promise<DocumentIdentity> {
     const row = (await client.query(`

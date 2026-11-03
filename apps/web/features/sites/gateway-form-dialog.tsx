@@ -13,7 +13,10 @@ import type {PayloadRevision} from './payload-contracts';
 import {apiClient} from '../../lib/api-client';
 import {focusErrorElement} from '../../lib/form-feedback';
 import {useLocale} from '../../providers/locale-provider';
-import {Radio,Cpu,Plus,Trash2} from 'lucide-react';
+import {useSessionUser} from '../../providers/session-user-provider';
+import {Radio,Cpu,Plus,Trash2,ReceiptText} from 'lucide-react';
+import {GatewayBillingSourceSection} from './gateway-billing-source-section';
+import {runGatewaySetupCreation,type GatewaySetupProgress} from './gateway-create-flow';
 
 interface SiteOption {
   id: string;
@@ -45,6 +48,8 @@ export function GatewayFormDialog({
 }) {
   const locale = useLocale();
   const th = locale === 'th';
+  const user=useSessionUser();
+  const canManageBillingSource=user.role==='admin';
 
   const [tab, setTab] = React.useState('general');
   const [availableSites, setAvailableSites] = React.useState<SiteOption[]>(sites ?? []);
@@ -64,6 +69,9 @@ export function GatewayFormDialog({
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState('');
   const [showErrors, setShowErrors] = React.useState(false);
+  const [createdSiteId,setCreatedSiteId]=React.useState('');
+  const [setupProgress,setSetupProgress]=React.useState<GatewaySetupProgress>({gatewayCreated:false,nextDeviceIndex:0});
+  const setupProgressRef=React.useRef<GatewaySetupProgress>({gatewayCreated:false,nextDeviceIndex:0});
 
   const selectedSite = availableSites.find((s) => s.id === siteId);
   const siteCode = selectedSite?.code?.trim() || '';
@@ -133,6 +141,10 @@ export function GatewayFormDialog({
       setAdditionalDevices([]);
       setError('');
       setShowErrors(false);
+      setCreatedSiteId('');
+      const emptyProgress={gatewayCreated:false,nextDeviceIndex:0};
+      setupProgressRef.current=emptyProgress;
+      setSetupProgress(emptyProgress);
       if (!sites || sites.length === 0) {
         apiClient.get<SiteOption[]>('/v1/gateways/site-options')
           .then(setAvailableSites)
@@ -142,7 +154,7 @@ export function GatewayFormDialog({
         .then(setPresets)
         .catch((e: Error) => setError(e.message));
     }
-  }, [open, sites]);
+  }, [open]);
 
   async function handleSubmit(e?: React.FormEvent) {
     e?.preventDefault();
@@ -187,39 +199,35 @@ export function GatewayFormDialog({
     try {
       const gatewaySubscriptionTopic = `solar/v1/sites/${siteCode}/gateways/${gwCode}/devices/+/telemetry`;
 
-      // 1. Create or bind gateway to site
-      await apiClient.post(`/v1/sites/${siteId}/gateway`, {
+      const gatewayPayload={
         name: name.trim(),
         externalGatewayId: code.trim() || undefined,
         mqttBrokerId: broker || undefined,
         topicContract: 'solar-v1',
         subscriptionTopic: gatewaySubscriptionTopic,
-      });
-
-      // 2. Create main meter device
-      await apiClient.post(`/v1/sites/${siteId}/devices`, {
+      };
+      const devicePayloads=[{
         name: mainDevice.name.trim(),
         model: mainDevice.model.trim(),
         serialNumber: mainDevice.serialNumber.trim(),
         externalDeviceId: mainDevice.externalDeviceId.trim() || undefined,
         expectedIntervalSeconds: mainDevice.expectedIntervalSeconds ?? 5,
         ...deviceProfilePayload(mainDevice),
-      });
-
-      // 3. Create any additional devices (e.g. SmartLogger)
-      for (const dev of additionalDevices) {
-        await apiClient.post(`/v1/sites/${siteId}/devices`, {
+      },...additionalDevices.map(dev=>({
           name: dev.name.trim(),
           model: dev.model.trim(),
           serialNumber: dev.serialNumber.trim(),
           externalDeviceId: dev.externalDeviceId.trim() || undefined,
           expectedIntervalSeconds: dev.expectedIntervalSeconds ?? (dev.config?.deviceType?.includes('logger') ? 15 : 5),
           ...deviceProfilePayload(dev),
-        });
-      }
+      }))];
+      await runGatewaySetupCreation({siteId,gateway:gatewayPayload,devices:devicePayloads},
+        (path,body)=>apiClient.post(path,body),next=>{setupProgressRef.current=next;setSetupProgress(next);},setupProgressRef.current);
 
       setShowErrors(false);
-      onOpenChange(false);
+      setCreatedSiteId(siteId);
+      if(canManageBillingSource)setTab('billing');
+      else onOpenChange(false);
       onSaved();
     } catch (err: unknown) {
       setError((err as Error).message || (th ? 'เกิดข้อผิดพลาดในการบันทึกเกตเวย์' : 'Failed to save gateway'));
@@ -244,6 +252,9 @@ export function GatewayFormDialog({
           <Cpu className="size-3.5" />
           <span>{th ? 'อุปกรณ์และการรับข้อมูล' : 'Devices & Data Reception'}</span>
         </TabsTrigger>
+        {canManageBillingSource&&<TabsTrigger value="billing" className={SEPARATED_TAB_TRIGGER_CLASS}>
+          <ReceiptText className="size-3.5"/><span>{th?'มิเตอร์ออกบิล':'Billing Meter'}</span>
+        </TabsTrigger>}
       </TabsList>
 
       <form
@@ -255,6 +266,7 @@ export function GatewayFormDialog({
       >
         {error && <p role="alert" className="text-sm text-destructive mb-3">{error}</p>}
 
+        <fieldset disabled={setupProgress.gatewayCreated} className="contents">
         {/* TAB 1: Gateway & Connection */}
         <TabsContent value="general" forceMount className="data-[state=inactive]:hidden space-y-6 m-0">
           <FieldGroup className="grid gap-3 sm:grid-cols-2">
@@ -460,6 +472,12 @@ export function GatewayFormDialog({
             )}
           </section>
         </TabsContent>
+        </fieldset>
+        {canManageBillingSource&&<TabsContent value="billing" forceMount className="data-[state=inactive]:hidden space-y-5 m-0">
+          {createdSiteId?<GatewayBillingSourceSection siteId={createdSiteId} locale={locale} setupPending focusOnLoad onBindingSaved={onSaved}/>:<div className="rounded-xl border bg-muted/20 p-4 text-sm text-muted-foreground">
+            {th?'สร้างเกตเวย์และอุปกรณ์ก่อน แล้วระบบจะเปิดให้เลือกมิเตอร์ออกบิลได้ทันทีโดยไม่ต้องรอการเชื่อมต่อ':'Create the gateway and devices first. You can then choose the billing meter immediately without waiting for a connection.'}
+          </div>}
+        </TabsContent>}
       </form>
     </Tabs>
   );
@@ -469,9 +487,9 @@ export function GatewayFormDialog({
       <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => onOpenChange(false)}>
         {th ? 'ยกเลิก' : 'Cancel'}
       </Button>
-      <Button type="submit" form="gateway-form" size="sm" disabled={busy}>
-        {busy ? (th ? 'กำลังบันทึก…' : 'Saving…') : th ? 'บันทึกและสร้างเกตเวย์' : 'Save and Create Gateway'}
-      </Button>
+      {!createdSiteId&&<Button type="submit" form="gateway-form" size="sm" disabled={busy}>
+        {busy ? (th ? 'กำลังบันทึก…' : 'Saving…') : setupProgress.gatewayCreated?(th?'ลองบันทึกอุปกรณ์ต่อ':'Retry remaining devices'):th ? 'บันทึกและสร้างเกตเวย์' : 'Save and Create Gateway'}
+      </Button>}
     </>
   );
 

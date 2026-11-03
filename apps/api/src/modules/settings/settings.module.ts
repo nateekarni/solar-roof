@@ -5,10 +5,11 @@ import { BrandingController } from './branding.controller.js';
 import { MeterPresetsController } from "./meter-presets.controller.js";
 import { PayloadPresetsController } from "./payload-presets.controller.js";
 import { SettingsService } from "./settings.service.js";
+import {PolicyFoundationsController} from './policy-foundations.controller.js';
 
 @Module({
   imports: [FinancialReadinessModule],
-  controllers: [SettingsController, BrandingController, MeterPresetsController, PayloadPresetsController],
+  controllers: [SettingsController, BrandingController, MeterPresetsController, PayloadPresetsController,PolicyFoundationsController],
   providers: [SettingsService],
   exports: [SettingsService],
 })

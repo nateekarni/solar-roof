@@ -25,7 +25,10 @@ export function isOwnerCompanyMutation(method: string, rawPath: string): boolean
 export function routeAllowed(role: string, method: string, rawPath: string): boolean {
   if (!["owner", "admin", "operator", "accountant", "customer_user"].includes(role)) return false;
   const path = rawPath.split("?")[0]!.replace(/\/$/, "");
-  if (path === '/v1/customer/portal/home' || path === '/v1/customer/portal/payment-instructions') return role === 'customer_user' && ['GET','HEAD'].includes(method);
+  if (path === '/v1/customer/portal/home' || path === '/v1/customer/portal/payment-instructions' || path === '/v1/customer/portal/production-history') return role === 'customer_user' && ['GET','HEAD'].includes(method);
+  if(path==='/v1/settings/late-fee-policy')return ['GET','HEAD'].includes(method)?['owner','accountant'].includes(role):method==='POST'&&role==='owner';
+  if(path==='/v1/settings/critical-alarm-rules')return ['GET','HEAD'].includes(method)&&role==='admin';
+  if(path==='/v1/settings/critical-alarm-rules/import')return method==='POST'&&role==='admin';
   if (/^\/v1\/settings\/finance-readiness(?:\/|$)/.test(path)) return role==='owner' && (path==='/v1/settings/finance-readiness'&&['GET','HEAD'].includes(method) || path==='/v1/settings/finance-readiness/confirm'&&method==='POST');
   if (isOwnerCompanyMutation(method,path)) return role === 'owner';
   if(/^\/v1\/operations\/contracts\/[^/]+\/original$/.test(path)&&method==='POST')return ['owner','accountant'].includes(role);

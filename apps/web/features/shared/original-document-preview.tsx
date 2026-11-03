@@ -7,8 +7,13 @@ import {Button} from '../../components/ui/button';
 import {apiClient} from '../../lib/api-client';
 import {useLocale} from '../../providers/locale-provider';
 import {verifiedOriginalPdf} from './original-document-loader';
-interface ContentProps {url:string;error:boolean;number:string;th:boolean;inline?:boolean;onSend?:(()=>void)|undefined;deliveryUnavailable?:boolean|undefined;sending?:boolean;sent?:boolean;sendError?:string;}
-export function OriginalPdfContent({url,error,number,th,inline=false,onSend,deliveryUnavailable,sending,sent,sendError}:ContentProps) {
+import type {DocumentAttachmentSlot} from '@solar/api-contracts';
+interface ContentProps {url:string;error:boolean;number:string;th:boolean;inline?:boolean;attachments?:DocumentAttachmentSlot[]|undefined;onSend?:(()=>void)|undefined;deliveryUnavailable?:boolean|undefined;sending?:boolean;sent?:boolean;sendError?:string;}
+export function DocumentAttachmentSlots({attachments=[],th}:{attachments?:DocumentAttachmentSlot[]|undefined;th:boolean}){
+ if(!attachments.length)return null;
+ return <section className="rounded-lg border border-dashed p-3 text-sm" aria-label={th?'ไฟล์แนบเอกสาร':'Document attachments'}>{attachments.map(slot=><div key={`${slot.kind}:${slot.documentRevision}`} className="space-y-1"><p className="font-medium">{th?'ไฟล์แนบแบบฟอร์มการผลิต':'Production form attachment'}</p><p className="text-muted-foreground">{th?'รอรับแบบฟอร์มที่จัดส่ง':'Awaiting supplied form'} · {th?'ฉบับแก้ไข':'Revision'} {slot.documentRevision} · {slot.templateVersion}</p></div>)}</section>;
+}
+export function OriginalPdfContent({url,error,number,th,inline=false,attachments,onSend,deliveryUnavailable,sending,sent,sendError}:ContentProps) {
  if(error)return <p role="alert">{th?'ไม่สามารถเปิดเอกสารต้นฉบับที่ตรวจสอบแล้วได้':'Could not load the verified original document.'}</p>;
  if(!url)return <p role="status">{th?'กำลังโหลดเอกสารต้นฉบับ…':'Loading original document…'}</p>;
  return <>{!inline&&<div className="flex flex-wrap gap-2">
@@ -17,9 +22,10 @@ export function OriginalPdfContent({url,error,number,th,inline=false,onSend,deli
   {onSend&&<Button variant="outline" onClick={onSend} disabled={sending||sent}>{sending?(th?'กำลังส่ง…':'Sending…'):sent?(th?'ส่งแล้ว':'Sent'):(th?'ส่งเอกสารต้นฉบับ':'Send original')}</Button>}
  </div>}{deliveryUnavailable&&<p role="status">{th?'ไม่มีบัญชีผู้รับที่ยืนยันไว้ กรุณาติดต่อผู้ดูแลเพื่อออกสัญญาที่เลือกบัญชีผู้รับ':'No frozen verified recipient. Ask an administrator to issue a contract with selected recipient accounts.'}</p>}
  {sendError&&<p role="alert">{sendError}</p>}{sent&&<p role="status">{th?'ส่งเอกสารต้นฉบับที่บันทึกไว้แล้ว':'Saved original sent.'}</p>}
+ <DocumentAttachmentSlots attachments={attachments} th={th}/>
  {inline?<InlinePdfCanvas locale={th?'th':'en'} url={url} title={th?'เอกสารต้นฉบับ':'Original document'}/>:<iframe src={url} title={th?'เอกสารต้นฉบับ':'Original document'} className="h-[65dvh] w-full border rounded"/>}</>;
 }
-export function OriginalDocumentPreview({open,onOpenChange,id,hash,number,onSend,deliveryUnavailable}:{open:boolean;onOpenChange:(value:boolean)=>void;id:string;hash:string;number:string;onSend?:(()=>Promise<unknown>)|undefined;deliveryUnavailable?:boolean|undefined}) {
+export function OriginalDocumentPreview({open,onOpenChange,id,hash,number,attachments,onSend,deliveryUnavailable}:{open:boolean;onOpenChange:(value:boolean)=>void;id:string;hash:string;number:string;attachments?:DocumentAttachmentSlot[]|undefined;onSend?:(()=>Promise<unknown>)|undefined;deliveryUnavailable?:boolean|undefined}) {
  const th=useLocale()==='th';const [url,setUrl]=React.useState('');const [error,setError]=React.useState(false);
  const [sending,setSending]=React.useState(false);const [sent,setSent]=React.useState(false);const [sendError,setSendError]=React.useState('');
  React.useEffect(()=>{
@@ -31,5 +37,5 @@ export function OriginalDocumentPreview({open,onOpenChange,id,hash,number,onSend
   if(!onSend||sending||sent||!url)return;setSending(true);setSendError('');
   try{const result=await onSend() as {pending?:boolean};if(result?.pending)setSendError(th?'การส่งยังดำเนินอยู่ กรุณาลองอีกครั้ง':'Delivery is still in progress. Try again.');else setSent(true);}catch(e){setSendError(e instanceof Error?e.message:(th?'ส่งเอกสารไม่สำเร็จ':'Could not send document'));}finally{setSending(false);}
  };
- return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="w-[calc(100%-2rem)] sm:max-w-5xl max-h-[94dvh] overflow-y-auto [&_button]:min-h-11"><DialogHeader><DialogTitle>{number}</DialogTitle></DialogHeader><OriginalPdfContent url={url} error={error} number={number} th={th} onSend={onSend?send:undefined} deliveryUnavailable={deliveryUnavailable} sending={sending} sent={sent} sendError={sendError}/></DialogContent></Dialog>;
+ return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="w-[calc(100%-2rem)] sm:max-w-5xl max-h-[94dvh] overflow-y-auto [&_button]:min-h-11"><DialogHeader><DialogTitle>{number}</DialogTitle></DialogHeader><OriginalPdfContent url={url} error={error} number={number} th={th} attachments={attachments} onSend={onSend?send:undefined} deliveryUnavailable={deliveryUnavailable} sending={sending} sent={sent} sendError={sendError}/></DialogContent></Dialog>;
 }

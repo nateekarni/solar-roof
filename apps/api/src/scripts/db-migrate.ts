@@ -79,6 +79,9 @@ try {
     "infra/migrations/070_payment_method_transfer_channel_cash.sql",
     "infra/migrations/071_telemetry_first_gateway_discovery.sql",
     "infra/migrations/072_gateway_logical_telemetry_bindings.sql",
+    "infra/migrations/073_finance_monitoring_policy_foundations.sql",
+    "infra/migrations/074_pilot_spm91_physical_preset.sql",
+    "infra/migrations/075_solar_leasing_billing_packet_fields.sql",
   ];
   for (const file of migrationFiles) {
     const sql = await readFile(new URL(`../../../../${file}`, import.meta.url), "utf8");

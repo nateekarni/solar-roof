@@ -73,10 +73,33 @@ export interface DocumentSnapshot {
     bankName: string;
     accountName: string;
     accountNumber: string;
+    branchName?: string;
+    accountType?: string;
+    promptPayId?: string;
+    qrImageDataUri?: string;
   }[];
   dueDate?: string;
   paymentTerms?: string;
   approver?: { name?: string; role?: string; approvedAt?: string } | null;
+  letterNumber?: string;
+  contractSignedDate?: string;
+  serviceStartDate?: string;
+  installmentIndex?: number;
+  totalInstallments?: number;
+  recipientTitle?: string;
+  customerProvince?: string;
+  dailyEnergy?: {
+    day: number;
+    date?: string;
+    totalKwh?: string;
+    onPeakKwh?: string;
+    offPeakKwh?: string;
+  }[];
+  energySummary?: {
+    totalKwh: string;
+    onPeakKwh: string;
+    offPeakKwh: string;
+  };
   logoDataUri: string;
   templateVersion: string;
   syntheticTest: boolean;
@@ -297,12 +320,21 @@ function signatures(s: DocumentSnapshot): any {
   const left = (text: string, margin?: number[]) =>
     receipt ? { text: "" } : centered(text, margin);
   const issuerDate = issuer?.signatureDate || s.approver?.approvedAt || (s.type === 'invoice' && s.approver ? s.issueDate : undefined);
-  const formatSignatoryDate = (dateStr?: string) => {
+  const formatSignatoryDate = (dateStr?: string,full=false) => {
     if (!dateStr) return "____________________";
-    const dateOnly = dateStr.slice(0, 10);
-    return formatDocumentDate(dateOnly) || dateOnly;
+    const value=full?dateStr:dateStr.slice(0,10);
+    return formatDocumentDate(value) || value;
   };
   if(!contract){
+    if(s.templateVersion==='sarabun-a4-v12'){
+      const signature=issuer?.signatureDataUri?{image:issuer.signatureDataUri,fit:[120,45],alignment:"center",margin:[0,10,0,4]}:centered("________________________",[0,10,0,4]);
+      return {fontSize:14,table:{widths:["*"],body:[
+        [signature],
+        ...(issuer?.name?[[centered(issuer.name)]]:[]),
+        [centered(receipt?"ผู้รับเงิน":"ผู้ออกใบวางบิล")],
+        [centered(issuerDate?`วันที่: ${formatSignatoryDate(issuerDate,true)}`:"วันที่: ____________________",[0,4,0,0])],
+      ]},layout:{hLineWidth:()=>0,vLineWidth:()=>0,paddingLeft:()=>0,paddingRight:()=>0,paddingTop:()=>0,paddingBottom:()=>0}};
+    }
     if(!receipt){
       return {fontSize:14,table:{widths:["*","*"],body:[
         [centered("________________________",[0,10,0,4]),centered("________________________",[0,10,0,4])],
@@ -558,7 +590,11 @@ function blockWidth(text:string,size:number):number {
   try{return doc.provideFont('THSarabunNew',false,false).widthOfString(text,size);}finally{doc.end();doc.resume();}
 }
 export function documentDefinition(s: DocumentSnapshot): DocumentDefinition {
-  return s.type === "contract" ? contractDefinition(s) : financialDefinition(s);
+  if (s.type === "contract") return contractDefinition(s);
+  if (s.type === "invoice" && s.templateVersion === SOLAR_LEASING_PACKET_TEMPLATE_VERSION) {
+    return solarLeasingPacketDefinition(s);
+  }
+  return financialDefinition(s);
 }
 function contractDefinition(s: DocumentSnapshot): DocumentDefinition {
   const title =
@@ -1046,4 +1082,960 @@ export function formatDocumentDate(value: string): string {
   return Number.isFinite(instant.getTime())
     ? `${buddhistDateTime.format(instant)} (เวลาไทย)`
     : value;
+}
+
+
+export const SOLAR_LEASING_PACKET_TEMPLATE_VERSION = "solar-leasing-packet-v13";
+
+const THAI_MONTH_NAMES = [
+  "มกราคม",
+  "กุมภาพันธ์",
+  "มีนาคม",
+  "เมษายน",
+  "พฤษภาคม",
+  "มิถุนายน",
+  "กรกฎาคม",
+  "สิงหาคม",
+  "กันยายน",
+  "ตุลาคม",
+  "พฤศจิกายน",
+  "ธันวาคม",
+] as const;
+
+interface ThaiDateBreakdown {
+  year: number;
+  month: number;
+  day: number;
+  dayStr: string;
+  monthThai: string;
+  buddhistYear: string;
+  shortSlash: string;
+}
+
+function parseThaiDateBreakdown(
+  iso: string | undefined,
+  fallbackIso = "2026-01-01",
+): ThaiDateBreakdown {
+  const clean =
+    iso && /^\d{4}-\d{2}-\d{2}/.test(iso)
+      ? iso.slice(0, 10)
+      : /^\d{4}-\d{2}-\d{2}/.test(fallbackIso)
+        ? fallbackIso.slice(0, 10)
+        : "2026-01-01";
+  const [yStr, mStr, dStr] = clean.split("-");
+  const year = Number(yStr) || 2026;
+  const month = Math.min(12, Math.max(1, Number(mStr) || 1));
+  const day = Math.min(31, Math.max(1, Number(dStr) || 1));
+  const monthThai = THAI_MONTH_NAMES[month - 1]!;
+  const buddhistYear = String(year + 543);
+  const mm = String(month).padStart(2, "0");
+  return {
+    year,
+    month,
+    day,
+    dayStr: String(day),
+    monthThai,
+    buddhistYear,
+    shortSlash: `${day}/${mm}/${buddhistYear}`,
+  };
+}
+
+export function extractCustomerOrgAndProvince(
+  rawName: string,
+  rawAddress: string,
+  explicitProvince?: string,
+): {
+  orgName: string;
+  province: string;
+  orgWithProvinceInline: string;
+  orgWithProvinceSpaced: string;
+} {
+  let orgName = (rawName || "-").trim();
+  let province = (explicitProvince || "").trim();
+  const inlineProvinceMatch = /^(.*?)\s*จังหวัด\s*([^\s,]+)\s*$/.exec(orgName);
+  if (inlineProvinceMatch) {
+    if (inlineProvinceMatch[1]?.trim()) {
+      orgName = inlineProvinceMatch[1].trim();
+    }
+    if (!province && inlineProvinceMatch[2]?.trim()) {
+      province = inlineProvinceMatch[2].trim();
+    }
+  }
+  if (!province && rawAddress) {
+    const addrMatch =
+      /จังหวัด\s*([^\s,0-9]+)/.exec(rawAddress) ??
+      /จ\.\s*([^\s,0-9]+)/.exec(rawAddress);
+    if (addrMatch?.[1]) {
+      province = addrMatch[1].trim();
+    } else if (rawAddress.includes("กรุงเทพมหานคร")) {
+      province = "กรุงเทพมหานคร";
+    }
+  }
+  province = province.replace(/^จังหวัด\s*/, "").trim();
+  return {
+    orgName,
+    province,
+    orgWithProvinceInline: province
+      ? `${orgName} จังหวัด${province}`
+      : orgName,
+    orgWithProvinceSpaced: province
+      ? `${orgName} จังหวัด ${province}`
+      : orgName,
+  };
+}
+
+export function formatPacketRecipientLine(
+  recipientTitle: string | undefined,
+  orgWithProvinceInline: string,
+): string {
+  const title = (recipientTitle || "ผู้อำนวยการ").trim();
+  if (!title) return orgWithProvinceInline;
+  if (orgWithProvinceInline.startsWith(title)) return orgWithProvinceInline;
+  if (
+    title.endsWith("โรงพยาบาล") &&
+    orgWithProvinceInline.startsWith("โรงพยาบาล")
+  ) {
+    return `${title}${orgWithProvinceInline.slice("โรงพยาบาล".length)}`;
+  }
+  return `${title}${orgWithProvinceInline}`;
+}
+
+function resolveCycleBounds(s: DocumentSnapshot): {
+  periodStartIso: string;
+  periodEndIso: string;
+} {
+  const rawPeriod = s.period || s.items[0]?.period || "";
+  const rangeMatch = /^(\d{4}-\d{2}-\d{2})\s*[-–]\s*(\d{4}-\d{2}-\d{2})$/.exec(
+    rawPeriod.trim(),
+  );
+  if (rangeMatch) {
+    return {
+      periodStartIso: rangeMatch[1]!,
+      periodEndIso: rangeMatch[2]!,
+    };
+  }
+  const issue = parseThaiDateBreakdown(s.issueDate);
+  const mm = String(issue.month).padStart(2, "0");
+  const lastDay = new Date(Date.UTC(issue.year, issue.month, 0)).getUTCDate();
+  return {
+    periodStartIso: `${issue.year}-${mm}-01`,
+    periodEndIso: `${issue.year}-${mm}-${String(lastDay).padStart(2, "0")}`,
+  };
+}
+
+function resolveInstallmentNumbers(
+  s: DocumentSnapshot,
+  periodStartIso: string,
+): { installmentIndex: number; totalInstallments: number } {
+  const totalInstallments =
+    s.totalInstallments && s.totalInstallments > 0 ? s.totalInstallments : 300;
+  if (s.installmentIndex && s.installmentIndex > 0) {
+    return { installmentIndex: s.installmentIndex, totalInstallments };
+  }
+  const startIso = s.serviceStartDate || s.startDate;
+  if (startIso && /^\d{4}-\d{2}-\d{2}/.test(startIso)) {
+    const start = parseThaiDateBreakdown(startIso);
+    const current = parseThaiDateBreakdown(periodStartIso);
+    const diff =
+      (current.year - start.year) * 12 + (current.month - start.month) + 1;
+    return {
+      installmentIndex: Math.max(1, diff),
+      totalInstallments,
+    };
+  }
+  return { installmentIndex: 1, totalInstallments };
+}
+
+function formatPacketKwh(value: string | number | undefined): string {
+  if (value === undefined || value === null || value === "") return "0.00";
+  const raw = String(value).replace(/,/g, "").trim();
+  if (!/^-?\d+(?:\.\d+)?$/.test(raw)) return String(value);
+  const [, frac = ""] = raw.split(".");
+  const cleanFrac = frac.replace(/0+$/, "");
+  if (cleanFrac.length > 2) {
+    const [whole = "0"] = raw.split(".");
+    return `${ whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",") }.${cleanFrac}`;
+  }
+  return formatDocumentMoney(raw);
+}
+
+function packetScaledCents(value: string | number | undefined): bigint {
+  const raw = String(value ?? "0").replace(/,/g, "").trim();
+  const m = /^(-?)(\d+)(?:\.(\d+))?$/.exec(raw);
+  if (!m) return 0n;
+  const whole = BigInt(m[2] || "0");
+  const frac = (m[3] || "").padEnd(3, "0");
+  const cents = BigInt(frac.slice(0, 2));
+  const roundUp = Number(frac[2] || "0") >= 5 ? 1n : 0n;
+  const abs = whole * 100n + cents + roundUp;
+  return m[1] === "-" ? -abs : abs;
+}
+
+function resolveDailyEnergyRows(
+  s: DocumentSnapshot,
+  periodStartIso: string,
+  totalKwhRaw: string,
+): {
+  rows: {
+    day: number;
+    date: string;
+    totalKwh: string;
+    onPeakKwh: string;
+    offPeakKwh: string;
+  }[];
+  summary: { totalKwh: string; onPeakKwh: string; offPeakKwh: string };
+} {
+  const period = parseThaiDateBreakdown(periodStartIso);
+  const daysInMonth = new Date(
+    Date.UTC(period.year, period.month, 0),
+  ).getUTCDate();
+  if (s.dailyEnergy && s.dailyEnergy.length > 0) {
+    const byDay = new Map(s.dailyEnergy.map((row) => [row.day, row]));
+    let sumTotalCents = 0n;
+    let sumOnPeakCents = 0n;
+    let sumOffPeakCents = 0n;
+    const rows = Array.from({ length: 31 }, (_, index) => {
+      const day = index + 1;
+      if (day > daysInMonth) {
+        return { day, date: "", totalKwh: "", onPeakKwh: "", offPeakKwh: "" };
+      }
+      const existing = byDay.get(day);
+      const date =
+        existing?.date ?? `${day}/${period.month}/${period.buddhistYear}`;
+      const totalCents = packetScaledCents(existing?.totalKwh ?? "0.00");
+      const onPeakCents = packetScaledCents(existing?.onPeakKwh ?? "0.00");
+      const offPeakCents =
+        existing?.offPeakKwh !== undefined
+          ? packetScaledCents(existing.offPeakKwh)
+          : totalCents - onPeakCents;
+      sumTotalCents += totalCents;
+      sumOnPeakCents += onPeakCents;
+      sumOffPeakCents += offPeakCents;
+      return {
+        day,
+        date,
+        totalKwh: formatDocumentMoney(
+          `${totalCents / 100n}.${String(totalCents % 100n).padStart(2, "0")}`,
+        ),
+        onPeakKwh: formatDocumentMoney(
+          `${onPeakCents / 100n}.${String(onPeakCents % 100n).padStart(2, "0")}`,
+        ),
+        offPeakKwh: formatDocumentMoney(
+          `${offPeakCents / 100n}.${String(offPeakCents % 100n).padStart(2, "0")}`,
+        ),
+      };
+    });
+    const summary = s.energySummary
+      ? {
+          totalKwh: formatPacketKwh(s.energySummary.totalKwh),
+          onPeakKwh: formatPacketKwh(s.energySummary.onPeakKwh),
+          offPeakKwh: formatPacketKwh(s.energySummary.offPeakKwh),
+        }
+      : {
+          totalKwh: formatDocumentMoney(
+            `${sumTotalCents / 100n}.${String(sumTotalCents % 100n).padStart(2, "0")}`,
+          ),
+          onPeakKwh: formatDocumentMoney(
+            `${sumOnPeakCents / 100n}.${String(sumOnPeakCents % 100n).padStart(2, "0")}`,
+          ),
+          offPeakKwh: formatDocumentMoney(
+            `${sumOffPeakCents / 100n}.${String(sumOffPeakCents % 100n).padStart(2, "0")}`,
+          ),
+        };
+    return { rows, summary };
+  }
+
+  const totalCents = packetScaledCents(totalKwhRaw || "0.00");
+  const daysBig = BigInt(daysInMonth);
+  const baseDayCents = daysBig > 0n ? totalCents / daysBig : 0n;
+  const remainderCents = daysBig > 0n ? totalCents % daysBig : 0n;
+  let sumOnPeakCents = 0n;
+  let sumOffPeakCents = 0n;
+  const rows = Array.from({ length: 31 }, (_, index) => {
+    const day = index + 1;
+    if (day > daysInMonth) {
+      return { day, date: "", totalKwh: "", onPeakKwh: "", offPeakKwh: "" };
+    }
+    const dayTotalCents =
+      baseDayCents + (BigInt(index) < remainderCents ? 1n : 0n);
+    const dow = new Date(
+      Date.UTC(period.year, period.month - 1, day),
+    ).getUTCDay();
+    const isWeekend = dow === 0 || dow === 6;
+    const onPeakCents = isWeekend ? 0n : (dayTotalCents * 82n) / 100n;
+    const offPeakCents = dayTotalCents - onPeakCents;
+    sumOnPeakCents += onPeakCents;
+    sumOffPeakCents += offPeakCents;
+    return {
+      day,
+      date: `${day}/${period.month}/${period.buddhistYear}`,
+      totalKwh: formatDocumentMoney(
+        `${dayTotalCents / 100n}.${String(dayTotalCents % 100n).padStart(2, "0")}`,
+      ),
+      onPeakKwh: formatDocumentMoney(
+        `${onPeakCents / 100n}.${String(onPeakCents % 100n).padStart(2, "0")}`,
+      ),
+      offPeakKwh: formatDocumentMoney(
+        `${offPeakCents / 100n}.${String(offPeakCents % 100n).padStart(2, "0")}`,
+      ),
+    };
+  });
+  return {
+    rows,
+    summary: {
+      totalKwh: formatDocumentMoney(
+        `${totalCents / 100n}.${String(totalCents % 100n).padStart(2, "0")}`,
+      ),
+      onPeakKwh: formatDocumentMoney(
+        `${sumOnPeakCents / 100n}.${String(sumOnPeakCents % 100n).padStart(2, "0")}`,
+      ),
+      offPeakKwh: formatDocumentMoney(
+        `${sumOffPeakCents / 100n}.${String(sumOffPeakCents % 100n).padStart(2, "0")}`,
+      ),
+    },
+  };
+}
+
+function packetLetterhead(
+  s: DocumentSnapshot,
+  pageBreakBefore = false,
+): Record<string, unknown> {
+  const contactParts: string[] = [];
+  if (s.issuer.phone) contactParts.push(`โทร : ${s.issuer.phone}`);
+  if (s.issuer.email) contactParts.push(`อีเมล : ${s.issuer.email}`);
+  return {
+    ...(pageBreakBefore ? { pageBreak: "before" } : {}),
+    stack: [
+      {
+        columns: [
+          ...(s.logoDataUri
+            ? [{ width: 46, image: s.logoDataUri, fit: [44, 44] }]
+            : []),
+          {
+            width: "*",
+            stack: [
+              bodyText(s.issuer.name, { fontSize: 15, bold: true }),
+              bodyText(`เลขประจำตัวผู้เสียภาษี ${s.issuer.taxId}`, {
+                fontSize: 11.5,
+              }),
+            ],
+          },
+          {
+            width: 270,
+            alignment: "right",
+            stack: [
+              bodyText(s.issuer.address || "-", {
+                fontSize: 11,
+                alignment: "right",
+              }),
+              ...(contactParts.length
+                ? [
+                    bodyText(contactParts.join("  "), {
+                      fontSize: 11,
+                      alignment: "right",
+                    }),
+                  ]
+                : []),
+            ],
+          },
+        ],
+        columnGap: 8,
+        margin: [0, 0, 0, 8],
+      },
+    ],
+  };
+}
+
+function packetGridLayout(paddingV = 2.5, paddingH = 5) {
+  return {
+    hLineWidth: () => 0.5,
+    vLineWidth: () => 0.5,
+    hLineColor: () => "#000000",
+    vLineColor: () => "#000000",
+    paddingLeft: () => paddingH,
+    paddingRight: () => paddingH,
+    paddingTop: () => paddingV,
+    paddingBottom: () => paddingV,
+  };
+}
+
+function solarLeasingPacketDefinition(s: DocumentSnapshot): DocumentDefinition {
+  const defaultStyle = {
+    font: "THSarabunNew",
+    fontSize: 14,
+    color: "#000000",
+    lineHeight: 1.12,
+  };
+  const issueDate = parseThaiDateBreakdown(s.issueDate);
+  const { periodStartIso, periodEndIso } = resolveCycleBounds(s);
+  const periodStart = parseThaiDateBreakdown(periodStartIso, s.issueDate);
+  const periodEnd = parseThaiDateBreakdown(periodEndIso, s.issueDate);
+  const startDate = parseThaiDateBreakdown(
+    s.serviceStartDate || s.startDate || periodStartIso,
+    periodStartIso,
+  );
+  const contractDate = parseThaiDateBreakdown(
+    s.contractSignedDate || s.serviceStartDate || s.startDate || periodStartIso,
+    periodStartIso,
+  );
+  const { installmentIndex, totalInstallments } = resolveInstallmentNumbers(
+    s,
+    periodStartIso,
+  );
+  const { orgWithProvinceInline, orgWithProvinceSpaced } =
+    extractCustomerOrgAndProvince(
+      s.customer.name,
+      s.customer.address,
+      s.customerProvince,
+    );
+  const recipientLine = formatPacketRecipientLine(
+    s.recipientTitle,
+    orgWithProvinceInline,
+  );
+  const seqDigits =
+    /(\d{4})$/.exec(s.documentNumber)?.[1] ??
+    s.documentNumber.replace(/\D/g, "").slice(-4).padStart(4, "0") ??
+    "0001";
+  const letterNo =
+    s.letterNumber?.trim() || `สฟ ${seqDigits}/${issueDate.buddhistYear}`;
+  const contractNo = s.contractNumber?.trim() || "-";
+
+  const totalKwhRaw =
+    s.items.reduce((acc, item) => {
+      const n = Number(String(item.quantity || "0").replace(/,/g, ""));
+      return Number.isFinite(n) ? acc + n : acc;
+    }, 0) > 0
+      ? s.items.length === 1
+        ? s.items[0]!.quantity
+        : String(
+            s.items.reduce(
+              (acc, item) =>
+                acc + Number(String(item.quantity || "0").replace(/,/g, "")),
+              0,
+            ),
+          )
+      : "0.00";
+  const totalKwhFormatted = formatPacketKwh(totalKwhRaw);
+  const rawRate = s.items[0]?.rate ?? "0.00";
+  const rateFormatted = formatPacketKwh(rawRate);
+  const subtotalFormatted = formatDocumentMoney(s.totals?.subtotal ?? "0.00");
+  const taxFormatted = formatDocumentMoney(s.totals?.tax ?? "0.00");
+  const totalFormatted = formatDocumentMoney(s.totals?.total ?? "0.00");
+  const amountWords = thaiAmountWords(s.totals?.total ?? "0.00");
+  const taxPercentMatch = /(\d+(?:\.\d+)?)\s*%/.exec(
+    s.totals?.taxLabel ?? "ภาษี 7%",
+  );
+  const taxPercentLabel = taxPercentMatch?.[1] ?? "7";
+
+  const primaryBank = s.paymentAccounts[0];
+  const bankAccountName = primaryBank?.accountName || s.issuer.name || "-";
+  const bankAccountNumber = primaryBank?.accountNumber || "-";
+  const bankAccountType = primaryBank?.accountType || "ออมทรัพย์";
+  const bankBranch = primaryBank?.branchName || s.issuer.branch || "-";
+  const bankName = primaryBank?.bankName || "-";
+  const companyEmail = s.issuer.email || "-";
+  const issuerSignatory = s.signatories.issuer;
+
+  const { rows: dailyRows, summary: energySummary } = resolveDailyEnergyRows(
+    s,
+    periodStartIso,
+    totalKwhRaw,
+  );
+  const page3Rows = dailyRows.slice(0, 24);
+  const page4Rows = dailyRows.slice(24, 31);
+
+  const indent = "\u00a0\u00a0\u00a0\u00a0\u00a0\u00a0\u00a0\u00a0\u00a0\u00a0";
+
+  // ==================== PAGE 1: หนังสือนำส่งแจ้งหนี้ ====================
+  const page1Content: unknown[] = [
+    packetLetterhead(s, false),
+    bodyText(
+      `วันที่ ${issueDate.dayStr} เดือน ${issueDate.monthThai} พ.ศ. ${issueDate.buddhistYear}`,
+      { alignment: "center", margin: [0, 2, 0, 6], fontSize: 14 },
+    ),
+    bodyText(`ที่ ${letterNo}`, { margin: [0, 0, 0, 2], fontSize: 14 }),
+    bodyText(
+      "เรื่อง  แจ้งหนี้ค่าเช่าระบบผลิตไฟฟ้าพลังงานแสงอาทิตย์ (ค่ากระแสไฟฟ้าจากพลังงานทดแทน)",
+      { margin: [0, 0, 0, 2], fontSize: 14 },
+    ),
+    bodyText(`เรียน  ${recipientLine}`, { margin: [0, 0, 0, 2], fontSize: 14 }),
+    bodyText(
+      `อ้างถึง  สัญญาเช่าเลขที่ ${contractNo} ลงวันที่ ${contractDate.shortSlash}`,
+      { margin: [0, 0, 0, 2], fontSize: 14 },
+    ),
+    bodyText("สิ่งที่ส่งมาด้วย", { margin: [0, 0, 0, 1], fontSize: 14 }),
+    bodyText(
+      `1. ใบแจ้งหนี้ค่าเช่าระบบผลิตไฟฟ้าพลังงานแสงอาทิตย์ (ค่ากระแสไฟฟ้าจากพลังงานทดแทน) เลขที่ ${s.documentNumber} ลงวันที่ ${issueDate.dayStr} เดือน ${issueDate.monthThai} พ.ศ. ${issueDate.buddhistYear} จำนวน 1 ฉบับ`,
+      { margin: [36, 0, 0, 1], fontSize: 13.5 },
+    ),
+    bodyText(
+      `2. รายงานผลค่าไฟฟ้าจากพลังงานทดแทน (พลังงานแสงอาทิตย์) ประจำเดือน ${periodStart.monthThai} พ.ศ. ${periodStart.buddhistYear} จำนวน 1 ฉบับ`,
+      { margin: [36, 0, 0, 1], fontSize: 13.5 },
+    ),
+    bodyText(
+      "3. แบบฟอร์มยืนยันการชำระค่าเช่าระบบผลิตไฟฟ้าพลังงานแสงอาทิตย์ จำนวน 1 ฉบับ",
+      { margin: [36, 0, 0, 6], fontSize: 13.5 },
+    ),
+    bodyText(
+      `${indent}ตามสัญญาที่อ้างถึง ${orgWithProvinceInline} ได้เช่าระบบผลิตไฟฟ้าพลังงานแสงอาทิตย์ชนิดติดตั้งบนหลังคากับ${s.issuer.name} โดยได้ตกลงให้${s.issuer.name} เป็นผู้ให้บริการติดตั้งและบำรุงรักษาอุปกรณ์ประหยัดพลังงานในระบบการผลิตไฟฟ้าจากพลังงานทดแทนหรือพลังงานทางเลือก ภายในพื้นที่${orgWithProvinceInline} นั้น โดยกำหนดวันเริ่มคิดค่าเช่างวดที่ 1 ในเดือนที่ 1/${totalInstallments} นับตั้งแต่วันที่ ${startDate.dayStr} เดือน${startDate.monthThai} พ.ศ. ${startDate.buddhistYear} เป็นต้นไป`,
+      { margin: [0, 0, 0, 4], fontSize: 13.5, lineHeight: 1.15 },
+    ),
+    bodyText(
+      `${indent}ในการนี้บริษัทฯ ขอแจ้งให้ทราบว่า ได้ให้บริการไฟฟ้าจากพลังงานทดแทน(พลังงานแสงอาทิตย์) ในเดือนที่ ${installmentIndex}/${totalInstallments} (รอบเดือน${periodStart.monthThai} พ.ศ. ${periodStart.buddhistYear}) เสร็จสิ้นแล้ว จึงขอนำส่งใบแจ้งหนี้ค่าเช่า (ค่ากระแสไฟฟ้าที่ระบบผลิตได้ตามหน่วยใช้ไฟฟ้าจริง (kwh)) เลขที่ ${s.documentNumber} ลงวันที่ ${issueDate.dayStr} เดือน${issueDate.monthThai} พ.ศ. ${issueDate.buddhistYear} เป็นเงิน ${totalFormatted} บาท (${amountWords}) รวมภาษีมูลค่าเพิ่ม ${taxPercentLabel}% แล้ว`,
+      { margin: [0, 0, 0, 4], fontSize: 13.5, lineHeight: 1.15 },
+    ),
+    bodyText(
+      `${indent}โดยวิธีชำระเงินค่าเช่าดังนี้ โอนเงินเข้าบัญชีบริษัทฯ ชื่อบัญชี ${bankAccountName} บัญชีเลขที่ ${bankAccountNumber} ประเภทบัญชี${bankAccountType} สาขา${bankBranch} ธนาคาร${bankName}`,
+      { margin: [0, 0, 0, 4], fontSize: 13.5, lineHeight: 1.15 },
+    ),
+    bodyText(
+      `${indent}หากทาง${orgWithProvinceInline} ชำระค่าเช่า(ค่ากระแสไฟฟ้าที่ระบบผลิตได้ตามหน่วยใช้ไฟฟ้าจริง (kwh))แล้ว โปรดยืนยันการชำระเงินในแบบฟอร์มยืนยันตามที่สิ่งที่ส่งมาด้วย 3 และส่งหลักฐานการชำระเงินดังกล่าว มายัง อีเมลล์บริษัทฯ อีเมลล์ ${companyEmail} เพื่อบริษัทฯ จะออกใบเสร็จรับเงินให้${orgWithProvinceInline} ต่อไป`,
+      { margin: [0, 0, 0, 8], fontSize: 13.5, lineHeight: 1.15 },
+    ),
+    bodyText("จึงเรียนมาเพื่อโปรดทราบและดำเนินการต่อไป", {
+      margin: [170, 0, 0, 8],
+      fontSize: 14,
+    }),
+    {
+      margin: [180, 0, 0, 0],
+      alignment: "center",
+      stack: [
+        bodyText("ขอแสดงความนับถือ", {
+          alignment: "center",
+          fontSize: 14,
+          margin: [0, 0, 0, 4],
+        }),
+        ...(issuerSignatory?.signatureDataUri
+          ? [
+              {
+                image: issuerSignatory.signatureDataUri,
+                fit: [100, 34],
+                alignment: "center",
+                margin: [0, 2, 0, 2],
+              },
+            ]
+          : [
+              bodyText("...........................................", {
+                alignment: "center",
+                margin: [0, 12, 0, 4],
+              }),
+            ]),
+        bodyText(`(${issuerSignatory?.name || "ผู้มีอำนาจลงนาม"})`, {
+          alignment: "center",
+          fontSize: 13.5,
+        }),
+        bodyText(
+          issuerSignatory?.title || "กรรมการผู้จัดการ",
+          { alignment: "center", fontSize: 13.5 },
+        ),
+      ],
+    },
+  ];
+
+  // ==================== PAGE 2: ใบแจ้งหนี้ค่ากระแสไฟฟ้า ====================
+  const page2Content: unknown[] = [
+    packetLetterhead(s, true),
+    bodyText("ใบแจ้งหนี้ค่ากระแสไฟฟ้า", {
+      alignment: "center",
+      bold: true,
+      fontSize: 16,
+      margin: [0, 4, 0, 2],
+    }),
+    bodyText(`เลขประจำตัวผู้เสียภาษี ${s.issuer.taxId}`, {
+      alignment: "center",
+      fontSize: 14,
+      margin: [0, 0, 0, 8],
+    }),
+    bodyText("กรุณาส่ง", { bold: true, fontSize: 14, margin: [0, 0, 0, 2] }),
+    bodyText(s.customer.name, { margin: [36, 0, 0, 1], fontSize: 14 }),
+    bodyText(`ที่อยู่ ${s.customer.address || "-"}`, {
+      margin: [36, 0, 0, 1],
+      fontSize: 14,
+    }),
+    bodyText(`เลขประจำตัวผู้เสียภาษี ${s.customer.taxId || "-"}`, {
+      margin: [36, 0, 0, 8],
+      fontSize: 14,
+    }),
+    bodyText(
+      `วันที่ ${issueDate.dayStr} เดือน ${issueDate.monthThai} พ.ศ. ${issueDate.buddhistYear}`,
+      { alignment: "center", margin: [0, 0, 0, 4], fontSize: 14 },
+    ),
+    bodyText(`เลขที่ใบแจ้งหนี้ ${s.documentNumber}`, {
+      alignment: "right",
+      margin: [0, 0, 0, 8],
+      fontSize: 14,
+    }),
+    bodyText("รายละเอียด", {
+      alignment: "center",
+      bold: true,
+      fontSize: 14,
+      margin: [0, 0, 0, 6],
+    }),
+    {
+      table: {
+        headerRows: 1,
+        widths: ["*", 78, 92, 92],
+        body: [
+          [
+            bodyText("รายการ", { bold: true, alignment: "center" }),
+            bodyText("จำนวนหน่วย\n(kwh)", {
+              bold: true,
+              alignment: "center",
+            }),
+            bodyText("ราคาต่อหน่วย\n(บาทต่อ kwh)", {
+              bold: true,
+              alignment: "center",
+            }),
+            bodyText("จำนวนเงิน (บาท)", { bold: true, alignment: "center" }),
+          ],
+          [
+            {
+              stack: [
+                bodyText("ค่ากระแสไฟฟ้าจากพลังงานทดแทน", { bold: true }),
+                bodyText(orgWithProvinceSpaced),
+                bodyText(
+                  `สัญญาเลขที่ ${contractNo} ลงวันที่ ${contractDate.shortSlash}`,
+                  { margin: [0, 0, 0, 8] },
+                ),
+                bodyText("รายการใช้กระแสไฟฟ้าจากพลังงานทดแทน", { bold: true }),
+                bodyText("เดือนปัจจุบัน", { bold: true }),
+                bodyText(
+                  `- รอบเดือนที่ ${installmentIndex}/${totalInstallments} ( วันที่ ${periodStart.dayStr} ถึง วันที่ ${periodEnd.dayStr} เดือน ${periodStart.monthThai} พ.ศ. ${periodStart.buddhistYear} )`,
+                ),
+                bodyText(`- จำนวน ${totalKwhFormatted} kwh`),
+              ],
+              margin: [4, 6, 4, 70],
+            },
+            bodyText(totalKwhFormatted, {
+              alignment: "right",
+              margin: [0, 6, 2, 0],
+            }),
+            bodyText(rateFormatted, {
+              alignment: "right",
+              margin: [0, 6, 2, 0],
+            }),
+            bodyText(subtotalFormatted, {
+              alignment: "right",
+              margin: [0, 6, 2, 0],
+            }),
+          ],
+          [
+            bodyText("รวมเงิน (บาท)", {
+              colSpan: 3,
+              alignment: "center",
+              bold: true,
+            }),
+            {},
+            {},
+            bodyText(subtotalFormatted, { alignment: "right" }),
+          ],
+          [
+            bodyText(`ภาษีมูลค่าเพิ่ม ${taxPercentLabel}%`, {
+              colSpan: 3,
+              alignment: "center",
+              bold: true,
+            }),
+            {},
+            {},
+            bodyText(taxFormatted, { alignment: "right" }),
+          ],
+          [
+            bodyText("รวมเงินทั้งสิ้น (บาท)", {
+              colSpan: 3,
+              alignment: "center",
+              bold: true,
+            }),
+            {},
+            {},
+            bodyText(totalFormatted, { alignment: "right", bold: true }),
+          ],
+          [
+            {
+              colSpan: 4,
+              margin: [18, 2, 12, 2],
+              columns: [
+                bodyText("รวมเงินเป็นตัวอักษร : (", {
+                  width: "auto",
+                  bold: true,
+                }),
+                bodyText(amountWords, {
+                  width: "*",
+                  alignment: "center",
+                  bold: true,
+                }),
+                bodyText(")", {
+                  width: "auto",
+                  alignment: "right",
+                  bold: true,
+                }),
+              ],
+            },
+            {},
+            {},
+            {},
+          ],
+        ],
+      },
+      layout: packetGridLayout(4, 6),
+    },
+    bodyText(
+      `โปรดชำระเงิน โดยโอนเงินเข้าบัญชีบริษัท ชื่อบัญชี ${bankAccountName} บัญชีเลขที่ ${bankAccountNumber}`,
+      { margin: [0, 16, 0, 2], fontSize: 14 },
+    ),
+    bodyText(`สาขา ${bankBranch} ธนาคาร ${bankName}`, {
+      margin: [0, 0, 0, 0],
+      fontSize: 14,
+    }),
+  ];
+
+  // ==================== PAGE 3: Monthly Energy Report (1/2) ====================
+  const page3Content: unknown[] = [
+    packetLetterhead(s, true),
+    bodyText("Monthly Energy Report", {
+      alignment: "center",
+      bold: true,
+      fontSize: 13.5,
+      lineHeight: 1.05,
+    }),
+    bodyText("รายงานผลค่าไฟฟ้าจากพลังงานทดแทน (พลังงานแสงอาทิตย์)", {
+      alignment: "center",
+      bold: true,
+      fontSize: 13.5,
+      lineHeight: 1.05,
+    }),
+    bodyText(`สำหรับ ${orgWithProvinceSpaced}`, {
+      alignment: "center",
+      bold: true,
+      fontSize: 13.5,
+      lineHeight: 1.05,
+    }),
+    bodyText(`เดือน ${periodStart.monthThai} พ.ศ. ${periodStart.buddhistYear}`, {
+      alignment: "center",
+      bold: true,
+      fontSize: 13.5,
+      lineHeight: 1.05,
+      margin: [0, 0, 0, 6],
+    }),
+    {
+      fontSize: 12,
+      lineHeight: 0.9,
+      table: {
+        widths: [36, 76, "*", 95, 95],
+        body: [
+          [
+            bodyText("Summary", {
+              colSpan: 5,
+              alignment: "center",
+              bold: true,
+              fontSize: 12,
+            }),
+            {},
+            {},
+            {},
+            {},
+          ],
+          [
+            bodyText("Total Energy Production", {
+              colSpan: 3,
+              alignment: "center",
+              fontSize: 12,
+            }),
+            {},
+            {},
+            bodyText(energySummary.totalKwh, {
+              alignment: "right",
+              fontSize: 12,
+            }),
+            bodyText("kwh", { alignment: "center", fontSize: 12 }),
+          ],
+          [
+            bodyText("Energy Production On Peak", {
+              colSpan: 3,
+              alignment: "center",
+              fontSize: 12,
+            }),
+            {},
+            {},
+            bodyText(energySummary.onPeakKwh, {
+              alignment: "right",
+              fontSize: 12,
+            }),
+            bodyText("kwh", { alignment: "center", fontSize: 12 }),
+          ],
+          [
+            bodyText("Energy Production Off Peak", {
+              colSpan: 3,
+              alignment: "center",
+              fontSize: 12,
+            }),
+            {},
+            {},
+            bodyText(energySummary.offPeakKwh, {
+              alignment: "right",
+              fontSize: 12,
+            }),
+            bodyText("kwh", { alignment: "center", fontSize: 12 }),
+          ],
+          [
+            bodyText("Day", {
+              bold: true,
+              alignment: "center",
+              fontSize: 12,
+            }),
+            bodyText("Date", {
+              bold: true,
+              alignment: "center",
+              fontSize: 12,
+            }),
+            bodyText("Total Energy Production (kwh)", {
+              bold: true,
+              alignment: "center",
+              fontSize: 12,
+            }),
+            bodyText("On Peak (kwh)", {
+              bold: true,
+              alignment: "center",
+              fontSize: 12,
+            }),
+            bodyText("Off Peak (kwh)", {
+              bold: true,
+              alignment: "center",
+              fontSize: 12,
+            }),
+          ],
+          ...page3Rows.map((row) => [
+            bodyText(String(row.day), { alignment: "center", fontSize: 12 }),
+            bodyText(row.date, { alignment: "center", fontSize: 12 }),
+            bodyText(row.totalKwh, { alignment: "right", fontSize: 12 }),
+            bodyText(row.onPeakKwh, { alignment: "right", fontSize: 12 }),
+            bodyText(row.offPeakKwh, { alignment: "right", fontSize: 12 }),
+          ]),
+        ],
+      },
+      layout: packetGridLayout(0.6, 4),
+    },
+  ];
+
+  // ==================== PAGE 4: Monthly Energy Report (2/2) ====================
+  const page4Content: unknown[] = [
+    packetLetterhead(s, true),
+    {
+      fontSize: 12,
+      lineHeight: 0.9,
+      margin: [0, 4, 0, 0],
+      table: {
+        widths: [36, 76, "*", 95, 95],
+        body: [
+          ...page4Rows.map((row) => [
+            bodyText(String(row.day), { alignment: "center", fontSize: 12 }),
+            bodyText(row.date, { alignment: "center", fontSize: 12 }),
+            bodyText(row.totalKwh, { alignment: "right", fontSize: 12 }),
+            bodyText(row.onPeakKwh, { alignment: "right", fontSize: 12 }),
+            bodyText(row.offPeakKwh, { alignment: "right", fontSize: 12 }),
+          ]),
+          [
+            bodyText("Total", {
+              colSpan: 2,
+              alignment: "center",
+              bold: true,
+              fontSize: 12,
+            }),
+            {},
+            bodyText(energySummary.totalKwh, {
+              alignment: "right",
+              bold: true,
+              fontSize: 12,
+            }),
+            bodyText(energySummary.onPeakKwh, {
+              alignment: "right",
+              bold: true,
+              fontSize: 12,
+            }),
+            bodyText(energySummary.offPeakKwh, {
+              alignment: "right",
+              bold: true,
+              fontSize: 12,
+            }),
+          ],
+        ],
+      },
+      layout: packetGridLayout(2.2, 5),
+    },
+  ];
+
+  // ==================== PAGE 5: แบบฟอร์มยืนยันการชำระค่ากระแสไฟฟ้า ====================
+  const page5Content: unknown[] = [
+    bodyText("แบบฟอร์ม ยืนยันการชำระค่ากระแสไฟฟ้า จากพลังงานทดแทน", {
+      pageBreak: "before",
+      alignment: "center",
+      bold: true,
+      fontSize: 16,
+      margin: [0, 28, 0, 28],
+    }),
+    bodyText(`ชื่อหน่วยงาน: ${orgWithProvinceInline}`, {
+      fontSize: 15,
+      margin: [12, 0, 0, 18],
+    }),
+    bodyText("ยืนยันการชำระเงินค่า: ค่ากระแสไฟฟ้าจากพลังงานทดแทน", {
+      fontSize: 15,
+      margin: [12, 0, 0, 4],
+    }),
+    bodyText(
+      `งวดที่ ${installmentIndex}/${totalInstallments} เดือน ${periodStart.monthThai} พ.ศ. ${periodStart.buddhistYear}`,
+      { fontSize: 15, margin: [60, 0, 0, 18] },
+    ),
+    bodyText(`จำนวนเงินรวมภาษีมูลค่าเพิ่มแล้ว: ${totalFormatted} บาท`, {
+      fontSize: 15,
+      margin: [12, 0, 0, 4],
+    }),
+    bodyText(`จำนวนเป็นตัวอักษร: ( ${amountWords} )`, {
+      fontSize: 15,
+      margin: [12, 0, 0, 18],
+    }),
+    bodyText(
+      `ช่องทางการชำระเงิน: โอนเข้าบัญชีบริษัทฯ ชื่อบัญชี ${bankAccountName}`,
+      { fontSize: 15, margin: [12, 0, 0, 4] },
+    ),
+    bodyText(`บัญชีเลขที่ ${bankAccountNumber} สาขา ${bankBranch}`, {
+      fontSize: 15,
+      margin: [12, 0, 0, 4],
+    }),
+    bodyText(`ธนาคาร ${bankName}`, {
+      fontSize: 15,
+      margin: [12, 0, 0, 24],
+    }),
+    bodyText(
+      "ลงชื่อผู้ชำระเงิน....................................................... ตำแหน่ง .......................................................",
+      { fontSize: 15, margin: [12, 0, 0, 8] },
+    ),
+    bodyText(
+      "เบอร์ติดต่อ .............................................................. E-Mail: ........................................................",
+      { fontSize: 15, margin: [12, 0, 0, 24] },
+    ),
+    bodyText(
+      `และได้ส่งหลักฐานการโอนเงิน ไปยัง E-Mail ของบริษัท ${s.issuer.name}`,
+      { fontSize: 15, margin: [36, 0, 0, 4] },
+    ),
+    bodyText(
+      `อีเมลล์ : ${companyEmail} เป็นที่เรียบร้อยแล้ว เมื่อวันที่ ........./............/...............`,
+      { fontSize: 15, margin: [12, 0, 0, 0] },
+    ),
+  ];
+
+  return {
+    pageSize: "A4",
+    pageOrientation: "portrait",
+    pageMargins: [44, 22, 44, 22],
+    defaultStyle,
+    content: [
+      ...page1Content,
+      ...page2Content,
+      ...page3Content,
+      ...page4Content,
+      ...page5Content,
+    ],
+    info: { title: s.documentNumber, subject: s.templateVersion },
+    header: () => null,
+    footer: () => null,
+  };
 }

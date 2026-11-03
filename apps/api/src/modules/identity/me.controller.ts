@@ -127,7 +127,20 @@ export class MeController {
     values.push(userId);
 
     const result = await this.db.query<{ displayName: string; phoneNumber: string | null }>(
-      `UPDATE users SET ${updates.join(", ")} WHERE id = $${values.length} RETURNING display_name AS "displayName", phone AS "phoneNumber"`,
+      `WITH prior AS MATERIALIZED (
+         SELECT u.id,u.display_name,u.phone,u.company_position_id,u.customer_id,
+           coalesce((SELECT jsonb_agg(a.site_id ORDER BY a.site_id) FROM site_account_assignments a WHERE a.user_id=u.id AND a.revoked_at IS NULL),'[]'::jsonb) AS site_ids
+         FROM users u WHERE u.id=$${values.length}
+       ), updated AS (
+         UPDATE users SET ${updates.join(", ")} WHERE id = $${values.length}
+         RETURNING id,display_name AS "displayName",phone AS "phoneNumber",company_position_id,customer_id
+       ), audited AS (
+         INSERT INTO audit_events(id,actor_id,action,entity_type,entity_id,before_json,after_json,correlation_id)
+         SELECT gen_random_uuid(),updated.id,'user.settings.profile_updated','user',updated.id,
+           jsonb_build_object('displayName',prior.display_name,'phoneNumber',prior.phone,'companyPositionId',prior.company_position_id,'customerId',prior.customer_id,'siteIds',prior.site_ids),
+           jsonb_build_object('displayName',updated."displayName",'phoneNumber',updated."phoneNumber",'companyPositionId',updated.company_position_id,'customerId',updated.customer_id,'siteIds',prior.site_ids),gen_random_uuid()
+         FROM updated JOIN prior ON prior.id=updated.id
+       ) SELECT "displayName","phoneNumber" FROM updated`,
       values,
     );
     const row = result.rows[0];
@@ -170,12 +183,23 @@ export class MeController {
     const theme = body.preferredTheme;
 
     const query = `
-      UPDATE users
+      WITH prior AS MATERIALIZED (
+        SELECT u.id,u.preferred_language,u.preferred_theme,u.customer_id,
+          coalesce((SELECT jsonb_agg(a.site_id ORDER BY a.site_id) FROM site_account_assignments a WHERE a.user_id=u.id AND a.revoked_at IS NULL),'[]'::jsonb) AS site_ids
+        FROM users u WHERE u.id=$3
+      ), updated AS (UPDATE users
       SET preferred_language = COALESCE($1, preferred_language),
           preferred_theme = COALESCE($2, preferred_theme),
           updated_at = NOW()
       WHERE id = $3
       RETURNING preferred_language AS "preferredLanguage", preferred_theme AS "preferredTheme"
+      ), audited AS (
+        INSERT INTO audit_events(id,actor_id,action,entity_type,entity_id,before_json,after_json,correlation_id)
+        SELECT gen_random_uuid(),prior.id,'user.settings.preferences_updated','user',prior.id,
+          jsonb_build_object('preferredLanguage',prior.preferred_language,'preferredTheme',prior.preferred_theme,'customerId',prior.customer_id,'siteIds',prior.site_ids),
+          jsonb_build_object('preferredLanguage',updated."preferredLanguage",'preferredTheme',updated."preferredTheme",'customerId',prior.customer_id,'siteIds',prior.site_ids),gen_random_uuid()
+        FROM prior CROSS JOIN updated
+      ) SELECT * FROM updated
     `;
     const result = await this.db.query(query, [
       lang ?? null,

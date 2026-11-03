@@ -19,7 +19,7 @@ import { allocateDocumentNumber } from '../documents/document-number.js';
 import { FINANCIAL_TEMPLATE_VERSION, renderFinancialDocumentPdf } from '../documents/financial-document-pdf.js';
 import {frozenFinancialLogo} from './frozen-financial-logo.js';
 import {frozenFinancialTax} from './frozen-financial-tax.js';
-import {DocumentIdentityService,type DocumentIdentity} from '../identity/document-identity.js';
+import {DocumentIdentityService,requireDocumentSignature,type DocumentIdentity} from '../identity/document-identity.js';
 import { lockIssuanceActor, authorizedIssuanceLabel } from './issuance-approval.js';
 import {manualBillIds} from './manual-bill-identity.js';
 import {outstandingBalance,settlementBalance} from './payment-settlement.js';
@@ -76,7 +76,7 @@ export class FinancialApplicationService {
  private async documentFacts(client:PoolClient,cycle:any,type:'invoice'|'receipt',review=false,options?:{payment?:any;outstandingBills?:any;issueDate?:string;settled?:boolean}) {
   const policy=validateFinancialPolicy(cycle);
   if(cycle.quality!=='complete'||!cycle.meter_snapshot)throw new ConflictException('Verified financial calculation required');
-  const customer=(await client.query(`SELECT cfg.*,sc.id AS customer_id,sc.legal_name AS company_name,sc.tax_id,sc.tax_branch AS branch,sc.tax_address,sc.document_email AS billing_email,sc.phone AS billing_phone,s.name AS site_name,s.external_site_id,sc.name AS customer_name FROM site_billing_settings cfg JOIN sites s ON s.id=cfg.site_id JOIN customers sc ON sc.id=s.customer_id WHERE cfg.site_id=$1`,[cycle.site_id])).rows[0];
+  const customer=(await client.query(`SELECT cfg.*,sc.id AS customer_id,sc.legal_name AS company_name,sc.tax_id,sc.tax_branch AS branch,sc.tax_address,sc.province,sc.document_email AS billing_email,sc.phone AS billing_phone,s.name AS site_name,s.external_site_id,sc.name AS customer_name FROM site_billing_settings cfg JOIN sites s ON s.id=cfg.site_id JOIN customers sc ON sc.id=s.customer_id WHERE cfg.site_id=$1`,[cycle.site_id])).rows[0];
   // Review may show a stale draft alongside ready batch items. Approval still
   // rejects its stale calculation independently before any official write.
   if(!review&&type==='invoice'&&cycle.billing_settings_version!==undefined&&cycle.billing_settings_version!==null&&cycle.billing_settings_version!==customer?.version)throw new ConflictException('Site billing configuration changed; recalculate before issuance');
@@ -118,7 +118,7 @@ export class FinancialApplicationService {
    const proposed=replacement?.snapshot?.cycle??cycle;
    const snapshot=await this.documentFacts(client,proposed,'invoice',true);
    const identity=await this.documentIdentity.resolve(client,actorId);
-   return {period:label.period,customerName:label.customer,siteName:label.site,rate:String(proposed.rate),subtotal:String(proposed.subtotal),tax:String(proposed.simulated_tax),amount:String(proposed.amount),dueDate:snapshot.dueDate,replacement:!!replacement,recipients:snapshot.recipients.map((recipient:any)=>({name:recipient.name,email:recipient.email})),approver:{displayName:identity.displayName,position:identity.position,hasSignature:!!identity.signatureDataUri},reviewToken:this.reviewToken(snapshot,identity)};
+   return {period:label.period,customerName:label.customer,siteName:label.site,rate:String(proposed.rate),subtotal:String(proposed.subtotal),tax:String(proposed.simulated_tax),amount:String(proposed.amount),dueDate:snapshot.dueDate,replacement:!!replacement,recipients:snapshot.recipients.map((recipient:any)=>({name:recipient.name,email:recipient.email})),attachmentSlots:[{kind:'production_form' as const,status:'awaiting_file' as const}],approver:{displayName:identity.displayName,position:identity.position,hasSignature:!!identity.signatureDataUri},reviewToken:this.reviewToken(snapshot,identity)};
   });
  }
  private async issue(client:PoolClient,cycle:any,type:'invoice'|'receipt',actorId?:string,approver?:FinancialApprover,reviewToken?:string,options?:{payment?:any;outstandingBills?:any;installmentIndex?:number;issueDate?:string;settled?:boolean}) {
@@ -133,12 +133,14 @@ export class FinancialApplicationService {
     ? `${number}/${options?.installmentIndex ?? 1}`
     : number;
   const docIssueDate = options?.issueDate ?? day;
-  const document={id:randomUUID(),document_number:docNumber,document_type:type,snapshot:{...snapshot,issueDate:docIssueDate,...(approver?{approver:{...approver}}:{})},amount:options?.payment?.verified_amount ?? cycle.amount};
+  const revision=cycle.document_revision??1;
+  const attachmentSlots=type==='invoice'?[{kind:'production_form',status:'awaiting_file',documentRevision:revision,templateVersion:FINANCIAL_TEMPLATE_VERSION}]:[];
+  const document={id:randomUUID(),document_number:docNumber,document_type:type,snapshot:{...snapshot,issueDate:docIssueDate,...(attachmentSlots.length?{attachmentSlots}:{}),...(approver?{approver:{...approver}}:{})},amount:options?.payment?.verified_amount ?? cycle.amount};
   const bytes=await this.render(document);const sha256=createHash('sha256').update(bytes).digest('hex');
   // A replacement is staged only inside approval. The old original remains
   // current through rendering/artifact/outbox/audit failures; no staging commits.
   const replacing=type==='invoice'&&!!cycle.supersedes_document_id;
-  const doc=(await client.query(`INSERT INTO documents(id,site_id,billing_cycle_id,document_type,document_number,status,issue_date,amount,snapshot,content_hash,file_key,template_version,revision,supersedes_document_id,is_current) VALUES($1,$2,$3,$4,$5,$14,$6,$7,$8,$9,$10,$11,$12,$13,$15) RETURNING *`,[document.id,cycle.site_id,cycle.id,type,docNumber,docIssueDate,document.amount,JSON.stringify(document.snapshot),sha256,`local-artifact:${document.id}`,FINANCIAL_TEMPLATE_VERSION,cycle.document_revision??1,cycle.supersedes_document_id??null,replacing?'draft':'issued',!replacing])).rows[0];
+  const doc=(await client.query(`INSERT INTO documents(id,site_id,billing_cycle_id,document_type,document_number,status,issue_date,amount,snapshot,content_hash,file_key,template_version,revision,supersedes_document_id,is_current) VALUES($1,$2,$3,$4,$5,$14,$6,$7,$8,$9,$10,$11,$12,$13,$15) RETURNING *`,[document.id,cycle.site_id,cycle.id,type,docNumber,docIssueDate,document.amount,JSON.stringify(document.snapshot),sha256,`local-artifact:${document.id}`,FINANCIAL_TEMPLATE_VERSION,revision,cycle.supersedes_document_id??null,replacing?'draft':'issued',!replacing])).rows[0];
   if(type==='invoice')await client.query('UPDATE billing_cycles SET due_date=$2 WHERE id=$1 AND due_date IS NULL',[cycle.id,snapshot.dueDate]);
   await client.query('INSERT INTO document_artifacts(document_id,pdf_bytes,sha256) VALUES($1,$2,$3)',[doc.id,bytes,sha256]);
   await client.query('INSERT INTO financial_delivery_outbox(id,document_id,artifact_sha256) VALUES($1,$2,$3)',[randomUUID(),doc.id,sha256]);await this.audit(client,actorId,'finance.issue_'+type,cycle.id,{documentId:doc.id,contentHash:sha256,policyHash:cycle.policy_hash});return doc;
@@ -283,7 +285,7 @@ export class FinancialApplicationService {
     const policy=validateFinancialPolicy(proposed);
     const evidence=await this.readiness.assertEnabled('adjust',{billingCycleId:id},client);
     if(policy.scope!==evidence.scope)throw new ConflictException('Financial scope differs from saved replacement');
-    const identity=await this.documentIdentity.resolve(client,actorId);
+    const identity=requireDocumentSignature(await this.documentIdentity.resolve(client,actorId));
     const approvedAt=(await client.query('SELECT now() AS value')).rows[0].value.toISOString();
     const staged=await this.issue(client,{...proposed,document_revision:prior.revision+1,supersedes_document_id:prior.id},'invoice',actorId,{...identity,approvedAt},reviewToken);
     await client.query("UPDATE documents SET status='superseded',is_current=false WHERE id=$1",[prior.id]);
@@ -301,7 +303,7 @@ export class FinancialApplicationService {
    const policy=validateFinancialPolicy(cycle);
    const evidence=await this.readiness.assertEnabled('issue',{billingCycleId:id},client);
    if(policy.scope!==evidence.scope)throw new ConflictException('Financial scope differs from saved cycle');
-   const identity=await this.documentIdentity.resolve(client,actorId);
+   const identity=requireDocumentSignature(await this.documentIdentity.resolve(client,actorId));
    const approvedAt=(await client.query('SELECT now() AS value')).rows[0].value.toISOString();
    const document=await this.issue(client,cycle,'invoice',actorId,{...identity,approvedAt},reviewToken);
    await client.query("UPDATE billing_cycles SET status='approved' WHERE id=$1",[id]);
@@ -315,7 +317,7 @@ export class FinancialApplicationService {
   if(!actorId)throw new BadRequestException('Actor required');
   const metadata=reviewedPaymentMetadata(body);
   if(metadata.paymentMethod==='cash')throw new BadRequestException('Cash payments are recorded by authorized staff only');
-  let amount:string|null=null;try{if(body.amount!==undefined)amount=requireTestTransferAmount(body.amount);}catch(error){throw new BadRequestException((error as Error).message);}
+  let amount:string;try{if(body.amount===undefined)throw new Error('Full outstanding payment amount required');amount=requireTestTransferAmount(body.amount);}catch(error){throw new BadRequestException((error as Error).message);}
   if(!body.slipUrl&&!body.evidenceKey)throw new BadRequestException('Transfer evidence required');
   const paidAt=body.paidAt?new Date(body.paidAt):null;if(paidAt&&!Number.isFinite(paidAt.getTime()))throw new BadRequestException('Valid transfer date required');
   return this.db.transaction(async client=>{
@@ -332,17 +334,19 @@ export class FinancialApplicationService {
     FROM users u WHERE u.id=$1`,[actorId,cycle.site_id])).rows[0];
    if(!submitter||submitter.status!=='active'||!['customer_user','admin','owner','accountant'].includes(submitter.role)||!submitter.assigned)throw new ForbiddenException('Live assigned payment submitter required');
    const policy=validateFinancialPolicy(cycle);if(policy.scope==='PRODUCTION')await this.readiness.assertEnabled('submit_payment',{billingCycleId:id,siteId:cycle.site_id},client);
-   if(!['approved','pending_verification','partially_paid'].includes(cycle.status))throw new ConflictException('Issued unpaid invoice required');
+   if(!['approved','partially_paid'].includes(cycle.status))throw new ConflictException('Issued invoice must be outstanding without another settlement review');
    const invoice=(await client.query("SELECT id FROM documents WHERE billing_cycle_id=$1 AND document_type='invoice' AND status='issued'",[id])).rows[0];if(!invoice)throw new ConflictException('Issued invoice required');
    if(paidAt){
     const calendar=(await client.query("SELECT to_char(now() AT TIME ZONE 'Asia/Bangkok','YYYY-MM-DD') AS day,to_char($1::timestamptz AT TIME ZONE 'Asia/Bangkok','YYYY-MM-DD') AS transfer_day",[paidAt])).rows[0];
     if(calendar.transfer_day>calendar.day)throw new BadRequestException('Transfer date cannot be in the future');
    }
    const payments=(await client.query('SELECT status,verified_amount,amount FROM payments WHERE billing_cycle_id=$1 FOR UPDATE',[id])).rows;
-   if(amount){
-    const approved=payments.filter(payment=>payment.status==='paid').map(payment=>String(payment.verified_amount??payment.amount));
-    try{settlementBalance(String(cycle.amount),approved,amount);}catch(error){throw new BadRequestException((error as Error).message);}
-   }
+   const approved=payments.filter(payment=>payment.status==='paid').map(payment=>String(payment.verified_amount??payment.amount));
+   const remaining=outstandingBalance(String(cycle.amount),approved);
+   if(remaining==='0.00')throw new ConflictException('Billing statement is already settled');
+   if(amount!==remaining)throw new BadRequestException('Payment evidence must cover the full outstanding amount');
+   let submittedBalance;try{submittedBalance=settlementBalance(String(cycle.amount),approved,amount);}catch(error){throw new BadRequestException((error as Error).message);}
+   if(!submittedBalance.settled)throw new BadRequestException('Payment evidence must cover the full outstanding amount');
    const duplicate=await client.query(`SELECT 1 FROM payments WHERE submitted_by IS NOT NULL AND status IN('pending_verification','paid') AND (payment_evidence_sha256(evidence_key)=payment_evidence_sha256($1::text) OR payment_evidence_sha256(slip_url)=payment_evidence_sha256($2::text))`,[body.evidenceKey??null,body.slipUrl??null]);if(duplicate.rowCount)throw new ConflictException('Transfer evidence already submitted');
    const paymentId=randomUUID();await client.query(`INSERT INTO payments(id,billing_cycle_id,amount,status,paid_at,slip_url,evidence_key,note,submitted_by,payer_name,payment_method,transfer_channel,origin_bank,origin_account,declared_amount,declared_transfer_at) VALUES($1,$2,$3,'pending_verification',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,[paymentId,id,null,null,body.slipUrl??null,body.evidenceKey??null,body.note??null,actorId,metadata.payerName??null,metadata.paymentMethod??null,metadata.transferChannel??null,metadata.originBank??null,metadata.originAccount??null,amount,paidAt]);
    await client.query("UPDATE billing_cycles SET status='pending_verification' WHERE id=$1",[id]);await this.audit(client,actorId,'finance.payment_submitted',id,{paymentId});return {success:true,paymentId,status:'pending_verification'};
@@ -395,22 +399,28 @@ export class FinancialApplicationService {
   if(metadata.paymentMethod==='cash')throw new BadRequestException('Cash payments do not use transfer evidence review');
   let verifiedAmount:string|null=null;let verifiedTransferAt:Date|null=null;
   if(status==='approved'){
-   try{verifiedAmount=requireTestTransferAmount(review.verifiedAmount);}catch(error){throw new BadRequestException((error as Error).message);}
-   if(!review.verifiedTransferAt)throw new BadRequestException('Confirmed transfer date and time required');
-   verifiedTransferAt=new Date(review.verifiedTransferAt);if(!Number.isFinite(verifiedTransferAt.getTime()))throw new BadRequestException('Valid confirmed transfer date and time required');
+   if(review.verifiedAmount!==undefined)try{verifiedAmount=requireTestTransferAmount(review.verifiedAmount);}catch(error){throw new BadRequestException((error as Error).message);}
+   if(review.verifiedTransferAt!==undefined){verifiedTransferAt=new Date(review.verifiedTransferAt);if(!Number.isFinite(verifiedTransferAt.getTime()))throw new BadRequestException('Valid confirmed transfer date and time required');}
   }
   return this.db.transaction(async client=>{
    await this.readiness.assertEnabled('approve_payment',{billingCycleId:id},client);
    const actor=(await client.query('SELECT role,status FROM users WHERE id=$1',[actorId])).rows[0];if(!actor||actor.status!=='active')throw new ForbiddenException('Live payment approval required');
    const cycle=(await client.query('SELECT * FROM billing_cycles WHERE id=$1 FOR UPDATE',[id])).rows[0];if(!cycle)throw new NotFoundException('Billing cycle not found');
    if(!(await client.query("SELECT employee_can_access($1,'business','business.billing.approve',$2) AS allowed",[actorId,cycle.site_id])).rows[0]?.allowed)throw new ForbiddenException('Live scoped payment approval required');
-   if(cycle.status==='paid'){const receipt=(await client.query("SELECT * FROM documents WHERE billing_cycle_id=$1 AND document_type='receipt'",[id])).rows[0];if(status==='approved'&&receipt)return {success:true,billingCycleStatus:'paid',receipt};throw new ConflictException('Paid cycle cannot be rejected');}
+   if(cycle.status==='paid'){const receipt=(await client.query("SELECT * FROM documents WHERE billing_cycle_id=$1 AND document_type='receipt'",[id])).rows[0];if(status==='approved'&&receipt)return {success:true,billingCycleStatus:'paid',receipt};throw new ConflictException('Billing statement is already settled');}
    const payments=(await client.query("SELECT * FROM payments WHERE billing_cycle_id=$1 ORDER BY submitted_at,id FOR UPDATE",[id])).rows;
    const payment=payments.find(p=>p.id===review.paymentId);if(!payment)throw new NotFoundException('Transfer not found');
    if(payment.status!=='pending_verification')throw new ConflictException('Transfer has already been reviewed');
    if(status==='rejected'&&!reason?.trim())throw new BadRequestException('Rejection reason required');
+   if(status==='approved'){
+    try{verifiedAmount=requireTestTransferAmount(verifiedAmount??payment.declared_amount);}catch{throw new BadRequestException('Submitted full payment amount required');}
+    verifiedTransferAt=verifiedTransferAt??(payment.declared_transfer_at?new Date(payment.declared_transfer_at):null);
+    if(!verifiedTransferAt||!Number.isFinite(verifiedTransferAt.getTime()))throw new BadRequestException('Submitted transfer date required');
+   }
    const approved=payments.filter(p=>p.status==='paid').map(p=>String(p.verified_amount??p.amount));
+   if(status==='approved'&&verifiedAmount!==outstandingBalance(String(cycle.amount),approved))throw new BadRequestException('Approved evidence must cover the full outstanding amount');
    const balance=status==='approved'?settlementBalance(String(cycle.amount),approved,verifiedAmount!):null;
+   if(status==='approved'&&!balance?.settled)throw new BadRequestException('Approved evidence must cover the full outstanding amount');
    if(status==='approved'&&review.transferReference?.trim()){
     await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[review.transferReference.trim()]);
     if((await client.query("SELECT id FROM payments WHERE transfer_reference=$1 AND status='paid'",[review.transferReference.trim()])).rows.length)throw new ConflictException('Transfer reference already approved');
@@ -424,7 +434,7 @@ export class FinancialApplicationService {
    }
    await client.query('UPDATE payments SET status=$2,verified_at=now(),verified_by=$3,rejection_reason=$4,verified_amount=$5,verified_transfer_at=$6,amount=$5,paid_at=$6,transfer_reference=$7,payer_name=coalesce($8,payer_name),payment_method=coalesce($9,payment_method),transfer_channel=coalesce($10,transfer_channel),origin_bank=coalesce($11,origin_bank),origin_account=coalesce($12,origin_account) WHERE id=$1',[payment.id,status==='approved'?'paid':'rejected',actorId,reason?.trim()??null,verifiedAmount,verifiedTransferAt,review.transferReference?.trim()||null,metadata.payerName??null,metadata.paymentMethod??null,metadata.transferChannel??null,metadata.originBank??null,metadata.originAccount??null]);
    const pending=payments.some(p=>p.id!==payment.id&&p.status==='pending_verification');
-   const cycleStatus=settled?'paid':pending?'pending_verification':'partially_paid';
+   const cycleStatus=settled?'paid':pending?'pending_verification':approved.length?'partially_paid':'approved';
 
    let receipt=null;
    if(status==='approved'){

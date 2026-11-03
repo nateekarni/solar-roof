@@ -49,6 +49,7 @@ export interface DatePickerProps {
   placeholder?: string | undefined;
   disabled?: boolean | undefined;
   className?: string | undefined;
+  surface?: "default" | "muted" | undefined;
 }
 
 export function DatePicker({
@@ -64,6 +65,7 @@ export function DatePicker({
   placeholder,
   disabled = false,
   className,
+  surface = "default",
 }: DatePickerProps) {
   const locale = useLocale();
   const [open, setOpen] = React.useState(false);
@@ -108,7 +110,10 @@ export function DatePicker({
             !selectedDate && "text-muted-foreground",
             className,
             iconInputLayout.trigger,
-            "h-10 bg-card hover:bg-card aria-expanded:bg-card disabled:bg-muted dark:bg-card dark:hover:bg-muted dark:aria-expanded:bg-muted dark:disabled:bg-muted dark:text-foreground"
+            "h-10 dark:text-foreground",
+            surface === "muted"
+              ? "bg-muted hover:bg-muted/80 aria-expanded:bg-muted disabled:bg-muted dark:bg-muted dark:hover:bg-muted/80 dark:aria-expanded:bg-muted"
+              : "bg-card hover:bg-card aria-expanded:bg-card disabled:bg-muted dark:bg-card dark:hover:bg-muted dark:aria-expanded:bg-muted dark:disabled:bg-muted",
           )}
         >
           <CalendarIcon className={cn(iconInputLayout.icon, "text-muted-foreground")} />

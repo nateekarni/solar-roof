@@ -88,7 +88,9 @@ for (const locale of ["th", "en"])
       const { page, origin } = fixture;
       try {
         await expect(page.locator("html")).toHaveClass(theme);
-        await expect(page.locator(".recharts-area-curve")).toBeVisible();
+        await expect(
+          page.locator('[data-trend-chart="bars"] .recharts-bar-rectangle').first(),
+        ).toBeVisible();
         await scan(fixture, "home");
         await page.keyboard.press("Tab");
         await visibleFocus(page.locator(".customer-skip-link"));
@@ -125,7 +127,15 @@ for (const locale of ["th", "en"])
         await visibleFocus(profileTrigger);
         await page.keyboard.press("Tab");
         await visibleFocus(
+          page.locator('[data-dashboard-area="header"] button').first(),
+        );
+        await page.keyboard.press("Tab");
+        await visibleFocus(
           page.locator('#customer-main a[href$="?payment=1"]').first(),
+        );
+        await page.keyboard.press("Tab");
+        await visibleFocus(
+          page.locator('#customer-main a[href="/records/billing/bill-001"]').first(),
         );
         await page.waitForTimeout(25);
         const motion = await page
@@ -160,11 +170,15 @@ for (const locale of ["th", "en"])
           [],
           "Reduced-motion chart has no running entry animation",
         );
-        // The energy readings stay reachable with motion disabled.
-        await page.locator("summary").click();
+        // Recorded values remain reachable in the shared dialog with motion disabled.
+        await expect(page.locator("details,summary")).toHaveCount(0);
+        await page.locator('[data-dashboard-area="trend"] [data-slot="dialog-trigger"]').click();
         await expect(
           page.getByRole("cell", { name: "17.25", exact: true }),
         ).toBeVisible();
+        await scan(fixture, "energy readings dialog");
+        await page.keyboard.press("Escape");
+        await expect(page.getByRole("dialog")).toHaveCount(0);
         for (const width of [768, 1280, 390]) {
           await page.setViewportSize({ width, height: 1000 });
           await checkSurface(fixture, "/");

@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { ChevronRight, ArrowLeft, RefreshCw, Settings, Clock, CheckCircle2, AlertTriangle, XCircle, Info, Copy, Check, Braces } from 'lucide-react';
+import { ChevronRight, ArrowLeft, RefreshCw, Settings, Clock, CheckCircle2, AlertTriangle, XCircle, Info, Copy, Check, Braces, Trash2 } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../../components/ui/card';
@@ -176,6 +176,7 @@ export function GatewayDetailPageView({ gatewayId }: { gatewayId: string }) {
   const [refreshing, setRefreshing] = React.useState(false);
   const [error, setError] = React.useState('');
   const [editOpen, setEditOpen] = React.useState(false);
+  const [removeOpen,setRemoveOpen]=React.useState(false),[removing,setRemoving]=React.useState(false);
   const [revision, setRevision] = React.useState(0);
 
   const loadData = React.useCallback(async (isRefresh = false) => {
@@ -308,7 +309,7 @@ export function GatewayDetailPageView({ gatewayId }: { gatewayId: string }) {
             </Button>
             {canRecoverCredential&&<GatewayCredentialRecovery gatewayId={gateway.id} locale={locale}/>}
             {permissions.gatewayEdit && (
-              <Button
+              <><Button
                 size="sm"
                 onClick={() => setEditOpen(true)}
                 className="h-9 gap-1.5"
@@ -316,6 +317,7 @@ export function GatewayDetailPageView({ gatewayId }: { gatewayId: string }) {
                 <Settings className="size-3.5" />
                 <span>{th ? 'ตั้งค่าเกตเวย์' : 'Configure Gateway'}</span>
               </Button>
+              <Button size="sm" variant="destructive" onClick={()=>setRemoveOpen(true)} className="h-9 gap-1.5"><Trash2 className="size-3.5"/><span>{th?'นำเกตเวย์ออก':'Remove gateway'}</span></Button></>
             )}
           </div>
         </header>
@@ -539,6 +541,7 @@ export function GatewayDetailPageView({ gatewayId }: { gatewayId: string }) {
         )}
 
         <GatewayTelemetryPayloadDialog payload={selectedPayload?.payload??null} deviceName={selectedPayload?.deviceName??''} locale={locale} open={Boolean(selectedPayload)} onOpenChange={open=>{if(!open)setSelectedPayload(null);}}/>
+        <Dialog open={removeOpen} onOpenChange={value=>!removing&&setRemoveOpen(value)}><DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>{th?'ยืนยันนำเกตเวย์ออก':'Confirm gateway removal'}</DialogTitle><DialogDescription>{th?'เกตเวย์จะหยุดรับข้อมูล โดยเก็บประวัติการเงิน โทรมาตร และการติดตั้งไว้':'The gateway will stop receiving data. Financial, telemetry, and installation history will be preserved.'}</DialogDescription></DialogHeader><div className="flex justify-end gap-2"><Button variant="outline" disabled={removing} onClick={()=>setRemoveOpen(false)}>{th?'ยกเลิก':'Cancel'}</Button><Button variant="destructive" disabled={removing} onClick={async()=>{setRemoving(true);try{await apiClient.delete(`/v1/gateways/${encodeURIComponent(gateway.id)}`);window.location.assign('/gateways');}catch(err){setError(err instanceof Error?err.message:(th?'นำเกตเวย์ออกไม่สำเร็จ':'Unable to remove gateway'));setRemoveOpen(false);}finally{setRemoving(false);}}}>{removing?(th?'กำลังนำออก…':'Removing…'):(th?'ยืนยันนำออก':'Confirm removal')}</Button></div></DialogContent></Dialog>
 
         {/* Edit Gateway Dialog */}
         {gateway && (

@@ -118,10 +118,6 @@ function PaymentSession({
     setDraft((previous) => ({
       ...previous,
       ...patch,
-      ...(patch.amountMode === "full" && {
-        amount: createPaymentDraft(previous.outstanding, previous.paidAt)
-          .amount,
-      }),
     }));
     setErrors((previous) => {
       const next = { ...previous };

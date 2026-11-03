@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { FinancialApplicationService } from './financial-application.service.js';
 import { TEST_FINANCIAL_POLICY_HASH } from './local-financial-policy.js';
 
-test('attachment-only submission stores unknown transaction amount and time',async()=>{
+test('submission requires and stores the full locked outstanding amount',async()=>{
  let persisted:any;
  const client={query:async(sql:string,args:any[]=[])=>{
   if(sql.includes('SELECT * FROM billing_cycles'))return {rows:[{id:'bill',site_id:'site-a',amount:'100.00',status:'approved',policy_hash:TEST_FINANCIAL_POLICY_HASH}]};
@@ -14,8 +14,9 @@ test('attachment-only submission stores unknown transaction amount and time',asy
   return {rows:[],rowCount:0};
  }};
  const service=new FinancialApplicationService({transaction:async(fn:any)=>fn(client)} as any,{} as any);
- await service.submitPayment('bill',{evidenceKey:'synthetic-file',note:'Third party transfer'},'customer');
- assert.equal(persisted[2],null);assert.equal(persisted[3],null);
+ await assert.rejects(()=>service.submitPayment('bill',{evidenceKey:'missing-amount'} as any,'customer'),/full outstanding/i);
+ await service.submitPayment('bill',{amount:'100.00',evidenceKey:'synthetic-file',note:'Third party transfer'},'customer');
+ assert.equal(persisted[13],'100.00');
 });
 
 function submissionValidationHarness(options:{assigned?:boolean;today?:string;paid?:string[]}={}){
@@ -48,8 +49,17 @@ test('customer payment submission rejects a future Bangkok transfer date',async(
 
 test('customer payment submission rejects a declared amount above the locked outstanding balance',async()=>{
  const {service,inserted}=submissionValidationHarness({paid:['80.00']});
- await assert.rejects(()=>service.submitPayment('bill',{amount:'20.01',evidenceKey:'over-balance'},'customer'),/exceed the bill/i);
+ await assert.rejects(()=>service.submitPayment('bill',{amount:'20.01',evidenceKey:'over-balance'},'customer'),/full outstanding/i);
  assert.equal(inserted(),false);
+});
+
+test('customer payment submission rejects a short amount and a second active settlement',async()=>{
+ const short=submissionValidationHarness({paid:['80.00']});
+ await assert.rejects(()=>short.service.submitPayment('bill',{amount:'19.99',evidenceKey:'short'},'customer'),/full outstanding/i);
+ assert.equal(short.inserted(),false);
+ const duplicate=submissionValidationHarness({paid:['100.00']});
+ await assert.rejects(()=>duplicate.service.submitPayment('bill',{amount:'100.00',evidenceKey:'second'},'customer'),/settled/i);
+ assert.equal(duplicate.inserted(),false);
 });
 
 test('approval requires a selected transfer and reviewer confirmed transaction fields',async()=>{
@@ -72,14 +82,14 @@ function reviewHarness(confirmed='40.00', withIdentity=true){
  (service as any).issue=async()=>({id:'receipt',document_number:'REC-001/1'});
  return {transfers,service};
 }
-test('partial approval accepts one transfer and retains other pending evidence',async()=>{
+test('approval rejects a short transfer and retains other pending evidence',async()=>{
  const {service,transfers}=reviewHarness();
- const result=await service.verifyPayment('bill','approved',undefined,'accountant',{paymentId:'first',verifiedAmount:'20.00',verifiedTransferAt:'2026-10-08T04:00:00Z'});
- assert.equal(result.billingCycleStatus,'pending_verification');assert.ok(result.receipt);assert.equal(transfers[1]!.status,'paid');assert.equal(transfers[2]!.status,'pending_verification');
+ await assert.rejects(()=>service.verifyPayment('bill','approved',undefined,'accountant',{paymentId:'first',verifiedAmount:'20.00',verifiedTransferAt:'2026-10-08T04:00:00Z'}),/full outstanding/i);
+ assert.equal(transfers[1]!.status,'pending_verification');assert.equal(transfers[2]!.status,'pending_verification');
 });
 test('overpayment fails without approving evidence',async()=>{
  const {service,transfers}=reviewHarness();
- await assert.rejects(()=>service.verifyPayment('bill','approved',undefined,'accountant',{paymentId:'first',verifiedAmount:'61.00',verifiedTransferAt:'2026-10-08T04:00:00Z'}),/exceed the bill/);
+ await assert.rejects(()=>service.verifyPayment('bill','approved',undefined,'accountant',{paymentId:'first',verifiedAmount:'61.00',verifiedTransferAt:'2026-10-08T04:00:00Z'}),/full outstanding/i);
  assert.equal(transfers[1]!.status,'pending_verification');
 });
 
@@ -89,22 +99,23 @@ test('missing reviewer identity blocks settlement before changing evidence or al
  assert.equal(transfers[1]!.status,'pending_verification');
 });
 
-test('reviewer payer details persist before receipt issuance and enter audit snapshot',async()=>{
+test('approval uses the submitted full amount and transfer time while preserving payer details',async()=>{
  let saved:any[],receiptPayer:any,audit:any;
- const payment={id:'transfer',status:'pending_verification',verified_amount:null,payer_name:null,origin_bank:null,origin_account:null};
+ const payment={id:'transfer',status:'pending_verification',verified_amount:null,declared_amount:'100.00',declared_transfer_at:'2026-10-09T01:00:00Z',payer_name:'ผู้ชำระเงิน',origin_bank:'ธนาคาร',origin_account:'1234'};
  const client={query:async(sql:string,args:any[]=[])=>{
   if(sql.includes('p.name AS position'))return {rows:[{id:'accountant',display_name:'ผู้ตรวจหลักฐาน',position:'ฝ่ายบัญชี',signature_data:null}]};
   if(sql==='SELECT now() AS value')return {rows:[{value:new Date('2026-10-14T01:00:00.000Z')}]};
   if(sql.includes('SELECT employee_can_access'))return {rows:[{allowed:true}]}; if(sql.includes('SELECT role,status'))return {rows:[{role:'accountant',status:'active'}]};
   if(sql.includes('SELECT * FROM billing_cycles'))return {rows:[{id:'bill',amount:'100.00',status:'pending_verification'}]};
   if(sql.includes('SELECT * FROM payments'))return {rows:[payment]};
-  if(sql.includes('UPDATE payments')&&!sql.includes('receipt_document_id')){saved=args;Object.assign(payment,{status:args[1],verified_amount:args[4],payer_name:args[7],origin_bank:args[10],origin_account:args[11]});}
+  if(sql.includes('UPDATE payments')&&!sql.includes('receipt_document_id')){saved=args;Object.assign(payment,{status:args[1],verified_amount:args[4],payer_name:args[7]??payment.payer_name,origin_bank:args[10]??payment.origin_bank,origin_account:args[11]??payment.origin_account});}
   if(sql.includes('INSERT INTO audit_events'))audit=JSON.parse(args[5]);return {rows:[]};
  }};
  const service=new FinancialApplicationService({transaction:async(fn:any)=>fn(client)} as any,{assertEnabled:async()=>{}} as any);
  (service as any).issue=async()=>{receiptPayer={...payment};return {id:'receipt'};};
- await service.verifyPayment('bill','approved',undefined,'accountant',{paymentId:'transfer',verifiedAmount:'100.00',verifiedTransferAt:'2026-10-09T01:00:00Z',payerName:' ผู้ชำระเงิน ',originBank:' ธนาคาร ',originAccount:'1234'});
- assert.equal(saved![7],'ผู้ชำระเงิน');assert.equal(receiptPayer.payer_name,'ผู้ชำระเงิน');assert.equal(receiptPayer.origin_bank,'ธนาคาร');assert.equal(audit.payerName,'ผู้ชำระเงิน');
+ await service.verifyPayment('bill','approved',undefined,'accountant',{paymentId:'transfer'});
+ assert.equal(saved![4],'100.00');assert.equal(new Date(saved![5]).toISOString(),'2026-10-09T01:00:00.000Z');
+ assert.equal(saved![7],null);assert.equal(receiptPayer.payer_name,'ผู้ชำระเงิน');assert.equal(receiptPayer.origin_bank,'ธนาคาร');assert.equal(audit.payerName,undefined);
 });
 test('invalid optional reviewed payer metadata fails before database access',async()=>{
  const service=new FinancialApplicationService({transaction:async()=>{throw new Error('unexpected persistence');}} as any,{assertEnabled:async()=>{}} as any);

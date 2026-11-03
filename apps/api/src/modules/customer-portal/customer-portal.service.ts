@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable } from '@nestjs/common';
-import type { CustomerPaymentInstructions, CustomerPortalBill, CustomerPortalHomeResponse, CustomerPortalRange } from '@solar/api-contracts';
+import type { CustomerPaymentInstructions, CustomerPortalBill, CustomerPortalHomeResponse, CustomerPortalRange, CustomerProductionHistory } from '@solar/api-contracts';
 import { customerScope } from '../../common/auth/resource-scope.js';
 import { siteScope } from '../../common/auth/authorization.js';
 import { DatabaseService } from '../../database/database.service.js';
@@ -11,6 +11,14 @@ import { SettingsService } from '../settings/settings.service.js';
 export function parseCustomerPortalRange(value: unknown = '7d'): CustomerPortalRange {
   if (value !== '7d' && value !== '30d') throw new BadRequestException('Invalid range; use 7d or 30d');
   return value;
+}
+export function parseCustomerPortalDate(value:unknown,now=new Date()):string{
+ if(typeof value!=='string'||!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(value)||!Number.isFinite(Date.parse(value))||new Date(`${value}T00:00:00.000Z`).toISOString().slice(0,10)!==value)throw new BadRequestException('Select a valid date');
+ const today=new Date(now.getTime()+7*3600000).toISOString().slice(0,10);
+ if(value>today)throw new BadRequestException('Production date cannot be in the future');
+ const local=new Date(`${today}T00:00:00.000Z`),earliest=new Date(Date.UTC(local.getUTCFullYear(),local.getUTCMonth()-5,1)).toISOString().slice(0,10);
+ if(value<earliest)throw new BadRequestException('Production date must be within the latest six calendar months');
+ return value;
 }
 
 type BillRow = Omit<CustomerPortalBill, 'canPay'> & { recentRank: number };
@@ -68,6 +76,19 @@ export class CustomerPortalService {
       branchName: bank.branchName, promptpayId: bank.promptpayId,
       ...(bank.qrCodeUrl !== undefined ? {qrCodeUrl: bank.qrCodeUrl} : {}),
     };
+  }
+
+  async productionHistory(user:DashboardPrincipal|undefined,requestedDate:unknown):Promise<CustomerProductionHistory>{
+    if(!user?.id||user.role!=='customer_user')throw new ForbiddenException('Customer portal access denied');
+    const date=parseCustomerPortalDate(requestedDate),sites=siteScope(user,'business'),customers=customerScope(user);
+    if(sites?.length!==1||customers?.length!==1)throw new ForbiddenException('One assigned customer site required');
+    const assigned=(await this.db.query<{id:string;name:string}>(`SELECT s.id,s.name FROM sites s WHERE s.id=$1::uuid AND s.customer_id=$3::uuid AND s.status<>'archived'
+      AND EXISTS(SELECT 1 FROM site_account_assignments access WHERE access.user_id=$2::uuid AND access.site_id=s.id AND access.revoked_at IS NULL)`,[sites[0],user.id,customers[0]])).rows[0];
+    if(!assigned)throw new ForbiddenException('Assigned customer site unavailable');
+    const day=await this.dashboard.getDay(user,date,date,assigned.id),site=day.sites.find(row=>row.siteId===assigned.id);
+    const quality=site?.energy.quality??'unavailable';
+    return {date,timezone:'Asia/Bangkok',source:'telemetry',status:quality==='complete'?'actual':quality==='partial'?'partial':'unavailable',site:assigned,
+      dayTotalKwh:site?.energy.observedKwh??null,watermark:site?.watermark??null,intervals:(site?.points??[]).map(point=>({timestamp:point.timestamp,valueKwh:point.value,status:point.quality==='complete'?'actual':point.quality==='partial'?'partial':'unavailable'}))};
   }
 
   async home(user: DashboardPrincipal | undefined, requestedRange: CustomerPortalRange): Promise<CustomerPortalHomeResponse> {

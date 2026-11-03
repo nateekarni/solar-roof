@@ -202,6 +202,22 @@ test("preview fallback retains a download only when a file exists", () => {
   assert.match(image, /download=/);
   revokeCustomerDocumentBlobUrl(blobUrl);
 });
+test("customer document viewer shows the issued version-linked production form slot", () => {
+  const url = createCustomerDocumentBlobUrl(new Blob(["%PDF-"]));
+  const html = renderToStaticMarkup(
+    <CustomerDocumentContent
+      url={url}
+      kind="unavailable"
+      title="INV-001"
+      locale="en"
+      attachments={[{kind:"production_form",status:"awaiting_file",documentId:"11111111-1111-4111-8111-111111111111",documentRevision:2,templateVersion:"sarabun-a4-v12"}]}
+    />,
+  );
+  assert.match(html, /Production form attachment/);
+  assert.match(html, /Awaiting supplied form/);
+  assert.match(html, /Revision 2/);
+  revokeCustomerDocumentBlobUrl(url);
+});
 test("unverified evidence shows its declared amount without treating it as approved and unknown status is localized", () => {
   const html = render({
     payments: [
@@ -371,6 +387,6 @@ test("legacy evidence data is validated as a file and converted to a managed blo
           slipUrl: unsafe,
         },
       }),
-      { url: "", kind: "unavailable", revoke: false },
+      { url: "", kind: "unavailable", revoke: false, attachments: [] },
     );
 });

@@ -9,7 +9,7 @@ export interface PaymentMetadata {
  originAccount?: string | null;
 }
 export interface PaymentSubmission extends PaymentMetadata {
- amount?: number | string;
+ amount: number | string;
  paidAt?: string;
  slipUrl?: string;
  evidenceKey?: string;

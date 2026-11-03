@@ -12,31 +12,34 @@ export function BillBreakdown({
   const t = createTranslator(locale);
   const rows = [
     ["consumedEnergy", bill.consumedKwh, "kwh"],
-    ["rate", bill.rate, "baht"],
     ["subtotal", bill.subtotal, "baht"],
     ["tax", bill.tax, "baht"],
-    ["total", bill.billedAmount, "baht"],
-    ["approvedAmount", bill.approvedAmount, "baht"],
-    ["outstandingAmount", bill.outstandingAmount, "baht"],
+    ["billedAmount", bill.billedAmount, "baht"],
   ] as const;
   return (
-    <section
+    <div
       aria-labelledby="bill-breakdown-title"
-      className="customer-card min-w-0 rounded-3xl border border-border bg-card p-6 sm:p-8"
+      className="min-w-0 border-t border-border/70 pt-3 sm:border-l sm:border-t-0 sm:pl-5 sm:pt-0"
     >
-      <h2 id="bill-breakdown-title" className="text-lg font-semibold">
+      <h3 id="bill-breakdown-title" className="sr-only">
         {t("customerPortal.home.breakdown")}
-      </h2>
-      <dl className="mt-5 divide-y divide-border">
-        {rows.map(([key, value, unit]) => (
+      </h3>
+      <dl className="divide-y divide-border/70">
+        {rows.filter(([key, value]) => value !== null && (key !== "billedAmount" || bill.billedAmount !== bill.outstandingAmount)).map(([key, value, unit]) => (
           <div
             key={key}
-            className={`flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-3 ${key === "outstandingAmount" ? "font-semibold" : ""}`}
+            data-bill-summary-row={key}
+            className="flex min-h-8 items-center justify-between gap-3 py-1.5"
           >
-            <dt className="text-sm text-muted-foreground">
+            <dt className="text-xs text-muted-foreground">
               {t(`customerPortal.home.${key}`)}
+              {key === "subtotal" && bill.rate !== null && (
+                <span className="block text-[11px] text-muted-foreground">
+                  {t("customerPortal.home.rate")} {formatDecimal(bill.rate, locale)} {t("customerPortal.common.baht")}/{t("customerPortal.common.kwh")}
+                </span>
+              )}
             </dt>
-            <dd className="break-words text-right tabular-nums">
+            <dd className="break-words text-right font-medium tabular-nums">
               {unit === "baht"
                 ? formatMoney(value, locale)
                 : formatDecimal(value, locale)}
@@ -49,6 +52,6 @@ export function BillBreakdown({
           </div>
         ))}
       </dl>
-    </section>
+    </div>
   );
 }

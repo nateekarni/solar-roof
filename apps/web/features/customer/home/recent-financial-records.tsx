@@ -1,4 +1,4 @@
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, FileText } from "lucide-react";
 import type { CustomerPortalBill } from "@solar/api-contracts";
 import { createTranslator, type Locale } from "@solar/i18n";
 import { Button } from "@/components/ui/button";
@@ -17,9 +17,13 @@ export function RecentFinancialRecords({
 }) {
   const t = createTranslator(locale);
   return (
-    <section aria-labelledby="recent-records-title" className="min-w-0">
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <h2 id="recent-records-title" className="text-xl font-semibold">
+    <section
+      aria-labelledby="recent-records-title"
+      data-dashboard-area="records"
+      className="customer-dashboard-panel min-w-0 overflow-hidden border border-primary/30 bg-card"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/70 px-4 py-3.5">
+        <h2 id="recent-records-title" className="text-base font-semibold sm:text-lg">
           {t("customerPortal.home.recentRecords")}
         </h2>
         {canViewDocuments && (
@@ -32,64 +36,45 @@ export function RecentFinancialRecords({
           </a>
         )}
       </div>
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div data-financial-record-list="compact" className="divide-y divide-border/70">
         {records.map((record) => (
           <article
             data-financial-record={record.id}
             key={record.id}
-            className="customer-card flex min-w-0 flex-col rounded-2xl border border-border bg-card p-5"
+            className="min-w-0 p-4"
           >
-            <div
-              data-record-header="true"
-              className="flex min-w-0 items-start justify-between gap-3"
-            >
-              <div className="min-w-0">
-                <h3 className="break-words font-semibold">
-                  {record.invoiceNumber ?? t("customerPortal.record.statement")}
-                </h3>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {formatDate(record.period, locale, true)}
-                </p>
-              </div>
-              <span className="inline-flex shrink-0 items-center rounded-full bg-[var(--customer-pending)] px-3 py-1.5 text-xs font-medium text-[var(--customer-pending-foreground)]">
-                {billStatus(record.status, locale)}
+            <div data-record-header="true" className="flex min-w-0 items-start gap-3">
+              <span className="grid size-9 shrink-0 place-items-center rounded-lg border border-primary/35 bg-primary/8 text-primary">
+                <FileText aria-hidden="true" className="size-4" />
               </span>
-            </div>
-            <dl className="mt-4 space-y-2 text-sm">
-              {(
-                [
-                  ["billedAmount", record.billedAmount],
-                  ["approvedAmount", record.approvedAmount],
-                  ["outstandingAmount", record.outstandingAmount],
-                ] as const
-              ).map(([key, value]) => (
-                <div key={key} className="flex flex-wrap justify-between gap-2">
-                  <dt className="text-muted-foreground">
-                    {t(`customerPortal.home.${key}`)}
-                  </dt>
-                  <dd className="break-words tabular-nums">
-                    {formatMoney(value, locale)}{" "}
-                    {t("customerPortal.common.baht")}
-                  </dd>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <h3 className="break-words text-sm font-semibold">{record.invoiceNumber ?? t("customerPortal.record.statement")}</h3>
+                    <p className="mt-0.5 text-xs text-muted-foreground">{formatDate(record.period, locale, true)}</p>
+                  </div>
+                  <span className="inline-flex shrink-0 items-center rounded-md border border-primary/25 bg-[var(--customer-pending)] px-2 py-1 font-mono text-[10px] font-medium text-[var(--customer-pending-foreground)]">
+                    {billStatus(record.status, locale)}
+                  </span>
                 </div>
-              ))}
-              <div className="pt-2">
-                <dt className="text-muted-foreground">
-                  {t("customerPortal.home.dueDate")}
-                </dt>
-                <dd>{formatDate(record.dueDate, locale)}</dd>
+                <div className="mt-3 flex items-baseline justify-between gap-3 border-t border-border/60 pt-2">
+                  <span className="text-xs text-muted-foreground">{t("customerPortal.home.outstandingAmount")}</span>
+                  <span className="font-mono text-sm font-semibold tabular-nums">
+                    {formatMoney(record.outstandingAmount, locale)} {t("customerPortal.common.baht")}
+                  </span>
+                </div>
               </div>
-            </dl>
+            </div>
             {(canViewDocuments || (canPay && record.canPay)) && (
               <div
                 data-record-actions="true"
-                className="mt-auto flex flex-wrap items-center justify-between gap-3 pt-4"
+                className="mt-2 flex flex-wrap items-center justify-end gap-2"
               >
                 {canViewDocuments && (
                   <Button
                     variant="outline"
                     asChild
-                    className="min-h-11 bg-background"
+                    className="min-h-11 rounded-lg px-3 text-xs"
                   >
                     <a href={`/records/billing/${encodeURIComponent(record.id)}`}>
                       {t("customerPortal.record.details")}
@@ -100,7 +85,7 @@ export function RecentFinancialRecords({
                 {canPay && record.canPay && (
                   <Button
                     asChild
-                    className="customer-primary-action min-h-11 bg-[var(--customer-action-primary)]"
+                    className="customer-primary-action min-h-11 min-w-11 rounded-lg bg-[var(--customer-action-primary)] px-3 text-xs"
                   >
                     <a
                       href={`/records/billing/${encodeURIComponent(record.id)}?payment=1`}
@@ -115,7 +100,7 @@ export function RecentFinancialRecords({
         ))}
       </div>
       {records.length === 0 && (
-        <p className="rounded-2xl border border-border bg-card p-6 text-muted-foreground">
+        <p className="p-5 text-sm text-muted-foreground">
           {t("customerPortal.home.noRecords")}
         </p>
       )}

@@ -11,7 +11,7 @@ import {formatAppDate} from '../../lib/date-format';
 import {apiClient} from '../../lib/api-client';
 import {notify} from '../../components/feedback/notifications';
 import {eligibleBillingRows} from './billing-selection';
-import {BillingIssuanceApprover,BillingIssuanceBill,BillingIssuanceReview,issuanceBillFromRow,type IssuanceApprover} from './billing-issuance-review';
+import {BillingIssuanceApprover,BillingIssuanceBill,BillingIssuanceReview,IssuanceSignatureUpload,issuanceBillFromRow,type IssuanceApprover} from './billing-issuance-review';
 
 const formatMoney = (val: unknown, locale: 'th' | 'en' = 'th') => {
   if (val === null || val === undefined || val === '') return '—';
@@ -134,6 +134,7 @@ export function BillingApprovalConfirmation({
 }) {
   const th = locale === 'th';
   const [showPassword, setShowPassword] = React.useState(false);
+  const [signatureOpen,setSignatureOpen]=React.useState(!approver.hasSignature),[signatureSaved,setSignatureSaved]=React.useState(Boolean(approver.hasSignature));
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(() => new Set(rows.map((r) => r.id)));
   const [expandedIds, setExpandedIds] = React.useState<Set<string>>(
     () => (rows.length === 1 ? new Set(rows.map((r) => r.id)) : new Set())
@@ -145,6 +146,8 @@ export function BillingApprovalConfirmation({
       setExpandedIds(new Set(rows.map((r) => r.id)));
     }
   }, [rows]);
+  React.useEffect(()=>setSignatureSaved(Boolean(approver.hasSignature)),[approver.hasSignature]);
+  const effectiveApprover={...approver,hasSignature:signatureSaved};
 
   const selectedRows = rows.filter((r) => selectedIds.has(r.id));
   const allSelected = rows.length > 0 && selectedRows.length === rows.length;
@@ -177,10 +180,11 @@ export function BillingApprovalConfirmation({
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-signature-upload-open={signatureOpen}>
+      <IssuanceSignatureUpload open={signatureOpen} onOpenChange={setSignatureOpen} onSaved={()=>setSignatureSaved(true)} locale={locale}/>
       {/* Compact Table */}
-      <div className="rounded-xl border border-border bg-card overflow-hidden">
-        <Table className="w-full text-xs">
+      <div className="min-w-0 max-w-full rounded-xl border border-border bg-card overflow-x-auto">
+        <Table className="w-full min-w-0 table-fixed text-xs">
           <TableHeader>
             <TableRow className="bg-muted/40 hover:bg-muted/40 h-9">
               <TableHead className="w-10 px-3 text-center">
@@ -192,14 +196,14 @@ export function BillingApprovalConfirmation({
                 />
               </TableHead>
               <TableHead>{th ? 'ไซต์งาน' : 'Site'}</TableHead>
-              <TableHead className="text-right">{th ? 'จำนวนเงิน' : 'Amount'}</TableHead>
+              <TableHead className="w-27 text-right">{th ? 'จำนวนเงิน' : 'Amount'}</TableHead>
               <TableHead className="w-10 px-2 text-center">
                 <span className="sr-only">{th ? 'รายละเอียด' : 'Details'}</span>
               </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {rows.map((row) => {
+            {rows.map((row,rowIndex) => {
               const isChecked = selectedIds.has(row.id);
               const isExpanded = expandedIds.has(row.id);
               const bill = issuanceBillFromRow(row);
@@ -217,7 +221,7 @@ export function BillingApprovalConfirmation({
                       />
                     </TableCell>
                     <TableCell className="py-2">
-                      <div className="font-semibold text-xs text-foreground">
+                      <div className="min-w-0 break-words font-semibold text-xs text-foreground">
                         {siteName}{' '}
                         {siteCode && siteCode !== '—' && !siteName.includes(siteCode) ? (
                           <span className="text-muted-foreground font-normal">({siteCode})</span>
@@ -238,6 +242,8 @@ export function BillingApprovalConfirmation({
                         size="icon"
                         className="size-7 text-muted-foreground hover:text-foreground cursor-pointer"
                         onClick={() => toggleExpand(row.id)}
+                        aria-expanded={isExpanded}
+                        aria-controls={`billing-approval-details-${rowIndex}`}
                         aria-label={`${
                           isExpanded ? (th ? 'ย่อรายละเอียด' : 'Collapse') : (th ? 'ดูรายละเอียด' : 'Expand')
                         } ${siteName}`}
@@ -249,9 +255,8 @@ export function BillingApprovalConfirmation({
                     </TableCell>
                   </TableRow>
                   {isExpanded && (
-                    <TableRow className="bg-muted/30 border-t border-border/50 hover:bg-muted/30">
-                      <TableCell colSpan={4} className="p-3">
-                        <div className="rounded-lg bg-background/80 border p-2.5 text-xs space-y-2">
+                    <TableRow id={`billing-approval-details-${rowIndex}`} className="bg-muted/30 border-t border-border/50 hover:bg-muted/30">
+                      <TableCell colSpan={4} className="px-4 py-3 text-xs space-y-2">
                           {bill.replacement && (
                             <p className="text-amber-600 dark:text-amber-400 font-medium text-[11px]">
                               {th
@@ -309,7 +314,6 @@ export function BillingApprovalConfirmation({
                               <span>{bill.recipients.map((r) => `${r.name} (${r.email})`).join(', ')}</span>
                             </div>
                           )}
-                        </div>
                       </TableCell>
                     </TableRow>
                   )}
@@ -321,7 +325,7 @@ export function BillingApprovalConfirmation({
       </div>
 
       {/* Approver Fact Display Card */}
-      <BillingIssuanceApprover approver={approver} locale={locale} />
+      <BillingIssuanceApprover approver={effectiveApprover} locale={locale} onUploadSignature={()=>setSignatureOpen(true)} />
 
       {/* Password Verification - clean without outer border/padding card */}
       <div className="space-y-1.5 pt-1">
@@ -352,8 +356,8 @@ export function BillingApprovalConfirmation({
         </div>
         <p className="text-[11px] text-muted-foreground leading-relaxed">
           {th
-            ? 'การระบุรหัสผ่านถือเป็นการยืนยันความถูกต้องและยินยอมให้นำชื่อ ตำแหน่ง และลายเซ็นไปประทับลงในเอกสารฉบับจริงเพื่อจัดส่งให้ลูกค้า'
-            : 'Entering your password confirms document accuracy and authorizes affixing your name, position, and signature to the official statement sent to the customer.'}
+            ? 'การระบุรหัสผ่านถือเป็นการยืนยันความถูกต้องและยินยอมให้นำชื่อและลายเซ็นไปประทับลงในเอกสารฉบับจริงเพื่อจัดส่งให้ลูกค้า'
+            : 'Entering your password confirms document accuracy and authorizes affixing your name and signature to the official statement sent to the customer.'}
         </p>
         {passwordError && <p role="alert" className="text-xs font-medium text-destructive">{passwordError}</p>}
       </div>
@@ -369,7 +373,8 @@ export function BillingApprovalConfirmation({
           disabled={
             disabled ||
             busy ||
-            !approver.position?.trim() ||
+            !effectiveApprover.position?.trim() ||
+            !effectiveApprover.hasSignature ||
             selectedRows.length === 0 ||
             selectedRows.length > 100 ||
             !(password ?? '').trim()
@@ -520,7 +525,7 @@ export function BillingBulkApproval({rows,approver,locale,canApprove,onCompleted
    <div
     role="status"
     aria-label={th ? 'แถบจัดการรายการที่เลือก' : 'Selection actions bar'}
-    className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border bg-card/95 backdrop-blur-md px-5 py-3.5 shadow-2xl animate-in slide-in-from-bottom-4 max-w-4xl w-[92vw] sm:w-auto"
+    className="fixed bottom-[calc(6rem+env(safe-area-inset-bottom))] md:bottom-6 left-1/2 -translate-x-1/2 z-50 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border bg-card/95 backdrop-blur-md px-5 py-3.5 shadow-2xl animate-in slide-in-from-bottom-4 max-w-4xl w-[92vw] sm:w-auto"
    >
     <div className="flex items-center gap-2">
      <span className="text-sm font-semibold text-foreground">
@@ -573,7 +578,7 @@ export function BillingBulkApproval({rows,approver,locale,canApprove,onCompleted
     </div>
    </div>
   )}
-  {canApprove&&<Dialog open={open} onOpenChange={setOpen}><DialogContent showCloseButton={!busy} className="max-h-[85vh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>{th?'ยืนยันอนุมัติและออกเอกสาร':'Confirm approval and issuance'}</DialogTitle><DialogDescription>{th?'ตรวจสอบใบวางบิลและผู้อนุมัติก่อนออกเอกสาร แต่ละรายการดำเนินการแยกกัน':'Review the billing statements and approver before issuance. Each bill is processed independently.'}</DialogDescription></DialogHeader>
+  {canApprove&&<Dialog open={open} onOpenChange={setOpen}><DialogContent showCloseButton={!busy} className="min-w-0 grid-cols-[minmax(0,1fr)] max-h-[85vh] overflow-x-hidden overflow-y-auto max-sm:w-full sm:max-w-2xl"><DialogHeader><DialogTitle>{th?'ยืนยันอนุมัติและออกเอกสาร':'Confirm approval and issuance'}</DialogTitle><DialogDescription>{th?'ตรวจสอบใบวางบิลและผู้อนุมัติก่อนออกเอกสาร แต่ละรายการดำเนินการแยกกัน':'Review the billing statements and approver before issuance. Each bill is processed independently.'}</DialogDescription></DialogHeader>
    {error&&<p role="alert" className="text-sm font-medium text-destructive">{error}</p>}
    {previewLoading&&<p role="status">{th?'กำลังโหลดข้อมูลตรวจอนุมัติ…':'Loading approval facts…'}</p>}
    {previewFailures.length>0&&<div role="alert" className="space-y-2"><p>{th?'รายการต่อไปนี้ยังรออนุมัติและจะไม่ถูกส่งอนุมัติในครั้งนี้':'These bills remain pending and will not be submitted in this approval.'}</p>{previewFailures.map((failure,index)=><div key={index}><p>{failure.label.period} · {failure.label.customer==='รายการที่ไม่สามารถเข้าถึงได้'&&!th?'Unavailable record':failure.label.customer} · {failure.label.site}</p><p>{th?failure.message:(englishMessages[failure.message]??'Unable to issue this document')}</p></div>)}</div>}

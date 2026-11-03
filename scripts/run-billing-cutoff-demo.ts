@@ -2,7 +2,7 @@ import { createRequire } from 'node:module';
 import { randomBytes, randomUUID, createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { sites, reading } from './local-system/telemetry-fixture.mjs';
-import { renderFinancialDocumentPdf } from '../apps/api/src/modules/documents/financial-document-pdf.js';
+import { FINANCIAL_TEMPLATE_VERSION, renderFinancialDocumentPdf } from '../apps/api/src/modules/documents/financial-document-pdf.js';
 import { financialPolicySnapshot, financialPolicyHash } from '../apps/api/src/modules/billing/financial-policy.js';
 import { canonicalGlobalFinancialConfiguration } from '../apps/api/src/modules/settings/settings.service.js';
 import { financialConfigurationHash } from '../apps/api/src/modules/financial-readiness/financial-configuration.js';
@@ -134,9 +134,9 @@ async function runCutoffDemo() {
 
     await client.query(`
       INSERT INTO employee_positions (id, name) VALUES
-      ($1, 'ผู้มีอำนาจลงนาม / Authorized Director'),
-      ($2, 'เจ้าหน้าที่บัญชีอาวุโส / Senior Accountant')
-      ON CONFLICT DO NOTHING
+      ($1, 'กรรมการผู้จัดการ'),
+      ($2, 'เจ้าหน้าที่บัญชีอาวุโส')
+      ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name
     `, [posDirectorId, posAccountantId]);
 
     const rules = {
@@ -296,12 +296,18 @@ async function runCutoffDemo() {
       site_name: bkkCustomerRow.site_name,
       external_site_id: bkkCustomerRow.external_site_id,
       payment_terms: 'ชำระเงินภายใน 30 วันนับจากวันที่ออกเอกสาร',
+      contract_number: '149/2565',
+      contract_signed_date: '2022-09-29',
+      service_start_date: '2026-07-01',
+      total_installments: 300,
+      recipient_title: 'ผู้อำนวยการ',
+      province: 'กรุงเทพมหานคร',
     };
 
     const existingDocs = (await client.query(`
       SELECT d.*, bc.period_start, bc.period_end, bc.consumed_kwh, bc.rate, bc.subtotal, bc.simulated_tax, bc.due_date
       FROM documents d
-      JOIN billing_cycles bc ON bc.id = d.billing_cycle_id
+      JOIN billing_cycles bc ON bc.id = d.billing_cycle_id WHERE d.document_number <> 'INV-202507-TRG'
       ORDER BY d.issue_date, d.document_number
     `)).rows;
 
@@ -327,7 +333,7 @@ async function runCutoffDemo() {
 
       const docSnapshot = {
         brandPrimary: '#0284c7',
-        templateVersion: 'sarabun-a4-v8',
+        templateVersion: isReceipt ? 'sarabun-a4-v11' : FINANCIAL_TEMPLATE_VERSION,
         policy: { scope: 'PRODUCTION', taxRate: '7.0000', pricesIncludeTax: false },
         company: companyParty,
         customer: customerParty,
@@ -355,13 +361,13 @@ async function runCutoffDemo() {
         logo: logoDataUri,
         logoDataUri: logoDataUri,
         banks: [
-          { bank_name: 'ธนาคารกรุงเทพ (BBL)', account_name: 'บริษัท โซลาร์ รูฟ จำกัด', account_number: '123-4-56789-0' }
+          { bank_name: 'ธนาคารกรุงเทพ (BBL)', account_name: 'บริษัท โซลาร์ รูฟ จำกัด', account_number: '123-4-56789-0', branch_name: 'สำนักงานใหญ่', account_type: 'ออมทรัพย์' }
         ],
         payments: paymentsList,
         approver: {
           userId: ownerId,
           displayName: 'ธนกฤต วัฒนาภิรมย์',
-          position: 'ผู้มีอำนาจลงนาม / Authorized Director',
+          position: 'กรรมการผู้จัดการ',
           signatureDataUri: SIGNATURE_PNG,
           approvedAt: issueDateStr + 'T09:00:00.000Z',
         }
@@ -375,6 +381,12 @@ async function runCutoffDemo() {
 
       const sha256 = createHash('sha256').update(pdfBytes).digest('hex');
 
+      await client.query(`ALTER TABLE documents DISABLE TRIGGER USER`);
+      await client.query(`ALTER TABLE document_artifacts DISABLE TRIGGER USER`);
+      await client.query(`UPDATE documents SET template_version = $2, snapshot = $3::jsonb, content_hash = $4 WHERE id = $1`, [doc.id, docSnapshot.templateVersion, JSON.stringify(docSnapshot), sha256]);
+      await client.query(`INSERT INTO document_artifacts (document_id, pdf_bytes, sha256, created_at) VALUES ($1, $2, $3, now()) ON CONFLICT (document_id) DO UPDATE SET pdf_bytes = EXCLUDED.pdf_bytes, sha256 = EXCLUDED.sha256, created_at = now()`, [doc.id, pdfBytes, sha256]);
+      await client.query(`ALTER TABLE document_artifacts ENABLE TRIGGER USER`);
+      await client.query(`ALTER TABLE documents ENABLE TRIGGER USER`);
       await client.query(`
         INSERT INTO document_artifacts (document_id, pdf_bytes, sha256, created_at)
         VALUES ($1, $2, $3, now())
@@ -519,6 +531,151 @@ async function runCutoffDemo() {
 
       console.log(`  ✓ Created Pending Approval Bill: ${siteFixture.code} (${siteDbRow.name}) | ${consumedKwh} kWh @ ฿${rate} = ฿${totalAmount.toLocaleString()} [pending_issue_approval]`);
     }
+
+    // 8. Seed Sample Hospital Solar Leasing Site & 5-Page Billing Packet (โรงพยาบาลโรคผิวหนังเขตร้อนภาคใต้ จังหวัดตรัง)
+    console.log('8. Seeding sample Solar Leasing Hospital site & 5-page billing packet (โรงพยาบาลโรคผิวหนังเขตร้อนภาคใต้ จังหวัดตรัง)...');
+    await client.query(`UPDATE site_billing_settings SET contract_number = coalesce(contract_number, '149/2565'), contract_signed_date = coalesce(contract_signed_date, '2022-09-29'::date), total_installments = 300, recipient_title = 'ผู้อำนวยการ'`);
+    const trangCustomerId = '00000000-0000-4000-8000-000000000771';
+    const trangSiteId = '00000000-0000-4000-8000-000000000772';
+    const trangCycleId = '00000000-0000-4000-8000-000000000773';
+    const trangDocId = '00000000-0000-4000-8000-000000000774';
+    await client.query(`
+      INSERT INTO customers (id, name, legal_name, code, region, status, tax_id, tax_branch, tax_address, province, phone, document_email)
+      VALUES ($1, 'โรงพยาบาลโรคผิวหนังเขตร้อนภาคใต้ จังหวัดตรัง', 'โรงพยาบาลโรคผิวหนังเขตร้อนภาคใต้', 'TRG-SKN-011', 'South', 'active', '0994000160000', '00000', '164 ถนนตรัง-ปะเหลียน ตำบลบ้านควน อำเภอเมืองตรัง จังหวัดตรัง 92000', 'ตรัง', '075-211-289', 'billing.trang-skin@customer.solar.test')
+      ON CONFLICT (id) DO UPDATE SET
+        name = EXCLUDED.name,
+        legal_name = EXCLUDED.legal_name,
+        tax_address = EXCLUDED.tax_address,
+        province = EXCLUDED.province,
+        status = 'active'
+    `, [trangCustomerId]);
+    await client.query(`
+      INSERT INTO sites (id, customer_id, name, capacity_mwp, timezone, status, latitude, longitude, external_site_id)
+      VALUES ($1, $2, 'โรงพยาบาลโรคผิวหนังเขตร้อนภาคใต้ จ.ตรัง', 0.150, 'Asia/Bangkok', 'online', 7.5450, 99.6110, 'TRG-SKN-011')
+      ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, status = 'online'
+    `, [trangSiteId, trangCustomerId]);
+    await client.query(`
+      INSERT INTO site_billing_settings (
+        site_id, version, service_start_date, payment_term_days, tax_rate,
+        prices_include_tax, tax_confirmed, reminders_enabled, reminder_start_days, reminder_interval_days,
+        contract_number, contract_signed_date, total_installments, recipient_title
+      ) VALUES ($1, 1, '2025-07-01', 30, 7.0000, false, true, true, 7, 7, '149/2565', '2022-09-29', 300, 'ผู้อำนวยการ')
+      ON CONFLICT (site_id) DO UPDATE SET
+        service_start_date = '2025-07-01',
+        contract_number = '149/2565',
+        contract_signed_date = '2022-09-29',
+        total_installments = 300,
+        recipient_title = 'ผู้อำนวยการ'
+    `, [trangSiteId]);
+    await client.query(`
+      INSERT INTO billing_cycles (
+        id, site_id, period_start, period_end, cutoff_time, status, quality,
+        opening_energy, closing_energy, consumed_kwh, rate, subtotal, simulated_tax, amount,
+        due_date, billing_kind, financial_scope, meter_snapshot
+      ) VALUES (
+        $1, $2, '2025-07-01', '2025-07-31', '2025-08-01 00:00:00+07', 'approved', 'complete',
+        0, 14689.570, 14689.570, 2.8800, 42305.96, 2961.42, 45267.38,
+        '2025-09-04', 'energy', 'PRODUCTION',
+        $3::jsonb
+      ) ON CONFLICT (id) DO UPDATE SET
+        consumed_kwh = EXCLUDED.consumed_kwh,
+        rate = EXCLUDED.rate,
+        subtotal = EXCLUDED.subtotal,
+        simulated_tax = EXCLUDED.simulated_tax,
+        amount = EXCLUDED.amount,
+        meter_snapshot = EXCLUDED.meter_snapshot
+    `, [trangCycleId, trangSiteId, JSON.stringify([{ from: '2025-07-01', to: '2025-08-01', consumedKwh: '14689.570', rate: '2.8800', subtotal: '42305.96' }])]);
+
+    const trangSnapshot = {
+      brandPrimary: '#0284c7',
+      templateVersion: FINANCIAL_TEMPLATE_VERSION,
+      letterNumber: 'สฟ 0001/2568',
+      installmentIndex: 1,
+      totalInstallments: 300,
+      policy: { scope: 'PRODUCTION', taxRate: '7.0000', pricesIncludeTax: false },
+      company: {
+        ...companyParty,
+        letter_prefix: 'สฟ',
+      },
+      customer: {
+        company_name: 'โรงพยาบาลโรคผิวหนังเขตร้อนภาคใต้',
+        tax_id: '0994000160000',
+        branch: '00000',
+        tax_address: '164 ถนนตรัง-ปะเหลียน ตำบลบ้านควน อำเภอเมืองตรัง จังหวัดตรัง 92000',
+        province: 'ตรัง',
+        site_name: 'โรงพยาบาลโรคผิวหนังเขตร้อนภาคใต้ จ.ตรัง',
+        external_site_id: 'TRG-SKN-011',
+        contract_number: '149/2565',
+        contract_signed_date: '2022-09-29',
+        service_start_date: '2025-07-01',
+        total_installments: 300,
+        recipient_title: 'ผู้อำนวยการ',
+      },
+      cycle: {
+        period_start: '2025-07-01',
+        period_end: '2025-07-31',
+        consumed_kwh: '14689.570',
+        rate: '2.8800',
+        subtotal: '42305.96',
+        simulated_tax: '2961.42',
+        amount: '45267.38',
+        meter_snapshot: [
+          {
+            from: '2025-07-01',
+            to: '2025-08-01',
+            consumedKwh: '14689.57',
+            rate: '2.88',
+            subtotal: '42305.96',
+          },
+        ],
+      },
+      issueDate: '2025-08-05',
+      dueDate: '2025-09-04',
+      logo: logoDataUri,
+      logoDataUri,
+      banks: [
+        {
+          bank_name: 'ธนาคารกรุงเทพ (BBL)',
+          account_name: 'บริษัท โซลาร์ รูฟ จำกัด',
+          account_number: '123-4-56789-0',
+          branch_name: 'สำนักงานใหญ่',
+          account_type: 'ออมทรัพย์',
+        },
+      ],
+      payments: [],
+      approver: {
+        userId: ownerId,
+        displayName: 'ธนกฤต วัฒนาภิรมย์',
+        position: 'กรรมการผู้จัดการ',
+        signatureDataUri: SIGNATURE_PNG,
+        approvedAt: '2025-08-05T09:00:00.000Z',
+      },
+    };
+    const trangPdfBytes = await renderFinancialDocumentPdf({
+      document_type: 'invoice',
+      document_number: 'INV-202507-TRG',
+      snapshot: trangSnapshot,
+    });
+    const trangSha256 = createHash('sha256').update(trangPdfBytes).digest('hex');
+    await client.query(`ALTER TABLE documents DISABLE TRIGGER USER`);
+    await client.query(`ALTER TABLE document_artifacts DISABLE TRIGGER USER`);
+    await client.query(`
+      INSERT INTO documents (
+        id, site_id, billing_cycle_id, document_type, document_number, status,
+        issue_date, amount, revision, is_current, template_version, file_key, snapshot, content_hash
+      ) VALUES (
+        $1, $2, $3, 'invoice', 'INV-202507-TRG', 'issued',
+        '2025-08-05', 45267.38, 1, true, $4, 'local:INV-202507-TRG.pdf', $5::jsonb, $6
+      ) ON CONFLICT (id) DO UPDATE SET template_version = EXCLUDED.template_version, snapshot = EXCLUDED.snapshot, content_hash = EXCLUDED.content_hash, is_current = true
+    `, [trangDocId, trangSiteId, trangCycleId, FINANCIAL_TEMPLATE_VERSION, JSON.stringify(trangSnapshot), trangSha256]);
+    await client.query(`
+      INSERT INTO document_artifacts (document_id, pdf_bytes, sha256, created_at)
+      VALUES ($1, $2, $3, now())
+      ON CONFLICT (document_id) DO UPDATE SET pdf_bytes = EXCLUDED.pdf_bytes, sha256 = EXCLUDED.sha256, created_at = now()
+    `, [trangDocId, trangPdfBytes, trangSha256]);
+    await client.query(`ALTER TABLE document_artifacts ENABLE TRIGGER USER`);
+    await client.query(`ALTER TABLE documents ENABLE TRIGGER USER`);
+    console.log(`  ✓ Generated 5-Page Solar Leasing Packet PDF for INV-202507-TRG (โรงพยาบาลโรคผิวหนังเขตร้อนภาคใต้ จังหวัดตรัง): ${trangPdfBytes.length} bytes`);
 
     await client.query('COMMIT');
     console.log(`\n🎉 Cut-off successfully completed for ${createdCycles.length} sites!`);

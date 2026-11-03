@@ -6,7 +6,7 @@ import type { CustomerPortalBill } from '@solar/api-contracts';
 import type { DatabaseService } from '../../database/database.service.js';
 import type { DashboardService } from '../dashboard/dashboard.service.js';
 import { SettingsService } from '../settings/settings.service.js';
-import { CustomerPortalService, parseCustomerPortalRange } from './customer-portal.service.js';
+import { CustomerPortalService, parseCustomerPortalDate, parseCustomerPortalRange } from './customer-portal.service.js';
 
 const siteId='11111111-1111-4111-8111-111111111111';
 const user={id:'22222222-2222-4222-8222-222222222222',role:'customer_user',customerId:'33333333-3333-4333-8333-333333333333',assignedSiteIds:[siteId]};
@@ -31,6 +31,22 @@ test('range parser defaults only missing input and rejects unsupported values',(
  assert.equal(parseCustomerPortalRange(undefined),'7d');
  assert.equal(parseCustomerPortalRange('7d'),'7d');assert.equal(parseCustomerPortalRange('30d'),'30d');
  for(const value of ['1d','90d','','7D',['7d'],null])assert.throws(()=>parseCustomerPortalRange(value),/Invalid range/);
+});
+test('production date accepts only today through the latest six Bangkok calendar months',()=>{
+ const now=new Date('2026-10-23T08:00:00.000Z');
+ assert.equal(parseCustomerPortalDate('2026-10-23',now),'2026-10-23');
+ assert.equal(parseCustomerPortalDate('2026-05-01',now),'2026-05-01');
+ for(const value of ['2026-04-30','2026-10-24','2026-02-30',''])assert.throws(()=>parseCustomerPortalDate(value,now),/latest six|future|valid date/i);
+});
+
+test('production history stays on the single assigned site and publishes timezone, source and status',async()=>{
+ const calls:any[]=[];
+ const db={query:async(sql:string,values:unknown[])=>({rows:sql.includes('site_account_assignments')?[{id:siteId,name:'Site A',customerName:'Customer A'}]:[]})};
+ const dashboard={getDay:async(principal:unknown,start:string,end:string,site:string)=>{calls.push({principal,start,end,site});return {date:start,sites:[{siteId:site,name:'Site A',energy:{observedKwh:12.5,quality:'complete'},watermark:'2026-10-23T10:00:00Z',points:[{timestamp:'2026-10-22T17:00:00Z',value:1.5,quality:'complete'}]}]};}};
+ const service=new CustomerPortalService(db as any,dashboard as any,new SettingsService(db as any));
+ const result=await service.productionHistory(user,'2026-10-23');
+ assert.deepEqual(calls,[{principal:user,start:'2026-10-23',end:'2026-10-23',site:siteId}]);
+ assert.equal(result.timezone,'Asia/Bangkok');assert.equal(result.source,'telemetry');assert.equal(result.status,'actual');assert.equal(result.dayTotalKwh,12.5);
 });
 test('home rejects missing and noncustomer principals before reading data',async()=>{
  const {service,queries,summaries}=fixture();

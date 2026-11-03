@@ -72,7 +72,62 @@ async function assertIconCentered(button, label) {
   );
 }
 
-test("mobile shell uses a profile menu, neutral dark surfaces and floating navigation", async () => {
+for (const width of [390, 768, 1440, 2560]) {
+  test(`integrated production remains readable at ${width}px and the bounded system date picker loads history`, async () => {
+    const fixture = await customerFixture({ width, locale: "en", route: "/" });
+    const { page, state } = fixture;
+    try {
+      await checkSurface(fixture, "/");
+      await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+      await expect(page.getByText("Asia/Bangkok · Telemetry source")).toBeVisible();
+      await expect(page.getByText("Missing readings are never estimated.")).toBeVisible();
+      await expect(page.getByText("Power flow is unavailable")).toBeVisible();
+      await expect(page.locator("[data-flow-particles]")).toHaveCount(0);
+      await expect(page.locator('input[type="date"]')).toHaveCount(0);
+      await expect(page.locator('details,summary')).toHaveCount(0);
+      await expect(page.locator('nav a[href="/production"]')).toHaveCount(0);
+      await expect(page.locator('[data-customer-dashboard-board="true"]')).toBeVisible();
+      await expect(page.locator('[data-production-kpis="open"]')).toBeVisible();
+      await expect(page.locator('[data-customer-hourly-chart="composed"] .recharts-bar-rectangle')).toHaveCount(1);
+      await expect(page.locator('[data-customer-hourly-chart="composed"] .recharts-line-curve')).toHaveCount(1);
+      await expect(page.locator('[data-trend-chart="bars"] .recharts-bar-rectangle')).toHaveCount(2);
+      await expect(page.locator('[data-financial-record-list="compact"]')).toBeVisible();
+      const date = page.getByRole("button", { name: "Select production date" });
+      await date.click();
+      const picker = page.locator('[data-slot="popover-content"]');
+      const bangkokToday = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Bangkok",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      })
+        .formatToParts(new Date())
+        .reduce((parts, part) => ({ ...parts, [part.type]: part.value }), {});
+      const today = `${bangkokToday.year}-${bangkokToday.month}-${bangkokToday.day}`;
+      const tomorrowDate = new Date(`${today}T00:00:00.000Z`);
+      tomorrowDate.setUTCDate(tomorrowDate.getUTCDate() + 1);
+      const tomorrow = tomorrowDate.toISOString().slice(0, 10);
+      await expect(picker.locator(`[data-day="${tomorrow}"] button`)).toBeDisabled();
+
+      const historyDate = new Date(`${today}T00:00:00.000Z`);
+      historyDate.setUTCMonth(historyDate.getUTCMonth() - 1);
+      historyDate.setUTCDate(Math.min(historyDate.getUTCDate(), 15));
+      const history = historyDate.toISOString().slice(0, 10);
+      if ((await picker.locator(`[data-day="${history}"] button`).count()) === 0) {
+        await picker.locator('.rdp-button_previous').click();
+      }
+      await picker.locator(`[data-day="${history}"] button`).click();
+      await expect.poll(() => state.calls.some(call => call.path === "/v1/customer/portal/production-history" && call.search === `?date=${history}`)).toBe(true);
+      await expect(
+        page.locator(`input[aria-hidden="true"][value="${history}"]`),
+      ).toHaveCount(1);
+    } finally {
+      await fixture.close();
+    }
+  });
+}
+
+test("mobile shell uses a profile menu, neutral dark surfaces and full-width navigation", async () => {
   const fixture = await customerFixture({
     width: 390,
     locale: "en",
@@ -108,10 +163,10 @@ test("mobile shell uses a profile menu, neutral dark surfaces and floating navig
         radius: Number.parseFloat(getComputedStyle(nav).borderRadius),
       };
     });
-    assert.ok(geometry.x >= 12, JSON.stringify(geometry));
-    assert.ok(geometry.width <= 366, JSON.stringify(geometry));
-    assert.ok(geometry.bottomGap >= 8, JSON.stringify(geometry));
-    assert.ok(geometry.radius >= 24, JSON.stringify(geometry));
+    assert.equal(geometry.x, 0, JSON.stringify(geometry));
+    assert.equal(geometry.width, 390, JSON.stringify(geometry));
+    assert.equal(geometry.bottomGap, 0, JSON.stringify(geometry));
+    assert.equal(geometry.radius, 0, JSON.stringify(geometry));
 
     const navigationColors = await page.evaluate(() => {
       const root = document.querySelector(".customer-portal");
@@ -122,7 +177,7 @@ test("mobile shell uses a profile menu, neutral dark surfaces and floating navig
         '.customer-bottom-nav a[href="/"]',
       );
       const probe = document.createElement("span");
-      probe.style.color = "var(--customer-action-primary)";
+      probe.style.color = "var(--customer-link)";
       root.append(probe);
       const primary = getComputedStyle(probe).color;
       probe.remove();
@@ -142,7 +197,7 @@ test("mobile shell uses a profile menu, neutral dark surfaces and floating navig
     assert.notEqual(
       navigationColors.inactiveColor,
       navigationColors.primary,
-      "Only the active icon and label use Solar Gold",
+      "Only the active icon and label use the accessible solar accent",
     );
 
     const palette = await page.locator(".customer-portal").first().evaluate((root) => {
@@ -568,50 +623,24 @@ for (const width of [390, 768, 1280]) {
     }
   });
 
-  test(`${width}: partial submission waits for approval, remaining balance funds a second submission`, async () => {
+  test(`${width}: payment evidence is fixed to the full outstanding amount`, async () => {
     const fixture = await customerFixture({ width, route: recordPath });
     const { page, state } = fixture;
     try {
       await openPayment(page);
-      await evidenceStep(page, { amount: "400.00", name: "first.png" });
-      await submitPayment(page);
-      assert.equal(
-        state.row.outstandingAmount,
-        "1070.13",
-        "Submission does not approve funds",
-      );
-      // Explicit external approval fixture; the browser never calculates a balance.
-      state.row.payments[0].status = "paid";
-      state.row.payments[0].amount = "400.00";
-      state.row.approvedAmount = "400.00";
-      state.row.outstandingAmount = "670.13";
-      state.row.pendingEvidenceCount = 0;
-      state.row.billingStatusView = "partially_paid";
-      await page.reload();
-      await expect(page.locator("#customer-main")).toContainText(
-        "Partially paid",
-      );
-      await expect(
-        page.getByRole("heading", { name: "Payment progress" }).locator(".."),
-      ).toContainText("Paid 400.00 / 1,070.13");
-      await openPayment(page);
-      await evidenceStep(page, { name: "second.png", buffer: alternatePng });
+      await expect(page.getByRole("dialog").locator("#customer-amount")).toHaveCount(0);
+      await expect(page.getByRole("dialog").getByRole("tab", { name: "Other amount" })).toHaveCount(0);
+      await evidenceStep(page, { name: "full.png" });
       await expect(
         page.getByRole("dialog").locator("#customer-payment-review-title").locator(".."),
-      ).toContainText("670.13");
+      ).toContainText("1,070.13");
       await submitPayment(page);
       assert.deepEqual(
         state.posts.map((p) => p.amount),
-        ["400.00", "670.13"],
+        ["1070.13"],
       );
-      assert.notEqual(state.posts[0].evidenceKey, state.posts[1].evidenceKey);
-      assert.notEqual(
-        state.posts[0].slipUrl,
-        state.posts[1].slipUrl,
-        "Distinct transfers have distinct evidence bytes",
-      );
-      assert.equal(state.row.approvedAmount, "400.00");
-      assert.equal(state.row.outstandingAmount, "670.13");
+      assert.equal(state.row.approvedAmount, "0.00");
+      assert.equal(state.row.outstandingAmount, "1070.13", "Evidence does not approve funds");
       await checkSurface(fixture, recordPath);
     } finally {
       await fixture.close();

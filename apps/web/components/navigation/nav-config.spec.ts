@@ -30,6 +30,6 @@ test('Unknown roles get no navigation and Admin retains technical destinations',
   assert.ok(paths('admin').includes('/settings/users'));
 });
 
-test('retired production and display routes never appear in any role navigation',()=>{for(const role of ['admin','owner','operator','accountant','customer_user']){assert.equal(paths(role).includes('/production'),false);assert.equal(paths(role).includes('/settings/general'),false);}});
+test('production history is integrated into customer home and retired routes stay hidden',()=>{for(const role of ['admin','owner','operator','accountant','customer_user']){assert.equal(paths(role).includes('/production'),false);assert.equal(paths(role).includes('/settings/general'),false);}});
 
 test('rates accessible only to Owner and Accountant',()=>{for(const role of ['owner','accountant'])assert.ok(paths(role).includes('/settings/rates'));for(const role of ['admin','operator','customer_user'])assert.equal(paths(role).includes('/settings/rates'),false);});

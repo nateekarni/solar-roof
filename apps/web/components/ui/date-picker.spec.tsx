@@ -25,3 +25,10 @@ test('payment date controls display the saved local time without UTC conversion'
  assert.match(html,/value="2026-10-05"/);
  assert.ok(!html.includes('type="datetime-local"'));
 });
+
+test('muted date controls use the system surface without a white card background',()=>{
+ const html=renderToStaticMarkup(<DatePicker value="2026-10-05" surface="muted" aria-label="Production date"/>);
+ const trigger=html.match(/<button[^>]*aria-label="Production date"[^>]*>/)?.[0]??'';
+ assert.match(trigger,/bg-muted/);
+ assert.doesNotMatch(trigger,/bg-card/);
+});

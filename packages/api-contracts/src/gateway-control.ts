@@ -8,7 +8,7 @@ export type GatewayConnectionState = 'online' | 'offline' | 'unknown';
 export type GatewayAuthenticationMode = 'credential' | 'demo-anonymous';
 export type GatewayJsonValue = string | number | boolean | null | GatewayJsonValue[] | { [key: string]: GatewayJsonValue };
 
-/** Profile vocabulary plus optional physical decoder details; no physical defaults. */
+/** Profile vocabulary plus optional physical decoder details supplied by verified preset revisions. */
 export interface GatewayRegisterMapping {
   tag: string;
   sourceTag?: string;

@@ -80,3 +80,24 @@ export async function acknowledgeGatewayConfiguration(db:DatabaseService,siteCod
   return true;
  });
 }
+
+export async function retireGateway(client:Pick<PoolClient,'query'>,gatewayId:string,actorId:string|undefined){
+ const gateway=(await client.query(`SELECT g.id,g.site_id,g.name FROM gateways g JOIN sites s ON s.id=g.site_id WHERE g.id::text=$1 AND g.retired_at IS NULL AND s.status<>'archived' FOR UPDATE OF g`,[gatewayId])).rows[0];
+ if(!gateway)throw new NotFoundException('Active gateway not found');
+ await client.query("UPDATE gateways SET retired_at=now(),status='offline' WHERE id=$1",[gateway.id]);
+ await client.query("UPDATE devices SET status='offline' WHERE gateway_id=$1",[gateway.id]);
+ await client.query('UPDATE gateway_installation_history SET removed_at=coalesce(removed_at,now()) WHERE gateway_id=$1 AND removed_at IS NULL',[gateway.id]);
+ await client.query("INSERT INTO audit_events(id,actor_id,action,entity_type,entity_id,before_json,after_json,correlation_id) VALUES($1,$2,'technical.gateway.retired','gateway',$3,$4::jsonb,$5::jsonb,$6)",[randomUUID(),actorId??null,gateway.id,JSON.stringify({siteId:gateway.site_id,name:gateway.name,status:'active'}),JSON.stringify({siteId:gateway.site_id,name:gateway.name,status:'retired',historyPreserved:true}),randomUUID()]);
+ return {success:true,retired:true,gatewayId:gateway.id,siteId:gateway.site_id,historyPreserved:true};
+}
+
+export async function retireSite(client:Pick<PoolClient,'query'>,siteId:string,actorId:string|undefined){
+ const site=(await client.query('SELECT id,name,status FROM sites WHERE id=$1 FOR UPDATE',[siteId])).rows[0];
+ if(!site)throw new NotFoundException('Site not found');
+ const active=(await client.query('SELECT id FROM gateways WHERE site_id=$1 AND retired_at IS NULL FOR UPDATE',[siteId])).rows;
+ if(active.length)throw new ConflictException('Remove active gateways first before removing this site');
+ await client.query("UPDATE sites SET status='archived',updated_at=now() WHERE id=$1",[siteId]);
+ await client.query("UPDATE devices SET status='offline' WHERE site_id=$1",[siteId]);
+ await client.query("INSERT INTO audit_events(id,actor_id,action,entity_type,entity_id,before_json,after_json,correlation_id) VALUES($1,$2,'business.site.retired','site',$3,$4::jsonb,$5::jsonb,$6)",[randomUUID(),actorId??null,siteId,JSON.stringify({name:site.name,status:site.status}),JSON.stringify({name:site.name,status:'archived',historyPreserved:true}),randomUUID()]);
+ return {success:true,archived:true,siteId,message:`Site "${site.name}" removed from active use; financial and telemetry history was preserved.`};
+}

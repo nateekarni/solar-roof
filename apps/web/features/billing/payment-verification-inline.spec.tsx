@@ -4,10 +4,11 @@ import test from 'node:test';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {PaymentVerificationDialog} from './payment-verification-dialog';
 import {PaymentHistory} from './payment-history';
-test('inline review exposes review fields without requiring a dialog or fetching a PDF',()=>{
+test('inline review exposes a single full-payment confirmation without editable settlement fields',()=>{
  const html=renderToStaticMarkup(<PaymentVerificationDialog inline open onOpenChange={()=>{}} billingCycle={{id:'bill',amount:'100'}}/>);
- assert.match(html,/verified-amount/);
- assert.match(html,/review-transfer/);
+ assert.match(html,/ยอดคงเหลือเต็มจำนวน/);
+ assert.match(html,/ตรวจสอบและยืนยัน/);
+ assert.doesNotMatch(html,/verified-amount|transfer-time|transfer-reference/);
  assert.doesNotMatch(html,/<iframe/);
 });
 test('reviewed evidence stays accessible in history',()=>{
@@ -23,5 +24,5 @@ test('record documents render selection and related payment link before loading 
 });
 test('inline review cannot submit while current approval capability is unavailable',()=>{
  const html=renderToStaticMarkup(<PaymentVerificationDialog inline open canReview={false} onOpenChange={()=>{}} billingCycle={{id:'bill'}}/>);
- assert.match(html,/<fieldset disabled=""/);
+ assert.match(html,/disabled=""[^>]*>ตรวจสอบและยืนยัน/);
 });

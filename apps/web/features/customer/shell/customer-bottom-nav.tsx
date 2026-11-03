@@ -18,7 +18,7 @@ export function CustomerNavigationLinks({ pathname }: { pathname: string }) {
       (href === "/billing" && pathname.startsWith("/records/billing/"));
     return (
       <Link key={href} href={href} aria-current={active ? "page" : undefined} className="customer-nav-link">
-        <Icon aria-hidden="true" className="size-5 shrink-0" />
+        <Icon aria-hidden="true" className="size-4.5 shrink-0" />
         <span>{t(`customerPortal.shell.${key}`)}</span>
       </Link>
     );
@@ -29,7 +29,7 @@ export function CustomerBottomNav({ pathname }: { pathname: string }) {
   const t = useT();
   return (
     <nav aria-label={t("customerPortal.shell.mobileNavigation")} className="customer-bottom-nav md:hidden">
-      <div className="customer-container grid grid-cols-3 gap-2">
+      <div className="customer-container grid grid-cols-3 gap-1">
         <CustomerNavigationLinks pathname={pathname} />
       </div>
     </nav>

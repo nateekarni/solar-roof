@@ -5,26 +5,24 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { PaymentEvidenceStep } from "./payment-evidence-step";
 import { PaymentPendingStep } from "./payment-pending-step";
 import { createPaymentDraft } from "./customer-payment-model";
-test("evidence has mobile camera selection, decimal amount controls and localized errors", () => {
+test("evidence has mobile camera selection and no partial amount controls", () => {
   const html = renderToStaticMarkup(
     <PaymentEvidenceStep
       draft={{
         ...createPaymentDraft("123.45", "2026-10-18"),
-        amountMode: "other",
       }}
       onChange={() => {}}
       onFile={() => {}}
       locale="en"
-      errors={{ amount: "customerPortal.validation.amountExceedsOutstanding" }}
+      errors={{}}
     />,
   );
   assert.match(html, /accept="image\/jpeg,image\/png,application\/pdf"/);
   assert.match(html, /capture="environment"/);
-  assert.match(html, /Other amount/);
-  assert.match(html, /aria-invalid="true"/);
-  assert.match(html, /cannot exceed/);
+  assert.doesNotMatch(html, /Other amount/);
+  assert.doesNotMatch(html, /id="customer-amount"/);
 });
-test("payment amount is a compact tab choice and evidence immediately follows it", () => {
+test("payment amount is a read-only full outstanding amount and evidence immediately follows it", () => {
   const full = renderToStaticMarkup(
     <PaymentEvidenceStep
       draft={createPaymentDraft("123.45", "2026-10-18")}
@@ -34,25 +32,13 @@ test("payment amount is a compact tab choice and evidence immediately follows it
       errors={{}}
     />,
   );
-  assert.match(full, /role="tablist"/);
-  assert.match(full, /role="tab"[^>]*aria-selected="true"[^>]*>Full outstanding amount/);
-  assert.doesNotMatch(full, /type="radio"/);
+  assert.match(full, /Full outstanding amount/);
+  assert.doesNotMatch(full, /role="tablist"/);
   assert.doesNotMatch(full, /id="customer-amount"/);
   assert.ok(
-    full.indexOf('role="tablist"') <
+    full.indexOf('Full outstanding amount') <
       full.indexOf('data-customer-evidence-picker="true"'),
   );
-
-  const other = renderToStaticMarkup(
-    <PaymentEvidenceStep
-      draft={{ ...createPaymentDraft("123.45", "2026-10-18"), amountMode: "other" }}
-      onChange={() => {}}
-      onFile={() => {}}
-      locale="en"
-      errors={{}}
-    />,
-  );
-  assert.match(other, /id="customer-amount"/);
 });
 test("payment details use one clickable uploader, a date picker, and no customer cash or channel selector", () => {
   const html = renderToStaticMarkup(

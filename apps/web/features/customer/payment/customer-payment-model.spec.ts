@@ -12,7 +12,6 @@ import {
 test("full outstanding amount is default and submission requires review before pending", () => {
   const draft = createPaymentDraft("1000.0000", "2026-10-18");
   assert.equal(draft.amount, "1000.00");
-  assert.equal(draft.amountMode, "full");
   assert.equal(draft.evidence, null);
   assert.equal("paymentMethod" in draft, false);
   assert.equal(draft.transferChannel, "bank_account");
@@ -21,7 +20,7 @@ test("full outstanding amount is default and submission requires review before p
   assert.equal(paymentTransition("review", "submitted"), "pending");
   assert.equal(paymentTransition("payment", "submitted"), "payment");
 });
-test("strict decimal strings reject coercion, excess precision, nonpositive and excess amounts", () => {
+test("payment draft is locked to the full outstanding amount", () => {
   for (const amount of [
     "0",
     "-1",
@@ -42,16 +41,8 @@ test("strict decimal strings reject coercion, excess precision, nonpositive and 
       amount,
     );
   }
-  assert.deepEqual(
-    validatePaymentDraft(
-      { amount: "1200", outstanding: "1000", paidAt: "2026-10-19" },
-      "2026-10-18",
-    ),
-    {
-      amount: "customerPortal.validation.amountExceedsOutstanding",
-      paidAt: "customerPortal.validation.futurePaidDate",
-    },
-  );
+  assert.equal(validatePaymentDraft({amount:"999.99",outstanding:"1000",paidAt:"2026-10-18"},"2026-10-18").amount,"customerPortal.validation.fullAmountRequired");
+  assert.equal(validatePaymentDraft({amount:"1200",outstanding:"1000",paidAt:"2026-10-18"},"2026-10-18").amount,"customerPortal.validation.fullAmountRequired");
   for (const paidAt of ["2026-02-30", "", "2026-1-01"])
     assert.equal(
       validatePaymentDraft(
@@ -69,7 +60,7 @@ test("strict decimal strings reject coercion, excess precision, nonpositive and 
       },
       "2026-10-18",
     ),
-    {},
+    {amount: "customerPortal.validation.fullAmountRequired"},
   );
 });
 test("evidence accepts JPEG PNG PDF at the 10 MB boundary only", () => {
@@ -88,8 +79,6 @@ test("evidence accepts JPEG PNG PDF at the 10 MB boundary only", () => {
 test("submission declares a Bangkok date and metadata without claiming a verified amount", () => {
   const draft = {
     ...createPaymentDraft("1000", "2026-10-18"),
-    amountMode: "other" as const,
-    amount: "012.5",
     note: "  reference  ",
     evidence: { name: "receipt.png", type: "image/png", size: 1 },
     evidenceKey: "unique",
@@ -97,7 +86,7 @@ test("submission declares a Bangkok date and metadata without claiming a verifie
     transferChannel: "promptpay" as const,
   };
   assert.deepEqual(paymentSubmission(draft), {
-    amount: "12.50",
+    amount: "1000.00",
     paidAt: "2026-10-18T05:00:00.000Z",
     paymentMethod: "bank_transfer",
     transferChannel: "promptpay",

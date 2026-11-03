@@ -50,14 +50,14 @@ export function CustomerTopNav({ pathname }: { pathname: string }) {
 
   return (
     <header className="customer-top-nav">
-      <div className="customer-container flex min-h-18 items-center justify-between gap-3 py-2">
+      <div className="customer-container flex min-h-14 items-center justify-between gap-3 py-1">
         <Link
           href="/"
           aria-label={t("customerPortal.shell.home")}
           className="flex min-h-11 min-w-11 items-center justify-center gap-2 font-semibold"
         >
-          <BrandMark className="size-8" />
-          <span className="hidden sm:inline">{BRAND_NAME}</span>
+          <BrandMark className="size-7" />
+          <span className="text-sm sm:inline">{BRAND_NAME}</span>
         </Link>
         <nav
           aria-label={t("customerPortal.shell.desktopNavigation")}

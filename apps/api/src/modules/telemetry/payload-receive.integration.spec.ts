@@ -90,8 +90,8 @@ test('real local MQTT + PostgreSQL bundle ACK, unit conversion, replay and parti
   await pool.query('CREATE TABLE telemetry_archive_scan(site_id uuid PRIMARY KEY REFERENCES sites(id),next_from timestamptz,completed boolean NOT NULL DEFAULT false)');
   await pool.query('INSERT INTO telemetry_archive_dirty VALUES($1,now())',[siteId]);
   await pool.query('INSERT INTO telemetry_archive_scan(site_id) VALUES($1)',[siteId]);
-  await assets.deleteSite(siteId);
-  assert.equal((await pool.query('SELECT count(*)::int AS count FROM sites WHERE id=$1',[siteId])).rows[0].count,0);
+  await assert.rejects(assets.deleteSite(siteId,{}),/Remove active gateways first/);
+  assert.equal((await pool.query('SELECT count(*)::int AS count FROM sites WHERE id=$1',[siteId])).rows[0].count,1);
  }finally {
   await Promise.all([receiver.endAsync(true),sender.endAsync(true)]);
   await pool.end();

@@ -4,12 +4,13 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 const logoHash=(uri:string)=>createHash('sha256').update(Buffer.from(uri.split(',')[1]!, 'base64')).digest('hex');
-function issuanceDb(db:any):DatabaseService {
+const savedApprovalSignature=`data:image/png;base64,${readFileSync(new URL('../../../../web/public/brand/solar-roof-mark.png',import.meta.url)).toString('base64')}`;
+function issuanceDb(db:any,signatureData:string|null=savedApprovalSignature):DatabaseService {
  return {transaction:async(run:any)=>db.transaction(async(client:any)=>run({query:async(sql:string,params:unknown[]=[])=>{
   if(sql.includes('SELECT id,role,status,permission_revision FROM users'))return {rows:[{id:'owner',role:'owner',status:'active',permission_revision:1}]};
   if(sql.includes('FROM employee_domain_grants'))return {rows:[]};
   if(sql.includes('SELECT to_char(b.period_end'))return {rows:[{period:'2026-09',customer:'Customer',site:'Site'}]};
-  if(sql.includes('p.name AS position')&&params[0]==='owner')return {rows:[{id:'owner',display_name:'Invoice approver',position:'Director',signature_data:null}]};
+  if(sql.includes('p.name AS position')&&params[0]==='owner')return {rows:[{id:'owner',display_name:'Invoice approver',position:'Director',signature_data:signatureData}]};
   if(sql==='SELECT now() AS value')return {rows:[{value:new Date('2026-10-14T01:00:00Z')}]};
   const result=await client.query(sql,params);
   if(sql.includes('SELECT * FROM billing_cycles'))return {rows:result.rows.map((cycle:any)=>({...cycle,status:cycle.status==='paid'?'paid':cycle.status==='pending_verification'?'pending_verification':'pending_issue_approval'}))};
@@ -149,7 +150,41 @@ test('future financial originals freeze protocol site identity and persist the r
  if(sql.includes('AS starts'))return {rows:[{starts:'2026-09-01',ends:'2026-09-30'}]};
  if(sql.includes('INSERT INTO documents')){persisted=JSON.parse(params[7]);insertedVersion=params[10];return {rows:[{id:params[0],snapshot:persisted}]};}return {rows:[]};}})};
  const service=new FinancialApplicationService(issuanceDb(db),{assertEnabled:async()=>({scope:'TEST'})} as unknown as FinancialReadinessService);
- const result=await service.issueInvoice('cycle','owner');assert.equal(result.document.snapshot.customer.external_site_id,'PROTOCOL-002');assert.equal(persisted.templateVersion,'sarabun-a4-v11');assert.equal(insertedVersion,'sarabun-a4-v11');assert.equal(persisted.logoDataUri,persisted.logo);assert.equal(persisted.brandPrimary,'#f29700');assert.equal(persisted.policyHash,TEST_FINANCIAL_POLICY_HASH);assert.equal(persisted.policy.logo,'/brand/solar-roof-document.png');assert.equal(logoHash(persisted.logo),createHash('sha256').update(readFileSync(new URL('../../../../web/public/brand/solar-roof-document-stacked.png',import.meta.url))).digest('hex'));
+ const result=await service.issueInvoice('cycle','owner');assert.equal(result.document.snapshot.customer.external_site_id,'PROTOCOL-002');assert.equal(persisted.templateVersion,'solar-leasing-packet-v13');assert.equal(insertedVersion,'solar-leasing-packet-v13');assert.deepEqual(persisted.attachmentSlots,[{kind:'production_form',status:'awaiting_file',documentRevision:1,templateVersion:'solar-leasing-packet-v13'}]);assert.equal(persisted.logoDataUri,persisted.logo);assert.equal(persisted.brandPrimary,'#f29700');assert.equal(persisted.policyHash,TEST_FINANCIAL_POLICY_HASH);assert.equal(persisted.policy.logo,'/brand/solar-roof-document.png');assert.equal(logoHash(persisted.logo),createHash('sha256').update(readFileSync(new URL('../../../../web/public/brand/solar-roof-document-stacked.png',import.meta.url))).digest('hex'));
+});
+
+test('new billing statements require a saved approval signature before rendering or persistence',async()=>{
+ let rendered=0;let writes=0;
+ const cycle={id:'cycle',site_id:'site-a',contract_id:'contract-a',quality:'complete',policy_hash:TEST_FINANCIAL_POLICY_HASH,amount:'107.00',subtotal:'100.00',simulated_tax:'7.00',meter_snapshot:[{from:'2026-09-01',to:'2026-10-01',consumedKwh:'25.000',rate:'4.0000',subtotal:'100.00'}]};
+ const db={transaction:async(run:any)=>run({query:async(sql:string)=>{
+  if(sql.includes('SELECT * FROM billing_cycles'))return {rows:[cycle]};
+  if(sql.includes('SELECT * FROM documents')||sql.includes('FROM billing_replacement_drafts'))return {rows:[]};
+  if(sql.includes('FROM site_billing_settings cfg JOIN sites'))return {rows:[{contract_number:'PPA261000001',company_name:'Synthetic customer',tax_id:'1111111111111',tax_address:'Customer address',site_name:'Site',external_site_id:'PROTOCOL-002',payment_term_days:30,tax_confirmed:true,tax_rate:'7.0000',prices_include_tax:false,recipient_user_ids:[]}]};
+  if(sql.includes('FROM company_profile'))return {rows:[{company_name:'Synthetic issuer',tax_id:'0000000000000',address:'Issuer address'}]};
+  if(sql.includes('FROM company_bank_accounts'))return {rows:[{bank_name:'Receiving bank',account_name:'Issuer',account_number:'9999'}]};
+  if(sql.includes("AS day"))return {rows:[{day:'2026-10-08'}]};
+  if(sql.includes('document_number_series'))return {rows:[{last_value:1}]};
+  if(sql.includes('AS starts'))return {rows:[{starts:'2026-09-01',ends:'2026-09-30'}]};
+  if(/INSERT INTO documents|INSERT INTO document_artifacts|INSERT INTO financial_delivery_outbox|UPDATE billing_cycles/.test(sql)){writes++;return {rows:[{id:'document'}]};}
+  return {rows:[]};
+ }})};
+ const service=new FinancialApplicationService(issuanceDb(db,null),{assertEnabled:async()=>({scope:'TEST'})} as unknown as FinancialReadinessService,undefined,async()=>{rendered++;return Buffer.from('%PDF-1.7');});
+ await assert.rejects(service.issueInvoice('cycle','owner'),error=>error instanceof ConflictException&&error.getStatus()===409&&/ลายเซ็น|signature/i.test(error.message));
+ assert.equal(rendered,0);assert.equal(writes,0);
+});
+
+test('historical issued statement replay does not require the approver to still have a signature',async()=>{
+ const existing={id:'document',status:'issued',is_current:true,document_number:'INV261000001',snapshot:{policy:{scope:'TEST'}}};
+ let writes=0;
+ const db={transaction:async(run:any)=>run({query:async(sql:string)=>{
+  if(sql.includes('SELECT * FROM billing_cycles'))return {rows:[{id:'cycle',site_id:'site-a'}]};
+  if(sql.includes('FROM billing_replacement_drafts'))return {rows:[]};
+  if(sql.includes('SELECT * FROM documents'))return {rows:[existing]};
+  if(/INSERT|UPDATE|DELETE/.test(sql))writes++;
+  return {rows:[]};
+ }})};
+ const result=await new FinancialApplicationService(issuanceDb(db,null),{assertEnabled:async()=>{throw new Error('replay must not revalidate readiness');}} as unknown as FinancialReadinessService).issueInvoice('cycle','owner');
+ assert.equal(result.created,false);assert.equal(result.document.id,'document');assert.equal(writes,0);
 });
 
 // Missing persistence/normalization must fail here, independently of SQL column ordering.
@@ -170,35 +205,35 @@ function paymentSubmissionHarness() {
  }})};
  return {saved,service:new FinancialApplicationService(db as unknown as DatabaseService,{} as FinancialReadinessService)};
 }
-test('transfer submissions persist trimmed optional payer metadata with exact amounts',async()=>{
+test('full transfer submissions persist trimmed optional payer metadata with exact amounts',async()=>{
  const {saved,service}=paymentSubmissionHarness();
- await service.submitPayment('cycle',{amount:'107.00',evidenceKey:'metadata',payerName:'  ผู้จ่ายจริง  ',paymentMethod:' promptpay ',originBank:' ธนาคารผู้จ่าย ',originAccount:' 001-234 '} as any,'actor');
- assert.equal(saved[0]!.payer_name,'ผู้จ่ายจริง');assert.equal(saved[0]!.payment_method,'bank_transfer');assert.equal(saved[0]!.transfer_channel,'promptpay');assert.equal(saved[0]!.origin_bank,'ธนาคารผู้จ่าย');assert.equal(saved[0]!.origin_account,'001-234');assert.equal(saved[0]!.declared_amount,'107.00');assert.equal(saved[0]!.amount,null);
+ await service.submitPayment('cycle',{amount:'1000.00',evidenceKey:'metadata',payerName:'  ผู้จ่ายจริง  ',paymentMethod:' promptpay ',originBank:' ธนาคารผู้จ่าย ',originAccount:' 001-234 '} as any,'actor');
+ assert.equal(saved[0]!.payer_name,'ผู้จ่ายจริง');assert.equal(saved[0]!.payment_method,'bank_transfer');assert.equal(saved[0]!.transfer_channel,'promptpay');assert.equal(saved[0]!.origin_bank,'ธนาคารผู้จ่าย');assert.equal(saved[0]!.origin_account,'001-234');assert.equal(saved[0]!.declared_amount,'1000.00');assert.equal(saved[0]!.amount,null);
 });
 test('malformed payer metadata fails before payment persistence',async()=>{
  for(const field of ['payerName','originBank','originAccount'])for(const value of [123,{},[],true]){
-  const {saved,service}=paymentSubmissionHarness();await assert.rejects(()=>service.submitPayment('cycle',{amount:'107.00',evidenceKey:'invalid',[field]:value} as any,'actor'),(error:any)=>error.getStatus()===400);assert.equal(saved.length,0);
+  const {saved,service}=paymentSubmissionHarness();await assert.rejects(()=>service.submitPayment('cycle',{amount:'1000.00',evidenceKey:'invalid',[field]:value} as any,'actor'),(error:any)=>error.getStatus()===400);assert.equal(saved.length,0);
  }
  for(const metadata of [{payerName:'x'.repeat(201)},{originBank:'x'.repeat(121)},{originAccount:'x'.repeat(81)},{paymentMethod:'cash'},{paymentMethod:'card'},{paymentMethod:1}]){
-  const {saved,service}=paymentSubmissionHarness();await assert.rejects(()=>service.submitPayment('cycle',{amount:'107.00',evidenceKey:'invalid',...metadata} as any,'actor'),(error:any)=>error.getStatus()===400);assert.equal(saved.length,0);
+  const {saved,service}=paymentSubmissionHarness();await assert.rejects(()=>service.submitPayment('cycle',{amount:'1000.00',evidenceKey:'invalid',...metadata} as any,'actor'),(error:any)=>error.getStatus()===400);assert.equal(saved.length,0);
  }
 });
 test('legacy omission and optional blank fields persist no fabricated payer information',async()=>{
  for(const metadata of [{},{payerName:' ',paymentMethod:' ',originBank:null,originAccount:''}]){
-  const {saved,service}=paymentSubmissionHarness();await service.submitPayment('cycle',{amount:'107.00',evidenceKey:'legacy',...metadata} as any,'actor');
+  const {saved,service}=paymentSubmissionHarness();await service.submitPayment('cycle',{amount:'1000.00',evidenceKey:'legacy',...metadata} as any,'actor');
   for(const field of ['payer_name','payment_method','origin_bank','origin_account'])assert.equal(saved[0]![field]??null,null);
  }
 });
 test('payer fields accept their trimmed maximum lengths and both transfer channels',async()=>{
  for(const transferChannel of ['bank_account','promptpay']){
-  const {saved,service}=paymentSubmissionHarness();await service.submitPayment('cycle',{amount:'107.00',evidenceKey:'limits',payerName:' '+ 'ก'.repeat(200)+' ',originBank:'x'.repeat(120),originAccount:'0'.repeat(80),paymentMethod:'bank_transfer',transferChannel} as any,'actor');assert.equal(saved[0]!.payer_name,'ก'.repeat(200));assert.equal(saved[0]!.payment_method,'bank_transfer');assert.equal(saved[0]!.transfer_channel,transferChannel);
+  const {saved,service}=paymentSubmissionHarness();await service.submitPayment('cycle',{amount:'1000.00',evidenceKey:'limits',payerName:' '+ 'ก'.repeat(200)+' ',originBank:'x'.repeat(120),originAccount:'0'.repeat(80),paymentMethod:'bank_transfer',transferChannel} as any,'actor');assert.equal(saved[0]!.payer_name,'ก'.repeat(200));assert.equal(saved[0]!.payment_method,'bank_transfer');assert.equal(saved[0]!.transfer_channel,transferChannel);
  }
 });
 
-test('approval freezes all approved transfer metadata, excludes rejected history and reuses the frozen original on retry',async()=>{
+test('full approval freezes one submitted transfer and rejects a second settlement review',async()=>{
  let persisted:any;let artifactCount=0;
  const cycle={id:'cycle',site_id:'site-a',contract_id:'contract-a',status:'pending_verification',quality:'complete',policy_hash:TEST_FINANCIAL_POLICY_HASH,amount:'107.00',subtotal:'100.00',simulated_tax:'7.00',meter_snapshot:[]};
- const transfers=[{id:'a',billing_cycle_id:'cycle',amount:'57.00',verified_amount:null as string|null,status:'pending_verification',paid_at:'2026-10-08T01:00:00Z',payer_name:'Payer',payment_method:'promptpay',origin_bank:'Payer bank',origin_account:'00123'},{id:'b',billing_cycle_id:'cycle',amount:'50.00',status:'pending_verification',paid_at:'2026-10-08T02:00:00Z'},{id:'old',billing_cycle_id:'cycle',amount:'107.00',status:'rejected',paid_at:'2026-10-07T01:00:00Z',payer_name:'Rejected payer'}];
+ const transfers=[{id:'a',billing_cycle_id:'cycle',amount:null,declared_amount:'107.00',verified_amount:null as string|null,status:'pending_verification',declared_transfer_at:'2026-10-08T01:00:00Z',payer_name:'Payer',payment_method:'promptpay',origin_bank:'Payer bank',origin_account:'00123'},{id:'old',billing_cycle_id:'cycle',amount:'107.00',status:'rejected',paid_at:'2026-10-07T01:00:00Z',payer_name:'Rejected payer'}];
  const db={transaction:async(run:any)=>run({query:async(sql:string,params:any[]=[])=>{
  if(sql.includes('SELECT employee_can_access'))return {rows:[{allowed:true}]}; if(sql.includes('SELECT role,status FROM users'))return {rows:[{role:'accountant',status:'active'}]};
  if(sql.includes('p.name AS position'))return {rows:[{id:'accountant',display_name:'Reviewer',position:'Accountant',signature_data:null}]};
@@ -206,7 +241,7 @@ test('approval freezes all approved transfer metadata, excludes rejected history
  if(sql.includes('SELECT * FROM billing_cycles'))return {rows:[cycle]};
  if(sql.includes('SELECT * FROM documents'))return {rows:persisted?[persisted]:[]};
  if(sql.includes('SELECT * FROM payments'))return {rows:sql.includes("status='paid'")?transfers.filter(p=>p.status==='paid'):transfers};
- if(sql.includes('UPDATE payments'))for(const p of transfers)if(p.id===params[0]){p.status=params[1];(p as any).verified_amount=params[4];}
+ if(sql.includes('UPDATE payments'))for(const p of transfers)if(p.id===params[0]){p.status=params[1];(p as any).verified_amount=params[4];p.amount=params[4];(p as any).paid_at=params[5];}
  if(sql.includes('FROM site_billing_settings cfg JOIN sites'))return {rows:[{contract_number:'PPA261000001',company_name:'Synthetic customer',tax_id:'1111111111111',tax_address:'Customer address',payment_term_days:30,tax_confirmed:true,tax_rate:'7.0000',prices_include_tax:false,recipient_user_ids:['recipient']}]};
  if(sql.includes('FROM company_profile'))return {rows:[{company_name:'Synthetic issuer',tax_id:'0000000000000',address:'Issuer address'}]};
  if(sql.includes('FROM company_bank_accounts'))return {rows:[{bank_name:'Receiving bank',account_name:'Issuer',account_number:'9999'}]};
@@ -220,17 +255,15 @@ test('approval freezes all approved transfer metadata, excludes rejected history
  if(sql.startsWith('UPDATE billing_cycles'))cycle.status=params[1];
  return {rows:[]};}})};
  const service=new FinancialApplicationService(db as unknown as DatabaseService,{assertEnabled:async()=>{}} as unknown as FinancialReadinessService);
- await service.verifyPayment('cycle','approved',undefined,'accountant',{paymentId:'a',verifiedAmount:'57.00',verifiedTransferAt:'2026-10-08T01:00:00Z'});
- const result=await service.verifyPayment('cycle','approved',undefined,'accountant',{paymentId:'b',verifiedAmount:'50.00',verifiedTransferAt:'2026-10-08T02:00:00Z'});
- assert.deepEqual(result.receipt.snapshot.payments.map((p:any)=>p.id),['a','b']);assert.equal(result.receipt.snapshot.payments[0].payer_name,'Payer');assert.equal(result.receipt.snapshot.payments[0].origin_account,'00123');assert.equal(result.receipt.snapshot.payments[1].payer_name,undefined);assert.equal(artifactCount,2);
- transfers[0]!.payer_name='Changed later';const retry=await service.verifyPayment('cycle','approved',undefined,'accountant',{paymentId:'b',verifiedAmount:'50.00',verifiedTransferAt:'2026-10-08T02:00:00Z'});assert.equal(retry.receipt.snapshot.payments[0].payer_name,'Payer');assert.equal(artifactCount,2);assert.equal(retry.receipt.id,result.receipt.id);
+ const result=await service.verifyPayment('cycle','approved',undefined,'accountant',{paymentId:'a'});
+ assert.deepEqual(result.receipt.snapshot.payments.map((p:any)=>p.id),['a']);assert.equal(result.receipt.snapshot.payments[0].payer_name,'Payer');assert.equal(result.receipt.snapshot.payments[0].origin_account,'00123');assert.equal(artifactCount,1);
+ await assert.rejects(()=>service.verifyPayment('cycle','approved',undefined,'accountant',{paymentId:'a'}),/already settled/i);assert.equal(artifactCount,1);
 });
 
-test('additional TEST evidence retains each transfer metadata independently without overwriting prior submissions',async()=>{
+test('TEST evidence rejects partial submissions before persistence',async()=>{
  const {saved,service}=paymentSubmissionHarness();
- await service.submitPayment('cycle',{amount:'57.00',evidenceKey:'first',payerName:'First payer',paymentMethod:'bank_transfer',originAccount:'00123'},'actor');
- await service.submitPayment('cycle',{amount:'50.00',evidenceKey:'second',payerName:'Second payer',paymentMethod:'bank_transfer',transferChannel:'promptpay'},'actor');
- assert.equal(saved.length,2);assert.equal(saved[0]!.payer_name,'First payer');assert.equal(saved[0]!.origin_account,'00123');assert.equal(saved[1]!.payer_name,'Second payer');assert.equal(saved[1]!.origin_account,null);assert.notEqual(saved[0]!.id,saved[1]!.id);
+ await assert.rejects(()=>service.submitPayment('cycle',{amount:'999.99',evidenceKey:'short',payerName:'First payer'},'actor'),/full outstanding/i);
+ assert.equal(saved.length,0);
 });
 
 test('uploaded invoice and receipt logos stay frozen with saved PDF hashes after company replacement and replay',async()=>{
@@ -251,7 +284,7 @@ test('uploaded invoice and receipt logos stay frozen with saved PDF hashes after
   if(sql.includes('FROM company_bank_accounts'))return {rows:[{bank_name:'Receiving bank',account_name:'Account name',account_number:'1234'}]};
   if(sql.includes('FROM users u'))return {rows:[{id:'recipient',email:'verified@example.invalid',name:'Verified recipient'}]};
   if(sql.includes('SELECT * FROM payments'))return {rows:sql.includes("status='paid'")&&payment.status!=='paid'?[]:[payment]};
-  if(sql.includes('UPDATE payments')){payment.status=params[1];payment.verified_amount=params[4];}
+  if(sql.includes('UPDATE payments')){payment.status=params[1];payment.verified_amount=params[4];payment.paid_at=params[5];}
   if(sql.includes('AS day'))return {rows:[{day:'2026-10-08'}]};
   if(sql.includes('document_number_series'))return {rows:[{last_value:1}]};
   if(sql.includes('SELECT document_number,snapshot'))return {rows:documents.filter(d=>d.document_type==='invoice')};
@@ -269,7 +302,7 @@ test('uploaded invoice and receipt logos stay frozen with saved PDF hashes after
  const receipt=(await service.verifyPayment('cycle','approved',undefined,'accountant',{paymentId:'payment',verifiedAmount:'107.00',verifiedTransferAt:'2026-10-08T01:00:00Z'})).receipt;
  assert.equal(receipt.snapshot.logoDataUri,uploaded);assert.equal(receipt.snapshot.logo,uploaded);assert.equal(receipt.snapshot.company.company_name,'Issuer at issuance');
  const receiptSnapshot=JSON.stringify(receipt.snapshot),receiptBytes=Buffer.from(artifacts.get(receipt.id)!.bytes),receiptHash=receipt.content_hash;
- await service.issueInvoice('cycle','owner');await service.verifyPayment('cycle','approved',undefined,'accountant',{paymentId:'payment',verifiedAmount:'107.00',verifiedTransferAt:'2026-10-08T01:00:00Z'});
+ await service.issueInvoice('cycle','owner');await assert.rejects(()=>service.verifyPayment('cycle','approved',undefined,'accountant',{paymentId:'payment',verifiedAmount:'107.00',verifiedTransferAt:'2026-10-08T01:00:00Z'}),/already settled/i);
  assert.equal(documents.length,2);assert.equal(artifacts.size,2);
  for(const [document,snapshot,bytes,hash] of [[invoice,invoiceSnapshot,invoiceBytes,invoiceHash],[receipt,receiptSnapshot,receiptBytes,receiptHash]] as const){
   assert.equal(JSON.stringify(document.snapshot),snapshot);assert.deepEqual(artifacts.get(document.id)!.bytes,bytes);assert.equal(artifacts.get(document.id)!.sha256,hash);assert.equal(createHash('sha256').update(bytes).digest('hex'),hash);assert.equal(bytes.subarray(0,5).toString(),'%PDF-');

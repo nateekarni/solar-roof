@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import * as React from "react";
-import { AlertTriangle, Archive, Trash2 } from "lucide-react";
+import { AlertTriangle, Trash2 } from "lucide-react";
 import { notify } from "../../components/feedback/notifications";
 import { Button } from "../../components/ui/button";
 import {
@@ -29,31 +29,28 @@ export function SiteDeleteDialog({
   const t = useT();
   const locale = useLocale();
   const [loading, setLoading] = React.useState(false);
-  const [hasLinkedError, setHasLinkedError] = React.useState(false);
+  const [gatewayError,setGatewayError]=React.useState(false);
   const [errorMessage, setErrorMessage] = React.useState("");
 
   React.useEffect(() => {
     if (open) {
-      setHasLinkedError(false);
+      setGatewayError(false);
       setErrorMessage("");
     }
   }, [open]);
 
-  const handleDelete = async (mode?: "archive") => {
+  const handleDelete = async () => {
     if (!site) return;
     setLoading(true);
     try {
-      const url = mode === "archive" ? `/v1/sites/${site.id}?mode=archive` : `/v1/sites/${site.id}`;
-      const res = await apiClient.delete<{ success: boolean; message: string; archived?: boolean }>(url);
+      const res = await apiClient.delete<{ success: boolean; message: string; archived?: boolean }>(`/v1/sites/${encodeURIComponent(site.id)}`);
       notify.success(res.message || "ดำเนินการสำเร็จ");
       onOpenChange(false);
       router.refresh();
     } catch (err: any) {
-      const msg = err.message || "ไม่สามารถลบไซต์งานได้";
+      const msg = err.message || "ไม่สามารถนำไซต์งานออกได้";
       setErrorMessage(msg);
-      // If error indicates linked contracts/billing cycles, offer archive
-      if (msg.includes("สัญญา") || msg.includes("รอบบิล") || msg.includes("Archive") || msg.includes("ระงับการใช้งาน")) {
-        setHasLinkedError(true);
+      if(/active gateways|gateways first/i.test(msg)){setGatewayError(true);
       } else {
         notify.error(msg);
       }
@@ -72,39 +69,21 @@ export function SiteDeleteDialog({
             </div>
             <div>
               <DialogTitle className="text-base font-semibold text-destructive">
-                {locale === "th" ? "ยืนยันการลบไซต์งาน" : "Delete Solar Site"}
+                {locale === "th" ? "ยืนยันการนำไซต์งานออก" : "Remove Solar Site"}
               </DialogTitle>
               <DialogDescription className="text-xs">
                 {locale === "th"
-                  ? `คุณต้องการลบไซต์งาน "${site?.name || ""}" หรือไม่?`
-                  : `Are you sure you want to delete "${site?.name || ""}"?`}
+                  ? `คุณต้องการนำไซต์งาน "${site?.name || ""}" ออกจากการใช้งานหรือไม่?`
+                  : `Remove "${site?.name || ""}" from active use?`}
               </DialogDescription>
             </div>
           </div>
         </DialogHeader>
 
         <div className="space-y-3 py-2 text-xs">
-          {hasLinkedError ? (
-            <div className="rounded-xl border border-warning/30 bg-warning/10 p-3.5 space-y-2 text-warning-emphasis ">
-              <div className="flex items-start gap-2">
-                <AlertTriangle className="size-4 shrink-0 mt-0.5 text-warning-emphasis" />
-                <div className="space-y-1">
-                  <p className="font-semibold">ไม่สามารถลบข้อมูลถาวรได้</p>
-                  <p className="text-[11px] leading-relaxed">{errorMessage}</p>
-                </div>
-              </div>
-              <p className="text-[11px] text-muted-foreground pt-1 border-t border-warning/20">
-                ท่านสามารถเลือกระงับการใช้งาน (Archive) เพื่อคงประวัติบิลและสัญญาไว้ในระบบ โดยปิดการรับส่งข้อมูลโทรมาตรของเกตเวย์
-              </p>
-            </div>
-          ) : (
+          {gatewayError ? <div className="rounded-xl border border-warning/30 bg-warning/10 p-3.5 text-warning-emphasis"><div className="flex items-start gap-2"><AlertTriangle className="mt-0.5 size-4 shrink-0"/><div><p className="font-semibold">{locale==='th'?'ต้องนำเกตเวย์ออกก่อน':'Remove gateways first'}</p><p className="mt-1 text-[11px] leading-relaxed">{locale==='th'?'ไซต์นี้ยังมีเกตเวย์ที่ทำงานอยู่ ให้นำเกตเวย์ออกจากหน้าเกตเวย์แล้วจึงกลับมานำไซต์ออก':'This site still has an active gateway. Remove it from the gateway screen, then return to remove the site.'}</p><p className="mt-1 text-[11px]">{errorMessage}</p></div></div></div> : (
             <div className="text-muted-foreground text-xs leading-relaxed space-y-1.5 border-t pt-4">
-              <p>
-                การลบไซต์งานจะทำการลบข้อมูลเกตเวย์, อุปกรณ์มิเตอร์ และประวัติการอ่านค่าที่เกี่ยวข้องของไซต์นี้ทั้งหมด
-              </p>
-              <p className="text-[11px] text-warning-emphasis font-medium">
-                * หากไซต์งานมีสัญญาหรือรอบบิลผูกอยู่ ระบบจะแจ้งให้ระงับการใช้งาน (Archive) แทนการลบถาวร
-              </p>
+              <p>{locale==='th'?'ระบบจะนำไซต์ออกจากการใช้งานและเก็บประวัติการเงินและโทรมาตรไว้':'The site will be removed from active use while financial and telemetry history is preserved.'}</p>
             </div>
           )}
         </div>
@@ -120,42 +99,18 @@ export function SiteDeleteDialog({
             {t("common.cancel")}
           </Button>
 
-          {hasLinkedError ? (
-            <Button
-              type="button"
-              size="sm"
-              disabled={loading}
-              onClick={() => handleDelete("archive")}
-              className="text-xs h-10 px-4 gap-1.5 font-semibold cursor-pointer bg-warning text-warning-foreground hover:bg-warning/90 shadow-xs"
-            >
-              <Archive className="size-3.5" />
-              <span>{locale === "th" ? "ระงับการใช้งาน (Archive)" : "Archive Site"}</span>
-            </Button>
-          ) : (
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={loading}
-                onClick={() => handleDelete("archive")}
-                className="text-xs h-10 px-3 gap-1 cursor-pointer text-muted-foreground hover:text-foreground"
-              >
-                <Archive className="size-3.5" />
-                <span>{locale === "th" ? "ระงับใช้งาน" : "Archive"}</span>
-              </Button>
+          {!gatewayError&&(
               <Button
                 type="button"
                 variant="destructive"
                 size="sm"
                 disabled={loading}
-                onClick={() => handleDelete()}
+                onClick={handleDelete}
                 className="text-xs h-10 px-4 gap-1 font-semibold cursor-pointer"
               >
                 <Trash2 className="size-3.5" />
-                <span>{loading ? t("common.deleting") : locale === "th" ? "ลบไซต์งาน" : "Delete Site"}</span>
+                <span>{loading ? t("common.deleting") : locale === "th" ? "นำไซต์ออก" : "Remove Site"}</span>
               </Button>
-            </div>
           )}
         </DialogFooter>
       </DialogContent>

@@ -76,8 +76,7 @@ async function fixture(handleApi) {
       type: "module",
       content: bundle.outputFiles[0].text,
     });
-    await page.getByRole("button", { name: "7 days", exact: true }).waitFor();
-    await page.getByText("View energy readings", { exact: true }).click();
+    await page.getByRole("tab", { name: "7 days", exact: true }).waitFor();
     return { browser, page, errors };
   } catch (error) {
     await browser.close();
@@ -104,10 +103,13 @@ test("mounted range request recovers expired access through the existing refresh
     return route.fulfill({ json: thirtyDays });
   });
   try {
-    await page.getByRole("button", { name: "30 days", exact: true }).click();
+    await page.getByRole("tab", { name: "30 days", exact: true }).click();
+    await page.locator('[data-energy-range-summary]').getByText('99.25', { exact: false }).first().waitFor();
+    await page.getByRole('button', { name: 'View energy readings', exact: true }).click();
     await page
       .getByRole("cell", { name: "99.25", exact: true })
       .waitFor({ state: "attached" });
+    await page.keyboard.press('Escape');
     assert.deepEqual(requests, [
       {
         path: "/v1/customer/portal/home",
@@ -123,8 +125,8 @@ test("mounted range request recovers expired access through the existing refresh
     ]);
     assert.equal(
       await page
-        .getByRole("button", { name: "30 days", exact: true })
-        .getAttribute("aria-pressed"),
+        .getByRole("tab", { name: "30 days", exact: true })
+        .getAttribute("aria-selected"),
       "true",
     );
     assert.equal(
@@ -160,40 +162,40 @@ test("failed 7d to 30d switch retains actual 7d selection and readings, then ret
     return route.fulfill({ json: thirtyDays });
   });
   try {
-    const seven = page.getByRole("button", { name: "7 days", exact: true });
-    const thirty = page.getByRole("button", { name: "30 days", exact: true });
+    const seven = page.getByRole("tab", { name: "7 days", exact: true });
+    const thirty = page.getByRole("tab", { name: "30 days", exact: true });
     await thirty.click();
     await waiting;
     assert.equal(
-      await seven.getAttribute("aria-pressed"),
+      await seven.getAttribute("aria-selected"),
       "true",
       "loading must retain the displayed 7d selection",
     );
-    assert.equal(await thirty.getAttribute("aria-pressed"), "false");
+    assert.equal(await thirty.getAttribute("aria-selected"), "false");
     release();
     await page
       .getByRole("button", { name: "Try again", exact: true })
       .waitFor();
     assert.equal(
-      await seven.getAttribute("aria-pressed"),
+      await seven.getAttribute("aria-selected"),
       "true",
       "failure must retain the displayed 7d selection",
     );
-    assert.equal(await thirty.getAttribute("aria-pressed"), "false");
+    assert.equal(await thirty.getAttribute("aria-selected"), "false");
     assert.match(
       await page.getByRole("status").innerText(),
       /Showing the last available data/,
     );
-    assert.equal(
-      await page.getByRole("cell", { name: "17.13", exact: true }).count(),
-      1,
-    );
+    await page.locator('[data-energy-range-summary]').getByText('17.13', { exact: false }).first().waitFor();
     await page.getByRole("button", { name: "Try again", exact: true }).click();
+    await page.locator('[data-energy-range-summary]').getByText('99.25', { exact: false }).first().waitFor();
+    await page.getByRole('button', { name: 'View energy readings', exact: true }).click();
     await page
       .getByRole("cell", { name: "99.25", exact: true })
       .waitFor({ state: "attached" });
-    assert.equal(await seven.getAttribute("aria-pressed"), "false");
-    assert.equal(await thirty.getAttribute("aria-pressed"), "true");
+    await page.keyboard.press('Escape');
+    assert.equal(await seven.getAttribute("aria-selected"), "false");
+    assert.equal(await thirty.getAttribute("aria-selected"), "true");
     assert.equal(attempts, 2);
     assert.deepEqual(errors, []);
   } finally {

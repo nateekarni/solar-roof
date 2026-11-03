@@ -9,12 +9,13 @@ for (const [locale, labels] of [
   ["th", ["หน้าแรก", "เอกสาร", "บัญชี"]],
   ["en", ["Home", "Documents", "Account"]],
 ] as const) {
-  test(`customer shell exposes the three approved destinations in ${locale}`, () => {
+  test(`customer shell exposes the integrated dashboard destinations in ${locale}`, () => {
     const html = renderToStaticMarkup(
       <LocaleProvider initialLocale={locale}><CustomerAppShell><h1>Content</h1></CustomerAppShell></LocaleProvider>,
     );
     for (const label of labels) assert.ok(html.includes(label));
     for (const href of ["/", "/billing", "/settings"]) assert.ok(html.includes(`href="${href}"`));
+    assert.doesNotMatch(html, /href="\/production"/);
     assert.match(html, /href="#customer-main"/);
     assert.match(html, /id="customer-main"/);
     assert.match(html, /Content/);

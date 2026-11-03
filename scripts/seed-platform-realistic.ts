@@ -351,7 +351,7 @@ async function seed() {
           id, site_id, billing_cycle_id, document_type, document_number, status,
           issue_date, amount, revision, is_current, template_version, file_key, snapshot
         ) VALUES ($1, $2, $3, 'invoice', 'INV-202607-001', 'issued',
-          '2026-08-01', $4, 1, true, 'v1', 'local:INV-202607-001.pdf', '{"policy":{"scope":"PRODUCTION"}}')
+          '2026-08-01', $4, 1, true, 'solar-leasing-packet-v13', 'local:INV-202607-001.pdf', '{"policy":{"scope":"PRODUCTION"}}')
       `, [inv1Id, lkbSite.siteId, cycle1Id, amount1]);
 
       await client.query(`
@@ -359,15 +359,15 @@ async function seed() {
           id, billing_cycle_id, status, paid_at, amount, verified_amount,
           payment_method, slip_url, submitted_at, payer_name
         ) VALUES ($1, $2, 'paid', '2026-08-10 14:30:00+07', $3, $3,
-          'bank_transfer', '/uploads/slips/slip-jul2026.png', '2026-08-10 14:32:00+07', lkbSite.customer)
-      `, [pay1Id, cycle1Id, amount1]);
+          'bank_transfer', '/uploads/slips/slip-jul2026.png', '2026-08-10 14:32:00+07', $4)
+      `, [pay1Id, cycle1Id, amount1, lkbSite.customer]);
 
       await client.query(`
         INSERT INTO documents (
           id, site_id, billing_cycle_id, document_type, document_number, status,
           issue_date, amount, revision, is_current, template_version, file_key, snapshot
         ) VALUES ($1, $2, $3, 'receipt', 'RCT-202608-001', 'issued',
-          '2026-08-11', $4, 1, true, 'v1', 'local:RCT-202608-001.pdf', '{"policy":{"scope":"PRODUCTION"}}')
+          '2026-08-11', $4, 1, true, 'sarabun-a4-v11', 'local:RCT-202608-001.pdf', '{"policy":{"scope":"PRODUCTION"}}')
       `, [rct1Id, lkbSite.siteId, cycle1Id, amount1]);
 
       // Cycle 2: August 2026 -> Overdue (เกินกำหนดชำระ)
@@ -392,7 +392,7 @@ async function seed() {
           id, site_id, billing_cycle_id, document_type, document_number, status,
           issue_date, amount, revision, is_current, template_version, file_key, snapshot
         ) VALUES ($1, $2, $3, 'invoice', 'INV-202608-001', 'issued',
-          '2026-09-01', $4, 1, true, 'v1', 'local:INV-202608-001.pdf', '{"policy":{"scope":"PRODUCTION"}}')
+          '2026-09-01', $4, 1, true, 'solar-leasing-packet-v13', 'local:INV-202608-001.pdf', '{"policy":{"scope":"PRODUCTION"}}')
       `, [inv2Id, lkbSite.siteId, cycle2Id, amount2]);
 
       // Cycle 3: September 2026 -> Pending Verification (รอตรวจหลักฐาน)
@@ -418,7 +418,7 @@ async function seed() {
           id, site_id, billing_cycle_id, document_type, document_number, status,
           issue_date, amount, revision, is_current, template_version, file_key, snapshot
         ) VALUES ($1, $2, $3, 'invoice', 'INV-202609-001', 'issued',
-          '2026-10-01', $4, 1, true, 'v1', 'local:INV-202609-001.pdf', '{"policy":{"scope":"PRODUCTION"}}')
+          '2026-10-01', $4, 1, true, 'solar-leasing-packet-v13', 'local:INV-202609-001.pdf', '{"policy":{"scope":"PRODUCTION"}}')
       `, [inv3Id, lkbSite.siteId, cycle3Id, amount3]);
 
       await client.query(`
@@ -426,8 +426,8 @@ async function seed() {
           id, billing_cycle_id, status, amount,
           payment_method, slip_url, submitted_at, payer_name
         ) VALUES ($1, $2, 'pending_verification', $3,
-          'bank_transfer', '/uploads/slips/slip-sep2026.png', now() - interval '2 days', lkbSite.customer)
-      `, [pay3Id, cycle3Id, amount3]);
+          'bank_transfer', '/uploads/slips/slip-sep2026.png', now() - interval '2 days', $4)
+      `, [pay3Id, cycle3Id, amount3, lkbSite.customer]);
 
       // Cycle 4: October 2026 -> Awaiting Payment (รอชำระเงิน)
       const cycle4Id = randomUUID();
@@ -451,7 +451,7 @@ async function seed() {
           id, site_id, billing_cycle_id, document_type, document_number, status,
           issue_date, amount, revision, is_current, template_version, file_key, snapshot
         ) VALUES ($1, $2, $3, 'invoice', 'INV-202610-001', 'issued',
-          (now() - interval '1 day')::date, $4, 1, true, 'v1', 'local:INV-202610-001.pdf', '{"policy":{"scope":"PRODUCTION"}}')
+          (now() - interval '1 day')::date, $4, 1, true, 'solar-leasing-packet-v13', 'local:INV-202610-001.pdf', '{"policy":{"scope":"PRODUCTION"}}')
       `, [inv4Id, lkbSite.siteId, cycle4Id, amount4]);
       }
     }

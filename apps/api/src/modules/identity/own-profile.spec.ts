@@ -13,6 +13,7 @@ test('every current role can read and update only its own display name',async()=
   assert.deepEqual(await controller.getProfile(req as never),{displayName:'New name',companyPosition:'Director',hasSignature:false,signatureDataUri:null});
   assert.deepEqual(await controller.updateProfile(req as never,{displayName:'  New name  '}),{displayName:'New name'});
   assert.deepEqual(calls[0]?.params,['current']);assert.deepEqual(calls[1]?.params,['New name','current']);
+  assert.match(calls[1]!.sql,/INSERT INTO audit_events/);assert.match(calls[1]!.sql,/user\.settings\.profile_updated/);
   await assert.rejects(()=>controller.updateProfile(req as never,{displayName:'Other',id:'other'}),/Invalid profile/);
   await assert.rejects(()=>controller.updateProfile(req as never,{displayName:' '.repeat(10)}),/Invalid display name/);
   await assert.rejects(()=>controller.updateProfile(req as never,{displayName:'x'.repeat(121)}),/Invalid display name/);
@@ -74,6 +75,12 @@ test('preference changes reject unknown fields and unsupported language/theme be
   await assert.rejects(()=>controller.updatePreferences({user:{id:'current'}} as never,body as never,{cookie(){}} as never),/Invalid preferences/);
  }
  assert.equal(writes,0);
+});
+
+test('preference changes atomically record scoped before and after values',async()=>{
+ let statement='';const controller=new MeController({query:async(sql:string)=>{statement=sql;return {rows:[{preferredLanguage:'en',preferredTheme:'dark'}]};}} as any);
+ await controller.updatePreferences({user:{id:'current'}} as never,{preferredLanguage:'en',preferredTheme:'dark'},{cookie(){}} as never);
+ assert.match(statement,/INSERT INTO audit_events/);assert.match(statement,/customerId/);assert.match(statement,/siteIds/);assert.match(statement,/user\.settings\.preferences_updated/);
 });
 
 test('own profile updates company position and normalizes position name', async () => {

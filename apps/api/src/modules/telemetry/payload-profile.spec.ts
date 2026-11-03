@@ -91,6 +91,21 @@ test("declarative profiles reject executable and inconsistent conversions", () =
   p.fields[0].conversion = "eval"; assert.throws(() => validatePayloadProfile(p));
   p.fields[0].conversion = "wh-to-kwh"; assert.throws(() => validatePayloadProfile(p));
 });
+test("payload profiles retain a complete physical register decoder and reject partial decoder metadata", () => {
+  const base = structuredClone(DEFAULT_PAYLOAD_PROFILES[0]!);
+  const decoder = {
+    registerAddress: "R0", registerCount: 2, dataType: "uint32", byteOrder: "big_endian",
+    wordOrder: "little_word_first", scale: 0.1, offset: 0,
+  } as const;
+  base.fields[0] = {...base.fields[0]!, ...decoder};
+
+  const profile = validatePayloadProfile(base);
+  assert.deepEqual(profile.fields[0], base.fields[0]);
+
+  const partial = structuredClone(base) as any;
+  delete partial.fields[0].scale;
+  assert.throws(() => validatePayloadProfile(partial), /decoder|mapping/i);
+});
 test("profiles enforce group uniqueness, unit identity and cumulative-import billing", () => {
   for (const mutate of [
     (p: any) => p.fields.push(p.fields[0]),

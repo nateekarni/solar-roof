@@ -1,5 +1,6 @@
 import {formatAppDateRange} from "../../../lib/date-format";
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import type { DashboardSummaryResponse } from "@solar/api-contracts";
 import type { Locale } from "@solar/i18n";
 import { requirePageAccess } from "../../../lib/session-user";
@@ -11,10 +12,13 @@ export default async function ProductionPage({searchParams}:{searchParams?:Promi
  const user = await requirePageAccess("/production");
  const locale = ((await cookies()).get("locale")?.value === "en" ? "en" : "th") as Locale;
  const values = searchParams ? await searchParams : {};
+ if(user.role==='customer_user'){
+  redirect('/#production');
+ }
  const query = new URLSearchParams();
  for (const key of ["start_date","end_date","month","year"] as const) if(values[key]) query.set(key,values[key]);
  const response = await serverFetch(getApiBaseUrl()+"/v1/dashboard/summary?"+query, {cache:"no-store"});
  if(!response.ok) throw new Error("Unable to load production");
  const data: DashboardSummaryResponse = await response.json();
- return <main className="content"><div className="ops-content w-full space-y-5"><div className="flex flex-wrap items-center justify-between gap-3"><div className="min-w-0 space-y-1"><h1 className="text-xl font-semibold">{locale === "th" ? "การผลิตไฟฟ้า" : "Electricity production"}</h1>{user.role === "customer_user" && <p className="break-words text-sm text-muted-foreground">{data.sites[0]?.customerName || (locale === "th" ? "ยังไม่มีข้อมูลองค์กรที่ได้รับมอบหมาย" : "Assigned organization unavailable")}</p>}<p className="text-sm text-muted-foreground">{formatAppDateRange(data.range.start,data.range.end,locale)}</p></div><PeriodPicker /></div><BusinessProductionTrend points={data.production} locale={locale} /></div></main>;
+ return <main className="content"><div className="ops-content w-full space-y-5"><div className="flex flex-wrap items-center justify-between gap-3"><div className="min-w-0 space-y-1"><h1 className="text-xl font-semibold">{locale === "th" ? "การผลิตไฟฟ้า" : "Electricity production"}</h1><p className="text-sm text-muted-foreground">{formatAppDateRange(data.range.start,data.range.end,locale)}</p></div><PeriodPicker /></div><BusinessProductionTrend points={data.production} locale={locale} /></div></main>;
 }

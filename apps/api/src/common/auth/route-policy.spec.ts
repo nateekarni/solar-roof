@@ -21,6 +21,10 @@ test('customer portal home is an exact customer-only read endpoint', () => {
  }
  for(const path of ['/v1/customer/portal/home/technical','/v1/customer/portal','/v1/customer/portal/home-other'])assert.equal(routeAllowed('customer_user','GET',path),false);
 });
+test('customer production history is an exact customer-only read endpoint',()=>{
+ const path='/v1/customer/portal/production-history?date=2026-10-23';
+ for(const role of ['customer_user','owner','admin','operator','accountant'])for(const method of ['GET','HEAD','POST','PUT','PATCH','DELETE'])assert.equal(routeAllowed(role,method,path),role==='customer_user'&&['GET','HEAD'].includes(method));
+});
 
 test('public branding GET and HEAD work without Origin while cross-origin mutations remain blocked',()=>{
  for(const method of ['GET','HEAD'])for(const origin of [undefined,'https://external.example'])assert.equal(isAllowedRequestOrigin({method,path:'/v1/public/branding/logo',headers:{origin}} as Request,'https://web.example'),true);
@@ -70,6 +74,8 @@ test("owner cannot access hardware while admin can configure it", () => {
   assert.equal(routeAllowed("owner", "PATCH", "/v1/sites/123"), true);
   assert.equal(routeAllowed("owner", "POST", "/v1/gateways/GW-1/hardware-config"), false);
   assert.equal(routeAllowed("admin", "POST", "/v1/gateways/GW-1/hardware-config"), true);
+  assert.equal(routeAllowed("admin", "DELETE", "/v1/gateways/GW-1"), true);
+  assert.equal(routeAllowed("owner", "DELETE", "/v1/gateways/GW-1"), false);
 });
 test("customer users cannot issue documents, configure registers or enumerate users", () => {
   assert.equal(routeAllowed("customer_user", "POST", "/v1/documents"), false);
@@ -115,6 +121,18 @@ test('only Owner and Accountant may record cash payments',()=>{
  for(const role of ['admin','operator','customer_user'])assert.equal(routeAllowed(role,'POST','/v1/billing-cycles/1/cash-payment'),false);
  for(const role of ['owner','accountant'])assert.equal(routeAllowed(role,'POST','/v1/billing-cycles/1/cash-payment'),true);
  for(const method of ['GET','PATCH','PUT','DELETE'])assert.equal(routeAllowed('owner',method,'/v1/billing-cycles/1/cash-payment'),false);
+});
+
+test('policy foundations keep business and technical authority separate',()=>{
+ for(const role of ['owner','accountant'])assert.equal(routeAllowed(role,'GET','/v1/settings/late-fee-policy'),true);
+ assert.equal(routeAllowed('owner','POST','/v1/settings/late-fee-policy'),true);
+ for(const role of ['accountant','admin','operator','customer_user'])assert.equal(routeAllowed(role,'POST','/v1/settings/late-fee-policy'),false);
+ assert.equal(routeAllowed('admin','GET','/v1/settings/critical-alarm-rules'),true);
+ assert.equal(routeAllowed('admin','POST','/v1/settings/critical-alarm-rules/import'),true);
+ for(const role of ['owner','accountant','operator','customer_user']){
+  assert.equal(routeAllowed(role,'GET','/v1/settings/critical-alarm-rules'),false);
+  assert.equal(routeAllowed(role,'POST','/v1/settings/critical-alarm-rules/import'),false);
+ }
 });
 
 test('Admin cannot read financial documents or finance widgets',()=>{

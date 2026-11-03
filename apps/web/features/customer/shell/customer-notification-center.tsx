@@ -151,7 +151,7 @@ export function CustomerNotificationCenter() {
       >
         <header
           data-customer-notification-header="true"
-          className="flex h-[73px] min-h-[73px] w-full items-center justify-between gap-3 border-b border-border px-4 py-2 text-left md:h-auto md:min-h-0 md:px-3 md:py-3"
+          className="flex h-[57px] min-h-[57px] w-full items-center justify-between gap-3 border-b border-border px-4 py-1 text-left md:h-auto md:min-h-0 md:px-3 md:py-3"
         >
           <div className="min-w-0 space-y-0.5">
             <div className="flex items-center gap-2">

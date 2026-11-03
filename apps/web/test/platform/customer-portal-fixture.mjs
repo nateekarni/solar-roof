@@ -56,7 +56,7 @@ authStore.setAuth({...${JSON.stringify(user)},preferredLanguage:data.locale},'fi
 const router={back:()=>history.back(),forward:()=>history.forward(),refresh:()=>location.reload(),push:href=>location.assign(href),replace:href=>location.replace(href),prefetch:()=>Promise.resolve()};
 // Match production: the server's cookie-derived page prop stays fixed for the
 // lifetime of this document. Only the production provider can update live copy.
-function Pages(){return <CustomerAppShell>{location.pathname==='/'?<CustomerHomePage initial={{status:'ready',data:data.home}} locale={data.locale}/>:location.pathname==='/billing'?<CustomerDocumentsPage initial={data.documents} initialQuery={location.search.slice(1)} locale={data.locale} capabilities={data.capabilities}/>:location.pathname==='/settings'?<CustomerAccountPage/>:<CustomerFinancialRecordPage row={data.row} locale={data.locale} capabilities={data.capabilities}/>}</CustomerAppShell>}
+function Pages(){return <CustomerAppShell>{location.pathname==='/'?<CustomerHomePage initial={{status:'ready',data:data.home}} production={data.production} locale={data.locale}/>:location.pathname==='/billing'?<CustomerDocumentsPage initial={data.documents} initialQuery={location.search.slice(1)} locale={data.locale} capabilities={data.capabilities}/>:location.pathname==='/settings'?<CustomerAccountPage/>:<CustomerFinancialRecordPage row={data.row} locale={data.locale} capabilities={data.capabilities}/>}</CustomerAppShell>}
 createRoot(document.getElementById('root')).render(<AppRouterContext.Provider value={router}><PathnameContext.Provider value={location.pathname}><ThemeProvider attribute="class" defaultTheme={data.theme} enableSystem={false}><LocaleProvider initialLocale={data.locale}><Pages/></LocaleProvider></ThemeProvider></PathnameContext.Provider></AppRouterContext.Provider>);
 `,
     resolveDir: base,
@@ -225,6 +225,19 @@ export async function customerFixture({
         capabilities: { canPay: bill.canPay, canViewDocuments: true },
       };
     };
+    const production = (date = "2026-10-23") => ({
+      date,
+      timezone: "Asia/Bangkok",
+      source: "telemetry",
+      status: "partial",
+      site: { id: "site-001", name: "Campus roof" },
+      dayTotalKwh: 18.25,
+      watermark: `${date}T08:00:00.000Z`,
+      intervals: [
+        { timestamp: `${date}T01:00:00.000Z`, valueKwh: 3.5, status: "actual" },
+        { timestamp: `${date}T02:00:00.000Z`, valueKwh: null, status: "unavailable" },
+      ],
+    });
     page.on("pageerror", (error) => state.errors.push(error.message));
     page.on("console", (message) => {
       if (message.type() === "error") state.consoleErrors.push(message.text());
@@ -255,6 +268,7 @@ export async function customerFixture({
       if (path.startsWith("/v1/")) {
         state.calls.push({
           path,
+          search: new URL(request.url()).search,
           method: request.method(),
           body: request.postDataJSON(),
         });
@@ -286,6 +300,8 @@ export async function customerFixture({
           return json({ success: true, status: "pending_verification" });
         }
         if (path === "/v1/customer/portal/home") return json(home());
+        if (path === "/v1/customer/portal/production-history")
+          return json(production(new URL(request.url()).searchParams.get("date") ?? "2026-10-23"));
         if (path === "/v1/operations/billing") return json(documents());
         if (path === "/v1/operations/documents/invoice-001/original")
           return json({
@@ -365,6 +381,7 @@ export async function customerFixture({
         row: state.row,
         documents: documents(),
         home: home(),
+        production: production(),
         capabilities,
         locale: state.locale,
         theme: state.theme,
@@ -451,7 +468,7 @@ export async function checkSurface(fixture, pathname) {
   }
   const sizes = await root
     .locator(
-      "button:visible,a:visible,select:visible,input:not([type=file]):not([type=radio]):visible,textarea:visible,summary:visible",
+      "button:visible,a:visible,select:visible,input:not([type=file]):not([type=radio]):not([aria-hidden=true]):visible,textarea:visible,summary:visible",
     )
     .evaluateAll((elements) =>
       elements

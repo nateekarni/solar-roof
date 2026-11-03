@@ -1,7 +1,7 @@
 export const en = {
   customerPortal: {
     shell: {
-      home: "Home", documents: "Documents", account: "Account", skipToContent: "Skip to content",
+      home: "Home", history: "History", documents: "Documents", account: "Account", skipToContent: "Skip to content",
       desktopNavigation: "Customer navigation", mobileNavigation: "Customer mobile navigation",
       language: "Language", thai: "ไทย", english: "EN", theme: "Theme", systemTheme: "System", lightTheme: "Light", darkTheme: "Dark",
       loading: "Loading your account", logout: "Sign out", profileMenu: "Profile menu",
@@ -50,7 +50,7 @@ export const en = {
       awaitingPayment: "Awaiting payment", pendingVerification: "Evidence review", partiallyPaid: "Partially paid", overdue: "Overdue", paid: "Paid", unsuccessful: "Unsuccessful", rejected: "Evidence rejected", cancelled: "Cancelled", superseded: "Replaced",
     },
     validation: {
-      required: "This field is required", positiveAmount: "Enter an amount greater than zero", amountExceedsOutstanding: "The amount cannot exceed the outstanding balance", futurePaidDate: "The transfer date cannot be in the future", invalidPaidDate: "Enter a valid transfer date", evidenceRequired: "Choose payment evidence", unsupportedFileType: "Choose a JPG, PNG or PDF file", fileTooLarge: "The file must be 10 MB or smaller", displayNameRequired: "Enter your display name",
+      required: "This field is required", positiveAmount: "Enter an amount greater than zero", amountExceedsOutstanding: "The amount cannot exceed the outstanding balance", fullAmountRequired: "Payment evidence must cover the full outstanding amount", futurePaidDate: "The transfer date cannot be in the future", invalidPaidDate: "Enter a valid transfer date", evidenceRequired: "Choose payment evidence", unsupportedFileType: "Choose a JPG, PNG or PDF file", fileTooLarge: "The file must be 10 MB or smaller", displayNameRequired: "Enter your display name",
     },
     common: {
       loading: "Loading", retry: "Try again", save: "Save", saving: "Saving", cancel: "Cancel", close: "Close", back: "Back", unavailable: "Unavailable", noData: "No data", unknown: "Unknown", baht: "THB", kwh: "kWh", date: "Date", amount: "Amount", offline: "You are offline. Reconnect to refresh your data.",

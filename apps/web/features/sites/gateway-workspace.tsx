@@ -174,7 +174,6 @@ export function GatewayWorkspace() {
         brokerAccess={permissions.brokerView}
         onSaved={() => {
           void registeredQuery.refetch();
-          setAddOpen(false);
         }}
       />
 

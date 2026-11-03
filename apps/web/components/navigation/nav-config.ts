@@ -8,7 +8,6 @@ import {
   MapPin,
   ScrollText,
   Settings2,
-  Zap,
   Users,
   Radio,
 } from "lucide-react";

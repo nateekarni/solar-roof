@@ -6,7 +6,7 @@ import {BillingApprovalConfirmation,BillingApprovalResults,BillingBulkApproval,e
 import type {IssuanceApprovalResult} from '@solar/api-contracts';
 
 const rows=[{id:'b5ca6e69-688d-4d43-8b8f-99f2b0df26ca',reviewToken:'a'.repeat(64),billingStatusView:'pending_issue_approval',period:'2026-09',customerName:'บริษัท ตัวอย่าง',siteName:'สำนักงานใหญ่',amount:'1070',simulatedTax:'70',dueDate:'2026-10-15'}];
-const approver={displayName:'สมชาย ใจดี',position:'กรรมการบริษัท',hasSignature:false};
+const approver={displayName:'สมชาย ใจดี',position:'กรรมการบริษัท',hasSignature:true};
 const testPassword='correct-password-123';
 
 test('bulk confirmation shows readable selected bills, approver, and password field',()=>{
@@ -16,13 +16,31 @@ test('bulk confirmation shows readable selected bills, approver, and password fi
  assert.match(html,/2026-09/);
  assert.match(html,/สมชาย ใจดี.*กรรมการบริษัท/s);
  assert.match(html,/รหัสผ่านเพื่อยืนยันการลงนามและออกเอกสาร/);
- assert.match(html,/การระบุรหัสผ่านถือเป็นการยืนยันความถูกต้องและยินยอมให้นำชื่อ ตำแหน่ง และลายเซ็นไปประทับลงในเอกสารฉบับจริงเพื่อจัดส่งให้ลูกค้า/);
+ assert.match(html,/การระบุรหัสผ่านถือเป็นการยืนยันความถูกต้องและยินยอมให้นำชื่อและลายเซ็นไปประทับลงในเอกสารฉบับจริงเพื่อจัดส่งให้ลูกค้า/);
+ assert.doesNotMatch(html,/ชื่อ ตำแหน่ง และลายเซ็น/);
  assert.doesNotMatch(html,/[0-9a-f]{8}-[0-9a-f]{4}/i);
  assert.doesNotMatch(html,/<button[^>]*disabled=""/);
 });
 
+test('bulk expanded details stay directly in the table row without a nested card',()=>{
+ const html=renderToStaticMarkup(<BillingApprovalConfirmation rows={rows} approver={approver} locale="en" busy={false} password={testPassword} onApprove={()=>{}}/>);
+ assert.match(html,/Site/);
+ assert.match(html,/Amount/);
+ assert.match(html,/aria-label="Collapse/);
+ assert.match(html,/Period/);
+ assert.doesNotMatch(html,/rounded-lg bg-background\/80 border/);
+});
+
 test('bulk confirmation disables approve button when password is missing',()=>{
  const html=renderToStaticMarkup(<BillingApprovalConfirmation rows={rows} approver={approver} locale="th" busy={false} password="" onApprove={()=>{}}/>);
+ assert.match(html,/<button[^>]*disabled=""/);
+});
+
+test('bulk issuance without a saved signature opens the in-context uploader over the pending review',()=>{
+ const html=renderToStaticMarkup(<BillingApprovalConfirmation rows={rows} approver={{...approver,hasSignature:false}} locale="en" busy={false} password={testPassword} onApprove={()=>{}}/>);
+ assert.match(html,/data-signature-upload-open="true"/);
+ assert.match(html,/issuance review stays open/);
+ assert.match(html,/Campus|สำนักงานใหญ่/);
  assert.match(html,/<button[^>]*disabled=""/);
 });
 
@@ -94,7 +112,7 @@ test('empty, oversized and ineligible requests never submit',async()=>{
 
 test('floating selection bar renders capsule container with context-aware actions for pending rows',()=>{
  const html=renderToStaticMarkup(<BillingBulkApproval rows={rows} approver={approver} locale="th" canApprove={true} onCompleted={()=>{}} onClearSelection={()=>{}}/>);
- assert.match(html,/fixed bottom-6 left-1\/2 -translate-x-1\/2 z-50/);
+ assert.match(html,/fixed bottom-\[calc\(6rem\+env\(safe-area-inset-bottom\)\)\] md:bottom-6 left-1\/2 -translate-x-1\/2 z-50/);
  assert.match(html,/เลือกแล้ว 1 รายการ/);
  assert.match(html,/รออนุมัติ 1 รายการ/);
  assert.match(html,/อนุมัติและออกเอกสาร \(1 รายการ\)/);
@@ -105,7 +123,7 @@ test('floating selection bar renders capsule container with context-aware action
 test('floating selection bar adapts when only non-pending rows are selected',()=>{
  const paidRows=[{...rows[0]!,billingStatusView:'paid'}];
  const html=renderToStaticMarkup(<BillingBulkApproval rows={paidRows} approver={approver} locale="th" canApprove={true} onCompleted={()=>{}} onClearSelection={()=>{}}/>);
- assert.match(html,/fixed bottom-6 left-1\/2 -translate-x-1\/2 z-50/);
+ assert.match(html,/fixed bottom-\[calc\(6rem\+env\(safe-area-inset-bottom\)\)\] md:bottom-6 left-1\/2 -translate-x-1\/2 z-50/);
  assert.match(html,/เลือกแล้ว 1 รายการ/);
  assert.match(html,/ไม่มีรายการรออนุมัติ/);
  assert.doesNotMatch(html,/อนุมัติและออกเอกสาร/);

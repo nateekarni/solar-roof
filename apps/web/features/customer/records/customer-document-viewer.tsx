@@ -7,6 +7,8 @@ import {
   originalDocumentReference,
 } from "../../shared/original-document-loader";
 import { InlinePdfCanvas } from "../../shared/inline-pdf-canvas";
+import { DocumentAttachmentSlots } from "../../shared/original-document-preview";
+import type { DocumentAttachmentSlot } from "@solar/api-contracts";
 import type { CustomerRecordDocument } from "./customer-record-model";
 import {
   createCustomerDocumentBlobUrl,
@@ -28,17 +30,20 @@ export function CustomerDocumentContent({
   kind,
   title,
   locale,
+  attachments = [],
 }: {
   url: string;
   kind: PreviewKind;
   title: string;
   locale: Locale;
+  attachments?: DocumentAttachmentSlot[];
 }) {
   const t = createTranslator(locale),
     [failed, setFailed] = React.useState(false);
   const safeUrl = safeCustomerDocumentUrl(url);
   return (
     <div className="min-h-0 space-y-4 overflow-y-auto">
+      <DocumentAttachmentSlots attachments={attachments} th={locale === "th"} />
       {safeUrl && (
         <Button asChild variant="outline" className="min-h-[2.75rem]">
           <a
@@ -72,7 +77,7 @@ export function CustomerDocumentContent({
 }
 export async function loadCustomerDocument(
   doc: CustomerRecordDocument,
-): Promise<{ url: string; kind: PreviewKind; revoke: boolean }> {
+): Promise<{ url: string; kind: PreviewKind; revoke: boolean; attachments: DocumentAttachmentSlot[] }> {
   if (doc.documentId) {
     const reference = await originalDocumentReference(
       {
@@ -90,6 +95,7 @@ export async function loadCustomerDocument(
       url: createCustomerDocumentBlobUrl(blob),
       kind: "pdf",
       revoke: true,
+      attachments: reference.attachments,
     };
   }
   const value = doc.payment?.slipUrl ?? "";
@@ -99,6 +105,7 @@ export async function loadCustomerDocument(
       url: createCustomerDocumentBlobUrl(blob),
       kind: blob.type === "application/pdf" ? "pdf" : "image",
       revoke: true,
+      attachments: [],
     };
   const url = safeCustomerDocumentUrl(value) ?? "";
   const kind: PreviewKind = /\.pdf(?:$|\?)/i.test(url)
@@ -106,7 +113,7 @@ export async function loadCustomerDocument(
     : /\.(png|jpe?g)(?:$|\?)/i.test(url)
       ? "image"
       : "unavailable";
-  return { url, kind, revoke: false };
+  return { url, kind, revoke: false, attachments: [] };
 }
 export function CustomerDocumentViewer({
   document: doc,
@@ -123,6 +130,7 @@ export function CustomerDocumentViewer({
     [preview, setPreview] = React.useState<{
       url: string;
       kind: PreviewKind;
+      attachments: DocumentAttachmentSlot[];
     } | null>(null),
     [error, setError] = React.useState(false);
   React.useEffect(() => {

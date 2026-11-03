@@ -19,3 +19,10 @@ test('absent contract recipient leaves the verified PDF usable with actionable s
  const html=renderToStaticMarkup(content({url:'blob:original',error:false,number:'PPA-1',th:false,deliveryUnavailable:true}));
  assert.match(html,/Download PDF/);assert.match(html,/recipient/i);assert.doesNotMatch(html,/Send original/);
 });
+test('verified statement viewer exposes its version-linked production form slot',()=>{
+ const html=renderToStaticMarkup(content({url:'blob:original',error:false,number:'INV-1',th:false,attachments:[{kind:'production_form',status:'awaiting_file',documentId:'11111111-1111-4111-8111-111111111111',documentRevision:2,templateVersion:'sarabun-a4-v12'}]}));
+ assert.match(html,/Production form attachment/);
+ assert.match(html,/Awaiting supplied form/);
+ assert.match(html,/Revision 2/);
+ assert.match(html,/sarabun-a4-v12/);
+});

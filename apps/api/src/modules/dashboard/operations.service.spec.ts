@@ -9,6 +9,14 @@ import { CustomerPortalService } from '../customer-portal/customer-portal.servic
 import type { DashboardService } from './dashboard.service.js';
 import { SettingsService } from '../settings/settings.service.js';
 
+test('authorized operations audit includes customer settings actions without exposing the route to customers',()=>{
+ const service=new OperationsService({} as DatabaseService);
+ for(const role of ['owner','admin']){
+  const sql=(service as any).source('audit',{role}).sql as string;
+  assert.match(sql,/starts_with\(a\.action,'user\.settings\.'\)/);
+ }
+});
+
 test('billing list and detail expose persisted tax for issuance review',async()=>{
  const id='00000000-0000-4000-8000-000000000001';
  const service=new OperationsService({query:async(sql:string)=>{
@@ -20,6 +28,21 @@ test('billing list and detail expose persisted tax for issuance review',async()=
  }} as unknown as DatabaseService);
  assert.equal((await service.list('billing',{role:'owner'})).rows[0]?.simulatedTax,'70.00000000');
  assert.equal((await service.detail('billing',id,{role:'owner'})).row.simulatedTax,'70.00000000');
+});
+
+test('issued billing statement metadata exposes its version-linked production form attachment slot',async()=>{
+ const documentId='00000000-0000-4000-8000-000000000001';
+ const queries:string[]=[];
+ const service=new OperationsService({query:async(sql:string)=>{
+  queries.push(sql);
+  if(sql.includes('FROM document_artifacts'))return {rows:[{sha256:'a'.repeat(64)}]};
+  return {rows:[{id:documentId,documentNumber:'INV-001',documentType:'invoice',revision:2,templateVersion:'sarabun-a4-v12',snapshot:{attachmentSlots:[{kind:'production_form',status:'awaiting_file',documentRevision:2,templateVersion:'sarabun-a4-v12'}]}}]};
+ }} as unknown as DatabaseService);
+ const result=await service.document(documentId,{role:'owner'});
+ assert.deepEqual(result.attachments,[{kind:'production_form',status:'awaiting_file',documentId,documentRevision:2,templateVersion:'sarabun-a4-v12'}]);
+ assert.match(queries[0]!,/d\.snapshot/);
+ assert.match(queries[0]!,/d\.revision/);
+ assert.match(queries[0]!,/d\.template_version/);
 });
 
 test('billing returns complete zero facets without querying an empty customer scope',async()=>{

@@ -32,6 +32,29 @@ test('A4 invoice retains approver audit data without rendering profile identity 
  const footer=documentDefinition(invoice).footer(1,1);assert.ok(footer.stack[0].table.body[0].every((cell:any)=>!cell.image));
  const bytes=await renderDocumentPdf(invoice);assert.equal(bytes.subarray(0,5).toString(),'%PDF-');
 });
+test('new billing statement renders the frozen approval signature, signer and actual approval timestamp without a job title',()=>{
+ const invoice=refinementFixtures().invoice!;
+ invoice.templateVersion='sarabun-a4-v12';
+ invoice.signatories={issuer:{name:'ผู้อนุมัติที่บันทึกไว้',title:'ตำแหน่งภายในบริษัท',signatureDataUri:invoice.logoDataUri}};
+ invoice.approver={name:'ผู้อนุมัติที่บันทึกไว้',role:'ตำแหน่งภายในบริษัท',approvedAt:'2026-10-23T07:30:15.000Z'};
+ const pages=layoutDocumentPages(invoice);
+ const text=pageLines(pages.at(-1)).map(lineText).join('\n');
+ assert.match(text,/ผู้อนุมัติที่บันทึกไว้/);
+ assert.match(text,/ผู้ออกใบวางบิล/);
+ assert.match(text,/23 ตุลาคม 2569 เวลา 14:30:15/);
+ assert.doesNotMatch(text,/ตำแหน่งภายในบริษัท|ผู้วางบิล|ผู้รับวางบิล/);
+ assert.match(JSON.stringify(documentDefinition(invoice).footer(1,1)),/data:image\/png;base64/);
+});
+test('new receipt labels its frozen reviewer only as recipient of funds and omits the job title',()=>{
+ const receipt={...refinementFixtures().receipt!,templateVersion:'sarabun-a4-v12'};
+ receipt.signatories={issuer:{name:'ผู้ตรวจรับเงิน',title:'ตำแหน่งภายในบริษัท',signatureDataUri:receipt.logoDataUri}};
+ receipt.approver={name:'ผู้ตรวจรับเงิน',role:'ตำแหน่งภายในบริษัท',approvedAt:'2026-10-23T07:30:15.000Z'};
+ const text=pageLines(layoutDocumentPages(receipt).at(-1)).map(lineText).join('\n');
+ assert.match(text,/ผู้ตรวจรับเงิน/);
+ assert.match(text,/ผู้รับเงิน/);
+ assert.match(text,/23 ตุลาคม 2569 เวลา 14:30:15/);
+ assert.doesNotMatch(text,/ตำแหน่งภายในบริษัท|ผู้รับวางบิล|ผู้วางบิล/);
+});
 test('manual document preserves issued line descriptions and configured tax without test watermark',()=>{
  const saved:any={document_type:'invoice',document_number:'INV261000001',snapshot:{company:{company_name:'Issuer',tax_id:'0'},customer:{company_name:'Customer',tax_id:'1'},issueDate:'2026-10-09',logo:'data:image/png;base64,AA==',policy:{taxPercent:'3.5',taxMode:'exclusive'},cycle:{period_start:'2026-09-01',period_end:'2026-09-30',subtotal:'100.00',simulated_tax:'3.50',amount:'103.50',meter_snapshot:[],billing_note:'Maintenance complete',manual_lines:[{description:'Maintenance',quantity:'2',unitPrice:'50',amount:'100.00'}]},banks:[],payments:[]}};
  const value=financialDocumentSnapshot(saved);assert.deepEqual(value.items,[{description:'Maintenance',quantity:'2',rate:'50',amount:'100.00'}]);assert.equal(value.totals?.taxLabel,'ภาษี 3.5%');assert.equal(value.syntheticTest,false);assert.ok(value.remarks?.includes('Maintenance complete'));

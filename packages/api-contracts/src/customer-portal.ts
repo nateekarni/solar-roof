@@ -42,3 +42,13 @@ export interface CustomerPaymentInstructions {
   promptpayId?: string;
   qrCodeUrl?: string | null;
 }
+export interface CustomerProductionHistory {
+  date: string;
+  timezone: 'Asia/Bangkok';
+  source: 'telemetry';
+  status: 'actual' | 'partial' | 'unavailable';
+  site: {id:string;name:string};
+  dayTotalKwh: number | null;
+  watermark: string | null;
+  intervals: Array<{timestamp:string;valueKwh:number|null;status:'actual'|'partial'|'unavailable'}>;
+}

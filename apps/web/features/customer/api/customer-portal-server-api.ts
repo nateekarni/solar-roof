@@ -1,4 +1,7 @@
-import type { CustomerPortalRange } from "@solar/api-contracts";
+import type {
+  CustomerPortalRange,
+  CustomerProductionHistory,
+} from "@solar/api-contracts";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { getApiBaseUrl, serverFetch } from "../../../lib/server-fetch";
 import {
@@ -20,5 +23,21 @@ export async function loadCustomerHomeServer(
     // serverFetch owns the session refresh/login redirect; never normalize it as an API failure.
     if (isRedirectError(error)) throw error;
     return { status: "unavailable" };
+  }
+}
+
+export async function loadCustomerProductionHistoryServer(
+  date: string,
+): Promise<CustomerProductionHistory | null> {
+  try {
+    const response = await serverFetch(
+      `${getApiBaseUrl()}/v1/customer/portal/production-history?date=${encodeURIComponent(date)}`,
+      { cache: "no-store" },
+    );
+    if (!response.ok) return null;
+    return (await response.json()) as CustomerProductionHistory;
+  } catch (error) {
+    if (isRedirectError(error)) throw error;
+    return null;
   }
 }

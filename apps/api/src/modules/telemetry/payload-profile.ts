@@ -1,11 +1,19 @@
 import { convertUnit, derivedConversion } from "@solar/api-contracts/unit-conversion";
+import {GATEWAY_REGISTER_BYTE_ORDERS,GATEWAY_REGISTER_DATA_TYPES,GATEWAY_REGISTER_WORD_ORDERS,gatewayRegisterMappingIssue,type GatewayRegisterMapping} from '@solar/api-contracts';
 import { createHash } from "node:crypto";
 import { z } from "zod";
 
 const identifier = z.string().min(1).max(128).regex(/^[A-Za-z0-9_-]+$/);
 const tag = z.string().min(1).max(128).regex(/^[A-Za-z0-9_.-]+$/);
 const unit = z.string().min(1).max(32);
-const fieldSchema = z.object({ tag, sourceTag:tag.optional(),required:z.boolean().optional(), registerAddress: z.string().min(1).max(128).optional(), displayName: z.string().min(1).max(128), pollGroup: identifier, sourceUnit: unit, targetUnit: unit, conversion: z.enum(["identity", "wh-to-kwh", "varh-to-kvarh", "auto-v1"]), role: z.enum(["billing-import", "active-power", "none"]).optional() }).strict();
+const fieldSchema = z.object({
+  tag, sourceTag:tag.optional(),required:z.boolean().optional(),registerAddress:z.string().min(1).max(128).optional(),
+  displayName:z.string().min(1).max(128),pollGroup:identifier,sourceUnit:unit,targetUnit:unit,
+  conversion:z.enum(["identity", "wh-to-kwh", "varh-to-kvarh", "auto-v1"]),role:z.enum(["billing-import", "active-power", "none"]).optional(),
+  registerCount:z.number().int().min(1).max(2_147_483_647).optional(),dataType:z.enum(GATEWAY_REGISTER_DATA_TYPES).optional(),
+  byteOrder:z.enum(GATEWAY_REGISTER_BYTE_ORDERS).optional(),wordOrder:z.enum(GATEWAY_REGISTER_WORD_ORDERS).optional(),
+  scale:z.number().finite().optional(),offset:z.number().finite().optional(),
+}).strict();
 const profileSchema = z.object({ id: identifier, version: z.string().regex(/^\d+\.\d+\.\d+$/), sourceProfile:z.object({id:identifier,version:z.string().regex(/^\d+\.\d+\.\d+$/)}).strict().optional(),schemaVersion: z.literal("1.1"), displayName: z.string().min(1).max(128), deviceType: identifier, pollGroups: z.array(identifier).min(1).max(16), fields: z.array(fieldSchema).min(1).max(256) }).strict();
 export type PayloadProfile = z.infer<typeof profileSchema>;
 export type PayloadProfileField = z.infer<typeof fieldSchema>;
@@ -18,6 +26,8 @@ export function validatePayloadProfile(input: unknown): PayloadProfile {
     if (!(f.conversion === "auto-v1" && derivedConversion(f.sourceUnit,f.targetUnit) !== "identity" || f.conversion === "identity" && f.sourceUnit === f.targetUnit || f.conversion === "wh-to-kwh" && f.sourceUnit === "Wh" && f.targetUnit === "kWh" || f.conversion === "varh-to-kvarh" && f.sourceUnit === "varh" && f.targetUnit === "kvarh")) throw new Error("Invalid unit conversion");
     if (f.role === "active-power" && f.targetUnit !== "W") throw new Error("Active power role requires W");
     if (f.role === "billing-import" && (f.tag !== "energy.active.import.total" || f.targetUnit !== "kWh")) throw new Error("Billing requires active import cumulative kWh");
+    const hasDecoderMetadata=[f.registerCount,f.dataType,f.byteOrder,f.wordOrder,f.scale,f.offset].some(value=>value!==undefined);
+    if(hasDecoderMetadata&&(!f.registerAddress||gatewayRegisterMappingIssue(f as GatewayRegisterMapping)))throw new Error('Invalid physical decoder mapping');
   }
   if (p.fields.filter(f => f.role === "active-power").length > 1) throw new Error("Multiple active-power fields");
   if (p.fields.filter(f => f.role === "billing-import").length > 1) throw new Error("Multiple billing fields");

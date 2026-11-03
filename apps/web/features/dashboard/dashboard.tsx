@@ -18,7 +18,10 @@ import { SummaryStatus } from "./summary-status";
 import { DeferredDashboardDetails } from "./deferred-dashboard-details";
 import { requirePageAccess } from "../../lib/session-user";
 import { CustomerHomePage } from "../customer/home/customer-home-page";
-import { loadCustomerHomeServer } from "../customer/api/customer-portal-server-api";
+import {
+  loadCustomerHomeServer,
+  loadCustomerProductionHistoryServer,
+} from "../customer/api/customer-portal-server-api";
 
 type DashboardData = DashboardSummaryResponse;
 async function getDashboardData(
@@ -72,7 +75,20 @@ export async function Dashboard({
   const t = createTranslator(locale);
 
   if (user.role === "customer_user") {
-    return <CustomerHomePage initial={await loadCustomerHomeServer()} locale={locale}/>;
+    const today = new Date(Date.now() + 7 * 3_600_000)
+      .toISOString()
+      .slice(0, 10);
+    const [initial, production] = await Promise.all([
+      loadCustomerHomeServer(),
+      loadCustomerProductionHistoryServer(today),
+    ]);
+    return (
+      <CustomerHomePage
+        initial={initial}
+        production={production}
+        locale={locale}
+      />
+    );
   }
 
   const data = await getDashboardData(

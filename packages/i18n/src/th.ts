@@ -1,7 +1,7 @@
 export const th = {
   customerPortal: {
     shell: {
-      home: "หน้าแรก", documents: "เอกสาร", account: "บัญชี", skipToContent: "ข้ามไปยังเนื้อหา",
+      home: "หน้าแรก", history: "ประวัติ", documents: "เอกสาร", account: "บัญชี", skipToContent: "ข้ามไปยังเนื้อหา",
       desktopNavigation: "เมนูสำหรับลูกค้า", mobileNavigation: "เมนูมือถือสำหรับลูกค้า",
       language: "ภาษา", thai: "ไทย", english: "EN", theme: "ธีม", systemTheme: "ระบบ", lightTheme: "สว่าง", darkTheme: "มืด",
       loading: "กำลังโหลดบัญชีของคุณ", logout: "ออกจากระบบ", profileMenu: "เมนูโปรไฟล์",
@@ -50,7 +50,7 @@ export const th = {
       awaitingPayment: "รอชำระเงิน", pendingVerification: "รอตรวจหลักฐาน", partiallyPaid: "ชำระบางส่วน", overdue: "เกินกำหนด", paid: "ชำระแล้ว", unsuccessful: "ไม่สำเร็จ", rejected: "หลักฐานไม่ผ่านการอนุมัติ", cancelled: "ยกเลิกแล้ว", superseded: "มีเอกสารทดแทนแล้ว",
     },
     validation: {
-      required: "กรุณากรอกข้อมูลนี้", positiveAmount: "กรุณาระบุยอดมากกว่าศูนย์", amountExceedsOutstanding: "ยอดชำระต้องไม่เกินยอดคงเหลือ", futurePaidDate: "วันที่โอนต้องไม่เป็นวันในอนาคต", invalidPaidDate: "กรุณาระบุวันที่โอนที่ถูกต้อง", evidenceRequired: "กรุณาเลือกหลักฐานการชำระเงิน", unsupportedFileType: "กรุณาเลือกไฟล์ JPG, PNG หรือ PDF", fileTooLarge: "ไฟล์ต้องมีขนาดไม่เกิน 10 MB", displayNameRequired: "กรุณาระบุชื่อที่แสดง",
+      required: "กรุณากรอกข้อมูลนี้", positiveAmount: "กรุณาระบุยอดมากกว่าศูนย์", amountExceedsOutstanding: "ยอดชำระต้องไม่เกินยอดคงเหลือ", fullAmountRequired: "หลักฐานการชำระต้องครอบคลุมยอดคงเหลือเต็มจำนวน", futurePaidDate: "วันที่โอนต้องไม่เป็นวันในอนาคต", invalidPaidDate: "กรุณาระบุวันที่โอนที่ถูกต้อง", evidenceRequired: "กรุณาเลือกหลักฐานการชำระเงิน", unsupportedFileType: "กรุณาเลือกไฟล์ JPG, PNG หรือ PDF", fileTooLarge: "ไฟล์ต้องมีขนาดไม่เกิน 10 MB", displayNameRequired: "กรุณาระบุชื่อที่แสดง",
     },
     common: {
       loading: "กำลังโหลด", retry: "ลองอีกครั้ง", save: "บันทึก", saving: "กำลังบันทึก", cancel: "ยกเลิก", close: "ปิด", back: "ย้อนกลับ", unavailable: "ไม่พร้อมใช้งาน", noData: "ไม่มีข้อมูล", unknown: "ไม่ทราบ", baht: "บาท", kwh: "กิโลวัตต์ชั่วโมง", date: "วันที่", amount: "จำนวนเงิน", offline: "คุณออฟไลน์อยู่ เชื่อมต่ออีกครั้งเพื่ออัปเดตข้อมูล",

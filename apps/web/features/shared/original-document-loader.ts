@@ -1,3 +1,5 @@
+import type {DocumentAttachmentSlot} from '@solar/api-contracts';
+
 export async function verifiedOriginalPdf(id:string,hash:string,getBlob:(path:string)=>Promise<Blob>):Promise<Blob>{
  if(!/^[0-9a-f-]{36}$/i.test(id)||!/^[0-9a-f]{64}$/i.test(hash))throw new Error('Invalid original document reference');
  const blob=await getBlob(`/v1/operations/documents/${id}/pdf`);
@@ -8,7 +10,7 @@ export async function verifiedOriginalPdf(id:string,hash:string,getBlob:(path:st
  return blob;
 }
 export interface OriginalDocumentSource {type:string;id?:string;documentId?:string;documentNumber?:string;}
-export interface OriginalDocumentReference {id:string;hash:string;number:string;deliveryAvailable?:boolean;deliveryEnabled?:boolean;}
+export interface OriginalDocumentReference {id:string;hash:string;number:string;attachments:DocumentAttachmentSlot[];deliveryAvailable?:boolean;deliveryEnabled?:boolean;}
 export async function originalDocumentReference(source:OriginalDocumentSource,get:(path:string)=>Promise<any>,issue?:(path:string,body:Record<string,never>)=>Promise<any>):Promise<OriginalDocumentReference> {
  const contract=source.type==='contract';const id=contract?source.id:source.documentId;
  if(!id)throw new Error('ยังไม่มีเอกสารที่ออกและบันทึกไว้สำหรับรายการนี้ / No issued document is available for this record.');
@@ -17,7 +19,13 @@ export async function originalDocumentReference(source:OriginalDocumentSource,ge
  if(issue&&!contract)throw new Error('Explicit original issuance requires a contract');
  const row=issue?await issue(path,{}):await get(path);
  if(row.previewUnavailableReason)throw new Error(row.previewUnavailableReason+' / Verified original unavailable. Preview, printing and download are unavailable.');
- const reference={id:contract?row.documentId:row.id,hash:row.contentHash,number:row.documentNumber,...(contract?{deliveryAvailable:row.deliveryAvailable===true,deliveryEnabled:row.deliveryEnabled===true}:{})};
+ const referenceId=contract?row.documentId:row.id;
+ const attachments:DocumentAttachmentSlot[]=contract||!Array.isArray(row.attachments)?[]:row.attachments.filter((slot:unknown):slot is DocumentAttachmentSlot=>{
+  if(!slot||typeof slot!=='object')return false;
+  const value=slot as Record<string,unknown>;
+  return value.kind==='production_form'&&value.status==='awaiting_file'&&value.documentId===referenceId&&Number.isInteger(value.documentRevision)&&Number(value.documentRevision)>0&&typeof value.templateVersion==='string'&&value.templateVersion.length>0;
+ });
+ const reference={id:referenceId,hash:row.contentHash,number:row.documentNumber,attachments,...(contract?{deliveryAvailable:row.deliveryAvailable===true,deliveryEnabled:row.deliveryEnabled===true}:{})};
  if(typeof reference.number!=='string'||!reference.number.trim())throw new Error('Stored document number unavailable');
  if(!/^[0-9a-f-]{36}$/i.test(reference.id??'')||!/^[0-9a-f]{64}$/i.test(reference.hash??''))throw new Error('ไม่มีเอกสารต้นฉบับที่ตรวจสอบแล้ว / Invalid original document reference');
  return reference;

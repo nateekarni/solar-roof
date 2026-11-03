@@ -12,3 +12,10 @@ test('original reference requires authoritative number and never substitutes rou
  const ref=await originalDocumentReference({type:'contract',id},async()=>({documentId:id,contentHash:hash,documentNumber:'PPA261000001'}));assert.equal(ref.number,'PPA261000001');
  await assert.rejects(originalDocumentReference({type:'contract',id,documentNumber:'invented'},async()=>({documentId:id,contentHash:hash})),/number/i);
 });
+test('issued statement reference retains only its authoritative version-linked production form slot',async()=>{
+ const attachments=[{kind:'production_form',status:'awaiting_file',documentId:id,documentRevision:2,templateVersion:'sarabun-a4-v12'}];
+ const ref=await originalDocumentReference({type:'invoice',documentId:id},async()=>({id,contentHash:hash,documentNumber:'INV261000001',attachments}));
+ assert.deepEqual(ref.attachments,attachments);
+ const malformed=await originalDocumentReference({type:'invoice',documentId:id},async()=>({id,contentHash:hash,documentNumber:'INV261000001',attachments:[...attachments,{kind:'invented',status:'available'}]}));
+ assert.deepEqual(malformed.attachments,attachments);
+});

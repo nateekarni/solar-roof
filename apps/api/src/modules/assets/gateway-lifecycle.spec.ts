@@ -8,7 +8,20 @@ import type { MqttIngestionService } from '../telemetry/mqtt-ingestion.service.j
 import { AssetsController } from './assets.controller.js';
 import { TelemetryController } from '../telemetry/telemetry.controller.js';
 import { PayloadReceptionSettings } from '../telemetry/payload-reception-settings.js';
-import { acknowledgeGatewayConfiguration, lifecycleState, snapshotGatewayConfiguration, guardLegacyGatewayConfiguration } from './gateway-lifecycle.js';
+import { acknowledgeGatewayConfiguration, lifecycleState, snapshotGatewayConfiguration, guardLegacyGatewayConfiguration, retireGateway, retireSite } from './gateway-lifecycle.js';
+
+test('gateway removal soft-retires hardware and keeps telemetry and financial rows',async()=>{
+ const writes:string[]=[];const client={query:async(sql:string)=>{if(sql.includes('FROM gateways g JOIN sites'))return {rows:[{id:'gateway',site_id:'site',name:'GW'}]};if(/^(UPDATE|INSERT|DELETE)/.test(sql.trim()))writes.push(sql);return {rows:[{id:'gateway'}]};}};
+ await retireGateway(client as any,'gateway','admin');
+ assert.ok(writes.some(sql=>sql.includes('UPDATE gateways SET retired_at')));assert.ok(writes.some(sql=>sql.includes('UPDATE devices SET status')));assert.ok(writes.some(sql=>sql.includes('INSERT INTO audit_events')));
+ assert.ok(writes.every(sql=>!/^DELETE/.test(sql.trim())));
+});
+
+test('site removal conflicts while an active gateway exists and otherwise archives without deleting history',async()=>{
+ let active=true;const writes:string[]=[];const client={query:async(sql:string)=>{if(sql.includes('FROM sites WHERE'))return {rows:[{id:'site',name:'Site'}]};if(sql.includes('FROM gateways WHERE site_id'))return {rows:active?[{id:'gateway'}]:[]};if(/^(UPDATE|INSERT|DELETE)/.test(sql.trim()))writes.push(sql);return {rows:[]};}};
+ await assert.rejects(()=>retireSite(client as any,'site','owner'),/Remove active gateways first/);assert.equal(writes.length,0);
+ active=false;await retireSite(client as any,'site','owner');assert.ok(writes.some(sql=>sql.includes("UPDATE sites SET status='archived'")));assert.ok(writes.every(sql=>!/^DELETE/.test(sql.trim())));
+});
 
 test('configuration snapshots supply the application canonical hash required by migration 066', async () => {
  const queries: {sql:string;values:unknown[]}[]=[];

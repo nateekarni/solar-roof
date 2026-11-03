@@ -130,6 +130,18 @@ test('GatewayFormDialog renders full-width tabs, frameless billing meter, and om
   assert.ok(!html.includes('gap-2 w-full'));
 });
 
+test('admin gateway creation exposes a billing-source step without requiring a connection', () => {
+  const html = renderToStaticMarkup(
+    <SessionUserProvider user={adminUser}>
+      <LocaleProvider initialLocale="en">
+        <GatewayFormDialog inline open onOpenChange={() => {}} sites={[{id:'site-1',name:'Site Alpha',code:'SA-01',active:true}]} onSaved={() => {}} />
+      </LocaleProvider>
+    </SessionUserProvider>
+  );
+  assert.match(html,/Billing Meter/);
+  assert.match(html,/Create the gateway and devices first/i);
+});
+
 test('GatewayEditDialog renders full-width tabs, footer save button, and omits subscribe box', () => {
   const html = renderToStaticMarkup(
     <SessionUserProvider user={adminUser}>

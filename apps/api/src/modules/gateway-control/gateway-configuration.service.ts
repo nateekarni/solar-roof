@@ -557,7 +557,8 @@ export class GatewayConfigurationService {
     if(!previous.payload_profile_revision_id||!previous.profile_config)return false;
     const semanticProfile=(profile:PayloadProfile)=>({deviceType:profile.deviceType,
       source:profile.sourceProfile??{id:profile.id,version:profile.version},pollGroups:[...profile.pollGroups].sort(),
-      fields:profile.fields.map(({displayName:_name,...field})=>({...field,sourceTag:field.sourceTag??field.tag,
+      fields:profile.fields.map(({displayName:_name,registerAddress:_address,registerCount:_count,dataType:_type,byteOrder:_byte,
+        wordOrder:_word,scale:_scale,offset:_offset,...field})=>({...field,sourceTag:field.sourceTag??field.tag,
         required:field.required??false,role:field.role??'none'})).sort((a,b)=>a.tag<b.tag?-1:a.tag>b.tag?1:0)});
     const physical=(mappings:GatewayRegisterMapping[])=>mappings.filter(m=>m.registerAddress!==undefined).map(m=>({tag:m.tag,
       registerAddress:m.registerAddress,registerCount:m.registerCount,dataType:m.dataType,byteOrder:m.byteOrder,wordOrder:m.wordOrder,
@@ -687,12 +688,14 @@ export class GatewayConfigurationService {
           if (device.deviceType && profile.deviceType !== device.deviceType) throw new BadRequestException('Preset device type mismatch');
           device.deviceType ??= profile.deviceType;
           if (device.pollGroups.length === 0) device.pollGroups = profile.pollGroups;
-          if (device.mappings.length === 0) device.mappings = profile.fields.map(field => ({ tag: field.tag, displayName: field.displayName,
-            pollGroup: field.pollGroup, sourceUnit: field.sourceUnit, targetUnit: field.targetUnit, conversion: field.conversion,
-            ...(field.sourceTag !== undefined ? { sourceTag: field.sourceTag } : {}),
-            ...(field.required !== undefined ? { required: field.required } : {}),
-            ...(field.registerAddress !== undefined ? { registerAddress: field.registerAddress } : {}),
-            ...(field.role !== undefined ? { role: field.role } : {}) }));
+          if (device.mappings.length === 0) device.mappings = profile.fields.map(field => ({
+            tag:field.tag,displayName:field.displayName,pollGroup:field.pollGroup,sourceUnit:field.sourceUnit,targetUnit:field.targetUnit,conversion:field.conversion,
+            ...(field.sourceTag!==undefined?{sourceTag:field.sourceTag}:{}),...(field.required!==undefined?{required:field.required}:{}),
+            ...(field.registerAddress!==undefined?{registerAddress:field.registerAddress}:{}),...(field.role!==undefined?{role:field.role}:{}),
+            ...(field.registerCount!==undefined?{registerCount:field.registerCount}:{}),...(field.dataType!==undefined?{dataType:field.dataType}:{}),
+            ...(field.byteOrder!==undefined?{byteOrder:field.byteOrder}:{}),...(field.wordOrder!==undefined?{wordOrder:field.wordOrder}:{}),
+            ...(field.scale!==undefined?{scale:field.scale}:{}),...(field.offset!==undefined?{offset:field.offset}:{}),
+          }));
           device.profileId = profile.sourceProfile?.id ?? profile.id;
           device.profileVersion = profile.sourceProfile?.version ?? profile.version;
         }
@@ -715,7 +718,7 @@ export class GatewayConfigurationService {
         validateRegisterStorage(mapping);
       }
       const id = randomUUID(), profileId = randomUUID();
-      const fields = device.mappings.map(({ registerCount: _count, dataType: _type, byteOrder: _byte, wordOrder: _word, scale: _scale, offset: _offset, ...field }) => field);
+      const fields = device.mappings.map(mapping => structuredClone(mapping));
       const profile = badInput(() => validatePayloadProfile({ id: 'local-' + profileId, version: '1.0.0', schemaVersion: '1.1',
         displayName: device.model, deviceType: device.deviceType, pollGroups: device.pollGroups, fields,
         ...(device.profileId || device.profileVersion ? { sourceProfile: { id: device.profileId, version: device.profileVersion } } : {}) }));

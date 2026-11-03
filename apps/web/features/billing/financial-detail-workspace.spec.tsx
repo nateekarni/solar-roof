@@ -65,7 +65,8 @@ test('expanded evidence preview stays inside the selected list item',()=>{
 
 test('split review has only one document selector owned by the workspace',()=>{
  const html=renderToStaticMarkup(<PaymentVerificationDialog inline formOnly selectedPaymentId="pending" open onOpenChange={()=>{}} billingCycle={{id:'bill'}}/>);
- assert.match(html,/verified-amount/);
+ assert.match(html,/ยอดคงเหลือเต็มจำนวน/);
+ assert.doesNotMatch(html,/verified-amount/);
  assert.doesNotMatch(html,/review-transfer|<iframe/);
 });
 

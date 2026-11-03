@@ -3,15 +3,19 @@ import {FINANCIAL_TEMPLATE_VERSION,formatFinancialMoney} from './financial-docum
 import {documentDefinition} from './document-layout.js';
 import {readFileSync} from 'node:fs';
 test('PDF monetary formatting preserves exact large satang and PostgreSQL zero padding',()=>{assert.equal(formatFinancialMoney('90071992547409.91'),'90,071,992,547,409.91');assert.equal(formatFinancialMoney('4623.45000000'),'4,623.45');assert.equal(formatFinancialMoney('2000'),'2,000.00');assert.throws(()=>formatFinancialMoney('4623.450001'));});
-test('latest financial template is v11 and TEST scope stays frozen without a visible synthetic banner',()=>{assert.equal(FINANCIAL_TEMPLATE_VERSION,'sarabun-a4-v11');const logo=`data:image/png;base64,${readFileSync(new URL('../../../../web/public/brand/solar-roof-document-stacked.png',import.meta.url)).toString('base64')}`,snapshot=financialDocumentSnapshot({document_type:'invoice',document_number:'INV-V11',snapshot:{company:{company_name:'Issuer',tax_id:'1'},customer:{company_name:'Customer',tax_id:'2'},issueDate:'2026-10-19',logo,policy:{scope:'TEST'},cycle:{period_start:'2026-10-01',period_end:'2026-10-31',subtotal:'1.00',simulated_tax:'0.00',amount:'1.00',meter_snapshot:[]},banks:[],payments:[]}});assert.equal(snapshot.templateVersion,'sarabun-a4-v11');assert.equal(snapshot.syntheticTest,true);assert.doesNotMatch(JSON.stringify(documentDefinition(snapshot).content),/SYNTHETIC LOCAL TEST|เอกสารทดสอบ/);});
+test('latest financial template is v13 while an unversioned historical snapshot remains v11',()=>{assert.equal(FINANCIAL_TEMPLATE_VERSION,'solar-leasing-packet-v13');const logo=`data:image/png;base64,${readFileSync(new URL('../../../../web/public/brand/solar-roof-document-stacked.png',import.meta.url)).toString('base64')}`,snapshot=financialDocumentSnapshot({document_type:'invoice',document_number:'INV-LEGACY',snapshot:{company:{company_name:'Issuer',tax_id:'1'},customer:{company_name:'Customer',tax_id:'2'},issueDate:'2026-10-19',logo,policy:{scope:'TEST'},cycle:{period_start:'2026-10-01',period_end:'2026-10-31',subtotal:'1.00',simulated_tax:'0.00',amount:'1.00',meter_snapshot:[]},banks:[],payments:[]}});assert.equal(snapshot.templateVersion,'sarabun-a4-v11');assert.equal(snapshot.syntheticTest,true);assert.doesNotMatch(JSON.stringify(documentDefinition(snapshot).content),/SYNTHETIC LOCAL TEST|เอกสารทดสอบ/);});
 
 import { financialDocumentSnapshot } from './financial-document-pdf.js';
 
 test('new financial rendering keeps frozen TEST marking and production configured tax labels',()=>{
  const snapshot={company:{company_name:'Issuer',tax_id:'123',address:'Address'},customer:{company_name:'Customer',tax_id:'456'},issueDate:'2026-10-14',logo:'logo',cycle:{period_start:'2026-09-01',period_end:'2026-09-30',subtotal:'100.00',simulated_tax:'10.00',amount:'110.00',meter_snapshot:[]},banks:[],payments:[]};
  assert.equal(financialDocumentSnapshot({document_type:'invoice',document_number:'INV261000001',snapshot:{...snapshot,policy:{scope:'TEST',taxPercent:7}}}).syntheticTest,true);
- const production=financialDocumentSnapshot({document_type:'invoice',document_number:'INV261000002',snapshot:{...snapshot,policy:{scope:'PRODUCTION',taxRate:'10.0000'}}});
- assert.equal(production.syntheticTest,false);assert.equal(production.totals?.taxLabel,'ภาษี 10.0000%');
+ const production=financialDocumentSnapshot({document_type:'invoice',document_number:'INV261000002',snapshot:{...snapshot,templateVersion:'sarabun-a4-v12',policy:{scope:'PRODUCTION',taxRate:'10.0000'}}});
+ assert.equal(production.syntheticTest,false);assert.equal(production.totals?.taxLabel,'ภาษี 10%');
+ const fractional=financialDocumentSnapshot({document_type:'invoice',document_number:'INV261000003',snapshot:{...snapshot,templateVersion:'sarabun-a4-v12',policy:{scope:'PRODUCTION',taxRate:'5.5000'}}});
+ assert.equal(fractional.totals?.taxLabel,'ภาษี 5.5%');
+ const historical=financialDocumentSnapshot({document_type:'invoice',document_number:'INV261000004',snapshot:{...snapshot,templateVersion:'sarabun-a4-v11',policy:{scope:'PRODUCTION',taxRate:'10.0000'}}});
+ assert.equal(historical.totals?.taxLabel,'ภาษี 10.0000%');
 });
 
 test('financial PDF adapter uses frozen embedded logo before legacy logo and retains old template evidence',()=>{
@@ -78,4 +82,222 @@ test('approved snapshot retains optional payer metadata without mixing receiving
  const document={document_type:'receipt',document_number:'RCP261000001',snapshot:{company:{company_name:'Issuer',tax_id:'0',address:'Issuer address'},customer:{company_name:'Customer',tax_id:'1',tax_address:'Customer address'},issueDate:'2026-10-08',logo:'data:image/png;base64,AA==',cycle:{period_start:'2026-09-01',period_end:'2026-09-30',subtotal:'100.00',simulated_tax:'7.00',amount:'107.00',meter_snapshot:[]},banks:[{bank_name:'Receiving bank',account_name:'Issuer',account_number:'9999'}],payments:[{status:'paid',paid_at:'2026-10-08T09:00:00Z',amount:'57.00',payer_name:'Actual payer',payment_method:'bank_transfer',origin_bank:'Payer bank',origin_account:'00123'},{status:'paid',paid_at:'2026-10-08T09:01:00Z',amount:'50.00'},{status:'pending_verification',paid_at:'2026-10-08T09:02:00Z',amount:'9.00',payer_name:'Pending payer'},{status:'rejected',paid_at:'2026-10-08T09:03:00Z',amount:'9.00',payer_name:'Rejected payer'}]}};
  const before=JSON.stringify(document);const snapshot=financialDocumentSnapshot(document as any);
  assert.deepEqual(snapshot.approvedTransfers,[{status:'paid',paidAt:'2026-10-08T09:00:00Z',amount:'57.00',payerName:'Actual payer',paymentMethod:'bank_transfer',originBank:'Payer bank',originAccount:'00123'},{status:'paid',paidAt:'2026-10-08T09:01:00Z',amount:'50.00'}]);assert.equal(snapshot.paymentAccounts[0]!.bankName,'Receiving bank');assert.equal(JSON.stringify(document),before);
+});
+
+
+import { layoutDocumentPages, pageLines, lineText } from './document-layout.test-fixtures.js';
+
+test('solar-leasing-packet-v13 renders a 5-page billing packet matching sample templates 100%', () => {
+  const logo = `data:image/png;base64,${readFileSync(new URL('../../../../web/public/brand/solar-roof-document-stacked.png', import.meta.url)).toString('base64')}`;
+  const snapshot = financialDocumentSnapshot({
+    document_type: 'invoice',
+    document_number: 'INV26070001',
+    snapshot: {
+      templateVersion: FINANCIAL_TEMPLATE_VERSION,
+      policy: { scope: 'PRODUCTION', taxRate: '7.0000' },
+      company: {
+        company_name: 'บริษัท โซลาร์รูฟ เทคโนโลยี จำกัด',
+        tax_id: '0994000165421',
+        address: '30 ซอยเพลินจิต แขวงลุมพินี เขตปทุมวัน กรุงเทพมหานคร 10330',
+        phone: '02-256-3225',
+        email: 'billing@solarroof.co.th',
+        letter_prefix: 'สฟ',
+      },
+      approver: {
+        userId: 'approver-1',
+        displayName: 'นายสมชาย ใจดี',
+        position: 'กรรมการผู้จัดการ',
+        signatureDataUri: logo,
+        approvedAt: '2025-08-05T03:00:00Z',
+      },
+      customer: {
+        company_name: 'โรงพยาบาลโรคผิวหนังเขตร้อนภาคใต้',
+        tax_id: '0994000199999',
+        tax_address: '123 ถนนพระราม 6 ตำบลทับเที่ยง อำเภอเมือง จังหวัดตรัง 92000',
+        province: 'ตรัง',
+        contract_number: '149/2565',
+        contract_signed_date: '2022-09-29',
+        service_start_date: '2025-07-01',
+        total_installments: 300,
+        recipient_title: 'ผู้อำนวยการ',
+      },
+      cycle: {
+        period_start: '2025-07-01',
+        period_end: '2025-07-31',
+        subtotal: '42305.96',
+        simulated_tax: '2961.42',
+        amount: '45267.38',
+        meter_snapshot: [
+          {
+            from: '2025-07-01',
+            to: '2025-08-01',
+            consumedKwh: '14689.57',
+            rate: '2.88',
+            subtotal: '42305.96',
+          },
+        ],
+      },
+      issueDate: '2025-08-05',
+      logo,
+      banks: [
+        {
+          bank_name: 'กรุงไทย',
+          account_name: 'บริษัท โซลาร์รูฟ เทคโนโลยี จำกัด',
+          account_number: '002-6-09892-1',
+          branch_name: 'ปทุมวัน',
+          account_type: 'ออมทรัพย์',
+        },
+      ],
+      payments: [],
+    },
+  });
+
+  const pages = layoutDocumentPages(snapshot);
+  assert.equal(pages.length, 5, 'Packet must render exactly 5 A4 pages');
+
+  const p1Text = pageLines(pages[0]).map(lineText).join(' ').replace(/\s+/g, ' ');
+  const p2Text = pageLines(pages[1]).map(lineText).join(' ').replace(/\s+/g, ' ');
+  const p3Text = pageLines(pages[2]).map(lineText).join(' ').replace(/\s+/g, ' ');
+  const p4Text = pageLines(pages[3]).map(lineText).join(' ').replace(/\s+/g, ' ');
+  const p5Text = pageLines(pages[4]).map(lineText).join(' ').replace(/\s+/g, ' ');
+
+  // Page 1: Cover Letter
+  assert.match(p1Text, /ที่ สฟ 0001\/2568/);
+  assert.match(p1Text, /เรื่อง\s+แจ้งหนี้ค่าเช่าระบบผลิตไฟฟ้าพลังงานแสงอาทิตย์/);
+  assert.match(p1Text, /เรียน\s+ผู้อำนวยการโรงพยาบาลโรคผิวหนังเขตร้อนภาคใต้ จังหวัดตรัง/);
+  assert.doesNotMatch(p1Text, /โรงพยาบาลโรงพยาบาล/);
+  assert.match(p1Text, /สัญญาเช่าเลขที่ 149\/2565 ลงวันที่ 29\/09\/2565/);
+  assert.match(p1Text, /ในเดือนที่ 1\/300 \(รอบเดือนกรกฎาคม พ\.ศ\. 2568\)/);
+  assert.match(p1Text, /45,267\.38 บาท/);
+  assert.match(p1Text, /ประเภทบัญชี\s*ออมทรัพย์ สาขาปทุมวัน ธนาคารกรุงไทย/);
+  assert.match(p1Text, /ขอแสดงความนับถือ/);
+  assert.match(p1Text, /\(นายสมชาย ใจดี\)/);
+
+  // Page 2: Electricity Invoice
+  assert.match(p2Text, /ใบแจ้งหนี้ค่ากระแสไฟฟ้า/);
+  assert.match(p2Text, /เลขประจำตัวผู้เสียภาษี 0994000165421/);
+  assert.match(p2Text, /กรุณาส่ง/);
+  assert.match(p2Text, /เลขที่ใบแจ้งหนี้ INV26070001/);
+  assert.match(p2Text, /รายละเอียด/);
+  assert.match(p2Text, /14,689\.57/);
+  assert.match(p2Text, /2\.88/);
+  assert.match(p2Text, /42,305\.96/);
+  assert.match(p2Text, /2,961\.42/);
+  assert.match(p2Text, /45,267\.38/);
+
+  // Page 3: Monthly Energy Report Part 1 (Summary + Day 1-24)
+  assert.match(p3Text, /Monthly Energy Report/);
+  assert.match(p3Text, /รายงานผลค่าไฟฟ้าจากพลังงานทดแทน \(พลังงานแสงอาทิตย์\)/);
+  assert.match(p3Text, /Summary/);
+  assert.match(p3Text, /Total Energy Production/);
+  assert.match(p3Text, /Energy Production On Peak/);
+  assert.match(p3Text, /Energy Production Off Peak/);
+  assert.match(p3Text, /1\/7\/2568/);
+  assert.match(p3Text, /24\/7\/2568/);
+  assert.doesNotMatch(p3Text, /25\/7\/2568/);
+
+  // Page 4: Monthly Energy Report Part 2 (Day 25-31 + Total)
+  assert.match(p4Text, /25\/7\/2568/);
+  assert.match(p4Text, /31\/7\/2568/);
+  assert.match(p4Text, /Total/);
+  assert.match(p4Text, /14,689\.57/);
+
+  // Page 5: Payment Confirmation Form
+  assert.match(p5Text, /แบบฟอร์ม ยืนยันการชำระค่ากระแสไฟฟ้า จากพลังงานทดแทน/);
+  assert.match(p5Text, /ชื่อหน่วยงาน: โรงพยาบาลโรคผิวหนังเขตร้อนภาคใต้ จังหวัดตรัง/);
+  assert.match(p5Text, /งวดที่ 1\/300 เดือน กรกฎาคม พ\.ศ\. 2568/);
+  assert.match(p5Text, /จำนวนเงินรวมภาษีมูลค่าเพิ่มแล้ว: 45,267\.38 บาท/);
+  assert.match(p5Text, /ลงชื่อผู้ชำระเงิน\.\.\./);
+  assert.match(p5Text, /อีเมลล์ : billing@solarroof\.co\.th เป็นที่เรียบร้อยแล้ว เมื่อวันที่ \.\.\./);
+});
+
+
+test('solar-leasing-packet-v13 handles 30-day months, installment index calculation, province extraction, and explicit daily TOU energy', () => {
+  const logo = `data:image/png;base64,${readFileSync(new URL('../../../../web/public/brand/solar-roof-document-stacked.png', import.meta.url)).toString('base64')}`;
+  const snapshot = financialDocumentSnapshot({
+    document_type: 'invoice',
+    document_number: 'INV25090003',
+    snapshot: {
+      templateVersion: FINANCIAL_TEMPLATE_VERSION,
+      policy: { scope: 'PRODUCTION', taxRate: '7.0000' },
+      company: {
+        company_name: 'บริษัท โซลาร์รูฟ เทคโนโลยี จำกัด',
+        tax_id: '0994000165421',
+        address: '30 ซอยเพลินจิต แขวงลุมพินี เขตปทุมวัน กรุงเทพมหานคร 10330',
+        phone: '02-256-3225',
+        email: 'billing@solarroof.co.th',
+      },
+      approver: {
+        userId: 'approver-1',
+        displayName: 'นางสาวสุดา รักษ์พลังงาน',
+        position: 'ผู้อำนวยการฝ่ายการเงิน',
+        signatureDataUri: logo,
+        approvedAt: '2025-10-02T03:00:00Z',
+      },
+      customer: {
+        company_name: 'โรงพยาบาลตัวอย่าง',
+        tax_id: '0994000188888',
+        tax_address: '99 ถนนสุขุมวิท อำเภอเมือง จังหวัดชลบุรี 20000',
+        contract_number: '200/2568',
+        contract_signed_date: '2025-06-15',
+        service_start_date: '2025-07-01',
+        total_installments: 300,
+        recipient_title: 'ผู้อำนวยการโรงพยาบาล',
+      },
+      cycle: {
+        period_start: '2025-09-01',
+        period_end: '2025-09-30',
+        subtotal: '30000.00',
+        simulated_tax: '2100.00',
+        amount: '32100.00',
+        meter_snapshot: [
+          {
+            from: '2025-09-01',
+            to: '2025-10-01',
+            consumedKwh: '10000.00',
+            rate: '3.00',
+            subtotal: '30000.00',
+          },
+        ],
+      },
+      issueDate: '2025-10-02',
+      logo,
+      banks: [
+        {
+          bank_name: 'กสิกรไทย',
+          account_name: 'บจก. โซลาร์รูฟ เทคโนโลยี',
+          account_number: '111-2-33333-4',
+          branch_name: 'สยามสแควร์',
+          account_type: 'ออมทรัพย์',
+        },
+      ],
+      payments: [],
+    },
+  });
+
+  const pages = layoutDocumentPages(snapshot);
+  assert.equal(pages.length, 5);
+
+  const p1Text = pageLines(pages[0]).map(lineText).join(' ').replace(/\s+/g, ' ');
+  const p3Text = pageLines(pages[2]).map(lineText).join(' ').replace(/\s+/g, ' ');
+  const p4Text = pageLines(pages[3]).map(lineText).join(' ').replace(/\s+/g, ' ');
+  const p5Text = pageLines(pages[4]).map(lineText).join(' ').replace(/\s+/g, ' ');
+
+  // Deduplicated "โรงพยาบาล" and extracted "จังหวัดชลบุรี" from tax_address
+  assert.match(p1Text, /เรียน ผู้อำนวยการโรงพยาบาลตัวอย่าง จังหวัดชลบุรี/);
+  assert.doesNotMatch(p1Text, /โรงพยาบาลโรงพยาบาล/);
+  // Installment 3/300 (July=1, Aug=2, Sep=3)
+  assert.match(p1Text, /ในเดือนที่ 3\/300 \(รอบเดือนกันยายน พ\.ศ\s*\. 2568\)/);
+
+  // Page 3 & 4: 30-day month has 30/9/2568 on Page 4, Day 31 has no 31/9/2568 date
+  assert.match(p3Text, /1\/9\/2568/);
+  assert.match(p3Text, /24\/9\/2568/);
+  assert.match(p4Text, /30\/9\/2568/);
+  assert.doesNotMatch(p4Text, /31\/9\/2568/);
+  assert.match(p4Text, /10,000\.00/);
+
+  // Page 5: Confirmation form has installment 3/300 and extracted province
+  assert.match(p5Text, /ชื่อหน่วยงาน: โรงพยาบาลตัวอย่าง จังหวัดชลบุรี/);
+  assert.match(p5Text, /งวดที่ 3\/300 เดือน กันยายน พ\.ศ\. 2568/);
+  assert.match(p5Text, /จำนวนเงินรวมภาษีมูลค่าเพิ่มแล้ว: 32,100\.00 บาท/);
 });

@@ -23,7 +23,7 @@ test('device-scoped bundles commit and acknowledge all four registered messages 
   };
   const db = { query, pool: { connect: async () => ({ query, release() {} }) } };
   const service = new MqttIngestionService(db as any, db as any);
-  const source = { connected: true, publish(topic: string, body: string) { assert.equal(commits, sent.length + 1); sent.push({ topic, body: JSON.parse(body) }); } };
+  const source = { connected: true, publish(topic: string, body: string, _options?: unknown, callback?: (error?: Error) => void) { assert.equal(commits, sent.length + 1); sent.push({ topic, body: JSON.parse(body) }); callback?.(); } };
   const meterBundle=structuredClone(bundle);meterBundle.payloads={pm2230Realtime:bundle.payloads.pm2230Realtime,pm2230Energy:bundle.payloads.pm2230Energy};
   const loggerBundle=structuredClone(bundle);loggerBundle.payloads={smartLoggerPlant:bundle.payloads.smartLoggerPlant,smartLoggerEnvironment:bundle.payloads.smartLoggerEnvironment};
   await service.handleIncomingMessage('solar/v1/sites/SITE-001/gateways/GW-001/devices/METER-001/telemetry', JSON.stringify(meterBundle), source as any, 'broker');
@@ -46,7 +46,7 @@ test('a mixed-device bundle persists only children matching the received device-
     return {rows:[]};
   };
   const db={query,pool:{connect:async()=>({query,release(){}})}};const service=new MqttIngestionService(db as any,db as any);
-  await service.handleIncomingMessage('solar/v1/sites/SITE-001/gateways/GW-001/devices/METER-001/telemetry',JSON.stringify(bundle),{connected:true,publish(_topic:string,body:string){sent.push(JSON.parse(body));}} as any,'broker');
+  await service.handleIncomingMessage('solar/v1/sites/SITE-001/gateways/GW-001/devices/METER-001/telemetry',JSON.stringify(bundle),{connected:true,publish(_topic:string,body:string,_options?:unknown,callback?:(error?:Error)=>void){sent.push(JSON.parse(body));callback?.();}} as any,'broker');
   assert.deepEqual(sent.map(ack=>ack.lotNumber),[1258,1259]);assert.equal(raw.length,2);assert.equal(rejections.length,2);assert.deepEqual([...new Set(lookups)],['METER-001']);
 });
 test('foreign gateway children are rejected without routing into their gateway', async () => {

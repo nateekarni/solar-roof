@@ -1,5 +1,8 @@
 export interface PayloadField {
   sourceTag?:string; required?:boolean; registerAddress?:string;
+  registerCount?:number;dataType?:'uint16'|'int16'|'uint32'|'int32'|'float32';
+  byteOrder?:'big_endian'|'little_endian';wordOrder?:'little_word_first'|'big_word_first'|'cdab'|'abcd';
+  scale?:number;offset?:number;
   tag: string; displayName: string; pollGroup: string; sourceUnit: string; targetUnit: string;
   conversion: 'identity' | 'wh-to-kwh' | 'varh-to-kvarh' | 'auto-v1'; role?: 'billing-import' | 'active-power' | 'none';
 }

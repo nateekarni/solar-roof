@@ -58,15 +58,19 @@ export function DeviceFieldsTable({
   }
 
   const isEditable = Boolean(onChange);
+  const decoder=(field:PayloadField)=>field.dataType&&field.registerCount&&field.byteOrder&&field.wordOrder&&field.scale!==undefined
+    ?<span className="block min-w-52 text-xs leading-relaxed"><span className="font-mono">{field.dataType} × {field.registerCount}</span><br/>{field.byteOrder} · {field.wordOrder}<br/>Scale {field.scale} · Offset {field.offset??0}</span>
+    :<span className="text-muted-foreground">—</span>;
 
   return (
     <div className="min-w-0 overflow-hidden rounded-md border [&_[data-slot=table-container]]:max-h-80 [&_[data-slot=table-container]]:overflow-auto">
-      <Table className="min-w-[950px]">
+      <Table className="min-w-[1160px]">
         <TableHeader className="sticky top-0 bg-white dark:bg-card z-10">
           <TableRow>
             <TableHead className="min-w-44">{th ? 'ฟิลด์' : 'Field'}</TableHead>
             <TableHead className="min-w-36">{th ? 'ชื่อ' : 'Name'}</TableHead>
             <TableHead className="min-w-28">{th ? 'ที่อยู่ Register' : 'Register Address'}</TableHead>
+            <TableHead className="min-w-52">{th?'ตัวถอดรหัส':'Decoder'}</TableHead>
             <TableHead className="min-w-24">{th ? 'กลุ่ม' : 'Group'}</TableHead>
             <TableHead className="min-w-24">{th ? 'หน่วยต้นทาง' : 'Source unit'}</TableHead>
             <TableHead className="min-w-24">{th ? 'หน่วยปลายทาง' : 'Target unit'}</TableHead>
@@ -86,6 +90,7 @@ export function DeviceFieldsTable({
                   </TableCell>
                   <TableCell className="text-xs">{field.displayName}</TableCell>
                   <TableCell className="font-mono text-xs text-primary">{field.registerAddress || '—'}</TableCell>
+                  <TableCell>{decoder(field)}</TableCell>
                   <TableCell className="text-xs">{field.pollGroup}</TableCell>
                   <TableCell className="text-xs">{field.sourceUnit}</TableCell>
                   <TableCell className="text-xs font-mono">{field.targetUnit}</TableCell>
@@ -155,6 +160,7 @@ export function DeviceFieldsTable({
                     onChange={(e) => onChange!(index, { registerAddress: e.target.value })}
                   />
                 </TableCell>
+                <TableCell className="p-1.5 align-top">{decoder(field)}</TableCell>
                 <TableCell className="p-1.5 align-top">
                   <Input
                     className="h-8 min-w-24 text-xs"

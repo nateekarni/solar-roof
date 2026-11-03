@@ -1,0 +1,33 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import {readFile} from 'node:fs/promises';
+import {PGlite} from '@electric-sql/pglite';
+import {decodeRegisterBatch,type RegisterFieldMapping} from '@solar/domain';
+import {validatePayloadProfile} from './payload-profile.js';
+
+test('immutable Pilot SPM91 revision maps the supplied R0-R12 sample once without inventing export energy',async()=>{
+ const db=new PGlite();
+ await db.exec('CREATE TABLE payload_profile_revisions(id uuid PRIMARY KEY,profile_id text NOT NULL,version text NOT NULL,config jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),UNIQUE(profile_id,version));');
+ await db.query(`INSERT INTO payload_profile_revisions(id,profile_id,version,config) VALUES('00000000-0000-4000-8000-000000000003','pilot-spm91','1.0.0',$1::jsonb)`,[JSON.stringify({legacy:true})]);
+ const sql=await readFile(new URL('../../../../../infra/migrations/074_pilot_spm91_physical_preset.sql',import.meta.url),'utf8');
+ await db.exec(sql);
+ const result=await db.query<{version:string;config:unknown}>("SELECT version,config FROM payload_profile_revisions WHERE profile_id='pilot-spm91' ORDER BY version");
+ assert.deepEqual(result.rows.map(row=>row.version),['1.0.0','1.1.0']);
+ const profile=validatePayloadProfile(result.rows[1]!.config);
+ assert.equal(profile.fields.some(field=>field.tag==='energy.active.export.total'),false);
+ assert.equal(profile.fields.filter(field=>field.role==='billing-import').length,1);
+ const energy=profile.fields.find(field=>field.tag==='energy.active.import.total')!;
+ assert.deepEqual({sourceUnit:energy.sourceUnit,targetUnit:energy.targetUnit,conversion:energy.conversion,scale:energy.scale},{sourceUnit:'kWh',targetUnit:'kWh',conversion:'identity',scale:0.1});
+ const raw={R0:96,R1:0,R2:22956,R3:190,R4:0,R5:391,R6:0,R7:437,R8:0,R9:65443,R10:65535,R11:4996,R12:972};
+ const mappings=profile.fields.map(field=>({semanticField:field.tag,registerAddress:field.registerAddress!,registerCount:field.registerCount!,dataType:field.dataType!,wordOrder:field.wordOrder!,scale:field.scale!,unit:field.sourceUnit})) as RegisterFieldMapping[];
+ const decoded=decodeRegisterBatch(raw,mappings);
+ assert.equal(decoded['energy.active.import.total']?.scaledValue,9.6);
+ assert.equal(decoded['electrical.voltage.l1_n']?.scaledValue,229.56);
+ assert.equal(decoded['electrical.current.l1']?.scaledValue,0.19);
+ assert.equal(decoded['power.active.total']?.scaledValue,39.1);
+ assert.equal(decoded['power.apparent.total']?.scaledValue,43.7);
+ assert.equal(decoded['power.reactive.total']?.scaledValue,-9.3);
+ assert.equal(decoded['electrical.frequency']?.scaledValue,49.96);
+ assert.equal(decoded['power.factor.total']?.scaledValue,0.972);
+ await db.close();
+});

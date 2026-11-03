@@ -22,6 +22,7 @@ test('every authenticated role can save and remove only its own signature', asyn
     assert.deepEqual(await controller.save(req as never, {image: null}), {hasSignature: false});
     assert.deepEqual(calls.map(call => call.params), [[image, 'actor'], [null, 'actor']]);
     for (const call of calls) assert.match(call.sql, /WHERE id\s*=\s*\$2/);
+    for (const call of calls) {assert.match(call.sql,/INSERT INTO audit_events/);assert.doesNotMatch(call.sql,/signature_data AS "signatureDataUri"/);}
     for (const key of ['id', 'userId', 'role', 'companyPosition']) {
       await assert.rejects(() => controller.save(req as never, {image: null, [key]: 'someone-else'}), BadRequestException);
     }

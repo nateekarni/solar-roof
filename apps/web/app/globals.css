@@ -1377,6 +1377,9 @@ input:-webkit-autofill, textarea:-webkit-autofill { -webkit-text-fill-color:var(
   --customer-chart-primary-foreground: #ffffff;
   --customer-chart-comparison: #737373;
   --customer-chart-comparison-foreground: #ffffff;
+  --customer-flow-solar: #d78400;
+  --customer-flow-load: #087f79;
+  --customer-flow-grid: #4869b1;
   --background: var(--customer-surface-background);
   --foreground: var(--customer-foreground);
   --card: var(--customer-surface-elevated);
@@ -1433,6 +1436,9 @@ input:-webkit-autofill, textarea:-webkit-autofill { -webkit-text-fill-color:var(
   --customer-chart-primary-foreground: #171717;
   --customer-chart-comparison: #a8a8aa;
   --customer-chart-comparison-foreground: #171717;
+  --customer-flow-solar: #f7b64d;
+  --customer-flow-load: #54d4cd;
+  --customer-flow-grid: #8aa9ff;
 }
 
 /* Action gold needs dark text; textual links use a separate AA-safe tone. */
@@ -1442,7 +1448,7 @@ input:-webkit-autofill, textarea:-webkit-autofill { -webkit-text-fill-color:var(
 
 .customer-portal .customer-container {
   width: 100%;
-  max-width: 72rem;
+  max-width: 88rem;
   min-width: 0;
   margin-inline: auto;
   padding-left: max(1rem, env(safe-area-inset-left));
@@ -1459,14 +1465,129 @@ input:-webkit-autofill, textarea:-webkit-autofill { -webkit-text-fill-color:var(
   padding-top: env(safe-area-inset-top);
 }
 .customer-portal .customer-main {
-  padding-top: 1.5rem;
-  padding-bottom: calc(7.5rem + env(safe-area-inset-bottom));
+  padding-top: 1rem;
+  padding-bottom: calc(6rem + env(safe-area-inset-bottom));
+}
+@media (min-width: 1920px) {
+  .customer-portal .customer-container { max-width: 112rem; }
+  .customer-portal .customer-main { padding-top: 2rem; }
+  .customer-portal .customer-production-chart { height: 18rem; }
 }
 .customer-portal .customer-card {
   border-color: color-mix(in oklab, var(--customer-border) 78%, transparent);
   box-shadow:
     0 1px 0 color-mix(in oklab, white 5%, transparent) inset,
     0 16px 42px color-mix(in oklab, var(--customer-foreground) 7%, transparent);
+}
+.customer-portal .customer-dashboard-board {
+  display: grid;
+  min-width: 0;
+  grid-template-areas:
+    "header"
+    "bill"
+    "flow"
+    "production"
+    "trend"
+    "records";
+  gap: 1rem;
+}
+.customer-portal .customer-dashboard-board [data-dashboard-area="header"] { grid-area: header; }
+.customer-portal .customer-dashboard-board [data-dashboard-area="bill"] { grid-area: bill; }
+.customer-portal .customer-dashboard-board [data-dashboard-area="flow"] { grid-area: flow; }
+.customer-portal .customer-dashboard-board [data-dashboard-area="production"] { grid-area: production; }
+.customer-portal .customer-dashboard-board [data-dashboard-area="trend"] { grid-area: trend; }
+.customer-portal .customer-dashboard-board [data-dashboard-area="records"] { grid-area: records; }
+.customer-portal .customer-dashboard-panel {
+  border-radius: .5rem;
+  box-shadow: 0 1px 0 color-mix(in oklab, white 4%, transparent) inset;
+}
+.customer-portal [data-slot="dialog-close"] {
+  min-width: 44px;
+  min-height: 44px;
+}
+.customer-portal .customer-dashboard-heading {
+  min-width: 0;
+  padding-bottom: .25rem;
+}
+.customer-portal .customer-flow-node {
+  box-shadow: 0 0 0 3px color-mix(in oklab, currentColor 8%, transparent);
+}
+.customer-portal .customer-flow-node-solar {
+  border-color: color-mix(in oklab, var(--customer-flow-solar) 75%, var(--customer-border));
+  color: var(--customer-flow-solar);
+}
+.customer-portal .customer-flow-node-load {
+  border-color: color-mix(in oklab, var(--customer-flow-load) 75%, var(--customer-border));
+  color: var(--customer-flow-load);
+}
+.customer-portal .customer-flow-node-grid {
+  border-color: color-mix(in oklab, var(--customer-flow-grid) 75%, var(--customer-border));
+  color: var(--customer-flow-grid);
+}
+@media (min-width: 1024px) {
+  .customer-portal .customer-dashboard-board {
+    grid-template-columns: minmax(0, 1.85fr) minmax(15rem, 1fr);
+    grid-template-areas:
+      "header header"
+      "bill flow"
+      "production records"
+      "trend records";
+    align-items: start;
+  }
+  .customer-portal .customer-dashboard-board[data-has-bill="false"] {
+    grid-template-areas:
+      "header header"
+      "production flow"
+      "trend records";
+  }
+  .customer-portal .customer-flow-panel .customer-flow-node {
+    width: 4rem;
+    height: 4rem;
+  }
+  .customer-portal .customer-flow-panel [data-flow-node] > p { display: none; }
+  .customer-portal .customer-flow-panel .customer-flow-line { top: -.5rem; }
+}
+@media (min-width: 1200px) {
+  .customer-portal .customer-dashboard-board {
+    grid-template-columns: minmax(0, 2fr) minmax(20rem, 1fr);
+  }
+  .customer-portal .customer-flow-panel .customer-flow-node {
+    width: 5rem;
+    height: 5rem;
+  }
+  .customer-portal .customer-flow-panel .customer-flow-line { top: 0; }
+}
+@keyframes customer-flow-forward {
+  from { left: 0; opacity: 0; }
+  18%, 82% { opacity: 1; }
+  to { left: 100%; opacity: 0; }
+}
+@keyframes customer-flow-reverse {
+  from { left: 100%; opacity: 0; }
+  18%, 82% { opacity: 1; }
+  to { left: 0; opacity: 0; }
+}
+.customer-portal .customer-flow-line {
+  position: relative;
+  display: block;
+  height: 2px;
+  background: color-mix(in oklab, var(--customer-border) 82%, transparent);
+}
+.customer-portal .customer-flow-particle {
+  position: absolute;
+  top: 50%;
+  width: .55rem;
+  height: .55rem;
+  border-radius: 9999px;
+  background: var(--customer-action-primary);
+  box-shadow: 0 0 0 .25rem color-mix(in oklab, var(--customer-action-primary) 16%, transparent);
+  transform: translate(-50%, -50%);
+}
+.customer-portal .customer-flow-particle-forward {
+  animation: customer-flow-forward 1.8s ease-in-out infinite;
+}
+.customer-portal .customer-flow-particle-reverse {
+  animation: customer-flow-reverse 1.8s ease-in-out infinite;
 }
 .customer-portal .customer-nav-link {
   display: flex;
@@ -1497,33 +1618,29 @@ input:-webkit-autofill, textarea:-webkit-autofill { -webkit-text-fill-color:var(
 }
 .customer-portal .customer-bottom-nav {
   position: fixed;
-  left: 50%;
-  bottom: max(.75rem, env(safe-area-inset-bottom));
-  width: min(calc(100% - 2rem), 36rem);
-  transform: translateX(-50%);
+  left: 0;
+  bottom: 0;
+  width: 100%;
   z-index: 40;
-  background: color-mix(in oklab, #252527 94%, transparent);
-  border-top: 1px solid #464648;
-  border: 1px solid color-mix(in oklab, #5a5a5c 78%, transparent);
-  border-radius: 2rem;
-  padding-block: .45rem;
-  box-shadow:
-    0 1px 0 color-mix(in oklab, white 9%, transparent) inset,
-    0 18px 48px color-mix(in oklab, black 38%, transparent);
+  background: color-mix(in oklab, var(--customer-surface-elevated) 96%, transparent);
+  border-top: 1px solid var(--customer-border);
+  padding-top: .35rem;
+  padding-bottom: max(.35rem, env(safe-area-inset-bottom));
+  box-shadow: 0 -8px 24px color-mix(in oklab, black 18%, transparent);
   backdrop-filter: blur(22px) saturate(135%);
 }
 .customer-portal .customer-bottom-nav .customer-container { padding-inline: .45rem; }
 .customer-portal .customer-bottom-nav .customer-nav-link {
   flex-direction: column;
   gap: .2rem;
-  border-radius: 1.5rem;
+  border-radius: .5rem;
   padding-block: .45rem;
   transition: color 180ms ease, background-color 180ms ease, transform 180ms ease;
-  color: #dedede;
+  color: var(--customer-muted-foreground);
 }
 .customer-portal .customer-bottom-nav .customer-nav-link[aria-current="page"] {
   background: transparent;
-  color: var(--customer-action-primary);
+  color: var(--customer-link);
 }
 .customer-portal .customer-bottom-nav .customer-nav-link:active { transform: scale(.97); }
 .customer-portal .customer-preference {

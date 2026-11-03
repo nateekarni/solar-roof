@@ -10,7 +10,6 @@ export type PaymentErrors = Partial<
 export interface PaymentDraft {
   outstanding: string;
   amount: string;
-  amountMode: "full" | "other";
   paidAt: string;
   transferChannel: TransferChannel;
   note: string;
@@ -38,7 +37,6 @@ export function createPaymentDraft(
   return {
     outstanding,
     amount,
-    amountMode: "full",
     paidAt: today,
     transferChannel: "bank_account",
     note: "",
@@ -54,8 +52,8 @@ export function validatePaymentDraft(
   const errors: PaymentErrors = {};
   try {
     const amount = transferAmount(draft.amount);
-    if (minor(amount) > minor(draft.outstanding))
-      errors.amount = "customerPortal.validation.amountExceedsOutstanding";
+    if (minor(amount) !== minor(draft.outstanding))
+      errors.amount = "customerPortal.validation.fullAmountRequired";
   } catch {
     errors.amount = "customerPortal.validation.positiveAmount";
   }

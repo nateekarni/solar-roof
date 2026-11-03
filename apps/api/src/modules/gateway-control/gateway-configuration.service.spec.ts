@@ -441,12 +441,16 @@ test('copies an explicitly chosen immutable preset into a device-owned local rev
   const source = { id: presetId, config: { id: 'verified-meter', version: '1.2.0', schemaVersion: '1.1',
     displayName: 'Verified meter', deviceType: 'energy-meter', pollGroups: ['energy'],
     fields: [{ tag: 'energy.active.import.total', displayName: 'Import energy', pollGroup: 'energy', sourceUnit: 'Wh',
-      targetUnit: 'kWh', conversion: 'wh-to-kwh', role: 'billing-import', registerAddress: '3204' }] } };
+      targetUnit: 'kWh', conversion: 'wh-to-kwh', role: 'billing-import', registerAddress: '3204', registerCount:2,
+      dataType:'uint32',byteOrder:'big_endian',wordOrder:'little_word_first',scale:0.1,offset:0 }] } };
   const f = fixture({ preset: source });
-  await f.service.confirm(discoveryId, confirm([{ ...device(), mappingSource: 'preset', presetId }]), actor);
+  await f.service.confirm(discoveryId, confirm([{ ...device(), mappingSource: 'preset', presetId, pollGroups:[],mappings:[] }]), actor);
   const p = write(f, /INSERT INTO payload_profile_revisions/);
   assert.notEqual(p.values[0], presetId); assert.equal(p.values[5], presetId);
   assert.deepEqual(JSON.parse(String(p.values[3])).sourceProfile, { id: 'verified-meter', version: '1.2.0' });
+  assert.deepEqual(JSON.parse(String(p.values[3])).fields[0],source.config.fields[0]);
+  const desired=JSON.parse(String(write(f,/INSERT INTO gateway_configuration_revisions/).values[3]));
+  assert.deepEqual(desired.devices[0].mappings[0],source.config.fields[0]);
 });
 
 test('rejects a missing explicitly selected preset', async () => {
@@ -576,8 +580,8 @@ test('binding predicate uses prepared semantic profile and persisted register ro
   const register={tag:stored.values[2],registerAddress:stored.values[3],dataType:stored.values[4],byteOrder:stored.values[5],
     wordOrder:stored.values[6],registerCount:stored.values[7],scale:stored.values[8],sourceUnit:stored.values[9],
     pollGroup:quality.pollGroup,offset:quality.offset??0};
-  assert.equal(profile.fields[0].registerCount,undefined);
-  assert.equal(profile.fields[0].dataType,undefined);
+  assert.equal(profile.fields[0].registerCount,2);
+  assert.equal(profile.fields[0].dataType,'uint32');
   assert.equal(register.registerCount,2);assert.equal(register.dataType,'uint32');
   const eligible=(candidate:typeof register)=>snapshot.devices.filter((configured:GatewayEnabledDeviceConfig)=>{
     const mapping=configured.mappings[0]!,field=profile.fields[0]!;
@@ -855,6 +859,7 @@ function bindingApplyRace(addDevice=false) {
  let bindingId:string|null=null,binding:Record<string,unknown>|null=null,owner:number|null=null,sequence=0,firstGated=false;
  const firstLocked=deferred(),secondWaiting=deferred(),continueFirst=deferred(),waiters:(()=>void)[]=[];
  const traces:{tx:number;sql:string}[]=[];let siteUpdateOwner:number|null=null,addedDevices=0;
+ const siteShareOwners=new Set<number>(),siteWaiters:(()=>void)[]=[];
  const lock=async(tx:number)=>{
   if(owner===tx)return;
   while(owner!==null){secondWaiting.resolve();await new Promise<void>(done=>waiters.push(done));}
@@ -870,10 +875,20 @@ function bindingApplyRace(addDevice=false) {
   const query=async(sql:string,values:unknown[]=[])=>{
    traces.push({tx,sql});
    if(sql==='BEGIN')return {rows:[]};
-   if(sql==='COMMIT'){actions.forEach(action=>action());if(siteUpdateOwner===tx)siteUpdateOwner=null;unlock(tx);return {rows:[]};}
-   if(sql==='ROLLBACK'){if(siteUpdateOwner===tx)siteUpdateOwner=null;unlock(tx);return {rows:[]};}
+   if(sql==='COMMIT'){actions.forEach(action=>action());if(siteUpdateOwner===tx)siteUpdateOwner=null;siteShareOwners.delete(tx);siteWaiters.splice(0).forEach(wake=>wake());unlock(tx);return {rows:[]};}
+   if(sql==='ROLLBACK'){if(siteUpdateOwner===tx)siteUpdateOwner=null;siteShareOwners.delete(tx);siteWaiters.splice(0).forEach(wake=>wake());unlock(tx);return {rows:[]};}
    if(sql.startsWith('SELECT id FROM sites')){
-    if(sql.includes('FOR UPDATE'))siteUpdateOwner=tx;
+    if(sql.includes('FOR KEY SHARE')){
+     while(siteUpdateOwner!==null&&siteUpdateOwner!==tx){
+      secondWaiting.resolve();await new Promise<void>(done=>siteWaiters.push(done));
+     }
+     siteShareOwners.add(tx);
+    } else if(sql.includes('FOR UPDATE')){
+     while(siteUpdateOwner!==null&&siteUpdateOwner!==tx||[...siteShareOwners].some(owner=>owner!==tx)){
+      secondWaiting.resolve();await new Promise<void>(done=>siteWaiters.push(done));
+     }
+     siteUpdateOwner=tx;
+    }
     return {rows:[{id:siteId}]};
    }
    if(/INSERT INTO devices\(/.test(sql)){
@@ -982,6 +997,10 @@ function archiveApplyRace() {
     if(sql.includes('FOR UPDATE'))await lock(tx,'gateway','update');
     if(archived&&sql.includes("status<>'archived'"))return {rows:[]};
    }
+   if(/FROM gateways WHERE site_id/.test(sql)){
+    if(sql.includes('FOR UPDATE'))await lock(tx,'gateway','update');
+    return {rows:[{id:'gateway'}]};
+   }
    if(/FROM contracts/.test(sql))return {rows:[{count:1}]};
    if(/FROM billing_cycles/.test(sql))return {rows:[{count:0}]};
    if(/UPDATE sites SET status = 'archived'/.test(sql)){actions.push(()=>{archived=true;});return {rows:[]};}
@@ -993,25 +1012,24 @@ function archiveApplyRace() {
   return {query,release(){}};
  }) as typeof db.pool.connect;
  return {apply:()=>base.service.recordConfigStatus(control(status('applied'))),
-  archive:()=>new AssetsController(db,{} as MqttIngestionService).deleteSite(siteId,'archive'),
+  archive:()=>new AssetsController(db,{} as MqttIngestionService).deleteSite(siteId,{}),
   firstLocked,secondWaiting,continueFirst,get archived(){return archived;},get activated(){return activated;},get addedDevices(){return addedDevices;}};
 }
 
-test('archive-first serializes application before its gateway lock and rejects archived site',{timeout:5000},async()=>{
- const f=archiveApplyRace();const archived=f.archive();await f.firstLocked.promise;
+test('removal-first serializes application and then refuses a site with an active gateway',{timeout:5000},async()=>{
+ const f=archiveApplyRace();const archived=f.archive().then(value=>({value,error:undefined}),error=>({value:undefined,error}));await f.firstLocked.promise;
  const applied=f.apply().then(value=>({value,error:undefined}),error=>({value:undefined,error}));
  await f.secondWaiting.promise;f.continueFirst.resolve();
- assert.equal((await archived).archived,true);const result=await applied;
- assert.ok(http(404)(result.error));assert.equal(f.archived,true);assert.equal(f.activated,false);assert.equal(f.addedDevices,0);
+ const removal=await archived,result=await applied;
+ assert.ok(http(409)(removal.error));assert.equal(result.error,undefined);assert.equal(f.archived,false);assert.equal(f.activated,true);assert.equal(f.addedDevices,1);
 });
 
-test('apply-first holds compatible site lock before gateway so archive waits without cycle',{timeout:5000},async()=>{
+test('apply-first holds compatible site lock before site removal checks the active gateway',{timeout:5000},async()=>{
  const f=archiveApplyRace();const applied=f.apply();await f.firstLocked.promise;
  const archived=f.archive().then(value=>({value,error:undefined}),error=>({value:undefined,error}));
  await f.secondWaiting.promise;f.continueFirst.resolve();
  assert.equal((await applied).activated,true);const result=await archived;
- assert.equal(result.error,undefined);assert.equal(result.value?.archived,true);
- assert.equal(f.archived,true);assert.equal(f.activated,true);assert.equal(f.addedDevices,1);
+ assert.ok(http(409)(result.error));assert.equal(f.archived,false);assert.equal(f.activated,true);assert.equal(f.addedDevices,1);
 });
 
 for(const operation of ['proposal','approve','reject','applied','connection','rotate'] as const){

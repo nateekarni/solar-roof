@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import {
-  Area,
-  AreaChart,
+  Bar,
+  BarChart,
   CartesianGrid,
   ResponsiveContainer,
   Tooltip,
@@ -14,6 +14,7 @@ import type { CustomerPortalHomeResponse } from "@solar/api-contracts";
 import { createTranslator, type Locale } from "@solar/i18n";
 import { formatDate } from "./customer-home-format";
 import { useChartTooltipTrigger } from "../../dashboard/use-chart-tooltip-trigger";
+import { ChartContainer } from "../../../components/ui/chart";
 
 export function CustomerEnergyChartRenderer({
   series,
@@ -33,16 +34,30 @@ export function CustomerEnergyChartRenderer({
     return () => preference.removeEventListener("change", update);
   }, []);
   const number = new Intl.NumberFormat(locale, { maximumFractionDigits: 2 });
+  const chartSeries = series.map((point) => ({
+    ...point,
+    value: point.value !== null && Number.isFinite(point.value) && point.value >= 0 ? point.value : null,
+  }));
   return (
     <div
-      className="h-64 w-full min-w-0 overflow-hidden sm:h-72"
+      data-trend-chart="bars"
+      className="h-52 w-full min-w-0 overflow-hidden sm:h-60"
       role="group"
       aria-label={t("customerPortal.home.energy")}
       {...handlers}
     >
-      <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-        <AreaChart
-          data={series}
+      <ChartContainer
+        config={{
+          value: {
+            label: t("customerPortal.home.energy"),
+            color: "var(--customer-chart-primary)",
+          },
+        }}
+        className="h-full"
+      >
+        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+        <BarChart
+          data={chartSeries}
           margin={{ top: 16, right: 12, bottom: 8, left: 0 }}
           accessibilityLayer
         >
@@ -89,26 +104,18 @@ export function CustomerEnergyChartRenderer({
               ) : null
             }
           />
-          <Area
-            type="monotone"
+          <Bar
             dataKey="value"
             name={t("customerPortal.common.kwh")}
-            connectNulls={false}
-            stroke="var(--customer-chart-primary)"
             fill="var(--customer-chart-primary)"
-            fillOpacity={0.1}
-            strokeWidth={3}
-            dot={false}
-            activeDot={{
-              r: 5,
-              stroke: "var(--customer-surface-elevated)",
-              strokeWidth: 2,
-            }}
+            fillOpacity={0.82}
+            radius={[3, 3, 0, 0]}
             isAnimationActive={animate}
             animationDuration={450}
           />
-        </AreaChart>
-      </ResponsiveContainer>
+        </BarChart>
+        </ResponsiveContainer>
+      </ChartContainer>
     </div>
   );
 }

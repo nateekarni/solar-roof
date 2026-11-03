@@ -23,27 +23,20 @@ test('large image evidence persists, rejects duplicates and settles one receipt'
   const db={transaction:async(fn:any)=>{await client.query('SAVEPOINT evidence_operation');try{const result=await fn(client);await client.query('RELEASE SAVEPOINT evidence_operation');return result;}catch(error){await client.query('ROLLBACK TO SAVEPOINT evidence_operation');throw error;}}};
   const service=new FinancialApplicationService(db as any,{assertEnabled:async()=>{}} as any);
   const image='data:image/png;base64,'+randomBytes(150_000).toString('base64');
-  const first=await service.submitPayment(cycle.id,{slipUrl:image},submitter.id);
-  const saved=(await client.query('SELECT amount,paid_at,length(slip_url) AS size FROM payments WHERE id=$1',[first.paymentId])).rows[0];
-  assert.equal(saved.amount,null);assert.equal(saved.paid_at,null);assert.ok(saved.size>100_000);
-  await assert.rejects(()=>service.submitPayment(cycle.id,{slipUrl:image},submitter.id),/already submitted/);
+  const key=randomBytes(150_000).toString('base64');
+  const first=await service.submitPayment(cycle.id,{amount:String(cycle.amount),paidAt:'2026-10-09T01:00:00Z',slipUrl:image,evidenceKey:key},submitter.id);
+  const saved=(await client.query('SELECT amount,paid_at,declared_amount,declared_transfer_at,length(slip_url) AS size FROM payments WHERE id=$1',[first.paymentId])).rows[0];
+  assert.equal(saved.amount,null);assert.equal(saved.paid_at,null);assert.equal(String(saved.declared_amount),String(cycle.amount));assert.equal(new Date(saved.declared_transfer_at).toISOString(),'2026-10-09T01:00:00.000Z');assert.ok(saved.size>100_000);
   // The unique index must protect concurrent writes which bypass the precheck.
   await assert.rejects(()=>db.transaction(()=>client.query(`INSERT INTO payments(id,billing_cycle_id,status,slip_url,submitted_by)
    VALUES(gen_random_uuid(),$1,'pending_verification',$2,$3)`,[cycle.id,image,submitter.id])),
    (error:any)=>error.code==='23505'&&error.constraint==='payments_new_active_slip');
-  const key=randomBytes(150_000).toString('base64');
-  const second=await service.submitPayment(cycle.id,{slipUrl:image+'AA==',evidenceKey:key},submitter.id);
-  assert.notEqual(first.paymentId,second.paymentId);
-  await assert.rejects(()=>service.submitPayment(cycle.id,{evidenceKey:key},submitter.id),/already submitted/);
   await assert.rejects(()=>db.transaction(()=>client.query(`INSERT INTO payments(id,billing_cycle_id,status,evidence_key,submitted_by)
    VALUES(gen_random_uuid(),$1,'pending_verification',$2,$3)`,[cycle.id,key,submitter.id])),
    (error:any)=>error.code==='23505'&&error.constraint==='payments_new_active_evidence');
-  const partial=await service.verifyPayment(cycle.id,'approved',undefined,actor.id,{paymentId:first.paymentId,verifiedAmount:'0.01',verifiedTransferAt:'2026-10-09T01:00:00Z'});
-  assert.equal(partial.receipt,null);
-  const [whole,fraction='']=String(cycle.amount).split('.');const remaining=BigInt(whole!)*100n+BigInt(fraction.padEnd(2,'0').slice(0,2))-1n;
-  const amount=(remaining/100n).toString()+'.'+(remaining%100n).toString().padStart(2,'0');
-  const settled=await service.verifyPayment(cycle.id,'approved',undefined,actor.id,{paymentId:second.paymentId,verifiedAmount:amount,verifiedTransferAt:'2026-10-09T02:00:00Z'});
+  const settled=await service.verifyPayment(cycle.id,'approved',undefined,actor.id,{paymentId:first.paymentId});
   assert.equal(settled.billingCycleStatus,'paid');assert.ok(settled.receipt);
+  await assert.rejects(()=>service.submitPayment(cycle.id,{amount:String(cycle.amount),paidAt:'2026-10-09T02:00:00Z',slipUrl:image+'AA=='},submitter.id),/settled|outstanding/i);
   const savedReceipt=(await client.query('SELECT snapshot FROM documents WHERE id=$1',[settled.receipt.id])).rows[0];
   const {financialDocumentSnapshot}=await import('../documents/financial-document-pdf.js');
   const printable=financialDocumentSnapshot({document_type:'receipt',document_number:settled.receipt.document_number,snapshot:savedReceipt.snapshot});

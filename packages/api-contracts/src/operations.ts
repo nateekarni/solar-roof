@@ -91,6 +91,9 @@ export interface BillingRow extends OperationRow {
  invoiceId: string | null; receiptId: string | null;
  invoiceNumber: string | null; receiptNumber: string | null;
 }
+export interface DocumentAttachmentSlot {
+ kind:'production_form';status:'awaiting_file';documentId:string;documentRevision:number;templateVersion:string;
+}
 export interface CashPaymentEntry {
  id:string;
  amount:string;
@@ -111,6 +114,7 @@ export interface BillingReplacementProposal {
 export interface IssuancePreview {
  period:string;customerName:string;siteName:string;rate:string;subtotal:string;tax:string;amount:string;dueDate:string;
  replacement:boolean;recipients:Array<{name:string;email:string}>;
+ attachmentSlots:Array<Pick<DocumentAttachmentSlot,'kind'|'status'>>;
  approver:{displayName:string;position:string;hasSignature:boolean};reviewToken:string;
 }
 export type IssuancePreviewResponse = IssuancePreview | {failure: IssuanceApprovalResult};
@@ -119,4 +123,5 @@ export interface PersistedDocumentRow extends OperationRow {
  siteId: string; billingCycleId: string | null; documentNumber: string;
  documentType: string; issueDate: string | null; amount: string; status: string;
  fileKey: string | null; previewUnavailableReason: string;
+ attachments?:DocumentAttachmentSlot[];
 }

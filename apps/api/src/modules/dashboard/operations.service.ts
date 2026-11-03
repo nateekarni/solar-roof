@@ -7,6 +7,7 @@ import { siteScope,hasPermission } from '../../common/auth/authorization.js';
 import { approvedAmount, daysOverdue, collectionStatus, billingStatusView } from './billing-read-model.js';
 
 const siteConnectionStatus=`CASE WHEN si.status IN ('inactive','archived') THEN si.status WHEN EXISTS (SELECT 1 FROM gateways g WHERE g.site_id=si.id AND g.retired_at IS NULL AND g.last_seen_at<=now() AND g.last_seen_at>=now()-make_interval(secs=>greatest(120,g.polling_interval_seconds*2))) THEN 'online' ELSE 'offline' END`;
+const auditActionScope=(role:string|undefined)=>`(starts_with(a.action,'${role==='owner'?'business':'technical'}.') OR starts_with(a.action,'user.settings.'))`;
 
 @Injectable()
 export class OperationsService {
@@ -89,7 +90,7 @@ export class OperationsService {
           a.correlation_id AS "correlationId",a.reason,
           a.before_json AS "beforeJson",a.after_json AS "afterJson"
           FROM audit_events a LEFT JOIN users u ON u.id=a.actor_id LEFT JOIN customers s ON s.id=u.customer_id
-          WHERE ${where} AND starts_with(a.action,'${user?.role==='owner'?'business':'technical'}.') ORDER BY a.occurred_at DESC LIMIT 500`;
+          WHERE ${where} AND ${auditActionScope(user?.role)} ORDER BY a.occurred_at DESC LIMIT 500`;
         columns=["เวลา","การดำเนินการ","ประเภทข้อมูล","รหัสอ้างอิง","ผู้ดำเนินการ","เหตุผล"];break;
       default:throw new NotFoundException("Unknown resource");
     }
@@ -139,11 +140,20 @@ export class OperationsService {
     const scope=siteScope(user,'business');
     const params:unknown[]=[id];
     if(scope!==null)params.push(scope,user?.role==='customer_user'?user.id:null);
-    const result=await this.db.query<{id:string;documentNumber:string;[key:string]:unknown}>(`SELECT d.id,d.site_id AS "siteId",d.billing_cycle_id AS "billingCycleId",(SELECT contract_id FROM billing_cycles WHERE id=d.billing_cycle_id) AS "contractId",d.document_number AS "documentNumber",d.document_type AS "documentType",d.status,to_char(d.issue_date,'YYYY-MM-DD') AS "issueDate",d.amount,d.file_key AS "fileKey" FROM documents d JOIN sites si ON si.id=d.site_id WHERE d.id=$1 ${scope===null?'':'AND si.id=ANY($2::uuid[]) AND ($3::uuid IS NULL OR EXISTS(SELECT 1 FROM site_account_assignments access WHERE access.user_id=$3::uuid AND access.site_id=si.id AND access.revoked_at IS NULL))'}`,params);
+    const result=await this.db.query<{id:string;documentNumber:string;documentType:string;revision:number;templateVersion:string;snapshot?:{attachmentSlots?:unknown};[key:string]:unknown}>(`SELECT d.id,d.site_id AS "siteId",d.billing_cycle_id AS "billingCycleId",(SELECT contract_id FROM billing_cycles WHERE id=d.billing_cycle_id) AS "contractId",d.document_number AS "documentNumber",d.document_type AS "documentType",d.status,to_char(d.issue_date,'YYYY-MM-DD') AS "issueDate",d.amount,d.file_key AS "fileKey",d.revision,d.template_version AS "templateVersion",d.snapshot FROM documents d JOIN sites si ON si.id=d.site_id WHERE d.id=$1 ${scope===null?'':'AND si.id=ANY($2::uuid[]) AND ($3::uuid IS NULL OR EXISTS(SELECT 1 FROM site_account_assignments access WHERE access.user_id=$3::uuid AND access.site_id=si.id AND access.revoked_at IS NULL))'}`,params);
     if(!result.rows[0])throw new NotFoundException('Document not found');
+    const {snapshot,...document}=result.rows[0];
+    const attachmentSlots:unknown[]=Array.isArray(snapshot?.attachmentSlots)?snapshot.attachmentSlots:[];
+    const attachments=document.documentType==='invoice'&&attachmentSlots.some(slot=>{
+      if(!slot||typeof slot!=='object')return false;
+      const value=slot as Record<string,unknown>;
+      return value.kind==='production_form'&&value.status==='awaiting_file'&&value.documentRevision===document.revision&&value.templateVersion===document.templateVersion;
+    })
+      ?[{kind:'production_form' as const,status:'awaiting_file' as const,documentId:document.id,documentRevision:document.revision,templateVersion:document.templateVersion}]
+      :[];
     const artifact=(await this.db.query('SELECT sha256 FROM document_artifacts WHERE document_id=$1',[id])).rows[0];
-    if(artifact)return {...result.rows[0],downloadUrl:`/v1/operations/documents/${id}/pdf`,previewUrl:`/v1/operations/documents/${id}/pdf`,contentHash:artifact.sha256};
-    return {...result.rows[0],previewUnavailableReason:'เอกสารต้นฉบับที่ตรวจสอบยังไม่พร้อมใช้งาน'};
+    if(artifact)return {...document,attachments,downloadUrl:`/v1/operations/documents/${id}/pdf`,previewUrl:`/v1/operations/documents/${id}/pdf`,contentHash:artifact.sha256};
+    return {...document,attachments,previewUnavailableReason:'เอกสารต้นฉบับที่ตรวจสอบยังไม่พร้อมใช้งาน'};
   }
   async contractRecipientOptions(siteId:string,user?:ScopePrincipal) {
     if(!hasPermission(user,'business.billing.edit'))throw new ForbiddenException('Contract author required');
@@ -174,7 +184,7 @@ export class OperationsService {
       case 'notifications':params.splice(0,params.length,user?.id);source='SELECT id,title,channel,recipient,status,created_at AS "sentAt" FROM notification_deliveries WHERE user_id=$1';break;
       case 'reports':params.splice(0,params.length,user?.id);source='SELECT id,title,report_type AS category,status,upper(format) AS format,created_at AS "generatedAt" FROM generated_reports WHERE created_by=$1';break;
       case 'users':source=`SELECT u.id,to_char(u.created_at AT TIME ZONE 'Asia/Bangkok','YYYY-MM-DD') AS "createdAt",u.display_name AS "displayName",u.email,u.role,u.status FROM users u LEFT JOIN customers s ON s.id=u.customer_id WHERE ${where}`;break;
-      case 'audit':source=`SELECT a.id,a.action,a.entity_type AS "entityType",a.entity_id AS "entityId",u.display_name AS actor,a.reason,a.correlation_id AS "correlationId",a.occurred_at AS time FROM audit_events a LEFT JOIN users u ON u.id=a.actor_id LEFT JOIN customers s ON s.id=u.customer_id WHERE ${where} AND starts_with(a.action,'${user?.role==='owner'?'business':'technical'}.')`;break;
+      case 'audit':source=`SELECT a.id,a.action,a.entity_type AS "entityType",a.entity_id AS "entityId",u.display_name AS actor,a.reason,a.correlation_id AS "correlationId",a.occurred_at AS time FROM audit_events a LEFT JOIN users u ON u.id=a.actor_id LEFT JOIN customers s ON s.id=u.customer_id WHERE ${where} AND ${auditActionScope(user?.role)}`;break;
       default:throw new NotFoundException('Unknown resource');
     }
     const filter=operationPredicate(resource,query,params).join(' AND ')||'TRUE';
